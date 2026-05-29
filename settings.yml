@@ -1,0 +1,188 @@
+# ------------------------------------------------------------
+# RAiTHE INDUSTRIES INCORPORATED
+# Copyright (c) 2026 All Rights Reserved.
+#
+# This file is part of a proprietary system. Unauthorized use,
+# reproduction, or distribution is strictly prohibited.
+# ------------------------------------------------------------
+
+# settings.yml — Global Conflict Risk Monitor (Rust)
+# Calibrated: 2026-03-31
+#
+# STRUCTURE NOTE: This file is parsed directly into the Rust Settings struct.
+# Only four top-level keys are valid: regime_factors, alerts, ingestion, dashboard.
+# Extra keys will cause a parse error and fall back to built-in defaults.
+#
+# REGIME MULTIPLIER METHOD:
+#   Factors encode STRUCTURAL conditions stable over months-to-years.
+#   They are multiplied (not summed) — conditionally independent amplifiers.
+#   The news-signal Bayesian layer captures acute daily events separately.
+#   Do not add a factor for something the domain scoring layer already captures.
+#
+#   Current product (active factors only):
+#   1.4 × 1.4 × 1.2 × 0.7 × 1.4 × 1.2 × 1.15 × 1.3 × 1.2 × 1.1 = 5.46×
+#   Adjusted prior: 0.000987 × 5.46 = 0.539% / yr
+#
+# CALIBRATION TARGETS:
+#   Quiet period (1-2 domains, low signals)        → ~0.5–1.5% annual
+#   Current world 2026 (4-5 domains, moderate)     → ~3–6% annual
+#   Active acute crisis (5-6 domains, high signals) → ~8–15% annual
+#   Ukraine Feb 2022 equivalent                    → ~25–35% annual
+#   Cuba Oct 1962 equivalent                       → ~40–50% annual
+
+# ── Alert thresholds ──────────────────────────────────────────────────────────
+# elevated: 2.5% — above the regime-adjusted structural floor; worth monitoring
+# critical: 8.0% — acute crisis territory; rare; triggers CRITICAL banner
+# thirty_day_warn: 1.0% — 30-day window threshold for early warning sub-banner
+alerts:
+  elevated:       0.025
+  critical:       0.08
+  thirty_day_warn: 0.01
+
+# ── Ingestion ─────────────────────────────────────────────────────────────────
+# poll_interval_seconds: base tick for the aggregator
+#   Aggregator fires every poll_interval × 1    (1s → 1s cycle)
+#   RSS loop fires every poll_interval × 10     (1s → 10s cycle)
+#   GNews loop fires every poll_interval × 20   (1s → 20s cycle)
+#   GDELT loop fires every poll_interval × 30   (1s → 30s cycle)
+ingestion:
+  poll_interval_seconds: 1
+  max_events_per_batch:  10000
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+# host: 0.0.0.0 listens on all interfaces (change to 127.0.0.1 for local-only)
+# port: default 8000 — change if port is already in use
+dashboard:
+  host: "0.0.0.0"
+  port: 8000
+  # Operator key — required for /api/regime/* and /api/operator/* endpoints.
+  # MUST be changed to a strong random string before deploying to raithe.ca or
+  # any network-exposed host. Generate one with: openssl rand -hex 32
+  # If left empty, all operator endpoints return 403 Forbidden.
+  # WARNING: The value below is a placeholder. Do NOT deploy with this value.
+  operator_key: "25a32691176840ea05d1d2455895569877f5eaba2aa7129873f06b53ef520526"
+
+# ── Regime factors ────────────────────────────────────────────────────────────
+# Each factor:
+#   id          — machine identifier (snake_case, unique)
+#   label       — human-readable description shown in logs
+#   multiplier  — structural amplifier (>1 raises risk, <1 reduces it)
+#   active      — true = included in product; false = standby (activate as needed)
+#
+# WHEN TO EDIT:
+#   - Set active: false when the structural condition resolves durably
+#   - Adjust multiplier only on quarterly recalibration or major doctrine change
+#   - Add a new factor only for a novel structural condition not captured by news scoring
+#   - Always verify the product of active multipliers matches the header comment above
+
+regime_factors:
+
+  # ── ACTIVE KINETIC CONFLICT ─────────────────────────────────────────────────
+  - id: active_superpower_war
+    label: "Active US kinetic war (Operation Epic Fury — US/Israel vs Iran)"
+    multiplier: 1.4
+    active: true
+    # Disable when: ceasefire holding >30 days and Strait of Hormuz fully reopened
+
+  # ── NUCLEAR AND ARMS CONTROL ────────────────────────────────────────────────
+  - id: arms_control_dead
+    label: "Global arms control and nonproliferation framework collapsed"
+    multiplier: 1.4
+    active: true
+    # New START suspended, INF dead, JCPOA destroyed during active negotiations.
+    # Disable when: new bilateral or multilateral treaty ratified and in force.
+
+  - id: dprk_nuclear_irreversible
+    label: "DPRK nuclear status constitutionally irreversible; expansion underway"
+    multiplier: 1.2
+    active: true
+    # Kim Mar 23 2026: nuclear status "absolutely irreversible."
+    # Raise to 1.35 if 7th nuclear test confirmed; disable if verifiable denuclearization.
+
+  - id: deterrence_structural_intact
+    label: "Nuclear deterrence (MAD) structurally intact — risk reducer"
+    multiplier: 0.7
+    active: true
+    # Genuine risk reducer. Retain unless: US formally abrogates Article 5 (→ 0.6),
+    # any nuclear detonation (→ 0.5), or US withdraws nuclear umbrella from Japan/ROK.
+
+  # ── EUROPE / RUSSIA ─────────────────────────────────────────────────────────
+  - id: war_in_europe_year5
+    label: "Active conventional war in Europe — Ukraine, year 5"
+    multiplier: 1.4
+    active: true
+    # First conventional war in Europe involving a nuclear power since 1945.
+    # Disable when: verified ceasefire holding >60 days with international monitors.
+
+  - id: russia_hybrid_nato
+    label: "Systematic Russian hybrid warfare campaign against NATO states"
+    multiplier: 1.2
+    active: true
+    # GLOBSEC Mar 2026: 4× increase in Russian sabotage across Europe in 2024.
+    # Disable when: documented 50%+ reduction in sabotage incidents over 90 days.
+
+  - id: russia_nuclear_doctrine_compellence
+    label: "Russia shifting nuclear doctrine from deterrence to compellence"
+    multiplier: 1.15
+    active: true
+    # RealClearDefense Mar 9 2026: Russia moving toward offensive deterrence.
+    # Disable when: Russia publicly reaffirms defensive-only nuclear doctrine.
+
+  # ── ASIA-PACIFIC ─────────────────────────────────────────────────────────────
+  - id: taiwan_south_china_sea_rising
+    label: "Taiwan Strait and South China Sea strategic competition intensifying"
+    multiplier: 1.3
+    active: true
+    # CFR 2026: Taiwan Strait crisis rated "even chance" by US foreign policy experts.
+    # Reduce to 1.2 if Trump-Xi summit produces binding commitments.
+    # Raise to 1.5 if PLA blockade exercises conducted.
+
+  # ── SYSTEMIC / INSTITUTIONAL ─────────────────────────────────────────────────
+  - id: us_institutional_norm_erosion
+    label: "US institutional norm erosion — unpredictable superpower behavior"
+    multiplier: 1.2
+    active: true
+    # US struck Iran Feb 28 2026 without congressional authorization, during
+    # active diplomacy. Affects adversary ability to model US behavior.
+    # Disable when: institutional checks meaningfully restored.
+
+  # ── CYBER / INFORMATION ──────────────────────────────────────────────────────
+  - id: cyber_info_warfare
+    label: "State-sponsored cyber and information warfare normalized"
+    multiplier: 1.1
+    active: true
+    # Conservative structural background condition — not an acute escalation driver.
+    # Disable when: binding international cyber norms framework ratified.
+
+  # ── INACTIVE STANDBY FACTORS ─────────────────────────────────────────────────
+  # Activate these by changing active: false → active: true as conditions change.
+
+  - id: dprk_7th_nuclear_test
+    label: "DPRK conducts 7th nuclear test"
+    multiplier: 1.35
+    active: false
+    # Activate if: seismic event consistent with nuclear test at Punggye-ri
+    # confirmed by CTBTO or USGS.
+
+  - id: russia_nato_kinetic
+    label: "Russia conducts kinetic attack on NATO member state territory"
+    multiplier: 1.6
+    active: false
+    # Activate if: confirmed kinetic Russian attack on NATO member territory
+    # (not airspace violation or sabotage — those are already in russia_hybrid_nato).
+
+  - id: nuclear_weapon_detonated
+    label: "Nuclear weapon detonated — any state, any yield"
+    multiplier: 2.5
+    active: false
+    # Activate if: confirmed detonation by any state actor (CTBTO, USGS, or
+    # credible government statements). Also reduce deterrence_structural_intact
+    # multiplier to 0.5 simultaneously.
+
+  - id: ceasefire_iran_durable
+    label: "Durable ceasefire in Iran war — 30+ days holding"
+    multiplier: 0.7
+    active: false
+    # Activate AND disable active_superpower_war if ceasefire holds >30 days
+    # and Strait of Hormuz fully reopened.
+    # Net effect: multiplier product drops from ~5.46 to ~2.73.
