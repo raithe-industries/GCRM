@@ -342,28 +342,33 @@ pub async fn load_epoch() -> EpochStore {
 pub type SharedState = Arc<AppState>;
 
 pub struct AppState {
-    pub latest_snapshot: Mutex<Option<serde_json::Value>>,
-    pub article_store:   Mutex<ArticleStore>,
-    pub source_registry: Mutex<HashMap<String, usize>>,
-    pub nuclear_alerts:  Mutex<Vec<crate::detector::SeismicAlert>>,
-    pub operator_events: Mutex<Vec<serde_json::Value>>,
+    pub latest_snapshot:   Mutex<Option<serde_json::Value>>,
+    pub article_store:     Mutex<ArticleStore>,
+    pub source_registry:   Mutex<HashMap<String, usize>>,
+    pub nuclear_alerts:    Mutex<Vec<crate::detector::SeismicAlert>>,
+    pub operator_events:   Mutex<Vec<serde_json::Value>>,
     /// Live regime factors — shared between OperatorState (api.rs) and Aggregator.
     /// Writing here immediately affects the next Bayesian tick.
-    pub shared_regime:   Mutex<Vec<crate::models::RegimeFactor>>,
+    pub shared_regime:     Mutex<Vec<crate::models::RegimeFactor>>,
     /// Full P(WWIII) timeline ring — pre-loaded from disk at boot.
-    pub epoch_store:     Mutex<EpochStore>,
+    pub epoch_store:       Mutex<EpochStore>,
+    /// Timestamp of the last operator calibration action (regime toggle, multiplier
+    /// set, or manual event assertion). Surfaced in every snapshot broadcast so the
+    /// dashboard can show an honest "model updated" indicator to public users.
+    pub last_calibrated_at: Mutex<Option<DateTime<Utc>>>,
 }
 
 impl AppState {
     pub fn new() -> SharedState {
         Arc::new(Self {
-            latest_snapshot: Mutex::new(None),
-            article_store:   Mutex::new(ArticleStore::new(75_000)),
-            source_registry: Mutex::new(HashMap::new()),
-            nuclear_alerts:  Mutex::new(Vec::new()),
-            operator_events: Mutex::new(Vec::new()),
-            shared_regime:   Mutex::new(Vec::new()),
-            epoch_store:     Mutex::new(EpochStore::new()),
+            latest_snapshot:    Mutex::new(None),
+            article_store:      Mutex::new(ArticleStore::new(75_000)),
+            source_registry:    Mutex::new(HashMap::new()),
+            nuclear_alerts:     Mutex::new(Vec::new()),
+            operator_events:    Mutex::new(Vec::new()),
+            shared_regime:      Mutex::new(Vec::new()),
+            epoch_store:        Mutex::new(EpochStore::new()),
+            last_calibrated_at: Mutex::new(None),
         })
     }
 }
