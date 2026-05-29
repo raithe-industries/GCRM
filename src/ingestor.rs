@@ -163,7 +163,7 @@ pub const GDELT_QUERIES: &[&str] = &[
 // ── Concurrency control ───────────────────────────────────────────────────────
 // Limit simultaneous RSS HTTP connections to avoid thundering-herd effects
 // against individual hosts and to stay within typical OS socket limits.
-const MAX_CONCURRENT_RSS: usize = 20;
+const MAX_CONCURRENT_RSS: usize = 42;
 
 // ── Article limits ────────────────────────────────────────────────────────────
 const RSS_ARTICLES_PER_FEED:  usize = 500;  // was 20
@@ -346,7 +346,7 @@ impl Ingestor {
     // holding a lock for the duration of an HTTP request.
 
     async fn rss_loop(ingestor: Arc<Self>) {
-        let client = match build_client(12) {
+        let client = match build_client(8) {
             Ok(c)  => c,
             Err(e) => { tracing::error!("RSS client build failed: {e}"); return; }
         };
@@ -504,7 +504,7 @@ impl Ingestor {
                 }
             }
 
-            sleep(Duration::from_secs(ingestor.poll_interval_s * 20)).await;
+            sleep(Duration::from_secs(ingestor.poll_interval_s * 12)).await;
         }
     }
 
@@ -590,7 +590,7 @@ impl Ingestor {
                 }
             }
 
-            sleep(Duration::from_secs(ingestor.poll_interval_s * 30)).await;
+            sleep(Duration::from_secs(ingestor.poll_interval_s * 20)).await;
         }
     }
 
