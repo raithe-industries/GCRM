@@ -238,11 +238,17 @@ impl ArticleStore {
     }
 
     pub fn query(&self, limit: usize, source_filter: Option<&str>, domain_filter: Option<&str>) -> Vec<&StoredArticle> {
-        self.articles.iter().rev()
+        let mut result: Vec<&StoredArticle> = self.articles.iter()
             .filter(|a| source_filter.map_or(true, |s| a.source == s))
             .filter(|a| domain_filter.map_or(true, |d| a.domain_tags.iter().any(|t| t == d)))
-            .take(limit)
-            .collect()
+            .collect();
+        result.sort_unstable_by_key(|a| std::cmp::Reverse(
+            chrono::DateTime::parse_from_rfc3339(&a.published_at)
+                .map(|d| d.timestamp())
+                .unwrap_or(0)
+        ));
+        result.truncate(limit);
+        result
     }
 
     pub fn len(&self) -> usize { self.articles.len() }
@@ -1005,8 +1011,12 @@ mod tests {
     #[test]
     fn article_store_query_newest_first() {
         let mut store = ArticleStore::new(100);
-        store.push(make_article("old", "bbc"));
-        store.push(make_article("new", "bbc"));
+        let mut old_art = make_article("old", "bbc");
+        old_art.published_at = "2026-01-01T00:00:00+00:00".to_string();
+        let mut new_art = make_article("new", "bbc");
+        new_art.published_at = "2026-06-01T00:00:00+00:00".to_string();
+        store.push(old_art);
+        store.push(new_art);
         let results = store.query(10, None, None);
         assert_eq!(results[0].id, "new");
     }

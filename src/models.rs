@@ -592,11 +592,20 @@ pub struct DashboardSettings {
     /// If empty, operator endpoints are disabled entirely.
     #[serde(default)]
     pub operator_key: String,
+    /// URL prefix under which the dashboard is served, e.g. "/risk".
+    /// Empty or "/" means serve at root. Must start with "/" if non-empty.
+    #[serde(default)]
+    pub base_path:    String,
 }
 
 impl Default for DashboardSettings {
     fn default() -> Self {
-        Self { host: "0.0.0.0".into(), port: 8000, operator_key: String::new() }
+        Self {
+            host:         "0.0.0.0".into(),
+            port:         8000,
+            operator_key: String::new(),
+            base_path:    String::new(),
+        }
     }
 }
 

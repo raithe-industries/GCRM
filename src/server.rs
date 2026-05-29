@@ -48,21 +48,29 @@ const BROADCAST_CAP: usize = 200;
 
 #[derive(Clone)]
 pub struct ServerState {
-    pub app_state:    SharedState,
-    pub broadcast_tx: broadcast::Sender<Arc<String>>,
-    pub client_count: Arc<Mutex<usize>>,
+    pub app_state:      SharedState,
+    pub broadcast_tx:   broadcast::Sender<Arc<String>>,
+    pub client_count:   Arc<Mutex<usize>>,
+    pub dashboard_html: Arc<String>,
 }
 
 impl ServerState {
-    pub fn new(app_state: SharedState) -> (Self, broadcast::Sender<Arc<String>>) {
+    pub fn new(app_state: SharedState, base_path: &str) -> (Self, broadcast::Sender<Arc<String>>) {
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
+        let html = Arc::new(generate_dashboard_html(base_path));
         let state = Self {
             app_state,
-            broadcast_tx: tx.clone(),
-            client_count: Arc::new(Mutex::new(0)),
+            broadcast_tx:   tx.clone(),
+            client_count:   Arc::new(Mutex::new(0)),
+            dashboard_html: html,
         };
         (state, tx)
     }
+}
+
+fn generate_dashboard_html(base_path: &str) -> String {
+    let bp = if base_path == "/" { "" } else { base_path };
+    DASHBOARD_HTML.replace("{{BASE_PATH}}", bp)
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -305,14 +313,14 @@ async fn get_health(State(state): State<ServerState>) -> impl IntoResponse {
     }))
 }
 
-async fn get_dashboard() -> impl IntoResponse {
-    Html(DASHBOARD_HTML)
+async fn get_dashboard(State(state): State<ServerState>) -> impl IntoResponse {
+    Html((*state.dashboard_html).clone())
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
-pub fn build_router(state: ServerState, operator_state: crate::api::OperatorState) -> Router {
-    Router::new()
+pub fn build_router(state: ServerState, operator_state: crate::api::OperatorState, base_path: &str) -> Router {
+    let inner = Router::new()
         .route("/",              get(get_dashboard))
         .route("/ws",            get(ws_handler))
         .route("/api/latest",    get(get_latest))
@@ -323,7 +331,14 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
         .route("/api/nuclear",   get(get_nuclear))
         .route("/api/health",    get(get_health))
         .with_state(state)
-        .merge(crate::api::operator_routes().with_state(operator_state))
+        .merge(crate::api::operator_routes().with_state(operator_state));
+
+    let bp = if base_path == "/" { "" } else { base_path };
+    if bp.is_empty() {
+        inner
+    } else {
+        Router::new().nest(bp, inner)
+    }
 }
 
 // ── Server entry point ────────────────────────────────────────────────────────
@@ -333,12 +348,14 @@ pub async fn serve(
     port:           u16,
     state:          ServerState,
     operator_state: crate::api::OperatorState,
+    base_path:      String,
 ) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    let router = build_router(state, operator_state);
+    let bp = if base_path == "/" { String::new() } else { base_path.clone() };
+    let router = build_router(state, operator_state, &bp);
 
-    info!("Dashboard → http://localhost:{port}");
-    info!("WebSocket → ws://localhost:{port}/ws");
+    info!("Dashboard → http://localhost:{port}{bp}/");
+    info!("WebSocket → ws://localhost:{port}{bp}/ws");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router).await?;
@@ -443,7 +460,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .ca span{color:var(--t2);font-family:monospace}
 .formula{padding:6px 10px;font-family:monospace;font-size:9px;color:var(--t4);line-height:1.7;flex-shrink:0;background:var(--bg)}
 .formula span{color:var(--t2)}
-.meta-pills{padding:3px 10px;display:flex;gap:4px;flex-wrap:wrap;border-top:0.5px solid var(--border);flex-shrink:0}
+.meta-pills{display:none}
 .mpill{font-size:8px;padding:1px 5px;border-radius:8px;border:0.5px solid var(--border);color:var(--t4)}
 .mpill.hi{border-color:var(--purple);color:#a0a0ff}
 .right-panel{border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)}
@@ -630,6 +647,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   </div>
 </div>
 <script>
+const BASE_PATH='{{BASE_PATH}}';
 const DID=['military_escalation','nuclear_posture','diplomatic_breakdown','economic_warfare','cyber_info_ops','alliance_activation','great_power_conflict','wmd_mass_casualty'];
 const DSHORT=['Military','Nuclear','Diplomatic','Economic','Cyber','Alliance','Gr.Power','WMD'];
 const DCOLORS=['--mil','--nuc','--dip','--eco','--cyb','--ali','--gp','--wmd'];
@@ -684,15 +702,15 @@ function renderArticles(arts,total){const el=document.getElementById('panel-arti
 function filterByDomain(dt){_artDomainFilter=(_artDomainFilter===dt)?'':dt;fetchArticles();}
 function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artTimeFilter=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',+b.dataset.h===0));fetchArticles();}
 let _artCache=[],_artTotal=0;
-async function fetchArticles(){try{let url='/api/articles?limit=2000';const r=await fetch(url);const d=await r.json();_artCache=d.articles;_artTotal=d.total;renderArticles(_artCache,_artTotal);}catch(e){console.warn('fetchArticles error',e);}}
-async function fetchSources(){try{const r=await fetch('/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];const activeCount=Object.keys(active).filter(k=>active[k]>0).length;el.innerHTML='<div style="padding:5px 10px;font-size:8px;color:var(--t4);border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between"><span>'+configured.length+' configured</span><span style="color:var(--green)">'+activeCount+' delivering</span></div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
+async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=2000';const r=await fetch(url);const d=await r.json();_artCache=d.articles;_artTotal=d.total;renderArticles(_artCache,_artTotal);}catch(e){console.warn('fetchArticles error',e);}}
+async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];const activeCount=Object.keys(active).filter(k=>active[k]>0).length;el.innerHTML='<div style="padding:5px 10px;font-size:8px;color:var(--t4);border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between"><span>'+configured.length+' configured</span><span style="color:var(--green)">'+activeCount+' delivering</span></div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
 const logLines=[];
 function addLog(msg,color='var(--t4)'){logLines.unshift('<span style="color:'+color+'">'+new Date().toLocaleTimeString()+' '+msg+'</span>');if(logLines.length>500)logLines.pop();if(currentTab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
 let prevAnnual=null,spikeAnnual=null;
 function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;if(Math.abs(delta)>0.0002){const id='spike_'+spikeIdx++;const color=delta>0?'#E24B4A88':'#1D9E7588';spikeAnnotations[id]={type:'line',xMin:tlChart.data.labels.length-1,xMax:tlChart.data.labels.length-1,borderColor:color,borderWidth:1,label:{display:true,content:(delta>0?'▲':'▼')+' '+(Math.abs(delta)*100).toFixed(3)+'%',color:'#c0c0e0',font:{size:7},position:'start',backgroundColor:'rgba(7,7,15,0.8)',padding:2}};const keys=Object.keys(spikeAnnotations);if(keys.length>20)delete spikeAnnotations[keys[0]];tlChart.options.plugins.annotation.annotations=spikeAnnotations;document.getElementById('spike-label').textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+new Date().toLocaleTimeString();}prevAnnual=pA;}
 function update6hBuffer(pA){const now=Date.now();history6h.push({t:now,p:pA});history6h=history6h.filter(e=>now-e.t<6*3600*1000);}
 function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0].p;}
-async function pollNuclear(){try{const r=await fetch('/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude+' depth='+top.depth_km+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
+async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude+' depth='+top.depth_km+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
 function applyData(d){
   liveData=d;const ov=SCEN[curScen];const doms={};
   for(const[k,v]of Object.entries(d.domains||{}))doms[k]={...v,score:ov?(ov[k]??v.score*.25):v.score};
@@ -748,7 +766,7 @@ function applyTimeline(entries){
 }
 function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.classList.toggle('connected',on);}}
 function connect(){
-  const ws=new WebSocket('ws://'+location.host+'/ws');
+  const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
   ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>350000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){_artCache=msg.data;_artTotal=msg.total;if(currentTab==='articles')renderArticles(_artCache,_artTotal);updateTicker(msg.data.slice(0,40));}};
   ws.onclose=()=>{setLive(false);addLog('WebSocket disconnected — reconnecting...','#c0392b');setTimeout(connect,4000)};
@@ -756,7 +774,7 @@ function connect(){
 }
 async function fetchEpoch(){
   try{
-    const r=await fetch('/api/epoch');
+    const r=await fetch(BASE_PATH+'/api/epoch');
     const d=await r.json();
     if(d.entries&&d.entries.length>0)applyTimeline(d.entries);
   }catch(e){addLog('Epoch fetch failed: '+e.message,'#c0392b');}
@@ -834,7 +852,7 @@ function opResult(msg,col){const el=document.getElementById('op-assert-result');
 async function fetchRegime(){
   const key=opKey();if(!key){document.getElementById('op-product').textContent='Enter API key above';return;}
   try{
-    const r=await fetch('/api/regime',{headers:{'X-GCRM-Key':key}});
+    const r=await fetch(BASE_PATH+'/api/regime',{headers:{'X-GCRM-Key':key}});
     const d=await r.json();
     if(d.error){document.getElementById('op-product').textContent='⚠ '+d.error;return;}
     document.getElementById('op-product').textContent=
@@ -854,7 +872,7 @@ async function fetchRegime(){
 async function toggleFactor(id){
   const key=opKey();if(!key)return;
   try{
-    const r=await fetch('/api/regime/'+id+'/toggle',{method:'POST',headers:{'X-GCRM-Key':key}});
+    const r=await fetch(BASE_PATH+'/api/regime/'+id+'/toggle',{method:'POST',headers:{'X-GCRM-Key':key}});
     const d=await r.json();
     if(d.error){alert(d.error);return;}
     fetchRegime();
@@ -873,7 +891,7 @@ async function assertEvent(){
   if(deactivateRaw)body.deactivate=deactivateRaw.split(',').map(s=>s.trim()).filter(Boolean);
   if(severityRaw)body.severity=parseFloat(severityRaw);
   try{
-    const r=await fetch('/api/operator/assert',{method:'POST',
+    const r=await fetch(BASE_PATH+'/api/operator/assert',{method:'POST',
       headers:{'X-GCRM-Key':key,'Content-Type':'application/json'},
       body:JSON.stringify(body)});
     const d=await r.json();
@@ -886,7 +904,7 @@ async function assertEvent(){
 
 async function fetchSeismic(){
   const key=opKey();
-  const url=key?'/api/operator/seismic':'/api/nuclear';
+  const url=key?BASE_PATH+'/api/operator/seismic':BASE_PATH+'/api/nuclear';
   const hdrs=key?{'X-GCRM-Key':key}:{};
   try{
     const r=await fetch(url,{headers:hdrs});
@@ -906,14 +924,14 @@ async function fetchSeismic(){
 
 async function dismissSeismic(id){
   const key=opKey();if(!key)return;
-  await fetch('/api/operator/seismic/'+encodeURIComponent(id)+'/dismiss',{method:'POST',headers:{'X-GCRM-Key':key}});
+  await fetch(BASE_PATH+'/api/operator/seismic/'+encodeURIComponent(id)+'/dismiss',{method:'POST',headers:{'X-GCRM-Key':key}});
   fetchSeismic();
 }
 
 async function fetchOpLog(){
   const key=opKey();if(!key)return;
   try{
-    const r=await fetch('/api/operator/log',{headers:{'X-GCRM-Key':key}});
+    const r=await fetch(BASE_PATH+'/api/operator/log',{headers:{'X-GCRM-Key':key}});
     const d=await r.json();
     const list=document.getElementById('op-log-list');
     const entries=d.entries||[];
@@ -1014,7 +1032,7 @@ mod tests {
     fn server_state_creates_broadcast_channel() {
         // Verify ServerState::new returns a functional broadcast sender
         let app_state = crate::aggregator::AppState::new();
-        let (state, tx) = ServerState::new(app_state);
+        let (state, tx) = ServerState::new(app_state, "");
         // Subscribe and verify we can send/receive
         let mut rx = state.broadcast_tx.subscribe();
         let msg = Arc::new("test".to_string());
@@ -1026,12 +1044,12 @@ mod tests {
     #[test]
     fn route_count() {
         let app_state      = crate::aggregator::AppState::new();
-        let (state, _)     = ServerState::new(Arc::clone(&app_state));
+        let (state, _)     = ServerState::new(Arc::clone(&app_state), "");
         let op_state       = crate::api::OperatorState::new(
             app_state,
             "test_key".into(),
             vec![],
         );
-        let _router = build_router(state, op_state);
+        let _router = build_router(state, op_state, "");
     }
 }

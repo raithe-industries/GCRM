@@ -150,6 +150,7 @@ fn default_settings() -> Settings {
             host:         "0.0.0.0".into(),
             port:         8000,
             operator_key: "CHANGE_ME_BEFORE_DEPLOY".into(),
+            base_path:    String::new(),
         },
     }
 }
@@ -250,7 +251,7 @@ async fn main() {
     }
 
     // ── Server state ──────────────────────────────────────────────────────────
-    let (server_state, _broadcast_tx) = ServerState::new(Arc::clone(&app_state));
+    let (server_state, _broadcast_tx) = ServerState::new(Arc::clone(&app_state), &settings.dashboard.base_path);
 
     // ── Ingestor ──────────────────────────────────────────────────────────────
     let ingestor = Ingestor::new(
@@ -277,8 +278,9 @@ async fn main() {
         settings.dashboard.operator_key.clone(),
         settings.regime_factors.clone(),
     );
-    let host = settings.dashboard.host.clone();
-    let port = settings.dashboard.port;
+    let host      = settings.dashboard.host.clone();
+    let port      = settings.dashboard.port;
+    let base_path = settings.dashboard.base_path.clone();
 
     info!("Dashboard → http://localhost:{port}");
     info!("Pipeline: Ingestor → NLP processor (pure Rust) → Aggregator → WebSocket → Dashboard");
@@ -317,7 +319,7 @@ async fn main() {
         _ = tokio::spawn(nuclear_news_monitor.run()) => {
             error!("Nuclear news monitor task exited unexpectedly");
         }
-        result = tokio::spawn(serve(host, port, server_state, operator_state)) => {
+        result = tokio::spawn(serve(host, port, server_state, operator_state, base_path)) => {
             match result {
                 Ok(Ok(())) => info!("Server stopped cleanly"),
                 Ok(Err(e)) => error!("Server error: {e}"),
