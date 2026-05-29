@@ -596,6 +596,13 @@ impl CorroborationIndex {
 
 // ── Aggregator ────────────────────────────────────────────────────────────────
 
+// Seconds after startup before timeline/EpochStore writes begin.
+// Suppresses the non-stationary warmup transient (0-articles → first RSS batch
+// lands → spike → settle) from ever appearing in the history chart.
+// Live gauge, articles, and domain bars are unaffected — snapshots still
+// broadcast immediately. Only the historical record is gated.
+const WARMUP_SECS: u64 = 90;
+
 pub struct Aggregator {
     engine:           BayesianRiskEngine,
     event_rx:         mpsc::Receiver<GeopoliticalEvent>,
@@ -606,6 +613,7 @@ pub struct Aggregator {
     corr_index:       CorroborationIndex,
     max_age_hours:    f64,
     poll_interval_ms: u64,
+    started_at:       std::time::Instant,
 }
 
 impl Aggregator {
@@ -631,6 +639,7 @@ impl Aggregator {
             corr_index:       CorroborationIndex::new(),
             max_age_hours:    MAX_EVENT_AGE_HOURS,
             poll_interval_ms: poll_interval_secs * 1000,
+            started_at:       std::time::Instant::now(),
         }
     }
 
@@ -713,22 +722,21 @@ impl Aggregator {
                 snapshot.delta_annual * 100.0,
             );
 
-            // Write disk FIRST — guarantees persistence even if WS drops
-            append_timeline(&snapshot).await;
-
-            // Mirror to EpochStore ring — zero disk I/O, serves /api/epoch and WS on-connect
-            {
+            // Gate history writes behind warmup period — suppresses the non-stationary
+            // transient (0-articles → first batch → spike) from the timeline chart.
+            // Live broadcasts and the gauge are unaffected; only the record is held.
+            if self.started_at.elapsed().as_secs() >= WARMUP_SECS {
+                append_timeline(&snapshot).await;
                 let entry = TimelineEntry::from_snapshot(&snapshot);
                 if let Ok(v) = serde_json::to_value(&entry) {
                     self.state.epoch_store.lock().await.push(v);
                 }
             }
 
-            // Update shared state
+            // Update shared state and broadcast regardless of warmup — live UI always current
             let json_snap = snapshot_to_json(&snapshot);
             *self.state.latest_snapshot.lock().await = Some(json_snap);
 
-            // Push to broadcast
             if let Err(e) = self.snapshot_tx.send(snapshot).await {
                 warn!("Snapshot channel closed: {e}");
             }
