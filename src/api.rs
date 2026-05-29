@@ -268,6 +268,7 @@ pub async fn toggle_regime(
             );
             // Sync to shared_regime so Aggregator picks it up immediately
             *state.app_state.shared_regime.lock().await = factors.clone();
+            *state.app_state.last_calibrated_at.lock().await = Some(Utc::now());
 
             let entry = json!({
                 "ts":      Utc::now().to_rfc3339(),
@@ -456,6 +457,7 @@ pub async fn assert_event(
     let product  = regime_product(&factors);
     let warnings = regime_warnings(&factors);
     *state.app_state.shared_regime.lock().await = factors.clone();
+    *state.app_state.last_calibrated_at.lock().await = Some(Utc::now());
     drop(factors);
 
     let event_id = uuid::Uuid::new_v4().to_string();

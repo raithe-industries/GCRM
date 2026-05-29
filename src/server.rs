@@ -85,7 +85,16 @@ pub async fn broadcast_snapshots(
     let mut article_push_counter = 0u32;
 
     while let Some(snap) = snap_rx.recv().await {
-        let data = snapshot_to_json(&snap);
+        let mut data = snapshot_to_json(&snap);
+
+        // Merge model calibration timestamp so dashboard can show honest "MODEL UPDATED" indicator
+        {
+            let cal = server_state.app_state.last_calibrated_at.lock().await;
+            data["model_calibrated_at"] = match *cal {
+                Some(ref ts) => serde_json::Value::String(ts.to_rfc3339()),
+                None         => serde_json::Value::Null,
+            };
+        }
 
         // Update latest in shared state
         {
@@ -526,6 +535,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar{width:3px;height:3px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+@keyframes cal-pulse{0%,100%{box-shadow:0 0 0 0 rgba(212,150,42,.4)}50%{box-shadow:0 0 6px 2px rgba(212,150,42,.2)}}
+.cal-fresh{animation:cal-pulse 1.8s ease-in-out infinite}
 </style>
 </head>
 <body>
@@ -546,6 +557,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <span id="src-count">—</span><span>|</span>
     <span id="nuc-status" style="color:#404040">● USGS</span><span>|</span>
     <span id="snap-id">—</span>
+    <span id="model-cal-pill" style="display:none;font-size:9px;padding:2px 7px;border-radius:3px;border:0.5px solid var(--amber);color:var(--amber);font-family:monospace;letter-spacing:.06em;transition:opacity .6s"></span>
     <button class="op-toggle-btn" onclick="toggleOperatorPanel()" title="Operator Panel">⚙</button>
   </div>
 </div>
@@ -648,6 +660,23 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 </div>
 <script>
 const BASE_PATH='{{BASE_PATH}}';
+let _lastCalTs=null;
+function updateModelCalIndicator(calAt){
+  const pill=document.getElementById('model-cal-pill');
+  if(!pill||!calAt)return;
+  const d=new Date(calAt);
+  if(isNaN(d.getTime()))return;
+  const tsStr=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+' UTC';
+  const ageMs=Date.now()-d.getTime();
+  const freshMs=5*60*1000; // 5 minutes = "fresh" / pulsing
+  const showMs=24*60*60*1000; // hide after 24h
+  if(ageMs>showMs){pill.style.display='none';return;}
+  const isFresh=ageMs<freshMs;
+  pill.style.display='inline-block';
+  pill.textContent=isFresh?'⬆ MODEL UPDATED':'● CALIBRATED '+tsStr;
+  pill.classList.toggle('cal-fresh',isFresh);
+  if(_lastCalTs!==calAt){_lastCalTs=calAt;if(isFresh)setTimeout(()=>updateModelCalIndicator(calAt),freshMs-ageMs);}
+}
 const DID=['military_escalation','nuclear_posture','diplomatic_breakdown','economic_warfare','cyber_info_ops','alliance_activation','great_power_conflict','wmd_mass_casualty'];
 const DSHORT=['Military','Nuclear','Diplomatic','Economic','Cyber','Alliance','Gr.Power','WMD'];
 const DCOLORS=['--mil','--nuc','--dip','--eco','--cyb','--ali','--gp','--wmd'];
@@ -712,6 +741,7 @@ function update6hBuffer(pA){const now=Date.now();history6h.push({t:now,p:pA});hi
 function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0].p;}
 async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude+' depth='+top.depth_km+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
 function applyData(d){
+  if(d.model_calibrated_at)updateModelCalIndicator(d.model_calibrated_at);
   liveData=d;const ov=SCEN[curScen];const doms={};
   for(const[k,v]of Object.entries(d.domains||{}))doms[k]={...v,score:ov?(ov[k]??v.score*.25):v.score};
   const pA=d.probabilities.annual,p30=d.probabilities.thirty_day,p90=d.probabilities.ninety_day,dA=d.delta?.annual??0,conf=d.confidence??0.5;
@@ -724,7 +754,8 @@ function applyData(d){
   const riskRatio=Math.round(pA/0.001);document.getElementById('gauge-ratio').textContent=riskRatio+'× above baseline (0.1%)';
   const ctxEl=document.getElementById('gauge-ratio-ctx');if(ctxEl){ctxEl.textContent=riskRatio+'× baseline';ctxEl.style.color=pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'#1D9E75';}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
-  document.getElementById('ts').textContent='Live · '+new Date(d.computed_at).toLocaleTimeString()+(curScen!=='live'?' · SCENARIO: '+curScen.toUpperCase():'')+' P₀=0.000987/yr';
+  const _cd=new Date(d.computed_at);const _utc=String(_cd.getUTCHours()).padStart(2,'0')+':'+String(_cd.getUTCMinutes()).padStart(2,'0')+':'+String(_cd.getUTCSeconds()).padStart(2,'0')+' UTC';
+  document.getElementById('ts').textContent='Live · '+_utc+(curScen!=='live'?' · SCENARIO: '+curScen.toUpperCase():'')+' P₀=0.000987/yr';
   const threat=threatLabel(pA);const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=threat;cmdThreat.style.color=pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':pA>=.005?'#7F77DD':'#1D9E75';
   document.getElementById('cmd-threat-sub').textContent=pA>=.05?'Immediate escalation risk':pA>=.015?'Above normal — monitor':pA>=.005?'Moderate background':'Baseline conditions';
   document.getElementById('cmd-risk').textContent=(pA*100).toFixed(2)+'%';document.getElementById('cmd-risk').style.color=pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'var(--t1)';
