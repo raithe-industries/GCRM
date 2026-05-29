@@ -1,0 +1,1130 @@
+// ------------------------------------------------------------
+// RAiTHE INDUSTRIES INCORPORATED
+// Copyright (c) 2026 All Rights Reserved.
+//
+// This file is part of a proprietary system. Unauthorized use,
+// reproduction, or distribution is strictly prohibited.
+// ------------------------------------------------------------
+
+// src/bayesian.rs — Bayesian risk engine
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use chrono::{DateTime, Utc};
+use tracing::{info, warn};
+
+use crate::models::{
+    AlertLevel, DomainScore, GeopoliticalEvent, RegimeFactor,
+    RiskSnapshot, SourceTier, ELEVATION_THRESHOLD, HISTORICAL_ANCHOR,
+};
+
+// ── Core constants ─────────────────────────────────────────────────────────────
+
+/// Domain-specific decay half-lives in hours.
+/// Fast-moving domains decay quickly; structural ones persist longer.
+pub const DOMAIN_HALF_LIVES: &[(&str, f64)] = &[
+    ("military_escalation",  24.0),   // Battles — active wars are persistent
+    ("nuclear_posture",      72.0),   // Nuclear posture changes persist
+    ("diplomatic_breakdown", 48.0),   // Diplomatic crises linger
+    ("economic_warfare",     96.0),   // Sanctions are long-lasting
+    ("cyber_info_ops",       24.0),   // Cyber attacks are episodic
+    ("alliance_activation",  72.0),   // Alliance decisions persist
+    ("great_power_conflict", 48.0),   // Great power moves have lasting effects
+    ("wmd_mass_casualty",    35064.0),// WMD use redefines the strategic situation
+                                      // for the full window (≈4yr / one presidential
+                                      // term). Intentionally long so a WMD event
+                                      // persists across the analysis window, anchoring
+                                      // a cross-presidency record of which actors
+                                      // cross the threshold. Half-life == window, so
+                                      // weight is still ~0.5 at the 4-year horizon.
+];
+
+fn domain_half_life(domain: &str) -> f64 {
+    DOMAIN_HALF_LIVES.iter()
+        .find(|(d, _)| *d == domain)
+        .map(|(_, h)| *h)
+        .unwrap_or(24.0)
+}
+
+/// Maximum event age before recency weight → 0.0  (4 years in hours).
+/// Aligned with aggregator window. Discuss with lead designer Robert Perreault
+/// if issues arise.
+pub const MAX_EVENT_AGE_HOURS: f64 = 35064.0;
+
+/// Domain weights — relative contribution to WWIII likelihood.
+pub const DOMAIN_WEIGHTS: &[(&str, f64)] = &[
+    ("military_escalation",  1.5),
+    ("nuclear_posture",      3.0),  // Highest — direct WWIII trigger mechanism
+    ("diplomatic_breakdown", 1.1),
+    ("economic_warfare",     1.4),
+    ("cyber_info_ops",       0.9),
+    ("alliance_activation",  1.6),
+    ("great_power_conflict", 2.0),
+    ("wmd_mass_casualty",    2.8),  // Second highest
+];
+
+pub fn domain_weight(domain: &str) -> f64 {
+    DOMAIN_WEIGHTS.iter()
+        .find(|(d, _)| *d == domain)
+        .map(|(_, w)| *w)
+        .unwrap_or(1.0)
+}
+
+fn max_weighted_sum() -> f64 {
+    DOMAIN_WEIGHTS.iter().map(|(_, w)| w).sum()
+}
+
+/// Co-occurrence boost anchor points: (elevated-domain count, multiplier).
+/// The boost is a continuous piecewise-linear interpolation through these
+/// anchors evaluated on a *soft* elevation count (`soft_elevation_weight`), so
+/// the multiplier responds smoothly as a domain approaches the elevation
+/// threshold instead of stepping when it crosses. Integer anchors preserve the
+/// original calibration (2→1.3, 3→2.0, 4→3.5, 5→5.0) and extend with
+/// diminishing increments to all 8 domains — a simultaneous escalation across
+/// every domain is an unprecedented, near-certain systemic-war signature.
+const CO_OCCURRENCE_ANCHORS: &[(f64, f64)] = &[
+    (0.0, 1.0),
+    (1.0, 1.0),
+    (2.0, 1.3),
+    (3.0, 2.0),
+    (4.0, 3.5),
+    (5.0, 5.0),
+    (6.0, 5.7),
+    (7.0, 6.4),
+    (8.0, 7.0),
+];
+
+/// Half-width of the smooth ramp centred on ELEVATION_THRESHOLD used to compute
+/// a domain's partial elevation weight. A domain scoring ≥ threshold+ramp counts
+/// as fully elevated (1.0); ≤ threshold−ramp counts as 0.0; in between it ramps
+/// smoothly (smoothstep), so a domain hovering at the boundary no longer flips
+/// the co-occurrence boost discontinuously.
+const ELEVATION_RAMP: f64 = 0.08;
+
+/// Smooth 0..1 elevation weight for a single domain score.
+fn soft_elevation_weight(score: f64) -> f64 {
+    let lo = ELEVATION_THRESHOLD - ELEVATION_RAMP;
+    let hi = ELEVATION_THRESHOLD + ELEVATION_RAMP;
+    if score <= lo { return 0.0; }
+    if score >= hi { return 1.0; }
+    let t = (score - lo) / (hi - lo); // 0..1 across the ramp
+    t * t * (3.0 - 2.0 * t)           // smoothstep
+}
+
+/// Continuous co-occurrence boost: piecewise-linear interpolation of
+/// CO_OCCURRENCE_ANCHORS at the (possibly fractional) soft elevation count.
+pub fn co_occurrence_boost(soft_elevated: f64) -> f64 {
+    let x = soft_elevated.max(0.0);
+    let anchors = CO_OCCURRENCE_ANCHORS;
+    let last = anchors[anchors.len() - 1];
+    if x >= last.0 { return last.1; }
+    for w in anchors.windows(2) {
+        let (x0, y0) = w[0];
+        let (x1, y1) = w[1];
+        if x >= x0 && x <= x1 {
+            let t = (x - x0) / (x1 - x0);
+            return y0 + t * (y1 - y0);
+        }
+    }
+    1.0
+}
+
+/// Evidence gain (β) for the log-odds risk model. Controls how strongly the
+/// likelihood term `L` (weighted domain sum × co-occurrence boost, range ≈0–7)
+/// moves the probability above the regime-adjusted prior.
+///
+///   P = sigmoid( logit(prior) + β·L )
+///
+/// At L = 0 the output equals the prior exactly (calibrated quiet baseline). As
+/// L grows the output rises along a logistic S-curve and saturates toward the
+/// engineering ceiling — so, unlike the old `prior × (1 + L·k)` form, strong
+/// multi-domain signals can express genuinely high risk instead of being capped
+/// near 15%. β is the master sensitivity knob; the alert thresholds in
+/// settings.yml are tuned jointly with it. Indicative behaviour at β = 2.0
+/// (regime ≈ 1.5): L≈1.1 → ~1.5% (elevated), L≈1.8 → ~5% (critical),
+/// L≈2.6 → ~22%, L≈5 → ceiling. Precise crisis calibration (Cuba/Ukraine)
+/// requires backtesting against historical event replays.
+const EVIDENCE_GAIN: f64 = 2.0;
+
+/// Logistic function. Maps log-odds → probability in (0, 1).
+fn sigmoid(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+const TRACKED_ACTORS: &[&str] = &[
+    "united_states", "united_states_military",
+    "russia", "russia_military",
+    "china", "china_military",
+    "north_korea", "iran", "iran_military",
+    "israel", "israel_military",
+    "nato", "ukraine", "ukraine_military",
+    "pakistan", "india",
+];
+
+fn is_tracked_actor(actor: &str) -> bool {
+    TRACKED_ACTORS.contains(&actor)
+}
+
+// ── Recency decay ──────────────────────────────────────────────────────────────
+
+/// Domain-specific exponential decay. Nuclear/diplomatic decay slower.
+/// Returns 0.0 for events older than MAX_EVENT_AGE_HOURS.
+pub fn recency_weight(published_at: &DateTime<Utc>, domain: &str) -> f64 {
+    let age_hours = (Utc::now() - *published_at).num_seconds() as f64 / 3600.0;
+    if age_hours > MAX_EVENT_AGE_HOURS {
+        return 0.0;
+    }
+    let half_life = domain_half_life(domain);
+    (-std::f64::consts::LN_2 * age_hours / half_life).exp()
+}
+
+/// Returns the longest half-life among the domains present in an event's signals.
+fn event_max_half_life(event: &GeopoliticalEvent) -> f64 {
+    // Prefer domain_signals keys (weighted NLP output); fall back to domain_tags
+    let domains: Vec<&str> = if !event.domain_signals.is_empty() {
+        event.domain_signals.keys().map(|s| s.as_str()).collect()
+    } else {
+        event.domain_tags.iter().map(|s| s.as_str()).collect()
+    };
+
+    domains.iter()
+        .map(|d| domain_half_life(d))
+        .fold(0.0_f64, f64::max)
+        // Fall back to military_escalation half-life if no domains are tagged
+        .max(domain_half_life("military_escalation"))
+}
+
+// ── Anomaly detector ──────────────────────────────────────────────────────────
+
+/// Detects sudden spikes in domain activity vs rolling baseline.
+#[derive(Debug, Default)]
+pub struct AnomalyDetector {
+    history: HashMap<String, VecDeque<usize>>,
+    window:  usize,
+}
+
+impl AnomalyDetector {
+    pub fn new(window: usize) -> Self {
+        Self { history: HashMap::new(), window }
+    }
+
+    /// Returns map of domain → is_anomaly.
+    pub fn update(&mut self, domain_event_counts: &HashMap<String, usize>) -> HashMap<String, bool> {
+        let mut anomalies = HashMap::new();
+        for (domain, &count) in domain_event_counts {
+            let hist = self.history.entry(domain.clone()).or_default();
+            hist.push_back(count);
+            if hist.len() > self.window {
+                hist.pop_front();
+            }
+            let is_anomaly = if hist.len() >= 3 {
+                let prior: Vec<usize> = hist.iter().copied().collect();
+                let n = prior.len() - 1;
+                let avg = prior[..n].iter().sum::<usize>() as f64 / n as f64;
+                count as f64 > (3.0 * avg).max(3.0)
+            } else {
+                false
+            };
+            anomalies.insert(domain.clone(), is_anomaly);
+        }
+        anomalies
+    }
+}
+
+// ── Domain scorer ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default)]
+pub struct DomainScorer {
+    anomaly_detector: AnomalyDetector,
+}
+
+impl DomainScorer {
+    pub fn new() -> Self {
+        Self { anomaly_detector: AnomalyDetector::new(60) }
+    }
+
+    pub fn score_all(&mut self, events: &[GeopoliticalEvent]) -> HashMap<String, DomainScore> {
+        // Local accumulators — named scored_* to avoid shadowing event.domain_signals field.
+        let mut scored_signals:    HashMap<String, Vec<f64>>        = HashMap::new();
+        let mut domain_event_ids:  HashMap<String, Vec<String>>     = HashMap::new();
+        let mut domain_tiers:      HashMap<String, Vec<SourceTier>> = HashMap::new();
+        let mut domain_gp_count:   HashMap<String, usize>           = HashMap::new();
+        let mut domain_actors:     HashMap<String, HashSet<String>> = HashMap::new();
+        let mut domain_event_count: HashMap<String, usize>          = HashMap::new();
+
+        // Seed every tracked domain with a zero count so quiet batches are recorded
+        // in the anomaly baseline. Without this, a normally-quiet domain only ever
+        // records its active batches, inflating its rolling average and masking the
+        // very spikes the anomaly detector exists to catch.
+        for &(domain, _) in DOMAIN_WEIGHTS {
+            domain_event_count.insert(domain.to_string(), 0);
+        }
+
+        for event in events {
+            // Iterate domain_signals (weighted NLP quality per domain).
+            // Falls back to domain_tags at signal=1.0 for any event that
+            // predates this change (corroboration_count: backward compat).
+            let signals_iter: Vec<(String, f64)> = if !event.domain_signals.is_empty() {
+                event.domain_signals.iter()
+                    .map(|(d, &s)| (d.clone(), s))
+                    .collect()
+            } else {
+                // Legacy path: events with no domain_signals (e.g. from tests
+                // or older serialised data) treat all tags as full signal.
+                event.domain_tags.iter()
+                    .map(|d| (d.clone(), 1.0_f64))
+                    .collect()
+            };
+
+            for (domain, nlp_signal) in signals_iter {
+                if !DOMAIN_WEIGHTS.iter().any(|(d, _)| *d == domain) {
+                    continue;
+                }
+                let rw = recency_weight(&event.published_at, &domain);
+                if rw < 0.01 { continue; }
+
+                // Corroboration factor: each additional confirmed source adds
+                // credibility beyond the base tier weight. Capped at 1.0.
+                let corroboration_factor = (event.corroboration_count as f64 * 0.05)
+                    .min(0.25); // max +0.25 from corroboration (5+ sources)
+                let effective_credibility =
+                    (event.credibility_weight + corroboration_factor).min(1.0);
+                let effective_weight = rw * effective_credibility;
+
+                let gp_bonus = if event.great_power_involved { 0.12 } else { 0.0 };
+
+                // nlp_signal [0,1] is the noisy-OR keyword-evidence strength from
+                // the NLP layer. Weighted at 0.20 (raised from 0.08) so in-article
+                // keyword evidence is a first-class contributor: a high-severity
+                // event tagged only by weak keywords now scores meaningfully lower
+                // than one carrying definitive keywords at the same severity.
+                // Additive budget (severity 0.43 + escalation 0.25 + nlp 0.20 +
+                // gp_bonus ≤ 0.12) sums to 1.0 at maximum.
+                let base_signal = event.severity        * 0.43
+                    + event.escalation_language_score   * 0.25
+                    + nlp_signal                        * 0.20
+                    + gp_bonus;
+
+                // Sentiment modulator: sentiment_score ∈ [-1, 1] where positive is
+                // conciliatory (de-escalatory) and negative is hostile. Hostile
+                // coverage amplifies the signal up to +15%, conciliatory coverage
+                // damps it up to -15%. Bounded so tone refines but never dominates
+                // the hard escalation evidence above.
+                let sentiment_mod = 1.0 - 0.15 * event.sentiment_score;
+                let signal = (base_signal * sentiment_mod).clamp(0.0, 1.0);
+
+                scored_signals.entry(domain.clone()).or_default()
+                    .push(signal * effective_weight);
+                domain_event_ids.entry(domain.clone()).or_default()
+                    .push(event.id.clone());
+                domain_tiers.entry(domain.clone()).or_default()
+                    .push(event.source_tier);
+                *domain_event_count.entry(domain.clone()).or_insert(0) += 1;
+                if event.great_power_involved {
+                    *domain_gp_count.entry(domain.clone()).or_insert(0) += 1;
+                }
+                for aid in &event.actor_ids {
+                    if is_tracked_actor(aid) {
+                        domain_actors.entry(domain.clone()).or_default()
+                            .insert(aid.clone());
+                    }
+                }
+            }
+        }
+
+        let anomalies = self.anomaly_detector.update(&domain_event_count);
+
+        let mut scores = HashMap::new();
+        for &(domain, _) in DOMAIN_WEIGHTS {
+            let signals     = scored_signals.get(domain).cloned().unwrap_or_default();
+            let event_count = signals.len();
+            let anomaly     = *anomalies.get(domain).unwrap_or(&false);
+
+            let raw_score = if !signals.is_empty() {
+                let mean_signal = signals.iter().sum::<f64>() / event_count as f64;
+                let volume_factor = (1.0 + event_count as f64).ln()
+                    / (1.0 + 20.0_f64).ln();
+                let volume_factor = volume_factor.min(1.0);
+                let actor_set  = domain_actors.get(domain)
+                    .map(|s| s.len())
+                    .unwrap_or(0);
+                let actor_diversity = (actor_set as f64 / 4.0).min(1.0);
+                let mut s = mean_signal * (0.7 + 0.2 * volume_factor + 0.1 * actor_diversity);
+                if anomaly {
+                    s = (s * 1.3).min(1.0);
+                    info!("ANOMALY detected in domain: {domain} (event spike)");
+                }
+                s.min(1.0)
+            } else {
+                0.0
+            };
+
+            let confidence = if event_count == 0 {
+                0.05
+            } else {
+                let tiers = domain_tiers.get(domain).cloned().unwrap_or_default();
+                let tier_quality = tiers.iter().map(|t| match t {
+                    SourceTier::Tier1 => 1.00,
+                    SourceTier::Tier2 => 0.65,
+                    SourceTier::Tier3 => 0.20,
+                }).sum::<f64>() / event_count as f64;
+                let count_factor = ((1.0 + event_count as f64).ln()
+                    / (1.0 + 15.0_f64).ln()).min(1.0);
+                let actor_conf = (domain_actors.get(domain)
+                    .map(|s| s.len()).unwrap_or(0) as f64 / 3.0).min(1.0);
+                (tier_quality * 0.5 + count_factor * 0.35 + actor_conf * 0.15)
+                    .clamp(0.0, 1.0)
+            };
+
+            scores.insert(domain.to_string(), DomainScore {
+                domain_id: domain.to_string(),
+                score:     (raw_score * 1e4).round() / 1e4,
+                confidence: (confidence * 1e3).round() / 1e3,
+                event_count,
+                great_power_event_count: *domain_gp_count.get(domain).unwrap_or(&0),
+                contributing_events: domain_event_ids.get(domain).cloned().unwrap_or_default(),
+                computed_at: Utc::now(),
+            });
+        }
+
+        // Ensure all 8 domains are always present (zeroed if no events)
+        for &(domain, _) in DOMAIN_WEIGHTS {
+            scores.entry(domain.to_string()).or_insert_with(|| DomainScore::zero(domain));
+        }
+
+        scores
+    }
+}
+
+// ── Regime multiplier ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct RegimeMultiplier {
+    factors: HashMap<String, RegimeFactor>,
+}
+
+impl RegimeMultiplier {
+    pub fn new(factors: Vec<RegimeFactor>) -> Self {
+        Self {
+            factors: factors.into_iter().map(|f| (f.id.clone(), f)).collect(),
+        }
+    }
+
+    pub fn compute(&self) -> f64 {
+        let product: f64 = self.factors.values()
+            .filter(|f| f.active)
+            .map(|f| f.multiplier)
+            .product();
+        (product * 1e4).round() / 1e4
+    }
+
+    /// Toggle a regime factor — called by /api/regime/:id/toggle
+    #[allow(dead_code)]
+    pub fn set_factor(&mut self, id: &str, active: bool) {
+        if let Some(f) = self.factors.get_mut(id) {
+            f.active = active;
+        }
+    }
+
+    /// Returns all factors as a vec — used by /api/regime for JSON serialisation
+    #[allow(dead_code)]
+    pub fn as_vec(&self) -> Vec<RegimeFactor> {
+        let mut v: Vec<_> = self.factors.values().cloned().collect();
+        v.sort_by(|a, b| a.id.cmp(&b.id));
+        v
+    }
+}
+
+// ── Actor tracker ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default)]
+pub struct ActorTracker {
+    counts:  HashMap<String, usize>,
+    domains: HashMap<String, HashSet<String>>,
+}
+
+impl ActorTracker {
+    /// Update actor counts and domain associations from the current event window.
+    pub fn update(&mut self, events: &[GeopoliticalEvent]) {
+        self.counts.clear();
+        self.domains.clear();
+        for event in events {
+            let half_life = event_max_half_life(event);
+            let age_hours = (Utc::now() - event.published_at).num_seconds() as f64 / 3600.0;
+            // Compute recency using the event's own longest half-life
+            let rw = if age_hours > MAX_EVENT_AGE_HOURS {
+                0.0
+            } else {
+                (-std::f64::consts::LN_2 * age_hours / half_life).exp()
+            };
+            if rw < 0.1 { continue; }
+
+            for aid in &event.actor_ids {
+                if is_tracked_actor(aid) {
+                    *self.counts.entry(aid.clone()).or_insert(0) += 1;
+                    // Use domain_signals keys if available, fall back to domain_tags
+                    let domains: Vec<&str> = if !event.domain_signals.is_empty() {
+                        event.domain_signals.keys().map(|s| s.as_str()).collect()
+                    } else {
+                        event.domain_tags.iter().map(|s| s.as_str()).collect()
+                    };
+                    for d in domains {
+                        self.domains.entry(aid.clone()).or_default()
+                            .insert(d.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn top_actors(&self, n: usize) -> Vec<String> {
+        let mut pairs: Vec<_> = self.counts.iter().collect();
+        pairs.sort_by(|a, b| b.1.cmp(a.1));
+        pairs.into_iter().take(n).map(|(k, _)| k.clone()).collect()
+    }
+}
+
+// ── Bayesian engine ────────────────────────────────────────────────────────────
+
+/// Calibrated risk index formula (log-odds / logistic form):
+///
+///   P_risk = sigmoid( logit(P₀_adj) + β × L )   clamped to [0, 0.85]
+///
+/// where:
+///   P₀_adj = HISTORICAL_ANCHOR × regime_multiplier
+///           = (2/2026) × product(active_regime_factors)
+///   L      = weighted_domain_sum / max_weighted_sum × co_occurrence_boost
+///   β      = EVIDENCE_GAIN
+///
+/// NOTE — Mathematical character of this formula:
+///   This is NOT a formal Bayesian update P(H|E) = P(E|H)P(H)/P(E). It is a
+///   calibrated risk index that combines a regime-adjusted prior with the
+///   likelihood evidence additively on the log-odds scale — the standard way to
+///   fold evidence into a prior probability. Properties this buys over the older
+///   `P₀_adj × (1 + L·k)` form: the output is always a valid probability in
+///   (0, ceiling], it is monotonic and smooth in L, it returns the prior exactly
+///   when L = 0, and it saturates gracefully so strong multi-domain signals are
+///   expressive rather than capped near 15%. It still does not derive from a
+///   generative model; "posterior" here means the output probability, not a
+///   formal posterior distribution.
+///
+/// NOTE — The 0.85 ceiling:
+///   The .min(0.85) clamp is an engineering ceiling, not a probabilistic prior.
+///   Its purpose is to prevent the model from emitting values near certainty,
+///   which would be epistemically unjustifiable regardless of observed signals
+///   (the model has no access to ground truth). The appropriate ceiling for
+///   extreme scenarios — e.g. confirmed nuclear detonation — is a design decision
+///   belonging to Robert Perreault and is not derived from the model itself.
+///
+/// Calibration targets:
+///   Cuba 1962 equivalent (6 domains, max signals)       → ~30-40% annual
+///   Ukraine 2022 equivalent (5 domains, high signals)   → ~8-12% annual
+///   Current world 2026 (4-5 domains, moderate)          → ~4-8% annual
+///   Quiet period (1-2 domains, low signals)             → ~0.5-1.5% annual
+pub struct BayesianRiskEngine {
+    regime:         RegimeMultiplier,
+    domain_scorer:  DomainScorer,
+    actor_tracker:  ActorTracker,
+    alert_elevated: f64,
+    alert_critical: f64,
+    prev_annual:    f64,
+    prev_30day:     f64,
+}
+
+impl BayesianRiskEngine {
+    pub fn new(
+        regime_factors: Vec<RegimeFactor>,
+        alert_elevated: f64,
+        alert_critical: f64,
+    ) -> Self {
+        Self {
+            regime:         RegimeMultiplier::new(regime_factors),
+            domain_scorer:  DomainScorer::new(),
+            actor_tracker:  ActorTracker::default(),
+            alert_elevated,
+            alert_critical,
+            prev_annual:    HISTORICAL_ANCHOR,
+            prev_30day:     0.0,
+        }
+    }
+
+    pub fn compute(&mut self, events: &[GeopoliticalEvent]) -> RiskSnapshot {
+        let mut snap = RiskSnapshot::default();
+        snap.historical_anchor = HISTORICAL_ANCHOR;
+
+        // ── Step 1: Regime-adjusted prior ──
+        snap.regime_multiplier = self.regime.compute();
+        snap.adjusted_prior    = HISTORICAL_ANCHOR * snap.regime_multiplier;
+
+        // ── Step 2: Actor tracking ──
+        self.actor_tracker.update(events);
+
+        // ── Step 3: Domain scores ──
+        snap.domain_scores    = self.domain_scorer.score_all(events);
+        snap.events_in_window = events.len();
+
+        // ── Step 4: Metadata ──
+        snap.great_power_events = events.iter()
+            .filter(|e| e.great_power_involved
+                && recency_weight(&e.published_at, "military_escalation") > 0.1)
+            .count();
+
+        let mut regions: Vec<String> = events.iter()
+            .filter_map(|e| {
+                if recency_weight(&e.published_at, "military_escalation") > 0.1 {
+                    e.region.clone()
+                } else {
+                    None
+                }
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        regions.sort();
+        snap.regions_active = regions;
+        snap.top_actors     = self.actor_tracker.top_actors(6);
+
+        let mut sources: HashSet<&str> = HashSet::new();
+        for e in events {
+            if recency_weight(&e.published_at, "military_escalation") > 0.1 {
+                sources.insert(&e.source);
+            }
+        }
+        snap.sources_active = sources.len();
+
+        // ── Step 5: Co-occurrence ──
+        // Hard count is reported for human display; the boost is driven by the
+        // soft (fractional) count so it varies continuously near the threshold.
+        let elevated = snap.domain_scores.values()
+            .filter(|ds| ds.score >= ELEVATION_THRESHOLD)
+            .count();
+        let soft_elevated: f64 = snap.domain_scores.values()
+            .map(|ds| soft_elevation_weight(ds.score))
+            .sum();
+        snap.elevated_domains    = elevated;
+        snap.co_occurrence_boost = (co_occurrence_boost(soft_elevated) * 1e4).round() / 1e4;
+
+        // ── Step 6: Likelihood ──
+        let weighted_sum: f64 = DOMAIN_WEIGHTS.iter()
+            .map(|(d, w)| {
+                snap.domain_scores.get(*d)
+                    .map(|ds| ds.score * w)
+                    .unwrap_or(0.0)
+            })
+            .sum();
+        snap.weighted_domain_sum = (weighted_sum * 1e6).round() / 1e6;
+        let raw_likelihood = (weighted_sum / max_weighted_sum()) * snap.co_occurrence_boost;
+        snap.likelihood_ratio = (raw_likelihood * 1e6).round() / 1e6;
+
+        // ── Step 7: Risk index computation (log-odds / logistic) ──
+        // Combine the regime-adjusted prior with the likelihood evidence on the
+        // log-odds scale, then map back to a probability. L = 0 reproduces the
+        // prior exactly; large L saturates toward the ceiling along an S-curve.
+        let prior         = snap.adjusted_prior.clamp(1e-9, 0.5);
+        let prior_logodds = (prior / (1.0 - prior)).ln();
+        let raw = sigmoid(prior_logodds + EVIDENCE_GAIN * raw_likelihood)
+            .min(0.85); // Engineering ceiling — epistemic humility, not a prior (I-13)
+        snap.p_wwiii_annual = (raw * 1e8).round() / 1e8;
+
+        snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(1.0 / 12.0)) * 1e8).round() / 1e8;
+        snap.p_wwiii_90day  = ((1.0 - (1.0 - raw).powf(3.0 / 12.0)) * 1e8).round() / 1e8;
+
+        // ── Step 8: Delta ──
+        snap.delta_annual = ((snap.p_wwiii_annual - self.prev_annual) * 1e8).round() / 1e8;
+        snap.delta_30day  = ((snap.p_wwiii_30day  - self.prev_30day)  * 1e8).round() / 1e8;
+        self.prev_annual  = snap.p_wwiii_annual;
+        self.prev_30day   = snap.p_wwiii_30day;
+
+        // ── Step 9: Confidence ──
+        if snap.events_in_window == 0 {
+            snap.estimate_confidence = 0.05;
+            warn!("No events in window — model running on regime prior only (offline?)");
+        } else {
+            let domain_confs: Vec<f64> = snap.domain_scores.values()
+                .filter(|ds| ds.event_count > 0)
+                .map(|ds| ds.confidence)
+                .collect();
+            let avg_conf = if domain_confs.is_empty() {
+                0.1
+            } else {
+                domain_confs.iter().sum::<f64>() / domain_confs.len() as f64
+            };
+            let event_factor = ((1.0 + snap.events_in_window as f64).ln()
+                / (1.0 + 200.0_f64).ln()).min(1.0);
+            let source_factor = (snap.sources_active as f64 / 20.0).min(1.0);
+            snap.estimate_confidence =
+                ((avg_conf * 0.5 + event_factor * 0.3 + source_factor * 0.2) * 1e3).round() / 1e3;
+        }
+
+        // ── Step 10: Alert ──
+        if raw >= self.alert_critical {
+            snap.alert_level   = AlertLevel::Critical;
+            snap.alert_message = format!(
+                "CRITICAL — P(WWIII) {:.3}% exceeds {:.1}% threshold. \
+                 {} domains elevated. Co-occurrence ×{}. Confidence: {:.0}%.",
+                raw * 100.0,
+                self.alert_critical * 100.0,
+                elevated,
+                snap.co_occurrence_boost,
+                snap.estimate_confidence * 100.0,
+            );
+        } else if raw >= self.alert_elevated {
+            snap.alert_level   = AlertLevel::Elevated;
+            snap.alert_message = format!(
+                "ELEVATED — P(WWIII) {:.3}%. {} domain(s) above {:.0}% threshold. \
+                 Δ {:+.4}%/snapshot.",
+                raw * 100.0,
+                elevated,
+                ELEVATION_THRESHOLD * 100.0,
+                snap.delta_annual * 100.0,
+            );
+        } else {
+            snap.alert_level   = AlertLevel::Normal;
+            snap.alert_message = String::new();
+        }
+
+        info!(
+            "P(WWIII)={:.4}% | Δ{:+.4}% | regime×{} | elevated={}/{} | \
+             L={:.4} | events={} | confidence={:.0}%",
+            raw * 100.0,
+            snap.delta_annual * 100.0,
+            snap.regime_multiplier,
+            elevated,
+            DOMAIN_WEIGHTS.len(),
+            raw_likelihood,
+            snap.events_in_window,
+            snap.estimate_confidence * 100.0,
+        );
+
+        snap
+    }
+
+    /// Toggle regime factor — called by operator API toggle handler
+    #[allow(dead_code)]
+    pub fn set_regime_factor(&mut self, id: &str, active: bool) {
+        self.regime.set_factor(id, active);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn minimal_engine() -> BayesianRiskEngine {
+        BayesianRiskEngine::new(
+            vec![
+                RegimeFactor { id: "proxy_wars".into(),        label: "Active proxy wars".into(),  multiplier: 1.4, active: true  },
+                RegimeFactor { id: "war_in_europe".into(),     label: "War in Europe".into(),       multiplier: 1.6, active: true  },
+                RegimeFactor { id: "deterrence_intact".into(), label: "Deterrence intact".into(),   multiplier: 0.7, active: true  },
+            ],
+            0.015,  // elevated threshold
+            0.05,   // critical threshold
+        )
+    }
+
+    fn make_event(domain: &str, severity: f64, hours_ago: f64, tier: SourceTier) -> GeopoliticalEvent {
+        use crate::models::EventType;
+        let mut e = GeopoliticalEvent::new(
+            "Test event".into(),
+            "testsource".into(),
+            tier,
+            Utc::now() - Duration::seconds((hours_ago * 3600.0) as i64),
+        );
+        e.domain_tags             = vec![domain.to_string()];
+        e.severity                = severity;
+        e.escalation_language_score = 0.3;
+        e.event_type              = EventType::MilitaryStrike;
+        e
+    }
+
+    fn make_event_with_signals(domain: &str, severity: f64, hours_ago: f64, tier: SourceTier) -> GeopoliticalEvent {
+        use crate::models::EventType;
+        let mut e = GeopoliticalEvent::new(
+            "Test event".into(),
+            "testsource".into(),
+            tier,
+            Utc::now() - Duration::seconds((hours_ago * 3600.0) as i64),
+        );
+        e.domain_tags             = vec![domain.to_string()];
+        e.domain_signals          = [(domain.to_string(), 0.8)].into_iter().collect();
+        e.severity                = severity;
+        e.escalation_language_score = 0.3;
+        e.event_type              = EventType::MilitaryStrike;
+        e
+    }
+
+    // ── Historical prior ──────────────────────────────────────────────────────
+
+    #[test]
+    fn anchor_value() {
+        assert!((HISTORICAL_ANCHOR - 2.0 / 2026.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn anchor_less_than_one_percent() {
+        assert!(HISTORICAL_ANCHOR < 0.01);
+    }
+
+    // ── Recency decay ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn fresh_event_weight_near_one() {
+        let pub_at = Utc::now() - Duration::seconds(300); // 5 min ago
+        assert!(recency_weight(&pub_at, "military_escalation") > 0.99);
+    }
+
+    #[test]
+    fn h24_event_weight_near_half() {
+        let pub_at = Utc::now() - Duration::hours(24);
+        let w = recency_weight(&pub_at, "military_escalation");
+        assert!(w > 0.45 && w < 0.55);
+    }
+
+    #[test]
+    fn beyond_max_age_weight_is_zero() {
+        let pub_at = Utc::now() - Duration::seconds(((MAX_EVENT_AGE_HOURS + 1.0) * 3600.0) as i64);
+        assert_eq!(recency_weight(&pub_at, "military_escalation"), 0.0);
+    }
+
+    #[test]
+    fn h72_event_still_has_weight() {
+        let pub_at = Utc::now() - Duration::hours(73);
+        let w = recency_weight(&pub_at, "military_escalation");
+        assert!(w > 0.0 && w < 0.5);
+    }
+
+    #[test]
+    fn nuclear_domain_decays_slower_than_military() {
+        let pub_at = Utc::now() - Duration::hours(48);
+        let w_mil = recency_weight(&pub_at, "military_escalation");
+        let w_nuc = recency_weight(&pub_at, "nuclear_posture");
+        assert!(w_nuc > w_mil);
+    }
+
+    #[test]
+    fn economic_domain_decays_slower_than_military() {
+        let pub_at = Utc::now() - Duration::hours(48);
+        let w_mil = recency_weight(&pub_at, "military_escalation");
+        let w_eco = recency_weight(&pub_at, "economic_warfare");
+        assert!(w_eco > w_mil);
+    }
+
+    // ── AnomalyDetector window (I-10) ─────────────────────────────────────────
+
+    #[test]
+    fn anomaly_detector_window_is_60() {
+        let scorer = DomainScorer::new();
+        assert_eq!(scorer.anomaly_detector.window, 60,
+            "AnomalyDetector window must be 60 batches (I-10 fix)");
+    }
+
+    #[test]
+    fn anomaly_detector_no_false_positive_on_small_burst() {
+        let mut det = AnomalyDetector::new(60);
+        let mut counts = HashMap::new();
+        counts.insert("military_escalation".into(), 50usize); // spike
+        let anomalies = det.update(&counts);
+        assert!(!anomalies["military_escalation"],
+            "Single spike with insufficient baseline history should not trigger anomaly");
+    }
+
+    // ── ActorTracker half-life fix (I-11) ─────────────────────────────────────
+
+    #[test]
+    fn actor_tracker_retains_nuclear_actors_at_78h() {
+        let mut tracker = ActorTracker::default();
+        let mut event = make_event_with_signals("nuclear_posture", 0.9, 78.0, SourceTier::Tier1);
+        event.actor_ids = vec!["north_korea".into()];
+        tracker.update(&[event]);
+        assert!(tracker.counts.contains_key("north_korea"),
+            "Nuclear actor at 78h should be retained — recency_weight(nuclear, 78h) ≈ 0.48 > 0.1");
+    }
+
+    #[test]
+    fn actor_tracker_drops_military_actors_at_82h() {
+        // Military event at 82h. The 0.1 threshold is crossed at:
+        //   h = 24 × ln(10) / ln(2) ≈ 79.73h
+        // At 82h: recency_weight("military_escalation", 82h) = exp(-ln2 × 82/24) ≈ 0.0975 < 0.1.
+        // At 78h: recency_weight = exp(-ln2 × 78/24) ≈ 0.1047 > 0.1 (not yet dropped).
+        // 82h is safely past the threshold in both directions.
+        let mut tracker = ActorTracker::default();
+        let mut event = make_event_with_signals("military_escalation", 0.9, 82.0, SourceTier::Tier1);
+        event.actor_ids = vec!["russia_military".into()];
+        tracker.update(&[event]);
+        assert!(!tracker.counts.contains_key("russia_military"),
+            "Military actor at 82h should be dropped — recency_weight(military, 82h) ≈ 0.0975 < 0.1");
+    }
+
+    #[test]
+    fn actor_tracker_retains_economic_actors_at_78h() {
+        // Economic event: half-life 96h. recency_weight("economic_warfare", 78h) ≈ 0.57.
+        let mut tracker = ActorTracker::default();
+        let mut event = make_event_with_signals("economic_warfare", 0.7, 78.0, SourceTier::Tier1);
+        event.actor_ids = vec!["china".into()];
+        tracker.update(&[event]);
+        assert!(tracker.counts.contains_key("china"),
+            "Economic actor at 78h should be retained — recency_weight(economic, 78h) ≈ 0.57 > 0.1");
+    }
+
+    #[test]
+    fn event_max_half_life_returns_longest() {
+        use crate::models::EventType;
+        let mut event = GeopoliticalEvent::new(
+            "Test".into(), "src".into(), SourceTier::Tier1, Utc::now()
+        );
+        event.domain_signals = [
+            ("military_escalation".into(), 0.5),  // 24h
+            ("nuclear_posture".into(),     0.8),  // 72h — longest
+        ].into_iter().collect();
+        event.event_type = EventType::NuclearTest;
+        let hl = event_max_half_life(&event);
+        assert!((hl - 72.0).abs() < 1e-9,
+            "Max half-life for military+nuclear event should be 72h (nuclear_posture), got {hl}");
+    }
+
+    #[test]
+    fn event_max_half_life_fallback_military_when_no_domains() {
+        use crate::models::EventType;
+        let mut event = GeopoliticalEvent::new(
+            "Test".into(), "src".into(), SourceTier::Tier1, Utc::now()
+        );
+        event.event_type = EventType::MilitaryStrike;
+        // No domain_signals, no domain_tags
+        let hl = event_max_half_life(&event);
+        assert!((hl - 24.0).abs() < 1e-9,
+            "Max half-life with no domains should fall back to military_escalation 24h, got {hl}");
+    }
+
+    // ── Domain scorer ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn empty_events_gives_zero_scores() {
+        let mut scorer = DomainScorer::new();
+        let scores = scorer.score_all(&[]);
+        for ds in scores.values() {
+            assert_eq!(ds.score, 0.0, "domain {} should be zero", ds.domain_id);
+        }
+    }
+
+    #[test]
+    fn nuclear_event_elevates_nuclear_domain() {
+        let mut scorer = DomainScorer::new();
+        let event = make_event("nuclear_posture", 0.9, 1.0, SourceTier::Tier1);
+        let scores = scorer.score_all(&[event]);
+        assert!(scores["nuclear_posture"].score > 0.3);
+    }
+
+    #[test]
+    fn stale_events_dont_score() {
+        let mut scorer = DomainScorer::new();
+        let event = make_event("military_escalation", 0.7, MAX_EVENT_AGE_HOURS + 1.0, SourceTier::Tier1);
+        let scores = scorer.score_all(&[event]);
+        assert_eq!(scores["military_escalation"].score, 0.0);
+    }
+
+    #[test]
+    fn h80_event_still_scores() {
+        // weight = exp(-ln2 * 80/24) ≈ 0.099 — small but non-zero
+        let mut scorer = DomainScorer::new();
+        let event = make_event("military_escalation", 0.7, 80.0, SourceTier::Tier1);
+        let scores = scorer.score_all(&[event]);
+        assert!(scores["military_escalation"].score > 0.0);
+        assert!(scores["military_escalation"].score < 0.15);
+    }
+
+    #[test]
+    fn tier3_source_scores_lower() {
+        let mut scorer = DomainScorer::new();
+        let e1 = make_event("military_escalation", 0.7, 1.0, SourceTier::Tier1);
+        let e3 = make_event("military_escalation", 0.7, 1.0, SourceTier::Tier3);
+        let s1 = scorer.score_all(&[e1])["military_escalation"].score;
+        let mut scorer2 = DomainScorer::new();
+        let s3 = scorer2.score_all(&[e3])["military_escalation"].score;
+        assert!(s1 > s3, "tier1 score {s1} should exceed tier3 score {s3}");
+    }
+
+    #[test]
+    fn contributing_events_populated() {
+        let mut scorer = DomainScorer::new();
+        let event = make_event("military_escalation", 0.8, 1.0, SourceTier::Tier1);
+        let id = event.id.clone();
+        let scores = scorer.score_all(&[event]);
+        assert!(scores["military_escalation"].contributing_events.contains(&id));
+    }
+
+    #[test]
+    fn great_power_event_count_populated() {
+        let mut scorer = DomainScorer::new();
+        let mut event = make_event("military_escalation", 0.8, 1.0, SourceTier::Tier1);
+        event.great_power_involved = true;
+        let scores = scorer.score_all(&[event]);
+        assert_eq!(scores["military_escalation"].great_power_event_count, 1);
+    }
+
+    // ── Bayesian engine ───────────────────────────────────────────────────────
+
+    #[test]
+    fn baseline_probability_below_alert() {
+        let mut engine = minimal_engine();
+        let snap = engine.compute(&[]);
+        assert!(snap.p_wwiii_annual < 0.015);
+        assert_eq!(snap.alert_level, AlertLevel::Normal);
+    }
+
+    #[test]
+    fn regime_multiplier_product() {
+        // proxy_wars(1.4) × war_in_europe(1.6) × deterrence_intact(0.7) = 1.568
+        let mut engine = minimal_engine();
+        let snap = engine.compute(&[]);
+        assert!((snap.regime_multiplier - 1.568).abs() < 0.01);
+    }
+
+    #[test]
+    fn nuclear_events_elevate_probability() {
+        let mut engine = minimal_engine();
+        let events: Vec<_> = (0..5)
+            .map(|_| make_event("nuclear_posture", 0.85, 1.0, SourceTier::Tier1))
+            .collect();
+        let snap = engine.compute(&events);
+        assert!(snap.p_wwiii_annual > HISTORICAL_ANCHOR);
+    }
+
+    #[test]
+    fn multi_domain_co_occurrence_boosts_probability() {
+        let domains = ["nuclear_posture", "military_escalation", "great_power_conflict",
+                       "alliance_activation", "wmd_mass_casualty"];
+        let mut engine_single = minimal_engine();
+        let mut engine_multi  = minimal_engine();
+        let single_event = vec![make_event("nuclear_posture", 0.8, 1.0, SourceTier::Tier1)];
+        let multi_events: Vec<_> = domains.iter()
+            .map(|d| make_event(d, 0.8, 1.0, SourceTier::Tier1))
+            .collect();
+        let snap_single = engine_single.compute(&single_event);
+        let snap_multi  = engine_multi.compute(&multi_events);
+        assert!(snap_multi.p_wwiii_annual > snap_single.p_wwiii_annual);
+    }
+
+    #[test]
+    fn probability_never_exceeds_one() {
+        let all_domains = ["nuclear_posture", "military_escalation", "great_power_conflict",
+                           "alliance_activation", "wmd_mass_casualty",
+                           "diplomatic_breakdown", "economic_warfare", "cyber_info_ops"];
+        let events: Vec<_> = all_domains.iter()
+            .flat_map(|d| (0..20).map(|_| make_event(d, 1.0, 1.0, SourceTier::Tier1)))
+            .collect();
+        let mut engine = minimal_engine();
+        let snap = engine.compute(&events);
+        assert!(snap.p_wwiii_annual <= 1.0);
+        assert!(snap.p_wwiii_30day  <= 1.0);
+    }
+
+    #[test]
+    fn thirty_day_less_than_annual() {
+        let mut engine = minimal_engine();
+        let events = vec![make_event("nuclear_posture", 0.7, 1.0, SourceTier::Tier1)];
+        let snap = engine.compute(&events);
+        assert!(snap.p_wwiii_30day < snap.p_wwiii_annual);
+    }
+
+    #[test]
+    fn delta_annual_computed() {
+        let mut engine = minimal_engine();
+        let _snap1 = engine.compute(&[]);
+        let events: Vec<_> = (0..10)
+            .map(|_| make_event("nuclear_posture", 0.9, 1.0, SourceTier::Tier1))
+            .collect();
+        let snap2 = engine.compute(&events);
+        assert_ne!(snap2.delta_annual, 0.0);
+    }
+
+    #[test]
+    fn snapshot_fields_fully_populated() {
+        let mut engine = minimal_engine();
+        let events = vec![make_event("military_escalation", 0.7, 1.0, SourceTier::Tier1)];
+        let snap = engine.compute(&events);
+        assert!(snap.historical_anchor > 0.0);
+        assert!(snap.regime_multiplier > 0.0);
+        assert!(snap.adjusted_prior    > 0.0);
+        assert_eq!(snap.events_in_window, 1);
+        assert!(snap.weighted_domain_sum >= 0.0);
+        assert!(snap.likelihood_ratio    >= 0.0);
+        assert!(snap.elevated_domains    <= DOMAIN_WEIGHTS.len());
+        assert!(snap.co_occurrence_boost >= 1.0);
+        assert!(snap.estimate_confidence >= 0.0);
+        assert!(snap.estimate_confidence <= 1.0);
+    }
+
+    #[test]
+    fn hostile_sentiment_scores_higher_than_conciliatory() {
+        // Identical events except sentiment tone; hostile must out-score conciliatory.
+        let mut hostile_ev = make_event("military_escalation", 0.7, 1.0, SourceTier::Tier1);
+        hostile_ev.sentiment_score = -1.0; // fully hostile
+        let mut concil_ev = make_event("military_escalation", 0.7, 1.0, SourceTier::Tier1);
+        concil_ev.sentiment_score = 1.0;   // fully conciliatory
+
+        let mut s_hostile = DomainScorer::new();
+        let mut s_concil  = DomainScorer::new();
+        let hostile = s_hostile.score_all(&[hostile_ev])["military_escalation"].score;
+        let concil  = s_concil.score_all(&[concil_ev])["military_escalation"].score;
+        assert!(hostile > concil,
+            "hostile sentiment ({hostile:.4}) should exceed conciliatory ({concil:.4})");
+    }
+
+    // ── Co-occurrence boosts ──────────────────────────────────────────────────
+
+    #[test]
+    fn co_occurrence_boost_values() {
+        // Integer anchors preserve the original calibration.
+        assert!((co_occurrence_boost(0.0) - 1.0).abs() < 1e-9);
+        assert!((co_occurrence_boost(1.0) - 1.0).abs() < 1e-9);
+        assert!((co_occurrence_boost(2.0) - 1.3).abs() < 1e-9);
+        assert!((co_occurrence_boost(3.0) - 2.0).abs() < 1e-9);
+        assert!((co_occurrence_boost(4.0) - 3.5).abs() < 1e-9);
+        assert!((co_occurrence_boost(5.0) - 5.0).abs() < 1e-9);
+        // Extends with diminishing increments up to all 8 domains, then saturates.
+        assert!((co_occurrence_boost(8.0) - 7.0).abs() < 1e-9);
+        assert!((co_occurrence_boost(12.0) - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn co_occurrence_boost_is_continuous_and_monotonic() {
+        // Fractional input interpolates linearly between anchors (2→1.3, 3→2.0).
+        let mid = co_occurrence_boost(2.5);
+        assert!((mid - 1.65).abs() < 1e-9, "expected 1.65 midpoint, got {mid}");
+        // Monotonic non-decreasing across the whole range — no step discontinuity.
+        let mut prev = co_occurrence_boost(0.0);
+        let mut x = 0.0;
+        while x <= 8.0 {
+            let b = co_occurrence_boost(x);
+            assert!(b + 1e-9 >= prev, "boost must be monotonic at x={x}");
+            prev = b;
+            x += 0.05;
+        }
+    }
+
+    #[test]
+    fn soft_elevation_weight_ramps_smoothly() {
+        assert_eq!(soft_elevation_weight(0.0), 0.0);
+        assert_eq!(soft_elevation_weight(ELEVATION_THRESHOLD - ELEVATION_RAMP), 0.0);
+        assert_eq!(soft_elevation_weight(ELEVATION_THRESHOLD + ELEVATION_RAMP), 1.0);
+        let mid = soft_elevation_weight(ELEVATION_THRESHOLD);
+        assert!((mid - 0.5).abs() < 1e-9, "midpoint of ramp should be 0.5, got {mid}");
+    }
+
+    // ── Regime multiplier ─────────────────────────────────────────────────────
+
+    #[test]
+    fn regime_multiplier_inactive_factor_excluded() {
+        let mut rm = RegimeMultiplier::new(vec![
+            RegimeFactor { id: "a".into(), label: "A".into(), multiplier: 2.0, active: true  },
+            RegimeFactor { id: "b".into(), label: "B".into(), multiplier: 3.0, active: false },
+        ]);
+        assert_eq!(rm.compute(), 2.0);
+        rm.set_factor("b", true);
+        assert_eq!(rm.compute(), 6.0);
+    }
+}
