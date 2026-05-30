@@ -10,7 +10,7 @@
 
 ## What GCRM Is
 
-The Global Conflict Risk Monitor is a real-time open-source intelligence (OSINT) aggregation and probabilistic risk analysis platform. It continuously ingests geopolitical news from dozens of international sources, classifies events using a pure Rust NLP pipeline, and computes a statistically grounded, continuously updated probability estimate of a world war-scale conflict — expressed as an annualized percentage.
+The Global Conflict Risk Monitor is a real-time open-source intelligence (OSINT) aggregation and probabilistic risk analysis platform invented by RAiTHE's founder. It continuously ingests geopolitical news from dozens of international sources, classifies events using a pure Rust NLP pipeline, and computes a statistically grounded, continuously updated probability estimate of a world war-scale conflict — expressed as an annualized percentage.
 
 GCRM is a professional intelligence dashboard: a single pane of glass that transforms the overwhelming volume of global news into a defensible, quantified risk index. It is built for analysts, researchers, and anyone who needs to understand global conflict risk in real time without relying on subjective assessment or media sentiment alone.
 
