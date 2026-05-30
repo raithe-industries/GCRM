@@ -40,7 +40,8 @@ use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use crate::aggregator::AppState;
-use crate::models::{GeopoliticalEvent, RawArticle, is_great_power};
+use crate::llm_enricher::{LlmEnricher, LlmScores};
+use crate::models::{GeopoliticalEvent, LlmSettings, RawArticle, SourceTier, is_great_power};
 use crate::processor::{FuzzyDedup, NlpProcessor};
 
 // ── NlpSidecarHandle ─────────────────────────────────────────────────────────
@@ -65,22 +66,24 @@ impl NlpSidecarHandle {
 // ── NlpSidecar ───────────────────────────────────────────────────────────────
 
 pub struct NlpSidecar {
-    raw_rx:      mpsc::Receiver<RawArticle>,
-    event_tx:    mpsc::Sender<GeopoliticalEvent>,
-    app_state:   Arc<AppState>,
-    shutdown_rx: watch::Receiver<bool>,
+    raw_rx:       mpsc::Receiver<RawArticle>,
+    event_tx:     mpsc::Sender<GeopoliticalEvent>,
+    app_state:    Arc<AppState>,
+    shutdown_rx:  watch::Receiver<bool>,
+    llm_settings: LlmSettings,
 }
 
 impl NlpSidecar {
     /// Construct the sidecar with a paired shutdown handle.
     /// Spawn the returned NlpSidecar; hold the NlpSidecarHandle in main.rs.
     pub fn with_shutdown(
-        raw_rx:    mpsc::Receiver<RawArticle>,
-        event_tx:  mpsc::Sender<GeopoliticalEvent>,
-        app_state: Arc<AppState>,
+        raw_rx:       mpsc::Receiver<RawArticle>,
+        event_tx:     mpsc::Sender<GeopoliticalEvent>,
+        app_state:    Arc<AppState>,
+        llm_settings: LlmSettings,
     ) -> (Self, NlpSidecarHandle) {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let sidecar = Self { raw_rx, event_tx, app_state, shutdown_rx };
+        let sidecar = Self { raw_rx, event_tx, app_state, shutdown_rx, llm_settings };
         let handle  = NlpSidecarHandle { shutdown_tx };
         (sidecar, handle)
     }
@@ -88,25 +91,24 @@ impl NlpSidecar {
     pub async fn run(mut self) {
         let _ = is_great_power("test");
 
-        let fuzzy = FuzzyDedup::load();
+        let fuzzy     = FuzzyDedup::load();
         let mut processor = NlpProcessor::with_dedup(fuzzy);
+        let enricher  = LlmEnricher::new(self.llm_settings.clone());
+
         info!("NLP processor: online — pure Rust, dedup cache loaded");
 
-        let mut processed = 0u64;
-        let mut tagged    = 0u64;
+        let mut processed   = 0u64;
+        let mut tagged      = 0u64;
+        let mut llm_hits    = 0u64;
 
         loop {
             tokio::select! {
-                // Biased toward the article channel so a burst of articles is
-                // drained before a shutdown signal interrupts processing.
                 biased;
 
                 maybe_article = self.raw_rx.recv() => {
                     let article = match maybe_article {
                         Some(a) => a,
                         None => {
-                            // Ingestor dropped its sender — pipeline failure.
-                            // Save the cache before the hard exit.
                             warn!(
                                 "NLP: raw_rx closed unexpectedly ({} processed, {} tagged). \
                                  Saving dedup cache before exit.",
@@ -121,7 +123,38 @@ impl NlpSidecar {
                     let article_id = article.id.clone();
                     processed += 1;
 
-                    if let Some(event) = processor.process(&article) {
+                    // ── Keyword scoring ───────────────────────────────────────
+                    let keyword_event = processor.process(&article);
+
+                    // ── LLM enrichment ────────────────────────────────────────
+                    // Path A: keyword produced an event → enrich with LLM scores
+                    // Path B: keyword found nothing but article has geopolitical
+                    //         trigger words → try LLM as the gate instead
+                    let final_event: Option<GeopoliticalEvent> = if let Some(mut ev) = keyword_event {
+                        if enricher.is_enabled() {
+                            if let Some(llm) = enricher.classify(&article.title, &article.body).await {
+                                merge_llm_scores(&mut ev, &llm);
+                                llm_hits += 1;
+                            }
+                        }
+                        Some(ev)
+                    } else if enricher.is_enabled() && has_geopolitical_trigger(&article.title) {
+                        // Keyword gate missed it — give LLM a chance
+                        if let Some(llm) = enricher.classify(&article.title, &article.body).await {
+                            if llm.max_domain_score() >= 0.45 {
+                                llm_hits += 1;
+                                Some(make_event_from_llm(&article, llm))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(event) = final_event {
                         self.app_state.article_store.lock().await
                             .set_domain_tags(&article_id, event.domain_tags.clone());
 
@@ -140,19 +173,26 @@ impl NlpSidecar {
 
                     if processed % 100 == 0 {
                         let pct = tagged * 100 / processed;
-                        info!(
-                            "NLP processor: {} processed, {} tagged ({}% geopolitical)",
-                            processed, tagged, pct
-                        );
+                        if enricher.is_enabled() {
+                            info!(
+                                "NLP: {} processed, {} tagged ({}% geo) | {} LLM enrichments",
+                                processed, tagged, pct, llm_hits
+                            );
+                        } else {
+                            info!(
+                                "NLP processor: {} processed, {} tagged ({}% geopolitical)",
+                                processed, tagged, pct
+                            );
+                        }
                     }
                 }
 
                 _ = self.shutdown_rx.changed() => {
                     if *self.shutdown_rx.borrow() {
                         info!(
-                            "NLP processor: shutdown signal received — \
-                             {} processed, {} tagged. Saving dedup cache...",
-                            processed, tagged
+                            "NLP processor: shutdown — {} processed, {} tagged, {} LLM hits. \
+                             Saving dedup cache...",
+                            processed, tagged, llm_hits
                         );
                         processor.dedup().save();
                         info!("NLP processor: dedup cache saved. Exiting cleanly.");
@@ -162,6 +202,71 @@ impl NlpSidecar {
             }
         }
     }
+}
+
+// ── LLM merge helpers ─────────────────────────────────────────────────────────
+
+const LLM_TAG_THRESHOLD: f64 = 0.50;
+const LLM_SCORE_DISCOUNT: f64 = 0.90; // slight discount so keyword 1.0 beats LLM
+
+/// Merge LLM domain scores into an existing keyword-derived event.
+/// Takes the max of keyword score and discounted LLM score for each domain.
+fn merge_llm_scores(event: &mut GeopoliticalEvent, llm: &LlmScores) {
+    for (domain, llm_score) in &llm.as_domain_pairs() {
+        if *llm_score <= 0.0 { continue; }
+        let discounted = llm_score * LLM_SCORE_DISCOUNT;
+        let existing   = event.domain_signals.get(*domain).copied().unwrap_or(0.0);
+        event.domain_signals.insert(domain.to_string(), existing.max(discounted));
+    }
+    // Rebuild tag list from updated signals
+    event.domain_tags = event.domain_signals
+        .iter()
+        .filter(|(_, &v)| v >= LLM_TAG_THRESHOLD)
+        .map(|(k, _)| k.clone())
+        .collect();
+    // Blend severity upward if LLM sees more than keywords did
+    if llm.severity > event.severity {
+        event.severity = (event.severity + llm.severity) / 2.0;
+    }
+}
+
+/// Create a GeopoliticalEvent from LLM scores alone (keyword gate missed it).
+fn make_event_from_llm(article: &RawArticle, llm: LlmScores) -> GeopoliticalEvent {
+    let mut event = GeopoliticalEvent::new(
+        article.title.clone(),
+        article.source.clone(),
+        article.source_tier,
+        article.published_at,
+    );
+    for (domain, score) in &llm.as_domain_pairs() {
+        if *score >= LLM_TAG_THRESHOLD {
+            event.domain_signals.insert(domain.to_string(), *score * LLM_SCORE_DISCOUNT);
+            event.domain_tags.push(domain.to_string());
+        }
+    }
+    event.severity = llm.severity;
+    event
+}
+
+/// Fast check: does the article title contain geopolitical trigger terms?
+/// Used to decide whether to run LLM on articles the keyword gate rejected.
+fn has_geopolitical_trigger(title: &str) -> bool {
+    let t = title.to_lowercase();
+    // Great powers / key actors
+    const ACTORS: &[&str] = &[
+        "china", "russia", "united states", "iran", "north korea", "israel",
+        "ukraine", "taiwan", "nato", "pentagon", "kremlin", "beijing", "moscow",
+        "white house", "xi jinping", "putin", "trump", "zelensky", "netanyahu",
+        "hezbollah", "hamas", "houthi", "pla", "irgc",
+    ];
+    // Conflict / escalation terms
+    const TERMS: &[&str] = &[
+        "war", "attack", "strike", "invasion", "missile", "nuclear", "troops",
+        "conflict", "crisis", "sanction", "threat", "escalat", "ceasefire",
+        "military", "bomb", "deploy", "weapon", "assassination", "coup",
+        "blockade", "detained", "hostage", "cyber", "hack", "intelligence",
+    ];
+    ACTORS.iter().any(|a| t.contains(a)) || TERMS.iter().any(|t2| t.contains(t2))
 }
 
 // ── wait_for_sidecar stub ─────────────────────────────────────────────────────

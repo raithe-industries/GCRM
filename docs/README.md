@@ -1,8 +1,8 @@
 # Global Conflict Risk Monitor (GCRM)
 
-**RAiTHE INDUSTRIES INCORPORATED**
-**Copyright © 2026 All Rights Reserved.**
-**Owner & Founder: Robert Perreault**
+**RAiTHE INDUSTRIES INCORPORATED** <br>
+**Copyright © 2026 All Rights Reserved.** <br>
+**Owner & Founder: Robert Perreault** <br>
 
 **Live Service: [raithe.ca/risk](https://raithe.ca/risk)**
 

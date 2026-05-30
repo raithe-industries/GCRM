@@ -536,8 +536,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar{width:3px;height:3px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-@keyframes cal-pulse{0%,100%{box-shadow:0 0 0 0 rgba(212,150,42,.6);background:rgba(212,150,42,0.15)}50%{box-shadow:0 0 10px 4px rgba(212,150,42,.35);background:rgba(212,150,42,0.30)}}
-.cal-fresh{animation:cal-pulse 1.2s ease-in-out infinite;border-color:var(--amber) !important}
+@keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
 </style>
 </head>
 <body>
@@ -558,7 +558,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <span id="src-count">—</span><span>|</span>
     <span id="nuc-status" style="color:#404040">● USGS</span><span>|</span>
     <span id="snap-id">—</span>
-    <span id="model-cal-pill" style="display:none;font-size:11px;padding:4px 10px;border-radius:3px;border:1.5px solid var(--amber);color:var(--t1);background:rgba(212,150,42,0.12);font-family:monospace;font-weight:700;letter-spacing:.08em"></span>
+    <span id="model-cal-pill" style="display:none;font-size:10px;color:var(--amber);font-family:monospace;font-weight:600;letter-spacing:.05em"></span>
     <button class="op-toggle-btn" onclick="toggleOperatorPanel()" title="Operator Panel">⚙</button>
   </div>
 </div>
@@ -669,37 +669,36 @@ let _lastCalTs=null,_firstSnapReceived=false;
 (function(){const pill=document.getElementById('model-cal-pill');if(!pill)return;pill.style.display='inline-block';pill.textContent='⏳ COLLECTING DATA...';pill.classList.add('cal-fresh');})();
 function updateModelCalIndicator(calAt,conf,evCount){
   const pill=document.getElementById('model-cal-pill');if(!pill)return;
-  const confPct=conf!=null?Math.round(conf*100):0;
   if(calAt){
     const d=new Date(calAt);if(isNaN(d.getTime()))return;
     const ageMs=Date.now()-d.getTime();const isFresh=ageMs<10*60*1000;
     const tsStr=toETShort(d);
     pill.style.display='inline-block';pill.classList.add('cal-fresh');
-    pill.textContent=isFresh?'⬆ MODEL UPDATED — '+tsStr:'● CALIBRATED '+confPct+'% — '+tsStr;
+    pill.textContent=isFresh?'⬆ UPDATED '+tsStr:'● CALIBRATED '+tsStr;
     if(_lastCalTs!==calAt)_lastCalTs=calAt;
     return;
   }
   if(!_firstSnapReceived||evCount===0){
     pill.style.display='inline-block';pill.classList.add('cal-fresh');
-    pill.textContent='⏳ COLLECTING DATA...';
+    pill.textContent='⏳ COLLECTING';
   }else if(evCount<15){
     pill.style.display='inline-block';pill.classList.add('cal-fresh');
-    pill.textContent='◐ POPULATING — '+evCount+' events';
+    pill.textContent='◐ POPULATING';
   }else if(conf==null||conf<0.90){
     pill.style.display='inline-block';pill.classList.add('cal-fresh');
-    pill.textContent='◐ CALIBRATING — '+confPct+'%';
+    pill.textContent='◐ CALIBRATING';
   }else{
     pill.style.display='none';pill.classList.remove('cal-fresh');
   }
 }
-// Fetch configured feed count once on load and keep src-count accurate
-(async function initFeedCount(){
+async function refreshSrcCount(){
   try{const r=await fetch(BASE_PATH+'/api/sources');const d=await r.json();
   const cfg=(d.configured_sources||[]).length;
   const act=Object.keys(d.active_sources||{}).filter(k=>(d.active_sources[k]||0)>0).length;
   document.getElementById('src-count').textContent=act+'/'+cfg+' feeds';
   }catch(e){}
-})();
+}
+refreshSrcCount();
 const DID=['military_escalation','nuclear_posture','diplomatic_breakdown','economic_warfare','cyber_info_ops','alliance_activation','great_power_conflict','wmd_mass_casualty'];
 const DSHORT=['Military','Nuclear','Diplomatic','Economic','Cyber','Alliance','Gr.Power','WMD'];
 const DCOLORS=['--mil','--nuc','--dip','--eco','--cyb','--ali','--gp','--wmd'];
@@ -736,18 +735,21 @@ let currentTab='articles';
 function switchTab(tab){currentTab=tab;['articles','sources','log'].forEach(t=>{document.getElementById('tab-'+t).classList.toggle('active',t===tab);document.getElementById('panel-'+t).style.display=t===tab?'block':'none';});if(tab==='articles')fetchArticles();if(tab==='sources'){document.getElementById('panel-sources').innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--t4)">Loading sources...</div>';fetchSources();}if(tab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
 let lastMovers=new Set(),_artDomainFilter='',_artSrcFilter='',_artTimeFilter=0;
 function setTimeFilter(h){_artTimeFilter=h;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',+b.dataset.h===h));renderArticles(_artCache,_artTotal);}
-function fmtArticleDate(isoStr){
+function fmtArticleDate(isoStr,ingestedIso){
   try{if(!isoStr)return'<span style="color:#404060">— no date —</span>';const pub=new Date(isoStr);if(isNaN(pub.getTime()))return`<span style="color:#404060">${isoStr}</span>`;
   const now=Date.now();const ageMs=now-pub.getTime();const ageH=ageMs/3600000;
+  const isFuture=ageMs<-120000;
   const torontoTime=pub.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true});
   const torontoDate=pub.toLocaleDateString('en-US',{timeZone:'America/Toronto',month:'short',day:'numeric'});
   const todayDate=new Date().toLocaleDateString('en-US',{timeZone:'America/Toronto',month:'short',day:'numeric'});
   const torontoFull=(torontoDate!==todayDate)?torontoDate+' '+torontoTime+' ET':torontoTime+' ET';
+  let ingLine='';if(ingestedIso){const ing=new Date(ingestedIso);if(!isNaN(ing.getTime())){const ingT=ing.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true});ingLine='<span style="color:#343448;margin-left:5px;font-size:8px">· pulled '+ingT+' ET</span>';}}
+  if(isFuture){return'<span style="font-family:monospace;color:#606080">'+torontoFull+'</span><span style="color:#404058;font-size:7px;margin-left:3px">(src tz)</span>'+ingLine;}
   let relAge;if(ageH<1){const m=Math.floor(ageMs/60000);relAge=m<=1?'just now':m+'m ago';}else if(ageH<24){const h=Math.floor(ageH),m=Math.floor((ageH-h)*60);relAge=m>0?h+'h '+m+'m ago':h+'h ago';}else if(ageH<168){relAge=Math.floor(ageH/24)+'d '+Math.floor(ageH%24)+'h ago';}else{relAge=Math.floor(ageH/24)+'d ago';}
   let badge='';if(ageH>168)badge='<span style="font-size:7px;padding:1px 4px;background:#200800;color:#c05818;border-radius:2px;margin-left:4px">'+Math.floor(ageH/24)+'d OLD</span>';else if(ageH>24)badge='<span style="font-size:7px;padding:1px 4px;background:#141400;color:#7a7a20;border-radius:2px;margin-left:4px">'+Math.floor(ageH)+'h OLD</span>';
-  return'<span style="font-family:monospace;color:#9090c0">'+torontoFull+'</span><span style="color:#505070;margin-left:5px">· '+relAge+'</span>'+badge;
+  return'<span style="font-family:monospace;color:#9090c0">'+torontoFull+'</span><span style="color:#505070;margin-left:5px">· '+relAge+'</span>'+badge+ingLine;
   }catch(err){return'<span style="color:#404060">'+(isoStr||'unknown date')+'</span>';}}
-function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artTimeFilter>0)filtered=filtered.filter(a=>{try{return(now-new Date(a.published_at).getTime())<_artTimeFilter*3600000;}catch{return true;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=filtered.length+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
+function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artTimeFilter>0)filtered=filtered.filter(a=>{try{return(now-new Date(a.published_at).getTime())<_artTimeFilter*3600000;}catch{return true;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=filtered.length+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
 function filterByDomain(dt){_artDomainFilter=(_artDomainFilter===dt)?'':dt;fetchArticles();}
 function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artTimeFilter=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',+b.dataset.h===0));fetchArticles();}
 let _artCache=[],_artTotal=0;
@@ -808,7 +810,7 @@ function applyData(d){
   document.getElementById('f-adj').textContent=d.prior.adjusted_prior.toFixed(6);
   document.getElementById('f-lik').textContent='×'+d.co_occurrence.boost.toFixed(1)+' boost, '+elev+' elevated';
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
-  const meta=d.meta||{};document.getElementById('ev-count').textContent=(meta.events_in_window||0)+' events';document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
+  const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];
   document.getElementById('meta-row').innerHTML=pills.map((p,i)=>'<span class="mpill'+(i>3?' hi':'')+'">'+p+'</span>').join('');
   addLog('P(WWIII)='+(pA*100).toFixed(2)+'% Δ'+(dA>=0?'+':'')+(dA*100).toFixed(4)+'% · '+elev+' elevated · '+(meta.events_in_window||0)+' events',pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'#6060a0');
@@ -837,6 +839,7 @@ connect();fetchArticles();
 setInterval(()=>{if(currentTab==='sources')fetchSources();},10000);
 setInterval(()=>{if(currentTab==='articles'&&_artCache.length===0)fetchArticles();},2000);
 pollNuclear();setInterval(pollNuclear,15000);
+setInterval(refreshSrcCount,30000);
 </script>
 <!-- ── Operator panel overlay ──────────────────────────────────────────── -->
 <div class="op-overlay" id="op-overlay" onclick="toggleOperatorPanel()"></div>

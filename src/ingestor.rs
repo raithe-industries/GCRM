@@ -156,10 +156,10 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.bbc.co.uk/news/technology/rss.xml",                source: "bbc_tech",        tier: SourceTier::Tier2 },
     // State media / alternative perspectives (signals, not endorsements)
     FeedSpec { url: "https://tass.com/rss/v2.xml",                                  source: "tass",            tier: SourceTier::Tier2 },
-    FeedSpec { url: "http://www.xinhuanet.com/english/rss/worldrss.xml",            source: "xinhua",          tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.xinhuanet.com/english/rss/worldrss.xml",           source: "xinhua",          tier: SourceTier::Tier2 },
     // Asia-Pacific
     FeedSpec { url: "https://www.japantimes.co.jp/feed/",                           source: "japantimes",      tier: SourceTier::Tier2 },
-    FeedSpec { url: "http://www.koreaherald.com/rss/060000000000.xml",              source: "koreaherald",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.koreaherald.com/rss/060000000000.xml",             source: "koreaherald",     tier: SourceTier::Tier2 },
     // South Asia
     FeedSpec { url: "https://www.dawn.com/feeds/home",                              source: "dawn_pk",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://theprint.in/feed/",                                    source: "theprint_in",     tier: SourceTier::Tier2 },
@@ -776,7 +776,7 @@ mod tests {
 
     #[test]
     fn rss_feeds_count_matches_python() {
-        assert_eq!(RSS_FEEDS.len(), 42);
+        assert_eq!(RSS_FEEDS.len(), 72);
     }
 
     #[test]
@@ -790,13 +790,13 @@ mod tests {
     #[test]
     fn rss_feeds_tier1_count() {
         let tier1 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier1).count();
-        assert_eq!(tier1, 18, "Expected 18 Tier-1 feeds");
+        assert_eq!(tier1, 25, "Expected 25 Tier-1 feeds");
     }
 
     #[test]
     fn rss_feeds_tier2_count() {
         let tier2 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier2).count();
-        assert_eq!(tier2, 24, "Expected 25 Tier-2 feeds");
+        assert_eq!(tier2, 47, "Expected 47 Tier-2 feeds");
     }
 
     #[test]
@@ -810,7 +810,7 @@ mod tests {
     #[test]
     fn gnews_queries_nonempty() {
         assert!(!GNEWS_QUERIES.is_empty());
-        assert_eq!(GNEWS_QUERIES.len(), 14);
+        assert_eq!(GNEWS_QUERIES.len(), 23);
     }
 
     #[test]

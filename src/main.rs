@@ -29,6 +29,7 @@ mod api;
 mod bayesian;
 mod detector;
 mod ingestor;
+mod llm_enricher;
 mod models;
 mod nlp_sidecar;
 mod processor;
@@ -44,7 +45,7 @@ use tracing_subscriber::EnvFilter;
 use aggregator::{Aggregator, AppState, load_epoch};
 use ingestor::Ingestor;
 use models::{
-    AlertSettings, DashboardSettings, IngestionSettings,
+    AlertSettings, DashboardSettings, IngestionSettings, LlmSettings,
     RawArticle, RegimeFactor, Settings,
 };
 use api::OperatorState;
@@ -152,6 +153,7 @@ fn default_settings() -> Settings {
             operator_key: "CHANGE_ME_BEFORE_DEPLOY".into(),
             base_path:    String::new(),
         },
+        llm: LlmSettings::default(),
     }
 }
 
@@ -290,6 +292,7 @@ async fn main() {
         raw_rx,
         event_tx,
         Arc::clone(&app_state),
+        settings.llm.clone(),
     );
 
     let server_state_bc      = server_state.clone();

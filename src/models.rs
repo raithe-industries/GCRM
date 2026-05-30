@@ -556,6 +556,39 @@ pub struct Settings {
     pub alerts:         AlertSettings,
     pub ingestion:      IngestionSettings,
     pub dashboard:      DashboardSettings,
+    #[serde(default)]
+    pub llm:            LlmSettings,
+}
+
+// ── LlmSettings ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettings {
+    #[serde(default)]
+    pub enabled:      bool,
+    #[serde(default = "LlmSettings::default_endpoint")]
+    pub endpoint:     String,
+    #[serde(default = "LlmSettings::default_model")]
+    pub model:        String,
+    #[serde(default = "LlmSettings::default_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl LlmSettings {
+    fn default_endpoint() -> String { "http://localhost:11434".into() }
+    fn default_model()    -> String { "qwen2.5:7b".into() }
+    fn default_timeout()  -> u64   { 10 }
+}
+
+impl Default for LlmSettings {
+    fn default() -> Self {
+        Self {
+            enabled:      false,
+            endpoint:     Self::default_endpoint(),
+            model:        Self::default_model(),
+            timeout_secs: Self::default_timeout(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
