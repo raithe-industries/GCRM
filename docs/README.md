@@ -130,7 +130,7 @@ An Axum web server serves a real-time dashboard via WebSocket. The dashboard is 
 - Regime factor panel with operator controls (key-protected)
 - Model calibration indicator — shows when an operator has updated model parameters
 
-All timestamps on the dashboard are displayed in UTC for consistency.
+All timestamps on the dashboard are displayed in Eastern Time (ET / America/Toronto) with UTC shown as secondary reference.
 
 The operator API (key-protected, rate-limited at 60 req/min) allows runtime adjustments: toggling regime factors, asserting manual events, dismissing seismic alerts. All operator actions are logged to an audit trail and surfaced to users via the model calibration indicator.
 

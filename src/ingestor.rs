@@ -91,9 +91,19 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.defensenews.com/arc/outboundfeeds/rss/",          source: "defensenews",     tier: SourceTier::Tier1 },
     FeedSpec { url: "https://warontherocks.com/feed/",                             source: "warontherocks",   tier: SourceTier::Tier1 },
     FeedSpec { url: "https://taskandpurpose.com/feed/",                            source: "taskpurpose",     tier: SourceTier::Tier1 },
+    // Wire services Tier 1
+    FeedSpec { url: "https://feeds.reuters.com/reuters/worldNews",                 source: "reuters",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://feeds.reuters.com/Reuters/worldNews",                 source: "reuters",         tier: SourceTier::Tier1 },
     // Nuclear/arms Tier 1 — highest credibility for nuclear signals
     FeedSpec { url: "https://www.armscontrol.org/taxonomy/term/1/feed",            source: "armscontrol",     tier: SourceTier::Tier1 },
     FeedSpec { url: "https://fas.org/feed/",                                       source: "fas",             tier: SourceTier::Tier1 },
+    // Defense Tier 1
+    FeedSpec { url: "https://www.defenseone.com/rss/all/",                         source: "defenseone",      tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://breakingdefense.com/feed/",                           source: "breakingdefense", tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.defensenews.com/arc/outboundfeeds/rss/category/pentagon/", source: "defensenews_pentagon", tier: SourceTier::Tier1 },
+    // Think-tank / policy Tier 1
+    FeedSpec { url: "https://www.lawfaremedia.org/feed",                           source: "lawfare",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.justsecurity.org/feed/",                          source: "justsecurity",    tier: SourceTier::Tier1 },
     // OSINT/analysis Tier 1
     FeedSpec { url: "https://www.bellingcat.com/feed/",                            source: "bellingcat",      tier: SourceTier::Tier1 },
     FeedSpec { url: "https://www.crisisgroup.org/rss",                             source: "crisisgroup",     tier: SourceTier::Tier1 },
@@ -124,12 +134,43 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     // Intelligence/analysis
     FeedSpec { url: "https://geopoliticalfutures.com/feed/",                        source: "gpf",             tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.realcleardefense.com/index.xml",                   source: "realcleardefense",tier: SourceTier::Tier2 },
-    // Verified-active replacements
+    // Think-tanks / policy Tier 2
+    FeedSpec { url: "https://www.atlanticcouncil.org/feed/",                        source: "atlanticcouncil", tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.brookings.edu/feed/",                              source: "brookings",       tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://carnegieendowment.org/feed/",                          source: "carnegie",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.stimson.org/feed/",                                source: "stimson",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://jamestown.org/feed/",                                  source: "jamestown",       tier: SourceTier::Tier2 },
+    // Official / intergovernmental
+    FeedSpec { url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml",       source: "un_news",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.nato.int/cps/en/natolive/news.htm?feed=true",      source: "nato",            tier: SourceTier::Tier2 },
+    // European broadcasters
+    FeedSpec { url: "https://rss.dw.com/rdf/rss-en-world",                         source: "dw",              tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.france24.com/en/rss",                              source: "france24",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.euronews.com/rss",                                 source: "euronews",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.voanews.com/rss/z/5752",                           source: "voa",             tier: SourceTier::Tier2 },
+    // US outlets
     FeedSpec { url: "https://feeds.feedburner.com/time/world",                      source: "time",            tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.cbsnews.com/latest/rss/world",                     source: "cbsnews",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://abcnews.go.com/abcnews/internationalheadlines",        source: "abcnews",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.independent.co.uk/news/world/rss",                 source: "independent",     tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.bbc.co.uk/news/technology/rss.xml",                source: "bbc_tech",        tier: SourceTier::Tier2 },
+    // State media / alternative perspectives (signals, not endorsements)
+    FeedSpec { url: "https://tass.com/rss/v2.xml",                                  source: "tass",            tier: SourceTier::Tier2 },
+    FeedSpec { url: "http://www.xinhuanet.com/english/rss/worldrss.xml",            source: "xinhua",          tier: SourceTier::Tier2 },
+    // Asia-Pacific
+    FeedSpec { url: "https://www.japantimes.co.jp/feed/",                           source: "japantimes",      tier: SourceTier::Tier2 },
+    FeedSpec { url: "http://www.koreaherald.com/rss/060000000000.xml",              source: "koreaherald",     tier: SourceTier::Tier2 },
+    // South Asia
+    FeedSpec { url: "https://www.dawn.com/feeds/home",                              source: "dawn_pk",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://theprint.in/feed/",                                    source: "theprint_in",     tier: SourceTier::Tier2 },
+    // Middle East
+    FeedSpec { url: "https://www.arabnews.com/category/middle-east/rss.xml",        source: "arabnews",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.aa.com.tr/en/rss/default?cat=world",               source: "anadolu",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.haaretz.com/cmlink/1.628752",                      source: "haaretz",         tier: SourceTier::Tier2 },
+    // Investigative / OSINT Tier 2
+    FeedSpec { url: "https://eurasianet.org/rss.xml",                               source: "eurasianet",      tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.occrp.org/en/component/ocrss/feed/articles.rss",   source: "occrp",           tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.rferl.org/api/zqpqpqtlvrpqty",                     source: "rferl",           tier: SourceTier::Tier2 },
 ];
 
 pub const GNEWS_QUERIES: &[&str] = &[
@@ -147,6 +188,15 @@ pub const GNEWS_QUERIES: &[&str] = &[
     "Pakistan India border tension Kashmir",
     "submarine warship naval confrontation",
     "coup military takeover government",
+    "sanctions embargo trade war",
+    "drone strike assassination targeted killing",
+    "hypersonic missile ICBM ballistic test",
+    "nuclear reactor enrichment uranium weapons grade",
+    "UN Security Council veto resolution",
+    "military exercises drills live fire",
+    "espionage spy intelligence leak",
+    "famine blockade siege humanitarian crisis",
+    "territorial dispute border clash skirmish",
 ];
 
 pub const GDELT_QUERIES: &[&str] = &[
