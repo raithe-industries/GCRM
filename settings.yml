@@ -10,8 +10,8 @@
 # Calibrated: 2026-03-31
 #
 # STRUCTURE NOTE: This file is parsed directly into the Rust Settings struct.
-# Only four top-level keys are valid: regime_factors, alerts, ingestion, dashboard.
-# Extra keys will cause a parse error and fall back to built-in defaults.
+# Valid top-level keys: regime_factors, alerts, ingestion, dashboard, llm.
+# Extra keys are silently ignored. Missing optional keys use built-in defaults.
 #
 # REGIME MULTIPLIER METHOD:
 #   Factors encode STRUCTURAL conditions stable over months-to-years.
@@ -38,6 +38,23 @@ alerts:
   elevated:       0.025
   critical:       0.08
   thirty_day_warn: 0.01
+
+# ── LLM Enrichment ───────────────────────────────────────────────────────────
+# Local LLM via Ollama for higher-fidelity domain scoring.
+# Setup (one-time):
+#   curl -fsSL https://ollama.com/install.sh | sh
+#   ollama pull qwen2.5:7b
+# Then set enabled: true and restart the service.
+#
+# The LLM runs two paths:
+#   1. Enrich articles that passed keyword scoring (adds multi-domain coverage)
+#   2. Gate articles keyword filter missed (catches context the keywords can't)
+# Falls back silently to keyword-only if Ollama is unreachable or times out.
+llm:
+  enabled: true
+  endpoint: "http://localhost:11434"
+  model: "qwen2.5:7b"
+  timeout_secs: 12
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 # poll_interval_seconds: base tick for the aggregator
