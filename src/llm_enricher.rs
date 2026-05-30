@@ -96,7 +96,15 @@ impl LlmEnricher {
             return None;
         }
 
-        let excerpt = if body.len() > 500 { &body[..500] } else { body };
+        let excerpt = if body.len() > 500 {
+            // Walk back from byte 500 to the nearest valid UTF-8 char boundary.
+            // Required because international news bodies (Arabic, CJK, Cyrillic)
+            // produce multi-byte sequences; slicing mid-character panics.
+            let end = (0..=500usize).rev().find(|&i| body.is_char_boundary(i)).unwrap_or(0);
+            &body[..end]
+        } else {
+            body
+        };
 
         let prompt = format!(
             "Classify this news article for geopolitical conflict risk. \

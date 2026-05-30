@@ -16,7 +16,7 @@ GCRM is a professional intelligence dashboard: a single pane of glass that trans
 
 ## What GCRM Is Not
 
-GCRM is **not** a prediction engine that claims certainty. It does not forecast specific events. It does not use generative AI, large language models, or neural networks for its core risk computation. It is not a news aggregator — articles are shown as signal evidence, not for casual reading. It does not access classified or restricted data sources; every input is openly available.
+GCRM is **not** a prediction engine that claims certainty. It does not forecast specific events. Its core risk computation is a pure Rust Bayesian engine with keyword-based NLP. The production deployment also runs a local LLM enrichment layer (Ollama, `qwen2.5:7b`) that supplements keyword scoring with higher-fidelity domain classification; the LLM layer falls back silently to keyword-only if Ollama is unreachable, keeping the system fully operational at all times. It is not a news aggregator — articles are shown as signal evidence, not for casual reading. It does not access classified or restricted data sources; every input is openly available.
 
 The system is transparent about its limitations: the probability output is a calibrated risk index, not a formal Bayesian posterior derived from a generative model. The codebase documents this distinction explicitly and avoids overclaiming.
 
@@ -29,7 +29,7 @@ GCRM is written entirely in Rust with zero Python runtime dependencies. The syst
 ```
 Ingestor (RSS / GNews / GDELT)
   → mpsc::channel<RawArticle>
-  → NlpSidecar (pure Rust NlpProcessor)
+  → NlpSidecar (pure Rust NlpProcessor + optional LlmEnricher)
   → mpsc::channel<GeopoliticalEvent>
   → Aggregator (Bayesian risk engine)
   → mpsc::channel<RiskSnapshot>
@@ -46,7 +46,8 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 | **Models** | `models.rs` | Shared types: `RawArticle`, `GeopoliticalEvent`, `RiskSnapshot`, `DomainScore`, actor normalization, region resolution, source tiers |
 | **Ingestor** | `ingestor.rs` | Parallel RSS polling (42 feeds, all simultaneous), GNews search, GDELT API integration, deduplication cache, source health tracking |
 | **Processor** | `processor.rs` | Pure Rust NLP: MinHash LSH deduplication, event classification, weighted domain tagging, severity/escalation/sentiment scoring, actor extraction |
-| **NLP Sidecar** | `nlp_sidecar.rs` | Pipeline runner for the NLP processor with graceful shutdown and dedup cache persistence |
+| **NLP Sidecar** | `nlp_sidecar.rs` | Pipeline runner for the NLP processor and LLM enricher with graceful shutdown and dedup cache persistence |
+| **LLM Enricher** | `llm_enricher.rs` | Optional Ollama integration — classifies articles against 8 domains via local LLM, merges with keyword scores, falls back silently if unavailable |
 | **Bayesian Engine** | `bayesian.rs` | Domain scoring, regime multiplier, actor tracking, anomaly detection, risk index computation |
 | **Aggregator** | `aggregator.rs` | Event window management, corroboration detection, timeline persistence (JSONL), warmup gate, shared state management |
 | **Detector** | `detector.rs` | Seismic anomaly detection, CTBTO monitoring, nuclear news monitoring, test site registry, alert fusion |
@@ -77,6 +78,17 @@ Every article passes through a pure Rust NLP processor with no external model de
 - **Weighted Domain Tagging**: Articles are scored against 8 risk domains using a weighted keyword dictionary. Definitive keywords carry high weight (e.g. "nuclear test" = 0.90); ambient keywords carry low weight (e.g. "military" = 0.10). A minimum signal threshold (0.035) prevents noise articles from tagging domains.
 - **Actor Extraction**: A 65+ entry entity dictionary maps raw text mentions to canonical actor IDs using longest-match-wins substring search. Great-power involvement (US, Russia, China, NATO) is flagged for elevated scoring.
 - **Severity, Escalation, and Sentiment Scoring**: Each event receives a composite severity score based on event type, casualties, nuclear/WMD indicators, escalation language density, and hostile-vs-conciliatory word balance.
+
+#### LLM Enrichment (Ollama)
+
+A local LLM (`qwen2.5:7b` via Ollama) runs a second pass on each article:
+
+- **Path A** — keyword scoring produced an event: LLM scores the same article against all 8 domains and merges into the keyword result, taking the max of each domain score. LLM scores are discounted 10% before merging, so a keyword definitive hit (1.0) always outweighs LLM estimates.
+- **Path B** — keyword gate found nothing but the title contains geopolitical trigger terms: LLM is used as the sole gate. An article passes only if the LLM assigns at least one domain a score ≥ 0.45.
+- Falls back silently to keyword-only on timeout, connection error, or malformed JSON — no disruption to the pipeline.
+- Temperature 0.05 (near-deterministic); `format: "json"` forces Ollama to return valid JSON.
+
+The LLM layer falls back silently to keyword-only on timeout, connection error, or malformed response — no disruption to the pipeline. For self-hosted deployments, enable it with `llm.enabled: true` in `settings.yml` after completing the Ollama setup below.
 
 ### 3. Aggregation and Corroboration
 
@@ -175,6 +187,21 @@ Key settings:
 - `dashboard.operator_key` — required for all operator API endpoints; must be a strong random string
 - `alerts.elevated` / `alerts.critical` — P(WWIII) thresholds for alert banners
 - `regime_factors` — structural multipliers reflecting current geopolitical conditions
+- `llm.enabled` — enable local LLM enrichment via Ollama (`true` in production)
+- `llm.endpoint` — Ollama API base URL (default: `http://localhost:11434`)
+- `llm.model` — model to use (default: `qwen2.5:7b`)
+- `llm.timeout_secs` — per-request timeout in seconds (default: `10`)
+
+### LLM Enrichment Setup (Optional)
+
+The local LLM enricher requires [Ollama](https://ollama.com). One-time setup:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:7b
+```
+
+Then set `llm.enabled: true` in `settings.yml` and restart the service. The production deployment runs Ollama continuously alongside GCRM. GCRM falls back silently to keyword-only scoring if Ollama is unreachable, so the pipeline is never blocked by LLM availability.
 
 ### Build
 
@@ -211,6 +238,7 @@ GCRM/
 │   ├── ingestor.rs       — RSS/GNews/GDELT ingestion
 │   ├── processor.rs      — Pure Rust NLP processor
 │   ├── nlp_sidecar.rs    — NLP pipeline runner
+│   ├── llm_enricher.rs   — Optional Ollama LLM enrichment layer
 │   ├── bayesian.rs       — Risk computation engine
 │   ├── aggregator.rs     — Event window, timeline, warmup gate
 │   ├── detector.rs       — Seismic/nuclear monitoring
