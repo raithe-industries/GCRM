@@ -44,7 +44,7 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 |--------|------|---------|
 | **Entry Point** | `main.rs` | Pipeline wiring, settings, signal handling, task orchestration |
 | **Models** | `models.rs` | Shared types: `RawArticle`, `GeopoliticalEvent`, `RiskSnapshot`, `DomainScore`, actor normalization, region resolution, source tiers |
-| **Ingestor** | `ingestor.rs` | Parallel RSS polling (42 feeds, all simultaneous), GNews search, GDELT API integration, deduplication cache, source health tracking |
+| **Ingestor** | `ingestor.rs` | Parallel RSS polling (103 feeds, all simultaneous), GNews search, GDELT API integration, deduplication cache, self-healing source health tracking |
 | **Processor** | `processor.rs` | Pure Rust NLP: MinHash LSH deduplication, event classification, weighted domain tagging, severity/escalation/sentiment scoring, actor extraction |
 | **NLP Sidecar** | `nlp_sidecar.rs` | Pipeline runner for the NLP processor and LLM enricher with graceful shutdown and dedup cache persistence |
 | **LLM Enricher** | `llm_enricher.rs` | Optional Ollama integration — classifies articles against 8 domains via local LLM, merges with keyword scores, falls back silently if unavailable |
@@ -60,14 +60,14 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 
 ### 1. Ingestion Layer
 
-GCRM polls 42 RSS feeds from Tier-1 and Tier-2 international news organizations fully in parallel (all feeds fetched simultaneously, 8-second timeout). It also queries Google News RSS (every 12 seconds) and the GDELT Project API (every 20 seconds) for supplementary coverage.
+GCRM polls 103 RSS feeds from Tier-1 and Tier-2 international news organizations fully in parallel (all feeds fetched simultaneously, 8-second timeout). It also queries Google News RSS (every 12 seconds) and the GDELT Project API (every 20 seconds) for supplementary coverage. The feed roster is treated as a stated source base, not a live ratio — every feed is verified-live and the roster is curated, not scored.
 
 Sources are classified into three credibility tiers:
 - **Tier 1** (credibility weight 1.00): Wire services, verified international outlets (BBC, NYT, WaPo, Al Jazeera, Foreign Policy, Defense News, Bellingcat, Crisis Group, Arms Control Association, FAS)
 - **Tier 2** (credibility weight 0.75): Major national outlets, regional specialists (Guardian, NPR, SCMP, Taipei Times, Times of Israel, Ukrayinska Pravda)
 - **Tier 3** (credibility weight 0.20): Unverified, aggregated, or lower-confidence sources
 
-Each article is deduplicated against a 50,000-entry MD5 cache before entering the pipeline. Source health is tracked: feeds with 10 consecutive failures are automatically disabled.
+Each article is deduplicated against a 50,000-entry MD5 cache before entering the pipeline. Source health is tracked and self-healing: a feed with 10 consecutive failures is demoted to periodic re-probing (roughly every 10 minutes) rather than disabled permanently — a single success restores it to full polling, so transient outages recover automatically without a restart.
 
 ### 2. NLP Processing (Pure Rust)
 
