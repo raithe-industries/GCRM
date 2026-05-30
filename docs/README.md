@@ -228,5 +228,5 @@ GCRM/
 
 ## License
 
-Proprietary. All rights reserved. Copyright © 2026 RAiTHE INDUSTRIES INCORPORATED. This software and associated files are the proprietary property of Robert Perreault and RAiTHE INDUSTRIES INCORPORATED. 
-<br>Unauthorized copying, modification, distribution, or use of this software, in whole or in part, is strictly prohibited.
+Proprietary. All rights reserved. Copyright © 2026 RAiTHE INDUSTRIES INCORPORATED. 
+<br>This software and associated files are the proprietary property of Robert Perreault and RAiTHE INDUSTRIES INCORPORATED. Unauthorized copying, modification, distribution, or use of this software, in whole or in part, is strictly prohibited.
