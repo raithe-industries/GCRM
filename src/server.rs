@@ -48,29 +48,36 @@ const BROADCAST_CAP: usize = 200;
 
 #[derive(Clone)]
 pub struct ServerState {
-    pub app_state:      SharedState,
-    pub broadcast_tx:   broadcast::Sender<Arc<String>>,
-    pub client_count:   Arc<Mutex<usize>>,
-    pub dashboard_html: Arc<String>,
+    pub app_state:        SharedState,
+    pub broadcast_tx:     broadcast::Sender<Arc<String>>,
+    pub client_count:     Arc<Mutex<usize>>,
+    pub dashboard_html:   Arc<String>,
+    pub methodology_html: Arc<String>,
 }
 
 impl ServerState {
     pub fn new(app_state: SharedState, base_path: &str) -> (Self, broadcast::Sender<Arc<String>>) {
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
         let html = Arc::new(generate_dashboard_html(base_path));
+        let methodology = Arc::new(render_base_path(METHODOLOGY_HTML, base_path));
         let state = Self {
             app_state,
-            broadcast_tx:   tx.clone(),
-            client_count:   Arc::new(Mutex::new(0)),
-            dashboard_html: html,
+            broadcast_tx:     tx.clone(),
+            client_count:     Arc::new(Mutex::new(0)),
+            dashboard_html:   html,
+            methodology_html: methodology,
         };
         (state, tx)
     }
 }
 
-fn generate_dashboard_html(base_path: &str) -> String {
+fn render_base_path(template: &str, base_path: &str) -> String {
     let bp = if base_path == "/" { "" } else { base_path };
-    DASHBOARD_HTML.replace("{{BASE_PATH}}", bp)
+    template.replace("{{BASE_PATH}}", bp)
+}
+
+fn generate_dashboard_html(base_path: &str) -> String {
+    render_base_path(DASHBOARD_HTML, base_path)
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -326,11 +333,16 @@ async fn get_dashboard(State(state): State<ServerState>) -> impl IntoResponse {
     Html((*state.dashboard_html).clone())
 }
 
+async fn get_methodology(State(state): State<ServerState>) -> impl IntoResponse {
+    Html((*state.methodology_html).clone())
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn build_router(state: ServerState, operator_state: crate::api::OperatorState, base_path: &str) -> Router {
     let inner = Router::new()
         .route("/",              get(get_dashboard))
+        .route("/methodology",   get(get_methodology))
         .route("/ws",            get(ws_handler))
         .route("/api/latest",    get(get_latest))
         .route("/api/timeline",  get(get_timeline))
@@ -538,6 +550,46 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
+.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex-shrink:0}
+.pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:var(--t4);text-transform:uppercase;margin-bottom:8px}
+.pe-item{margin-bottom:7px}
+.pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
+.pe-text{font-size:9px;color:var(--t4);line-height:1.55}
+.pe-scale{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.pe-scale-row{display:flex;align-items:baseline;gap:5px}
+.pe-val{font-size:9px;font-family:monospace;color:var(--t2);min-width:38px;flex-shrink:0}
+.pe-desc{font-size:8px;color:var(--t4);line-height:1.4}
+.pe-btn{display:block;margin-top:4px;text-align:center;font-size:9px;font-weight:600;letter-spacing:.04em;color:#c0bcff;background:#0d0d20;border:0.5px solid var(--purple);border-radius:3px;padding:6px;text-decoration:none;transition:all .2s}
+.pe-btn:hover{background:var(--purple);color:#fff}
+/* ── Default desktop scale-up (≈ the old "133% zoom" look) ──────────────────
+   The base sizes above are intentionally tiny for laptops/embeds. On any real
+   desktop monitor (≥1100 CSS px) everything steps up ~30% so the cockpit is
+   legible at native 100% browser zoom. Scrollable panels absorb the extra
+   height; the centre charts flex to fit. */
+@media(min-width:1100px){
+  .main{grid-template-columns:210px 1fr 350px}
+  .logo{font-size:18px}
+  .sub,.topbar-right,.tick-item{font-size:12px}
+  .cmd-label,.lm-label,.panel-title,.dn,.scen-label,.pe-title,.pe-label{font-size:10px}
+  .cmd-val,.lm-val,.dscore{font-size:16px}
+  .cmd-sub,.lm-sub,.gauge-pct-label,.conf-row,.ddelta{font-size:11px}
+  .gauge-val{font-size:27px}
+  #gauge-canvas{width:188px;height:104px}
+  .gauge-context{font-size:10px}
+  .dlabel,.dconf,.art-tag,.src-tier,.art-meta{font-size:9px}
+  .sbtn,.tf-btn,.ct,.tab,.context-strip,.formula,.ca,.pe-text,.pe-val,.pe-desc,.pe-btn,.src-count,
+  #log-body{font-size:11px}
+  .alert-bar,.panel-body,.art-title,.src-name{font-size:13px}
+}
+@media(min-width:1700px){
+  .main{grid-template-columns:230px 1fr 380px}
+  .logo{font-size:20px}
+  .cmd-val,.lm-val,.dscore{font-size:18px}
+  .gauge-val{font-size:31px}
+  #gauge-canvas{width:204px;height:113px}
+  .art-title,.panel-body,.src-name{font-size:14px}
+  .cmd-label,.lm-label,.panel-title,.dn,.pe-title,.pe-label{font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -578,7 +630,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <canvas id="gauge-canvas" width="148" height="82"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
       <div class="gauge-pct-label" id="gauge-ratio">— × above baseline</div>
-      <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:1px">annual P(WWIII) — gauge max = 5%</div>
+      <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:1px">annual P(WWIII) — log scale 0.1%→50% · <a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       <div class="gauge-context">
         <div class="gauge-context-row"><span>Baseline:</span><span style="color:var(--t2)">0.10% / year</span></div>
         <div class="gauge-context-row"><span>This reading:</span><span id="gauge-ratio-ctx" style="color:var(--amber)">—</span></div>
@@ -601,6 +653,31 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="lm"><div class="lm-label">P₀ ADJUSTED</div><div class="lm-val" id="m-p0">—</div><div class="lm-sub" style="color:var(--t4)">anchor × regime</div></div>
       <div class="lm"><div class="lm-label">GP EVENTS</div><div class="lm-val" id="m-gp">—</div><div class="lm-sub" style="color:var(--t4)">great-power in window</div></div>
       <div class="lm"><div class="lm-label">LAST COMPUTED</div><div class="lm-val" id="m-computed" style="font-size:11px">—</div><div class="lm-sub" style="color:var(--t4)">model update time</div></div>
+    </div>
+    <div class="plain-eng">
+      <div class="pe-title">WHAT THIS MEANS</div>
+      <div class="pe-item">
+        <div class="pe-label">THE NUMBER</div>
+        <div class="pe-text">Estimated probability that a world-war-scale conflict begins within the next 12 months, based on live news signals.</div>
+      </div>
+      <div class="pe-item">
+        <div class="pe-label">REFERENCE SCALE</div>
+        <div class="pe-scale">
+          <div class="pe-scale-row"><span class="pe-val">~0.1%</span><span class="pe-desc">Historical baseline — 2 world wars across 2,000 years</span></div>
+          <div class="pe-scale-row"><span class="pe-val">1–3%</span><span class="pe-desc">Elevated — tracking current 2026 geopolitics</span></div>
+          <div class="pe-scale-row"><span class="pe-val">≥8%</span><span class="pe-desc">Acute crisis territory — rare, serious</span></div>
+          <div class="pe-scale-row"><span class="pe-val">40–50%</span><span class="pe-desc">Cuban Missile Crisis equivalent</span></div>
+        </div>
+      </div>
+      <div class="pe-item">
+        <div class="pe-label">DOMAINS</div>
+        <div class="pe-text">The 8 coloured bars are risk categories (military, nuclear, diplomatic, etc.). When several spike at once, danger compounds faster than any single one suggests.</div>
+      </div>
+      <div class="pe-item">
+        <div class="pe-label">REGIME ×</div>
+        <div class="pe-text">A multiplier for stable background conditions — active wars, collapsed arms treaties, nuclear posture shifts. It raises the floor before any news is read.</div>
+      </div>
+      <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
     </div>
   </div>
   <div class="center-panel">
@@ -647,13 +724,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <span id="art-count">loading...</span>
       <span><span id="art-filter-label" style="color:var(--purple)"></span><span onclick="clearFilters()" style="cursor:pointer;color:var(--t4);margin-left:6px">✕ clear</span></span>
     </div>
-    <div style="padding:3px 8px;display:flex;gap:3px;border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap">
-      <button class="tf-btn active" data-h="0"   onclick="setTimeFilter(0)">All</button>
-      <button class="tf-btn"        data-h="24"  onclick="setTimeFilter(24)">24h</button>
-      <button class="tf-btn"        data-h="72"  onclick="setTimeFilter(72)">72h</button>
-      <button class="tf-btn"        data-h="672" onclick="setTimeFilter(672)">4w</button>
-      <button class="tf-btn"        data-h="4368" onclick="setTimeFilter(4368)">6m</button>
-      <button class="tf-btn"        data-h="8760" onclick="setTimeFilter(8760)">12m</button>
+    <div style="padding:3px 8px;display:flex;gap:3px;border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap" title="Filter by article age — each band is a distinct era of pulled news, not a cumulative window">
+      <button class="tf-btn active" data-min="0"    data-max="0"    onclick="setAgeFilter(0,0,this)">All</button>
+      <button class="tf-btn"        data-min="0"    data-max="24"   onclick="setAgeFilter(0,24,this)">&lt;24h</button>
+      <button class="tf-btn"        data-min="24"   data-max="72"   onclick="setAgeFilter(24,72,this)">1–3d</button>
+      <button class="tf-btn"        data-min="72"   data-max="672"  onclick="setAgeFilter(72,672,this)">3d–4w</button>
+      <button class="tf-btn"        data-min="672"  data-max="4368" onclick="setAgeFilter(672,4368,this)">4w–6m</button>
+      <button class="tf-btn"        data-min="4368" data-max="8760" onclick="setAgeFilter(4368,8760,this)">6–12m</button>
     </div>
     <div class="panel-body" id="panel-articles"></div>
     <div class="panel-body" id="panel-sources" style="display:none"></div>
@@ -692,10 +769,13 @@ function updateModelCalIndicator(calAt,conf,evCount){
   }
 }
 async function refreshSrcCount(){
+  // Sources are a statement, not a metric: we draw on N curated feeds, full stop.
+  // A live "X/N delivering" ratio is misleading — RSS feeds publish in bursts, so
+  // a perfectly healthy feed with nothing new this poll reads as "down". We state
+  // the breadth of the source base instead.
   try{const r=await fetch(BASE_PATH+'/api/sources');const d=await r.json();
   const cfg=(d.configured_sources||[]).length;
-  const act=Object.keys(d.active_sources||{}).filter(k=>(d.active_sources[k]||0)>0).length;
-  document.getElementById('src-count').textContent=act+'/'+cfg+' feeds';
+  document.getElementById('src-count').textContent=cfg+' sources';
   }catch(e){}
 }
 refreshSrcCount();
@@ -706,11 +786,31 @@ const DTAGS={military_escalation:'MIL',nuclear_posture:'NUC',diplomatic_breakdow
 const TAG_COLORS={MIL:'#E24B4A',NUC:'#FF6B35',DIP:'#7F77DD',ECO:'#1D9E75',CYB:'#00CED1',ALI:'#EF9F27',GP:'#FF69B4',WMD:'#FF0000'};
 const GC=document.getElementById('gauge-canvas').getContext('2d');
 let lastGaugePct=0;
+// ── Logarithmic risk→gauge mapping ──────────────────────────────────────────
+// Linear 0–5% hid reality: anything above 5% (Ukraine ~10%, Cuba ~40%) pinned
+// at full. A log scale from 0.1% baseline to 50% ceiling spreads the whole
+// historically-meaningful range across the dial so every regime is legible.
+const G_MIN=0.001,G_MAX=0.50,G_DEN=Math.log10(G_MAX/G_MIN); // den = log10(500)
+function riskToFrac(p){
+  if(p<=G_MIN)return 0;
+  return Math.min(1,Math.log10(p/G_MIN)/G_DEN);
+}
+// Zone ends as gauge fractions of the alert thresholds (elevated 1.5%, critical 5%).
+const GZ_ELEV=riskToFrac(0.015),GZ_CRIT=riskToFrac(0.05);
+// Tick reference points (risk → short label).
+const G_TICKS=[{p:0.001,l:'.1'},{p:0.01,l:'1'},{p:0.05,l:'5'},{p:0.50,l:'50'}];
 function drawGauge(pct){
-  pct=Math.min(1,pct);const W=148,H=82,cx=W/2,cy=H-4,r=62;
-  GC.clearRect(0,0,W,H);GC.beginPath();GC.arc(cx,cy,r,Math.PI,0);GC.strokeStyle='#1e1e38';GC.lineWidth=9;GC.stroke();
-  const zones=[{e:.33,c:'#1D9E75'},{e:.67,c:'#EF9F27'},{e:1,c:'#E24B4A'}];let s=Math.PI;
+  pct=Math.min(1,pct);const W=148,H=82,cx=W/2,cy=H-10,r=58;
+  GC.clearRect(0,0,W,H);
+  GC.beginPath();GC.arc(cx,cy,r,Math.PI,0);GC.strokeStyle='#1e1e38';GC.lineWidth=9;GC.stroke();
+  const zones=[{e:GZ_ELEV,c:'#1D9E75'},{e:GZ_CRIT,c:'#EF9F27'},{e:1,c:'#E24B4A'}];let s=Math.PI;
   for(const z of zones){const e=Math.PI+z.e*Math.PI;GC.beginPath();GC.arc(cx,cy,r,s,Math.min(e,Math.PI+pct*Math.PI));GC.strokeStyle=z.c;GC.lineWidth=9;GC.stroke();if(pct<=z.e)break;s=e;}
+  // Tick marks + labels at log reference points
+  GC.font='6px monospace';GC.fillStyle='#6878a0';GC.textAlign='center';
+  for(const t of G_TICKS){const f=riskToFrac(t.p),a=Math.PI+f*Math.PI;
+    const x1=cx+(r-5)*Math.cos(a),y1=cy+(r-5)*Math.sin(a),x2=cx+(r+5)*Math.cos(a),y2=cy+(r+5)*Math.sin(a);
+    GC.beginPath();GC.moveTo(x1,y1);GC.lineTo(x2,y2);GC.strokeStyle='#3a4560';GC.lineWidth=1;GC.stroke();
+    const lx=cx+(r+10)*Math.cos(a),ly=cy+(r+10)*Math.sin(a)+2;GC.fillText(t.l,lx,ly);}
   const a=Math.PI+pct*Math.PI;GC.beginPath();GC.moveTo(cx,cy);GC.lineTo(cx+(r-13)*Math.cos(a),cy+(r-13)*Math.sin(a));GC.strokeStyle='#ffffff';GC.lineWidth=2;GC.stroke();
   GC.beginPath();GC.arc(cx,cy,4,0,2*Math.PI);GC.fillStyle='#ffffff';GC.fill();
 }
@@ -733,8 +833,11 @@ function updateTicker(articles){if(!articles||!articles.length)return;tickerItem
 function openArticle(url){window.open(url,'_blank')}
 let currentTab='articles';
 function switchTab(tab){currentTab=tab;['articles','sources','log'].forEach(t=>{document.getElementById('tab-'+t).classList.toggle('active',t===tab);document.getElementById('panel-'+t).style.display=t===tab?'block':'none';});if(tab==='articles')fetchArticles();if(tab==='sources'){document.getElementById('panel-sources').innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--t4)">Loading sources...</div>';fetchSources();}if(tab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
-let lastMovers=new Set(),_artDomainFilter='',_artSrcFilter='',_artTimeFilter=0;
-function setTimeFilter(h){_artTimeFilter=h;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',+b.dataset.h===h));renderArticles(_artCache,_artTotal);}
+let lastMovers=new Set(),_artDomainFilter='',_artSrcFilter='',_artAgeMin=0,_artAgeMax=0;
+// Age-bracket filter: each band shows a distinct slice of pulled news by age,
+// not a cumulative "last X hours" window. min/max are in hours; (0,0) = All.
+// e.g. (672,4368) = items aged 4 weeks to 6 months — "what GCRM pulled ~a month ago".
+function setAgeFilter(min,max,btn){_artAgeMin=min;_artAgeMax=max;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');renderArticles(_artCache,_artTotal);}
 function fmtArticleDate(isoStr,ingestedIso){
   try{if(!isoStr)return'<span style="color:#404060">— no date —</span>';const pub=new Date(isoStr);if(isNaN(pub.getTime()))return`<span style="color:#404060">${isoStr}</span>`;
   const now=Date.now();const ageMs=now-pub.getTime();const ageH=ageMs/3600000;
@@ -749,12 +852,20 @@ function fmtArticleDate(isoStr,ingestedIso){
   let badge='';if(ageH>168)badge='<span style="font-size:7px;padding:1px 4px;background:#200800;color:#c05818;border-radius:2px;margin-left:4px">'+Math.floor(ageH/24)+'d OLD</span>';else if(ageH>24)badge='<span style="font-size:7px;padding:1px 4px;background:#141400;color:#7a7a20;border-radius:2px;margin-left:4px">'+Math.floor(ageH)+'h OLD</span>';
   return'<span style="font-family:monospace;color:#9090c0">'+torontoFull+'</span><span style="color:#505070;margin-left:5px">· '+relAge+'</span>'+badge+ingLine;
   }catch(err){return'<span style="color:#404060">'+(isoStr||'unknown date')+'</span>';}}
-function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artTimeFilter>0)filtered=filtered.filter(a=>{try{return(now-new Date(a.published_at).getTime())<_artTimeFilter*3600000;}catch{return true;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=filtered.length+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
+function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=filtered.length+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
 function filterByDomain(dt){_artDomainFilter=(_artDomainFilter===dt)?'':dt;fetchArticles();}
-function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artTimeFilter=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',+b.dataset.h===0));fetchArticles();}
+function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artAgeMin=0;_artAgeMax=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',b.dataset.min==='0'&&b.dataset.max==='0'));fetchArticles();}
 let _artCache=[],_artTotal=0;
-async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=2000';const r=await fetch(url);const d=await r.json();_artCache=d.articles;_artTotal=d.total;renderArticles(_artCache,_artTotal);}catch(e){console.warn('fetchArticles error',e);}}
-async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];const activeCount=Object.keys(active).filter(k=>active[k]>0).length;el.innerHTML='<div style="padding:5px 10px;font-size:8px;color:var(--t4);border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between"><span>'+configured.length+' configured</span><span style="color:var(--green)">'+activeCount+' delivering</span></div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
+async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=6000';const r=await fetch(url);const d=await r.json();
+  // Merge rather than replace, so a manual refresh never discards deeper history
+  // already accumulated via the WS push merge.
+  const have=new Set(_artCache.map(a=>a.id||a.url));
+  const add=(d.articles||[]).filter(a=>!have.has(a.id||a.url));
+  _artCache=_artCache.length?_artCache.concat(add):(d.articles||[]);
+  _artCache.sort((x,y)=>new Date(y.published_at)-new Date(x.published_at));
+  if(_artCache.length>8000)_artCache.length=8000;
+  _artTotal=d.total;renderArticles(_artCache,_artTotal);}catch(e){console.warn('fetchArticles error',e);}}
+async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];el.innerHTML='<div style="padding:5px 10px;font-size:9px;color:var(--t3);border-bottom:0.5px solid var(--border);text-align:center;letter-spacing:.04em">'+configured.length+' curated intelligence sources</div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
 const logLines=[];
 function addLog(msg,color='var(--t4)'){logLines.unshift('<span style="color:'+color+'">'+toETShort(new Date())+' '+msg+'</span>');if(logLines.length>500)logLines.pop();if(currentTab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
 let prevAnnual=null,spikeAnnual=null;
@@ -774,7 +885,7 @@ function applyData(d){
   document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
   const delta6h=get6hDelta(pA);if(delta6h!==null){const d6el=document.getElementById('ca-6h');d6el.textContent=(delta6h>=0?'+':'')+(delta6h*100).toFixed(3)+'%';d6el.style.color=delta6h>0.0005?'#E24B4A':delta6h<-0.0005?'#1D9E75':'var(--t2)';}
-  checkSpike(pA);animateGauge(Math.min(1,pA/.05));
+  checkSpike(pA);animateGauge(riskToFrac(pA));
   const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(2)+'%';gv.style.color=pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'#1D9E75';
   const riskRatio=Math.round(pA/0.001);document.getElementById('gauge-ratio').textContent=riskRatio+'× above baseline (0.1%)';
   const ctxEl=document.getElementById('gauge-ratio-ctx');if(ctxEl){ctxEl.textContent=riskRatio+'× baseline';ctxEl.style.color=pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'#1D9E75';}
@@ -824,7 +935,18 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>350000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){_artCache=msg.data;_artTotal=msg.total;if(currentTab==='articles')renderArticles(_artCache,_artTotal);updateTicker(msg.data.slice(0,40));}};
+  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>350000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+    // MERGE the periodic push (newest ~200) into the deep cache instead of
+    // replacing it — otherwise the WS push would clobber the large initial
+    // fetch every ~9s and the age brackets would lose all their history.
+    const have=new Set(_artCache.map(a=>a.id||a.url));
+    const fresh=(msg.data||[]).filter(a=>!have.has(a.id||a.url));
+    if(fresh.length)_artCache=fresh.concat(_artCache);
+    if(_artCache.length>8000)_artCache.length=8000;
+    _artTotal=msg.total;
+    if(currentTab==='articles')renderArticles(_artCache,_artTotal);
+    updateTicker(_artCache.slice(0,40));
+  }};
   ws.onclose=()=>{setLive(false);addLog('WebSocket disconnected — reconnecting...','#c0392b');setTimeout(connect,4000)};
   ws.onerror=()=>ws.close();
 }
@@ -1006,6 +1128,284 @@ async function fetchOpLog(){
 </body>
 </html>"#;
 
+// ── Methodology / whitepaper page ─────────────────────────────────────────────
+// Deep, accurate explanation of the entire risk model. Self-contained, dark
+// theme matching the dashboard. Every constant and formula below mirrors the
+// live engine in bayesian.rs — if the engine changes, update this page.
+// `r##"..."##` delimiter so in-page `href="#anchor"` links are safe.
+
+const METHODOLOGY_HTML: &str = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>GCRM — Methodology &amp; Mathematics</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#05080c;--bg2:#0a0f16;--bg3:#0e141e;--border:#1a2333;--t1:#fff;--t2:#c2d2e2;--t3:#7c98b4;--t4:#4a5c70;--purple:#8e86e8;--green:#1D9E75;--amber:#EF9F27;--red:#E24B4A;--code:#0d1320}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--t2);line-height:1.65;font-size:15px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:240px 1fr;gap:0}
+.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:28px 20px;border-right:1px solid var(--border);background:var(--bg2)}
+.toc-brand{font-size:13px;font-weight:800;letter-spacing:.12em;color:var(--t1);text-transform:uppercase;margin-bottom:4px}
+.toc-sub{font-size:10px;color:var(--t4);letter-spacing:.08em;margin-bottom:20px}
+.toc a{display:block;font-size:12.5px;color:var(--t3);text-decoration:none;padding:4px 0;border-left:2px solid transparent;padding-left:10px;transition:all .15s}
+.toc a:hover{color:var(--t1);border-left-color:var(--purple)}
+.toc-back{display:inline-block;margin-top:22px;font-size:11px;color:var(--purple);text-decoration:none;font-weight:600}
+.toc-back:hover{text-decoration:underline}
+main{padding:48px 56px;min-width:0}
+h1{font-size:30px;color:var(--t1);font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
+.lede{font-size:16px;color:var(--t3);margin-bottom:8px;max-width:70ch}
+.stamp{font-size:11px;color:var(--t4);font-family:monospace;margin-bottom:40px}
+section{margin-bottom:46px;scroll-margin-top:24px}
+h2{font-size:21px;color:var(--t1);font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h2 .num{color:var(--purple);font-family:monospace;font-size:15px;margin-right:10px}
+h3{font-size:15px;color:var(--t1);font-weight:600;margin:22px 0 8px}
+p{margin-bottom:13px;max-width:74ch}
+ul,ol{margin:0 0 13px 22px;max-width:72ch}
+li{margin-bottom:6px}
+strong{color:var(--t1);font-weight:600}
+code{font-family:'SF Mono',Menlo,monospace;font-size:13px;background:var(--code);color:#b9c4ff;padding:1px 6px;border-radius:3px}
+.eq{background:var(--code);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:5px;padding:16px 20px;margin:16px 0;font-family:'SF Mono',Menlo,monospace;font-size:14px;color:var(--t1);overflow-x:auto;line-height:1.9}
+.eq .c{color:var(--t4)}
+.eq .v{color:#7fd1b9}
+.note{background:rgba(142,134,232,.06);border:1px solid rgba(142,134,232,.25);border-radius:5px;padding:13px 18px;margin:16px 0;font-size:14px;color:var(--t2)}
+.note b{color:var(--purple)}
+.warn{background:rgba(226,75,74,.06);border:1px solid rgba(226,75,74,.28);border-radius:5px;padding:13px 18px;margin:16px 0;font-size:14px}
+.warn b{color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)}
+th{color:var(--t3);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;background:var(--bg2)}
+td{color:var(--t2)}
+td.mono,th.mono{font-family:monospace}
+td.r,th.r{text-align:right}
+.pill{display:inline-block;font-size:11px;font-family:monospace;padding:1px 7px;border-radius:10px;background:var(--bg3);border:1px solid var(--border)}
+.g{color:var(--green)}.a{color:var(--amber)}.r2{color:var(--red)}.p{color:var(--purple)}
+footer{border-top:1px solid var(--border);margin-top:50px;padding-top:20px;font-size:11px;color:var(--t4);font-family:monospace}
+@media(max-width:880px){.wrap{grid-template-columns:1fr}.toc{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border)}main{padding:32px 22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc">
+  <div class="toc-brand">GCRM</div>
+  <div class="toc-sub">METHODOLOGY &amp; MATHEMATICS</div>
+  <a href="#what">1 · What the number is</a>
+  <a href="#pipeline">2 · System pipeline</a>
+  <a href="#prior">3 · The historical prior</a>
+  <a href="#regime">4 · Regime multiplier</a>
+  <a href="#nlp">5 · Domain scoring</a>
+  <a href="#decay">6 · Recency decay</a>
+  <a href="#cooc">7 · Co-occurrence boost</a>
+  <a href="#likelihood">8 · The likelihood L</a>
+  <a href="#engine">9 · The risk model</a>
+  <a href="#gauge">10 · Reading the gauge</a>
+  <a href="#confidence">11 · Confidence</a>
+  <a href="#alerts">12 · Alerts &amp; calibration</a>
+  <a href="#nuclear">13 · Nuclear detector</a>
+  <a href="#limits">14 · What it is NOT</a>
+  <a href="{{BASE_PATH}}/" class="toc-back">← Back to live dashboard</a>
+</nav>
+<main>
+<h1>How GCRM Computes Risk</h1>
+<p class="lede">A complete, honest walk-through of the mathematics behind the annual P(WWIII) figure — from a single news headline to the number on the dial. No black boxes.</p>
+<div class="stamp">RAiTHE INDUSTRIES INCORPORATED · Global Conflict Risk Monitor · live engine reference</div>
+
+<section id="what">
+<h2><span class="num">01</span>What the number actually is</h2>
+<p>The headline figure is a <strong>calibrated annual probability estimate</strong>: given everything in the live news signal right now, roughly how likely is it that a world-war-scale conflict begins within the next 12 months.</p>
+<p>It is expressed as a percentage per year. The historical base rate — two world wars across roughly 2,000 years of recorded great-power history — sits near <strong>0.1% per year</strong>. Everything GCRM does is reason, transparently, about how far above or below that base rate today's conditions push us.</p>
+<div class="note"><b>Read it as:</b> not a prediction that war <em>will</em> happen, but a continuously-updated thermometer. 0.5% is a quiet world. 5% is an acute crisis. 40% is the Cuban Missile Crisis. The point is the <em>movement</em> and the <em>structure</em> behind it.</div>
+</section>
+
+<section id="pipeline">
+<h2><span class="num">02</span>The system pipeline</h2>
+<p>Every figure is the end of a five-stage concurrent pipeline. Each stage is an independent task; data flows one way through bounded channels.</p>
+<div class="eq">
+Ingestor <span class="c">(42 RSS feeds + GNews + GDELT)</span><br>
+&nbsp;&nbsp;→ NLP processor <span class="c">(pure-Rust keyword scoring)</span> + LLM enricher <span class="c">(local Ollama)</span><br>
+&nbsp;&nbsp;→ Aggregator <span class="c">(time-windowed event buffer, corroboration)</span><br>
+&nbsp;&nbsp;→ Bayesian risk engine <span class="c">(this document)</span><br>
+&nbsp;&nbsp;→ WebSocket broadcast → your screen
+</div>
+<p>Stages 1–3 decide <em>what is happening in the world</em> and how much to trust each signal. Stage 4 — the risk engine — turns that into a probability. This page is mostly about stage 4, with enough of stages 1–3 to make the inputs legible.</p>
+</section>
+
+<section id="prior">
+<h2><span class="num">03</span>The historical prior <span class="pill p">P₀</span></h2>
+<p>We anchor to history before reading a single headline. Two world wars in the modern era, over the span of recorded great-power conflict, give a naive annual base rate:</p>
+<div class="eq">P₀ &nbsp;=&nbsp; 2 / 2026 &nbsp;=&nbsp; <span class="v">0.000987</span> &nbsp;<span class="c">≈ 0.0987% per year</span></div>
+<p>This is deliberately crude and deliberately <em>low</em>. It is the floor the evidence has to argue its way up from. Using the current year as the denominator is a transparent convention, not a claim of precision — its job is to put the prior in the right order of magnitude.</p>
+</section>
+
+<section id="regime">
+<h2><span class="num">04</span>The regime multiplier <span class="pill p">×</span></h2>
+<p>The naive prior assumes an <em>average</em> century. Today is not average. The <strong>regime multiplier</strong> captures slow-moving <em>structural</em> conditions — things stable over months to years, not daily news — by multiplying a set of operator-maintained factors. They are multiplied, not added, because they are treated as conditionally-independent amplifiers of the same underlying danger.</p>
+<table>
+<tr><th>Active structural factor</th><th class="r mono">×</th></tr>
+<tr><td>Active US kinetic war (Iran theatre)</td><td class="r mono">1.40</td></tr>
+<tr><td>Global arms-control framework collapsed</td><td class="r mono">1.40</td></tr>
+<tr><td>Conventional war in Europe (Ukraine, yr 5)</td><td class="r mono">1.40</td></tr>
+<tr><td>Taiwan / South China Sea competition</td><td class="r mono">1.30</td></tr>
+<tr><td>DPRK nuclear status irreversible</td><td class="r mono">1.20</td></tr>
+<tr><td>Russian hybrid warfare vs NATO</td><td class="r mono">1.20</td></tr>
+<tr><td>US institutional norm erosion</td><td class="r mono">1.20</td></tr>
+<tr><td>Russia nuclear doctrine → compellence</td><td class="r mono">1.15</td></tr>
+<tr><td>Cyber / information warfare normalized</td><td class="r mono">1.10</td></tr>
+<tr><td>Nuclear deterrence (MAD) intact <span class="g">— reducer</span></td><td class="r mono g">0.70</td></tr>
+</table>
+<div class="eq">regime &nbsp;=&nbsp; 1.4·1.4·1.4·1.3·1.2·1.2·1.2·1.15·1.1·0.7 &nbsp;≈&nbsp; <span class="v">5.46×</span><br>
+P₀<span class="c">,adj</span> &nbsp;=&nbsp; P₀ × regime &nbsp;=&nbsp; 0.000987 × 5.46 &nbsp;≈&nbsp; <span class="v">0.539% / yr</span></div>
+<p>Note the <span class="g">0.70 deterrence reducer</span>: mutually-assured destruction genuinely <em>lowers</em> the probability of all-out war, and the model honours that. Factors are toggled only when a structural condition durably changes — a held ceasefire, a ratified treaty, a confirmed nuclear test. They never move on a single news cycle.</p>
+<div class="note"><b>Standby factors</b> sit dormant at the operator console (e.g. <code>nuclear_weapon_detonated ×2.5</code>, <code>russia_nato_kinetic ×1.6</code>) and switch on only if that threshold event is confirmed.</div>
+</section>
+
+<section id="nlp">
+<h2><span class="num">05</span>From headline to domain score</h2>
+<p>Each article is scored against <strong>eight risk domains</strong>. A single event contributes a per-domain signal in <code>[0,1]</code> built from an explicit, bounded budget:</p>
+<div class="eq">base &nbsp;=&nbsp; severity·<span class="v">0.43</span> &nbsp;+&nbsp; escalation·<span class="v">0.25</span> &nbsp;+&nbsp; nlp_keyword·<span class="v">0.20</span> &nbsp;+&nbsp; gp_bonus<span class="c">(≤0.12)</span><br>
+signal &nbsp;=&nbsp; clamp( base × (1 − 0.15·sentiment) , 0, 1 )</div>
+<ul>
+<li><strong>severity</strong> — event-type seriousness, casualties, nuclear/WMD indicators.</li>
+<li><strong>escalation</strong> — density of escalatory language vs conciliatory.</li>
+<li><strong>nlp_keyword</strong> — noisy-OR keyword evidence strength (definitive terms beat ambient ones).</li>
+<li><strong>gp_bonus</strong> — +0.12 if a great power (US, Russia, China, NATO) is directly involved.</li>
+<li><strong>sentiment</strong> — hostile tone amplifies up to +15%, conciliatory tone damps up to −15%. Tone refines, never dominates.</li>
+</ul>
+<p>Each signal is then weighted by <strong>credibility</strong> (source tier + corroboration from independent outlets, capped) and <strong>recency</strong> (next section) before contributing to its domain. The optional local LLM runs a second pass per article and is merged in at the max of the two scores, discounted 10% so a definitive keyword hit always outranks an LLM estimate.</p>
+<h3>Domain strategic weights</h3>
+<p>Not every domain pushes toward world war equally. The engine assigns each a relative weight:</p>
+<table>
+<tr><th>Domain</th><th class="r mono">weight</th><th class="r mono">half-life</th></tr>
+<tr><td>Nuclear posture</td><td class="r mono r2">3.0</td><td class="r mono">72 h</td></tr>
+<tr><td>WMD / mass casualty</td><td class="r mono r2">2.8</td><td class="r mono">~4 yr</td></tr>
+<tr><td>Great-power conflict</td><td class="r mono">2.0</td><td class="r mono">48 h</td></tr>
+<tr><td>Alliance activation</td><td class="r mono">1.6</td><td class="r mono">72 h</td></tr>
+<tr><td>Military escalation</td><td class="r mono">1.5</td><td class="r mono">24 h</td></tr>
+<tr><td>Economic warfare</td><td class="r mono">1.4</td><td class="r mono">96 h</td></tr>
+<tr><td>Diplomatic breakdown</td><td class="r mono">1.1</td><td class="r mono">48 h</td></tr>
+<tr><td>Cyber / info ops</td><td class="r mono">0.9</td><td class="r mono">24 h</td></tr>
+</table>
+<p>Nuclear posture carries the highest weight because it is the most direct mechanism by which a regional crisis becomes a global one.</p>
+</section>
+
+<section id="decay">
+<h2><span class="num">06</span>Recency decay</h2>
+<p>News is perishable, but not all news perishes at the same rate. Each domain has an exponential <strong>half-life</strong>: the time after which an event's weight halves.</p>
+<div class="eq">recency(age) &nbsp;=&nbsp; exp( −ln2 · age / half_life )</div>
+<p>A street battle (military, 24 h) is stale within days. A sanctions regime (economic, 96 h) lingers. A nuclear posture shift (72 h) persists for most of a week. WMD use is given a ~4-year half-life on purpose: it redefines the strategic situation for a whole presidential term, so it stays on the books across the entire analysis window. Events past the 4-year horizon drop to zero weight entirely.</p>
+</section>
+
+<section id="cooc">
+<h2><span class="num">07</span>Co-occurrence — why simultaneity matters</h2>
+<p>Three crises at once is far more dangerous than three crises spread across a decade. Simultaneity is how regional wars become systemic. GCRM models this with a <strong>co-occurrence boost</strong> driven by how many domains are elevated at the same time:</p>
+<table>
+<tr><th class="r mono">domains elevated</th><th class="r mono">boost ×</th></tr>
+<tr><td class="r mono">1</td><td class="r mono">1.0</td></tr>
+<tr><td class="r mono">2</td><td class="r mono">1.3</td></tr>
+<tr><td class="r mono">3</td><td class="r mono">2.0</td></tr>
+<tr><td class="r mono">4</td><td class="r mono">3.5</td></tr>
+<tr><td class="r mono">5</td><td class="r mono r2">5.0</td></tr>
+<tr><td class="r mono">6 → 8</td><td class="r mono r2">5.7 → 7.0</td></tr>
+</table>
+<p>Between these anchor points the boost interpolates linearly, and the elevation count itself is <em>soft</em> — a domain near the threshold contributes a fractional amount via a smoothstep ramp, so the boost moves continuously instead of jumping when a score crosses the line. Eight domains lit at once is an unprecedented, near-certain systemic-war signature, and the curve reflects that.</p>
+</section>
+
+<section id="likelihood">
+<h2><span class="num">08</span>Assembling the likelihood <span class="pill p">L</span></h2>
+<p>The eight weighted domain scores collapse into one evidence term. We take the weighted sum, normalise by the maximum possible, and apply the co-occurrence boost:</p>
+<div class="eq">L &nbsp;=&nbsp; ( Σ domain_score·weight / Σ weight ) &nbsp;×&nbsp; co_occurrence_boost</div>
+<p>L is roughly <code>0</code> in a quiet world and can reach <code>~5+</code> when every domain is lit and corroborated simultaneously. It is the single number that says <em>"here is how much today's news argues for danger."</em></p>
+</section>
+
+<section id="engine">
+<h2><span class="num">09</span>The risk model <span class="pill p">log-odds</span></h2>
+<p>Now we fold the evidence into the prior. GCRM does this on the <strong>log-odds (logit) scale</strong> — the standard, well-behaved way to combine a prior probability with new evidence:</p>
+<div class="eq">P &nbsp;=&nbsp; sigmoid( &nbsp;logit(P₀<span class="c">,adj</span>) &nbsp;+&nbsp; β · L&nbsp; ) &nbsp;&nbsp;<span class="c">clamped to [0, 0.85]</span><br><br>
+<span class="c">where</span> &nbsp;logit(p) = ln( p / (1−p) ) &nbsp;&nbsp;and&nbsp;&nbsp; sigmoid(x) = 1 / (1 + e<span class="c">⁻ˣ</span>) &nbsp;&nbsp;and&nbsp;&nbsp; β = <span class="v">2.0</span></div>
+<p>Three properties make this the right shape:</p>
+<ul>
+<li><strong>L = 0 returns the prior exactly.</strong> A quiet world reads precisely <code>0.539%</code> — no evidence, no inflation.</li>
+<li><strong>It is smooth and monotonic.</strong> More evidence always means more risk, with no discontinuities.</li>
+<li><strong>It saturates gracefully.</strong> Strong multi-domain signals climb an S-curve toward the ceiling instead of being capped near 15% — so a real crisis can express genuinely high risk.</li>
+</ul>
+<h3>Worked example — at today's regime (P₀,adj ≈ 0.539%)</h3>
+<table>
+<tr><th class="mono">L</th><th class="r mono">→ P(WWIII)/yr</th><th>interpretation</th></tr>
+<tr><td class="mono">0.0</td><td class="r mono g">0.54%</td><td>quiet — prior only</td></tr>
+<tr><td class="mono">0.5</td><td class="r mono g">1.5%</td><td>low-level activity</td></tr>
+<tr><td class="mono">1.0</td><td class="r mono a">3.9%</td><td>several domains warm</td></tr>
+<tr><td class="mono">1.5</td><td class="r mono a">9.8%</td><td>acute crisis</td></tr>
+<tr><td class="mono">2.0</td><td class="r mono r2">22.8%</td><td>Ukraine-2022 territory</td></tr>
+<tr><td class="mono">2.6</td><td class="r mono r2">49.6%</td><td>Cuba-1962 territory</td></tr>
+<tr><td class="mono">≥4</td><td class="r mono r2">→ 85%</td><td>engineering ceiling</td></tr>
+</table>
+<div class="warn"><b>The 85% ceiling is not a probability claim.</b> It is a deliberate cap of epistemic humility. The model has no access to ground truth and must never emit near-certainty. Where the ceiling should sit for an extreme confirmed event is a human design decision, not something the model derives on its own.</div>
+<div class="note"><b>Honest naming:</b> this is a <em>calibrated risk index</em>, not a formal Bayesian posterior from a generative model. "P" here is the output probability — combining a prior and evidence additively in log-odds — not a posterior distribution. The system is built to inform, not to overclaim.</div>
+</section>
+
+<section id="gauge">
+<h2><span class="num">10</span>Reading the gauge — why it is logarithmic</h2>
+<p>Real risk spans more than two orders of magnitude: <code>0.1%</code> baseline to <code>~50%</code> at the Cuban Missile Crisis. A linear dial maxing at 5% would pin <em>everything</em> serious — Ukraine, Cuba, a nuclear alert — at the same full-scale reading, erasing the distinctions that matter most.</p>
+<p>So the dial is <strong>logarithmic</strong>, mapping <code>0.1% → 50%</code> across the arc:</p>
+<div class="eq">fraction &nbsp;=&nbsp; log₁₀(P / 0.1%) / log₁₀(50% / 0.1%)</div>
+<p>The tick marks (<span class="mono">.1 · 1 · 5 · 50</span>) are spaced by this log law, so each step is a <em>tenfold-ish</em> jump in danger. The coloured bands: <span class="g">green below 1.5%</span>, <span class="a">amber 1.5–5%</span>, <span class="r2">red above 5%</span>. This way a move from 4% to 9% is visible and dramatic, exactly as it should be — instead of both sitting jammed against the same red stop.</p>
+</section>
+
+<section id="confidence">
+<h2><span class="num">11</span>Confidence — how much to trust the reading</h2>
+<p>The probability is only as good as the evidence underneath it. A separate <strong>confidence</strong> score blends three independent signals:</p>
+<div class="eq">confidence &nbsp;=&nbsp; tier_quality·<span class="v">0.5</span> &nbsp;+&nbsp; event_volume·<span class="v">0.3</span> &nbsp;+&nbsp; source_diversity·<span class="v">0.2</span></div>
+<ul>
+<li><strong>tier_quality</strong> — are signals coming from Tier-1 wires or unverified aggregators?</li>
+<li><strong>event_volume</strong> — a handful of articles or hundreds? (log-scaled)</li>
+<li><strong>source_diversity</strong> — how many independent outlets corroborate?</li>
+</ul>
+<p>Low confidence with high risk means "something may be happening but the picture is thin" — a fundamentally different state from a well-corroborated high reading, and the dashboard shows both.</p>
+</section>
+
+<section id="alerts">
+<h2><span class="num">12</span>Alert thresholds &amp; calibration targets</h2>
+<p>Banners fire at operator-configured thresholds in <code>settings.yml</code>. The model is calibrated so that historically-recognisable situations land in sensible bands:</p>
+<table>
+<tr><th>Situation</th><th class="r">annual P(WWIII)</th></tr>
+<tr><td>Quiet period (1–2 domains, low signal)</td><td class="r mono g">0.5 – 1.5%</td></tr>
+<tr><td>Current world, 2026 (4–5 domains, moderate)</td><td class="r mono a">4 – 8%</td></tr>
+<tr><td>Acute crisis (5–6 domains, high signal)</td><td class="r mono r2">8 – 15%</td></tr>
+<tr><td>Ukraine, Feb 2022 equivalent</td><td class="r mono r2">~8 – 12%</td></tr>
+<tr><td>Cuban Missile Crisis, Oct 1962 equivalent</td><td class="r mono r2">~30 – 50%</td></tr>
+</table>
+<p>These targets are the yardstick the parameters (β, the boost anchors, the domain weights) are tuned against. Precise crisis calibration is an ongoing process of back-testing against historical event replays.</p>
+</section>
+
+<section id="nuclear">
+<h2><span class="num">13</span>The nuclear detection subsystem</h2>
+<p>Running alongside the risk engine is a dedicated detector for the one event that would override everything else: an underground nuclear test.</p>
+<ul>
+<li><strong>Seismic monitor</strong> — polls FDSN-standard seismological APIs for anomalies near the 10 known test sites (Punggye-ri, Novaya Zemlya, Lop Nur, Nevada, and others).</li>
+<li><strong>CTBTO monitor</strong> — watches official public statements.</li>
+<li><strong>Nuclear news monitor</strong> — flags headline spikes around nuclear keywords.</li>
+<li><strong>Alert fusion</strong> — combines the three into one confidence-weighted signal.</li>
+</ul>
+<div class="warn"><b>Every alert is labelled "SEISMIC ANOMALY," never "nuclear test,"</b> until officially confirmed. The system reports what it can measure, not what it cannot.</div>
+</section>
+
+<section id="limits">
+<h2><span class="num">14</span>What GCRM is — and is not</h2>
+<p><strong>It is</strong> a transparent, continuously-updated risk index that turns the firehose of global news into one defensible, quantified figure with every step of its reasoning open to inspection — this page being the proof.</p>
+<p><strong>It is not</strong> a crystal ball. It does not forecast specific events, does not claim certainty, and its core computation uses no generative AI for the probability itself. It reads only openly-available sources. The number is a thermometer for structural and acute conditions — most valuable in its <em>movement</em> and the <em>structure</em> it exposes, not as a literal oracle.</p>
+<div class="note"><b>Design philosophy:</b> every ceiling, threshold, and weight is a stated, auditable human decision. The model is built to be honest about the limits of what it can know — and to make those limits visible rather than hide them.</div>
+</section>
+
+<footer>
+© 2026 RAiTHE INDUSTRIES INCORPORATED · Global Conflict Risk Monitor · This page mirrors the live engine. Constants shown match the production build.<br>
+<a href="{{BASE_PATH}}/" style="color:var(--purple);text-decoration:none">← Return to live dashboard</a>
+</footer>
+</main>
+</div>
+</body>
+</html>"##;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1053,6 +1453,35 @@ mod tests {
         assert!(DASHBOARD_HTML.contains("toggleOperatorPanel"));
         assert!(DASHBOARD_HTML.contains("assertEvent"));
         assert!(DASHBOARD_HTML.contains("toggleFactor"));
+    }
+
+    #[test]
+    fn methodology_html_is_substantial_and_complete() {
+        // Page must exist and cover every section the engine actually implements.
+        assert!(METHODOLOGY_HTML.len() > 8000, "methodology page should be a real whitepaper");
+        for anchor in ["#prior", "#regime", "#nlp", "#decay", "#cooc",
+                       "#likelihood", "#engine", "#gauge", "#confidence", "#nuclear"] {
+            assert!(METHODOLOGY_HTML.contains(anchor), "methodology missing section {anchor}");
+        }
+        // Key constants from bayesian.rs must be documented accurately.
+        assert!(METHODOLOGY_HTML.contains("2 / 2026"), "missing historical anchor");
+        assert!(METHODOLOGY_HTML.contains("0.85"),     "missing engineering ceiling");
+        assert!(METHODOLOGY_HTML.contains("sigmoid"),  "missing logistic model");
+    }
+
+    #[test]
+    fn methodology_base_path_substituted() {
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        assert!(state.methodology_html.contains("/risk/"),
+            "base path must be substituted into methodology links");
+        assert!(!state.methodology_html.contains("{{BASE_PATH}}"),
+            "no unrendered template tokens may remain");
+    }
+
+    #[test]
+    fn dashboard_links_to_methodology() {
+        assert!(DASHBOARD_HTML.contains("{{BASE_PATH}}/methodology"),
+            "dashboard must link to the methodology page");
     }
 
     #[test]

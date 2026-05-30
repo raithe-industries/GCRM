@@ -58,7 +58,8 @@
       "Bash(sudo systemctl status gcrm --no-pager)",
       "Bash(env)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\)\")",
-      "Bash(wrangler whoami *)"
+      "Bash(wrangler whoami *)",
+      "Bash(grep *)"
     ]
   }
 }

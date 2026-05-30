@@ -41,7 +41,7 @@ use tracing::{info, warn};
 
 use crate::aggregator::AppState;
 use crate::llm_enricher::{LlmEnricher, LlmScores};
-use crate::models::{GeopoliticalEvent, LlmSettings, RawArticle, SourceTier, is_great_power};
+use crate::models::{GeopoliticalEvent, LlmSettings, RawArticle, is_great_power};
 use crate::processor::{FuzzyDedup, NlpProcessor};
 
 // ── NlpSidecarHandle ─────────────────────────────────────────────────────────

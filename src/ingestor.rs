@@ -82,18 +82,16 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",   source: "nyt",             tier: SourceTier::Tier1 },
     FeedSpec { url: "https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml", source: "nyt",             tier: SourceTier::Tier1 },
     FeedSpec { url: "https://rss.nytimes.com/services/xml/rss/nyt/AsiaPacific.xml",source: "nyt",             tier: SourceTier::Tier1 },
-    // WaPo
-    FeedSpec { url: "https://feeds.washingtonpost.com/rss/world",                  source: "wapo",            tier: SourceTier::Tier1 },
-    FeedSpec { url: "https://feeds.washingtonpost.com/rss/national-security",      source: "wapo",            tier: SourceTier::Tier1 },
+    // WSJ World — replaces WaPo (feeds.washingtonpost.com discontinued its public RSS)
+    FeedSpec { url: "https://feeds.a.dj.com/rss/RSSWorldNews.xml",                 source: "wsj",             tier: SourceTier::Tier1 },
     // Foreign Policy
     FeedSpec { url: "https://foreignpolicy.com/feed/",                             source: "foreignpolicy",   tier: SourceTier::Tier1 },
     // Defense-specific Tier 1
     FeedSpec { url: "https://www.defensenews.com/arc/outboundfeeds/rss/",          source: "defensenews",     tier: SourceTier::Tier1 },
     FeedSpec { url: "https://warontherocks.com/feed/",                             source: "warontherocks",   tier: SourceTier::Tier1 },
     FeedSpec { url: "https://taskandpurpose.com/feed/",                            source: "taskpurpose",     tier: SourceTier::Tier1 },
-    // Wire services Tier 1
-    FeedSpec { url: "https://feeds.reuters.com/reuters/worldNews",                 source: "reuters",         tier: SourceTier::Tier1 },
-    FeedSpec { url: "https://feeds.reuters.com/Reuters/worldNews",                 source: "reuters",         tier: SourceTier::Tier1 },
+    // (Reuters discontinued its public RSS feeds globally — removed; GNews/GDELT
+    //  still surface Reuters-originated coverage through the search APIs.)
     // Nuclear/arms Tier 1 — highest credibility for nuclear signals
     FeedSpec { url: "https://www.armscontrol.org/taxonomy/term/1/feed",            source: "armscontrol",     tier: SourceTier::Tier1 },
     FeedSpec { url: "https://fas.org/feed/",                                       source: "fas",             tier: SourceTier::Tier1 },
@@ -102,7 +100,7 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://breakingdefense.com/feed/",                           source: "breakingdefense", tier: SourceTier::Tier1 },
     FeedSpec { url: "https://www.defensenews.com/arc/outboundfeeds/rss/category/pentagon/", source: "defensenews_pentagon", tier: SourceTier::Tier1 },
     // Think-tank / policy Tier 1
-    FeedSpec { url: "https://www.lawfaremedia.org/feed",                           source: "lawfare",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://thediplomat.com/feed/",                               source: "thediplomat",     tier: SourceTier::Tier1 },
     FeedSpec { url: "https://www.justsecurity.org/feed/",                          source: "justsecurity",    tier: SourceTier::Tier1 },
     // OSINT/analysis Tier 1
     FeedSpec { url: "https://www.bellingcat.com/feed/",                            source: "bellingcat",      tier: SourceTier::Tier1 },
@@ -138,16 +136,17 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.atlanticcouncil.org/feed/",                        source: "atlanticcouncil", tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.brookings.edu/feed/",                              source: "brookings",       tier: SourceTier::Tier2 },
     FeedSpec { url: "https://carnegieendowment.org/feed/",                          source: "carnegie",        tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.stimson.org/feed/",                                source: "stimson",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://mwi.westpoint.edu/feed/",                              source: "mwi",             tier: SourceTier::Tier2 },
     FeedSpec { url: "https://jamestown.org/feed/",                                  source: "jamestown",       tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://responsiblestatecraft.org/feed/",                       source: "responsiblestatecraft", tier: SourceTier::Tier2 },
     // Official / intergovernmental
     FeedSpec { url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml",       source: "un_news",         tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.nato.int/cps/en/natolive/news.htm?feed=true",      source: "nato",            tier: SourceTier::Tier2 },
+    // (NATO retired its public news RSS endpoint — removed.)
     // European broadcasters
     FeedSpec { url: "https://rss.dw.com/rdf/rss-en-world",                         source: "dw",              tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.france24.com/en/rss",                              source: "france24",        tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.euronews.com/rss",                                 source: "euronews",        tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.voanews.com/rss/z/5752",                           source: "voa",             tier: SourceTier::Tier2 },
+    // (VOA retired the /rss/z/5752 zone feed — no clean XML replacement; removed.)
     // US outlets
     FeedSpec { url: "https://feeds.feedburner.com/time/world",                      source: "time",            tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.cbsnews.com/latest/rss/world",                     source: "cbsnews",         tier: SourceTier::Tier2 },
@@ -164,13 +163,60 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.dawn.com/feeds/home",                              source: "dawn_pk",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://theprint.in/feed/",                                    source: "theprint_in",     tier: SourceTier::Tier2 },
     // Middle East
-    FeedSpec { url: "https://www.arabnews.com/category/middle-east/rss.xml",        source: "arabnews",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.arabnews.com/rss.xml",                             source: "arabnews",        tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.aa.com.tr/en/rss/default?cat=world",               source: "anadolu",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.haaretz.com/cmlink/1.628752",                      source: "haaretz",         tier: SourceTier::Tier2 },
     // Investigative / OSINT Tier 2
-    FeedSpec { url: "https://eurasianet.org/rss.xml",                               source: "eurasianet",      tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.occrp.org/en/component/ocrss/feed/articles.rss",   source: "occrp",           tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://meduza.io/rss/en/all",                                 source: "meduza",          tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.occrp.org/en/feed",                                source: "occrp",           tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.rferl.org/api/zqpqpqtlvrpqty",                     source: "rferl",           tier: SourceTier::Tier2 },
+
+    // ── 2026-05 expansion — 35 feeds added to broaden global coverage past 100 ──
+    // Every URL below was probed from the production host and confirmed to return
+    // HTTP 200 with valid RSS/Atom XML before inclusion.
+    // Major international / wire — Tier 1
+    FeedSpec { url: "https://feeds.nbcnews.com/nbcnews/public/world",               source: "nbcnews",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.foreignaffairs.com/rss.xml",                       source: "foreignaffairs",  tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.lemonde.fr/en/rss/une.xml",                        source: "lemonde",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.spiegel.de/international/index.rss",               source: "spiegel",         tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.economist.com/international/rss.xml",              source: "economist",       tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://feeds.bloomberg.com/politics/news.rss",               source: "bloomberg",       tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://asia.nikkei.com/rss/feed/nar",                         source: "nikkei",          tier: SourceTier::Tier1 },
+    // Defense / military analysis — Tier 1
+    FeedSpec { url: "https://news.usni.org/feed",                                   source: "usni",            tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.militarytimes.com/arc/outboundfeeds/rss/",         source: "militarytimes",   tier: SourceTier::Tier1 },
+    FeedSpec { url: "https://www.longwarjournal.org/feed",                          source: "longwarjournal",  tier: SourceTier::Tier1 },
+    // Regional / national outlets — Tier 2
+    FeedSpec { url: "https://moxie.foxnews.com/google-publisher/world.xml",         source: "foxnews",         tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://nationalpost.com/feed/",                               source: "nationalpost",    tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.cnbc.com/id/100727362/device/rss/rss.html",        source: "cnbc",            tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.abc.net.au/news/feed/51120/rss.xml",               source: "abc_au",          tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.rnz.co.nz/rss/world.xml",                          source: "rnz",             tier: SourceTier::Tier2 },
+    // Asia-Pacific — Tier 2
+    FeedSpec { url: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml", source: "cna",      tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.thehindu.com/news/international/feeder/default.rss",source: "thehindu",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",   source: "timesofindia",    tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://asiatimes.com/feed/",                                  source: "asiatimes",       tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.nknews.org/feed/",                                 source: "nknews",          tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.globaltimes.cn/rss/outbrain.xml",                  source: "globaltimes",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://chinadigitaltimes.net/feed/",                          source: "chinadigitaltimes", tier: SourceTier::Tier2 },
+    // Middle East — Tier 2
+    FeedSpec { url: "https://www.jpost.com/rss/rssfeedsheadlines.aspx",             source: "jpost",           tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.middleeastmonitor.com/feed/",                      source: "middleeastmonitor", tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.al-monitor.com/rss",                               source: "almonitor",       tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://thecradle.co/feed",                                    source: "thecradle",       tier: SourceTier::Tier2 },
+    // Russia / Eurasia — Tier 2
+    FeedSpec { url: "https://www.themoscowtimes.com/rss/news",                      source: "moscowtimes",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.kyivpost.com/feed",                                source: "kyivpost",        tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.intellinews.com/feed",                             source: "intellinews",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.rt.com/rss/news/",                                 source: "rt",              tier: SourceTier::Tier2 },
+    // Think tanks / specialist — Tier 2
+    FeedSpec { url: "https://nationalinterest.org/feed",                            source: "nationalinterest",tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.twz.com/feed",                                     source: "twz",             tier: SourceTier::Tier2 },
+    // Global South / humanitarian — Tier 2
+    FeedSpec { url: "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf", source: "allafrica",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://en.mercopress.com/rss",                                source: "mercopress",      tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://reliefweb.int/updates/rss.xml",                        source: "reliefweb",       tier: SourceTier::Tier2 },
 ];
 
 pub const GNEWS_QUERIES: &[&str] = &[
@@ -262,6 +308,15 @@ impl SeenCache {
 
 // ── Source health tracking ────────────────────────────────────────────────────
 
+/// Consecutive failures before a source is considered unhealthy and demoted to
+/// periodic re-probing instead of every-cycle polling.
+const DISABLE_THRESHOLD: u32 = 10;
+/// A demoted (unhealthy) source is re-probed once every this many RSS cycles.
+/// At the ~100s base cycle this is roughly one retry every ~10 minutes — enough
+/// to recover automatically from transient outages (DNS blips, feed maintenance,
+/// rate-limit windows) without hammering a genuinely dead endpoint every cycle.
+const REPROBE_EVERY_CYCLES: u64 = 6;
+
 #[derive(Debug, Default)]
 pub struct SourceHealth {
     /// Consecutive failure count per source name.
@@ -280,9 +335,25 @@ impl SourceHealth {
         *self.failures.entry(source.to_string()).or_insert(0) += 1;
     }
 
-    /// Sources with ≥10 consecutive failures are skipped automatically.
+    /// A source with ≥DISABLE_THRESHOLD consecutive failures is "unhealthy".
+    /// Reported to /api/sources for display, but — unlike before — NEVER means
+    /// permanently dead: see `should_attempt`, which still re-probes it.
     pub fn is_disabled(&self, source: &str) -> bool {
-        self.failures.get(source).copied().unwrap_or(0) >= 10
+        self.failures.get(source).copied().unwrap_or(0) >= DISABLE_THRESHOLD
+    }
+
+    /// Whether to attempt this source on the given RSS cycle.
+    ///
+    /// Healthy sources are always attempted. Unhealthy sources are demoted to a
+    /// periodic re-probe (every REPROBE_EVERY_CYCLES) rather than skipped
+    /// forever — so a single success resets their failure count and restores
+    /// full polling. This is the self-healing behaviour: feeds recover on their
+    /// own instead of staying dark until the next process restart.
+    pub fn should_attempt(&self, source: &str, cycle: u64) -> bool {
+        if !self.is_disabled(source) {
+            return true;
+        }
+        cycle % REPROBE_EVERY_CYCLES == 0
     }
 }
 
@@ -416,8 +487,9 @@ impl Ingestor {
                 let source   = feed.source;
                 let tier     = feed.tier;
 
-                // Skip persistently failing sources before spawning
-                if ingestor.health.lock().await.is_disabled(source) {
+                // Unhealthy sources are demoted to periodic re-probing rather
+                // than skipped forever — a single success restores them.
+                if !ingestor.health.lock().await.should_attempt(source, jitter_ctr) {
                     continue;
                 }
 
@@ -752,6 +824,33 @@ mod tests {
     }
 
     #[test]
+    fn healthy_source_always_attempted() {
+        let mut health = SourceHealth::default();
+        for _ in 0..9 { health.record_failure("bbc"); } // below threshold
+        // Healthy sources are attempted on every cycle regardless of phase.
+        for cycle in 0..REPROBE_EVERY_CYCLES {
+            assert!(health.should_attempt("bbc", cycle));
+        }
+    }
+
+    #[test]
+    fn unhealthy_source_is_reprobed_not_skipped_forever() {
+        let mut health = SourceHealth::default();
+        for _ in 0..10 { health.record_failure("dead"); }
+        assert!(health.is_disabled("dead"));
+        // It is skipped on most cycles...
+        assert!(!health.should_attempt("dead", 1));
+        assert!(!health.should_attempt("dead", 5));
+        // ...but re-probed periodically, so it can recover on its own.
+        assert!(health.should_attempt("dead", 0));
+        assert!(health.should_attempt("dead", REPROBE_EVERY_CYCLES));
+        // And a single re-probe success fully restores it.
+        health.record_success("dead", 1);
+        assert!(!health.is_disabled("dead"));
+        assert!(health.should_attempt("dead", 1));
+    }
+
+    #[test]
     fn source_health_registry_counts() {
         let mut health = SourceHealth::default();
         health.record_success("bbc", 3);
@@ -775,8 +874,13 @@ mod tests {
     }
 
     #[test]
-    fn rss_feeds_count_matches_python() {
-        assert_eq!(RSS_FEEDS.len(), 72);
+    fn rss_feeds_count() {
+        // 103 verified-live feeds after the 2026-05 audit + expansion (every URL
+        // probed from the production host, confirmed HTTP 200 + valid XML).
+        // Audit removed: Reuters×2 & WaPo×2 (publisher killed RSS), NATO & VOA
+        // (endpoints retired), lawfare/stimson/eurasianet (hard 403 from prod IP).
+        // Then expanded with 35 new global feeds to broaden coverage past 100.
+        assert_eq!(RSS_FEEDS.len(), 103);
     }
 
     #[test]
@@ -790,13 +894,13 @@ mod tests {
     #[test]
     fn rss_feeds_tier1_count() {
         let tier1 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier1).count();
-        assert_eq!(tier1, 25, "Expected 25 Tier-1 feeds");
+        assert_eq!(tier1, 32, "Expected 32 Tier-1 feeds");
     }
 
     #[test]
     fn rss_feeds_tier2_count() {
         let tier2 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier2).count();
-        assert_eq!(tier2, 47, "Expected 47 Tier-2 feeds");
+        assert_eq!(tier2, 71, "Expected 71 Tier-2 feeds");
     }
 
     #[test]
