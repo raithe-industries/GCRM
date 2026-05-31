@@ -205,15 +205,24 @@ pub async fn append_article(article: &StoredArticle) {
 // for a long time post-redeploy). Best-effort: a write failure is logged, never
 // blocks the aggregator.
 
-pub async fn append_event(event: &GeopoliticalEvent) {
-    let line = match serde_json::to_string(event) {
-        Ok(s) => s + "\n",
-        Err(e) => { warn!("Event serialise failed: {e}"); return; }
-    };
+pub async fn append_events(events: &[GeopoliticalEvent]) {
+    if events.is_empty() { return; }
+    // Serialise the whole batch first, then write with a single file open — a feed
+    // batch can land many new events in one aggregator tick, and one open+write
+    // beats one open per event in the hot drain path. Best-effort: a serialise
+    // failure drops that one line; an open/write failure is logged, never blocks.
+    let mut buf = String::new();
+    for event in events {
+        match serde_json::to_string(event) {
+            Ok(s) => { buf.push_str(&s); buf.push('\n'); }
+            Err(e) => warn!("Event serialise failed: {e}"),
+        }
+    }
+    if buf.is_empty() { return; }
     let path = today_event_path();
     match OpenOptions::new().create(true).append(true).open(&path).await {
         Ok(mut f) => {
-            if let Err(e) = f.write_all(line.as_bytes()).await {
+            if let Err(e) = f.write_all(buf.as_bytes()).await {
                 warn!("Event write to {path}: {e}");
             }
         }
@@ -869,8 +878,9 @@ impl Aggregator {
                     }
                 }
             }
-            // Persist newly-added events to the date-rotated archive (for restart restore).
-            for ev in &to_persist { append_event(ev).await; }
+            // Persist newly-added events to the date-rotated archive (for restart
+            // restore) in a single batched write.
+            append_events(&to_persist).await;
 
             // Evict stale
             let now = Utc::now();

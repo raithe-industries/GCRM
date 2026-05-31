@@ -121,6 +121,23 @@ impl OperatorState {
     }
 }
 
+/// Constant-time string equality. The operator key gates controls that change
+/// the published risk number (regime toggles), so key verification must not leak
+/// the secret through response-timing differences. Length is allowed to differ
+/// up front; the byte comparison itself never short-circuits on the first
+/// mismatch.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 fn check_key(headers: &HeaderMap, expected: &str) -> Result<String, (StatusCode, Json<Value>)> {
     if expected.is_empty() {
         return Err((
@@ -134,7 +151,7 @@ fn check_key(headers: &HeaderMap, expected: &str) -> Result<String, (StatusCode,
         .get("X-GCRM-Key")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if provided != expected {
+    if !constant_time_eq(provided, expected) {
         warn!("Operator API: rejected request with invalid key");
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -728,6 +745,16 @@ mod tests {
     }
 
     // ── check_key ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn constant_time_eq_matches_only_on_full_equality() {
+        assert!(constant_time_eq("secret123", "secret123"));
+        assert!(!constant_time_eq("secret123", "secret124")); // same length, last byte differs
+        assert!(!constant_time_eq("secret", "secret123"));     // length mismatch
+        assert!(!constant_time_eq("secret123", "secret"));     // length mismatch (other order)
+        assert!(constant_time_eq("", ""));                      // both empty
+        assert!(!constant_time_eq("x", ""));
+    }
 
     #[test]
     fn check_key_valid() {
