@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use chrono::Utc;
 use regex::Regex;
@@ -871,9 +872,16 @@ fn actor_entity_patterns() -> Vec<(&'static str, &'static str)> {
 // ── Casualty extraction ───────────────────────────────────────────────────────
 
 fn extract_casualties(text: &str) -> Option<u32> {
-    let re = Regex::new(
-        r"(\d[\d,]*)\s*(people|civilians|soldiers|troops|killed|dead|wounded|injured)"
-    ).unwrap();
+    // Case-insensitive: headlines routinely capitalise casualty words ("12 Killed"),
+    // and this figure feeds event severity — missing it makes the thermometer read
+    // cooler than the source actually reports, which cuts against GCRM's job of
+    // honestly reflecting the corpus. Compiled once: regex compilation is expensive
+    // and this runs on every article.
+    static CASUALTY_RE: OnceLock<Regex> = OnceLock::new();
+    let re = CASUALTY_RE.get_or_init(|| {
+        Regex::new(r"(?i)(\d[\d,]*)\s*(people|civilians|soldiers|troops|killed|dead|wounded|injured)")
+            .expect("casualty regex is a valid pattern")
+    });
     re.captures_iter(text)
         .filter_map(|c| {
             let n_str = c[1].replace(',', "");
@@ -1343,6 +1351,17 @@ mod tests {
         // Noisy-OR scale: a single strong keyword (w ≥ 0.55) tags; a lone
         // moderate keyword (w ≤ 0.50) does not.
         assert!((MIN_DOMAIN_SIGNAL - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn casualties_extracted_case_insensitively() {
+        // Headlines capitalise these words; the figure must still be read.
+        assert_eq!(extract_casualties("12 Killed in airstrike"), Some(12));
+        assert_eq!(extract_casualties("12 KILLED in airstrike"), Some(12));
+        assert_eq!(extract_casualties("12 killed in airstrike"), Some(12));
+        // Thousands separators are stripped; the largest figure wins.
+        assert_eq!(extract_casualties("2,000 Troops massed; 5 Wounded"), Some(2000));
+        assert_eq!(extract_casualties("no numbers here"), None);
     }
 
     #[test]

@@ -791,6 +791,12 @@ async function refreshSrcCount(){
 }
 refreshSrcCount();
 const DID=['military_escalation','nuclear_posture','diplomatic_breakdown','economic_warfare','cyber_info_ops','alliance_activation','great_power_conflict','wmd_mass_casualty'];
+// Live timeline chart capacity. Mirrors the server's epoch ring (MAX_EPOCH_ENTRIES
+// = 350,640 ≈ 4 days at the 1s tick), and is applied identically on initial load
+// (applyTimeline) and on live append — so the ceiling is one stated, auditable
+// value rather than two that disagree. GCRM's signal lives in the MOVEMENT over
+// time, so we keep the full durable window instead of truncating recent history.
+const MAX_TL_POINTS=350640;
 const DSHORT=['Military','Nuclear','Diplomatic','Economic','Cyber','Alliance','Gr.Power','WMD'];
 const DCOLORS=['--mil','--nuc','--dip','--eco','--cyb','--ali','--gp','--wmd'];
 const DTAGS={military_escalation:'MIL',nuclear_posture:'NUC',diplomatic_breakdown:'DIP',economic_warfare:'ECO',cyber_info_ops:'CYB',alliance_activation:'ALI',great_power_conflict:'GP',wmd_mass_casualty:'WMD'};
@@ -950,6 +956,7 @@ function applyData(d){
   addLog('P(WWIII)='+(pA*100).toFixed(2)+'% Δ'+(dA>=0?'+':'')+(dA*100).toFixed(4)+'% · '+elev+' elevated · '+(meta.events_in_window||0)+' events',pA>=.05?'#E24B4A':pA>=.015?'#EF9F27':'#6060a0');
 }
 function applyTimeline(entries){
+  if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);tlChart.update('none');
   if(entries.length>0){const peaks=entries.map(e=>e.p_annual);sessionPeak=Math.max(...peaks);sessionLow=Math.min(...peaks);}
@@ -958,7 +965,7 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>15000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
     // fetch every ~9s and the age brackets would lose all their history.
