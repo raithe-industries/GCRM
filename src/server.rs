@@ -654,14 +654,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
         <span id="conf-pct" style="font-size:9px;color:var(--t2)">—</span>
       </div>
     </div>
+    <!-- At-a-glance rail: the two derived windows + freshness. The annual reading is
+         the hero gauge above; regime ×, P₀, GP-event count and elevated-domain tally
+         are model internals that live in the methodology and model-state footer. -->
     <div class="left-metrics">
-      <div class="lm"><div class="lm-label">P(WWIII) ANNUAL</div><div class="lm-val" id="m-annual">—</div><div class="lm-sub" id="m-da">—</div></div>
-      <div class="lm"><div class="lm-label">30-DAY WINDOW</div><div class="lm-val" id="m-30d">—</div><div class="lm-sub" id="m-d30">—</div></div>
+      <div class="lm"><div class="lm-label">30-DAY WINDOW</div><div class="lm-val" id="m-30d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
       <div class="lm"><div class="lm-label">90-DAY WINDOW</div><div class="lm-val" id="m-90d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
-      <div class="lm"><div class="lm-label">REGIME ×</div><div class="lm-val" id="m-regime">—</div><div class="lm-sub" style="color:var(--t4)">structural multiplier</div></div>
-      <div class="lm"><div class="lm-label">DOMAINS ELEVATED</div><div class="lm-val" id="m-elev">—</div><div class="lm-sub" id="m-boost">—</div></div>
-      <div class="lm"><div class="lm-label">P₀ ADJUSTED</div><div class="lm-val" id="m-p0">—</div><div class="lm-sub" style="color:var(--t4)">anchor × regime</div></div>
-      <div class="lm"><div class="lm-label">GP EVENTS</div><div class="lm-val" id="m-gp">—</div><div class="lm-sub" style="color:var(--t4)">great-power in window</div></div>
       <div class="lm"><div class="lm-label">LAST COMPUTED</div><div class="lm-val" id="m-computed" style="font-size:11px">—</div><div class="lm-sub" style="color:var(--t4)">model update time</div></div>
     </div>
     <div class="plain-eng">
@@ -684,8 +682,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
         <div class="pe-text">The 8 coloured bars are risk categories (military, nuclear, diplomatic, etc.). When several spike at once, danger compounds faster than any single one suggests. Click any bar to audit it — the article feed filters to the signals feeding that score. "signals" = articles tagged to the domain; "gt-power" = those involving the US, Russia, China, or NATO.</div>
       </div>
       <div class="pe-item">
-        <div class="pe-label">REGIME ×</div>
-        <div class="pe-text">A multiplier for stable background conditions — active wars, collapsed arms treaties, nuclear posture shifts. It raises the floor before any news is read.</div>
+        <div class="pe-label">REGIME × — HOW DANGEROUS IS THE ERA ITSELF?</div>
+        <div class="pe-text">One number for the <b>slow-moving backdrop</b> — active wars, collapsed arms-control treaties, hardened nuclear postures — the conditions that are true for months or years, before a single headline is read. It <b>multiplies the historical baseline</b> (≈0.10%/yr) to set today's starting floor: e.g. a 5× regime means the era alone puts baseline risk 5× above the long-run average. It sets the floor; live news then moves the number above it. It is <b>not</b> applied to the final percentage and it never reacts to one story. <a href="{{BASE_PATH}}/methodology#regime" style="color:var(--purple);text-decoration:none">Full breakdown ↗</a></div>
       </div>
       <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
     </div>
@@ -934,13 +932,12 @@ function applyData(d){
   const d6=get6hDelta(pA);const trendEl=document.getElementById('cmd-trend');
   if(d6===null){trendEl.textContent='—';}else{trendEl.textContent=(d6>=0?'+':'')+(d6*100).toFixed(3)+'%';trendEl.style.color=d6>0.0005?'#E24B4A':d6<-0.0005?'#1D9E75':'var(--t2)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago ('+history6h.length+' samples)';}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
-  setMv('m-annual',(pA*100).toFixed(2)+'%',pc(pA));
-  document.getElementById('m-da').innerHTML=dA>0?'<span style="color:#E24B4A">▲ +'+(dA*100).toFixed(4)+'%/snap</span>':dA<0?'<span style="color:#1D9E75">▼ '+(dA*100).toFixed(4)+'%/snap</span>':'<span style="color:var(--t4)">─ stable</span>';
+  // Rail shows only the 30/90-day windows + last-computed (see HTML note above).
+  // The annual reading is the hero gauge; regime ×, P₀, GP count and the elevated
+  // tally are surfaced in the methodology and the model-state footer, not the rail.
   setMv('m-30d',(p30*100).toFixed(2)+'%',pc(p30*4));setMv('m-90d',(p90*100).toFixed(2)+'%',pc(p90*2));
-  const reg=d.prior.regime_multiplier;setMv('m-regime',reg.toFixed(2)+'×',reg>5?'#E24B4A':reg>3?'#EF9F27':'#1D9E75');
-  const elev=d.co_occurrence.elevated_count;setMv('m-elev',elev+' / 8',elev>=4?'#E24B4A':elev>=2?'#EF9F27':'#1D9E75');
-  document.getElementById('m-boost').textContent='co-occur ×'+d.co_occurrence.boost.toFixed(1);
-  setMv('m-p0',d.prior.adjusted_prior.toFixed(6),'var(--t2)');setMv('m-gp',(d.meta?.great_power_events||0)+'','var(--t2)');setMv('m-computed',toETShort(new Date(d.computed_at)),'var(--t2)');
+  setMv('m-computed',toETShort(new Date(d.computed_at)),'var(--t2)');
+  const elev=d.co_occurrence.elevated_count; // still feeds the model-state co-occurrence line below
   const ab=document.getElementById('alert-bar');const al=d.alert.level;
   ab.className='alert-bar'+(al==='critical'?' critical':al==='elevated'?' elevated':'');ab.textContent=d.alert.message||'';
   const grid=document.getElementById('domain-grid');grid.innerHTML='';
@@ -1270,7 +1267,8 @@ Ingestor <span class="c">(42 RSS feeds + GNews + GDELT)</span><br>
 
 <section id="regime">
 <h2><span class="num">04</span>The regime multiplier <span class="pill p">×</span></h2>
-<p>The naive prior assumes an <em>average</em> century. Today is not average. The <strong>regime multiplier</strong> captures slow-moving <em>structural</em> conditions — things stable over months to years, not daily news — by multiplying a set of operator-maintained factors. They are multiplied, not added, because they are treated as conditionally-independent amplifiers of the same underlying danger.</p>
+<p>The naive prior assumes an <em>average</em> century. Today is not average. The <strong>regime multiplier</strong> answers one precise question: <em>how dangerous is the era itself, before any of today's headlines are read?</em> It scales the historical prior P₀ up — or down — for slow-moving <strong>structural</strong> conditions: the geopolitical backdrop that holds steady over months to years, not the daily news cycle.</p>
+<p>Each structural condition is a single operator-maintained factor carrying its own multiplier. The active factors are <strong>multiplied together, not added</strong>, because each is treated as a conditionally-independent amplifier of the same underlying danger; a factor below 1.0 is a genuine <em>reducer</em>. Their product multiplies P₀ to give the <strong>adjusted prior</strong> P₀,adj — the floor that live evidence then has to argue its way up from.</p>
 <table>
 <tr><th>Active structural factor</th><th class="r mono">×</th></tr>
 <tr><td>Active US kinetic war (Iran theatre)</td><td class="r mono">1.40</td></tr>
@@ -1286,7 +1284,7 @@ Ingestor <span class="c">(42 RSS feeds + GNews + GDELT)</span><br>
 </table>
 <div class="eq">regime &nbsp;=&nbsp; 1.4·1.4·1.4·1.3·1.2·1.2·1.2·1.15·1.1·0.7 &nbsp;≈&nbsp; <span class="v">5.46×</span><br>
 P₀<span class="c">,adj</span> &nbsp;=&nbsp; P₀ × regime &nbsp;=&nbsp; 0.000987 × 5.46 &nbsp;≈&nbsp; <span class="v">0.539% / yr</span></div>
-<p>Note the <span class="g">0.70 deterrence reducer</span>: mutually-assured destruction genuinely <em>lowers</em> the probability of all-out war, and the model honours that. Factors are toggled only when a structural condition durably changes — a held ceasefire, a ratified treaty, a confirmed nuclear test. They never move on a single news cycle.</p>
+<p><strong>What the multiplier is — and is not.</strong> It sets the <em>starting point</em>, not the answer. At 5.46× the era alone lifts baseline annual risk to ≈0.54%/yr — about 5.5× the long-run historical average — but it is <em>never</em> multiplied into the final probability. Live event evidence is folded in separately, on the log-odds scale (see <a href="#engine">§09, the risk model</a>), so the regime only moves where the number <em>starts</em>, not how far the day's news pushes it. Note the <span class="g">0.70 deterrence reducer</span>: mutually-assured destruction genuinely <em>lowers</em> the probability of all-out war, and the model honours that. Factors are toggled only when a structural condition durably changes — a held ceasefire, a ratified treaty, a confirmed nuclear test. They never move on a single news cycle.</p>
 <div class="note"><b>Standby factors</b> sit dormant at the operator console (e.g. <code>nuclear_weapon_detonated ×2.5</code>, <code>russia_nato_kinetic ×1.6</code>) and switch on only if that threshold event is confirmed.</div>
 </section>
 
