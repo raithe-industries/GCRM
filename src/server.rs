@@ -337,12 +337,28 @@ async fn get_methodology(State(state): State<ServerState>) -> impl IntoResponse 
     Html((*state.methodology_html).clone())
 }
 
+// RAiTHE "A" mark — shared brand favicon + the rotating branding glyph. Compiled
+// into the binary so the dashboard stays a single self-contained artifact.
+static LOGO_A: &[u8] = include_bytes!("../assets/logo-a.png");
+
+async fn get_logo() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE,  "image/png"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        LOGO_A,
+    )
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn build_router(state: ServerState, operator_state: crate::api::OperatorState, base_path: &str) -> Router {
     let inner = Router::new()
         .route("/",              get(get_dashboard))
         .route("/methodology",   get(get_methodology))
+        .route("/logo-a.png",    get(get_logo))
+        .route("/favicon.ico",   get(get_logo))
         .route("/ws",            get(ws_handler))
         .route("/api/latest",    get(get_latest))
         .route("/api/timeline",  get(get_timeline))
@@ -401,6 +417,8 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Global Conflict Risk Monitor</title>
+<link rel="icon" type="image/png" href="{{BASE_PATH}}/logo-a.png">
+<link rel="apple-touch-icon" href="{{BASE_PATH}}/logo-a.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
@@ -561,6 +579,14 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
 .plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:1;min-height:0;overflow-y:auto}
+/* RAiTHE "A" brand mark — its own pinned strip at the foot of the left rail
+   (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
+   in 3D so it reads as a turning badge rather than a flat spin. */
+.brand-a{flex-shrink:0;display:flex;justify-content:center;align-items:center;padding:14px 0;border-top:0.5px solid var(--border);background:var(--bg2);perspective:360px;line-height:0;cursor:pointer}
+.brand-a img{width:40px;height:40px;opacity:.4;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite;transition:opacity .3s}
+.brand-a:hover img{opacity:.85;animation-play-state:paused}
+@keyframes brand-a-spin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
+@media(prefers-reduced-motion:reduce){.brand-a img{animation:none;opacity:.5}}
 .pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
 .pe-item{margin-bottom:7px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
@@ -678,6 +704,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       </div>
       <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
     </div>
+    <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><img src="{{BASE_PATH}}/logo-a.png" alt="RAiTHE Industries" width="40" height="40"></a>
   </div>
   <div class="center-panel">
     <div class="domains" id="domain-grid"></div>
@@ -1158,6 +1185,7 @@ const METHODOLOGY_HTML: &str = r##"<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>GCRM — Methodology &amp; Mathematics</title>
+<link rel="icon" type="image/png" href="{{BASE_PATH}}/logo-a.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#05080c;--bg2:#0a0f16;--bg3:#0e141e;--border:#1a2333;--t1:#fff;--t2:#c2d2e2;--t3:#7c98b4;--t4:#4a5c70;--purple:#8e86e8;--green:#1D9E75;--amber:#EF9F27;--red:#E24B4A;--code:#0d1320}
