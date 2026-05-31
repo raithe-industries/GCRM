@@ -582,20 +582,27 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 /* RAiTHE "A" brand mark — its own pinned strip at the foot of the left rail
    (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
    in 3D so it reads as a turning badge rather than a flat spin. */
-.brand-a{flex-shrink:0;display:flex;justify-content:center;align-items:center;padding:14px 0;border-top:0.5px solid var(--border);background:var(--bg2);perspective:360px;line-height:0;cursor:pointer}
-.brand-a img{width:40px;height:40px;opacity:.4;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite;transition:opacity .3s}
-.brand-a:hover img{opacity:.85;animation-play-state:paused}
+.left-foot{flex-shrink:0;border-top:0.5px solid var(--border);background:var(--bg2);padding:12px 12px 4px}
+.brand-a{display:flex;justify-content:center;align-items:center;padding:16px 0 6px;perspective:360px;line-height:0;cursor:pointer}
+/* Two-faced "coin": front + a back face pre-rotated 180°, both backface-hidden,
+   so whichever side faces the viewer always shows the A upright — the spin reads
+   as a turning solid badge, never a mirrored or blank flip. */
+.brand-a-coin{position:relative;width:40px;height:40px;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite}
+.brand-a-face{position:absolute;top:0;left:0;width:40px;height:40px;opacity:.45;backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:opacity .3s}
+.brand-a-back{transform:rotateY(180deg)}
+.brand-a:hover .brand-a-coin{animation-play-state:paused}
+.brand-a:hover .brand-a-face{opacity:.85}
 @keyframes brand-a-spin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
-@media(prefers-reduced-motion:reduce){.brand-a img{animation:none;opacity:.5}}
+@media(prefers-reduced-motion:reduce){.brand-a-coin{animation:none}}
 .pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
-.pe-item{margin-bottom:7px}
+.pe-item{margin-bottom:9px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
 .pe-text{font-size:9px;color:var(--t4);line-height:1.55}
 .pe-scale{display:flex;flex-direction:column;gap:2px;margin-top:4px}
 .pe-scale-row{display:flex;align-items:baseline;gap:5px}
 .pe-val{font-size:9px;font-family:monospace;color:var(--t2);min-width:38px;flex-shrink:0}
 .pe-desc{font-size:8px;color:var(--t4);line-height:1.4}
-.pe-btn{display:block;margin-top:4px;text-align:center;font-size:9px;font-weight:600;letter-spacing:.04em;color:#c0bcff;background:#0d0d20;border:0.5px solid var(--purple);border-radius:3px;padding:6px;text-decoration:none;transition:all .2s}
+.pe-btn{display:block;text-align:center;font-size:9px;font-weight:600;letter-spacing:.04em;color:#c0bcff;background:#0d0d20;border:0.5px solid var(--purple);border-radius:3px;padding:6px;text-decoration:none;transition:all .2s}
 .pe-btn:hover{background:var(--purple);color:#fff}
 /* ── Default desktop scale-up (≈ the old "133% zoom" look) ──────────────────
    The base sizes above are intentionally tiny for laptops/embeds. On any real
@@ -700,11 +707,16 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       </div>
       <div class="pe-item">
         <div class="pe-label">REGIME ×</div>
-        <div class="pe-text">A multiplier for slow-moving conditions (wars, treaties, nuclear posture) that sets the floor before any news is read. <a href="{{BASE_PATH}}/methodology#regime" style="color:var(--purple);text-decoration:none">More ↗</a></div>
+        <div class="pe-text">A multiplier for slow-moving conditions (wars, treaties, nuclear posture) that sets the floor before any news is read.</div>
       </div>
-      <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
     </div>
-    <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><img src="{{BASE_PATH}}/logo-a.png" alt="RAiTHE Industries" width="40" height="40"></a>
+    <!-- Pinned foot: methodology link + rotating RAiTHE mark. Lives outside the
+         scrollable explainer so it (and the metrics above) stay visible while only
+         the descriptive prose yields when the viewport is short. -->
+    <div class="left-foot">
+      <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
+      <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><span class="brand-a-coin"><img class="brand-a-face" src="{{BASE_PATH}}/logo-a.png" alt="RAiTHE Industries" width="40" height="40"><img class="brand-a-face brand-a-back" src="{{BASE_PATH}}/logo-a.png" alt="" aria-hidden="true" width="40" height="40"></span></a>
+    </div>
   </div>
   <div class="center-panel">
     <div class="domains" id="domain-grid"></div>
