@@ -61,7 +61,8 @@
       "Bash(wrangler whoami *)",
       "Bash(grep *)",
       "Bash(xxd)",
-      "Bash(cargo check *)"
+      "Bash(cargo check *)",
+      "Bash(cargo clippy *)"
     ]
   }
 }
