@@ -167,12 +167,19 @@ fn is_tracked_actor(actor: &str) -> bool {
 // ── Recency decay ──────────────────────────────────────────────────────────────
 
 /// Domain-specific exponential decay. Nuclear/diplomatic decay slower.
-/// Returns 0.0 for events older than MAX_EVENT_AGE_HOURS.
+/// Returns 0.0 for events older than MAX_EVENT_AGE_HOURS, and never exceeds 1.0.
+///
+/// Future-dated events (feed clock skew / timezone bugs — common enough that the
+/// dashboard flags them) have a negative age, which would make the exponent
+/// positive and return a weight > 1.0, *amplifying* the event's signal in
+/// score_all (where this is a multiplier). Clamp age to 0 so a future-dated
+/// event is treated as brand-new (weight 1.0) rather than super-weighted.
 pub fn recency_weight(published_at: &DateTime<Utc>, domain: &str) -> f64 {
     let age_hours = (Utc::now() - *published_at).num_seconds() as f64 / 3600.0;
     if age_hours > MAX_EVENT_AGE_HOURS {
         return 0.0;
     }
+    let age_hours = age_hours.max(0.0); // future-dated → treat as "just now", cap weight at 1.0
     let half_life = domain_half_life(domain);
     (-std::f64::consts::LN_2 * age_hours / half_life).exp()
 }
@@ -798,6 +805,17 @@ mod tests {
     fn beyond_max_age_weight_is_zero() {
         let pub_at = Utc::now() - Duration::seconds(((MAX_EVENT_AGE_HOURS + 1.0) * 3600.0) as i64);
         assert_eq!(recency_weight(&pub_at, "military_escalation"), 0.0);
+    }
+
+    #[test]
+    fn future_dated_event_weight_capped_at_one() {
+        // Feed clock skew / tz bugs can date an item ahead of now. Such an event
+        // must never be super-weighted (> 1.0) — that would amplify its signal in
+        // score_all. It is treated as brand-new instead (weight ~1.0).
+        let week_ahead = Utc::now() + Duration::hours(168);
+        let w = recency_weight(&week_ahead, "cyber_info_ops"); // 24h half-life domain
+        assert!(w <= 1.0, "future-dated weight must not exceed 1.0, got {w}");
+        assert!(w > 0.99, "future-dated event should read as fresh, got {w}");
     }
 
     #[test]
