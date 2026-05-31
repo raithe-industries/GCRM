@@ -455,7 +455,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .conf-row{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:9px;color:var(--t2);width:100%}
 .conf-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .conf-fill{height:100%;border-radius:2px;background:var(--purple);transition:width .6s}
-.left-metrics{display:flex;flex-direction:column;overflow-y:auto;flex:1}
+.left-metrics{display:flex;flex-direction:column;flex-shrink:0}
 .lm{padding:7px 12px;border-bottom:0.5px solid var(--border)}
 .lm-label{font-size:8px;color:var(--t4);margin-bottom:2px;letter-spacing:.04em}
 .lm-val{font-size:13px;font-weight:500;font-family:monospace;color:var(--t1);transition:color .4s}
@@ -560,7 +560,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
-.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex-shrink:0}
+.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:1;min-height:0;overflow-y:auto}
 .pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
 .pe-item{margin-bottom:7px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
@@ -666,24 +666,15 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="pe-title">WHAT THIS MEANS</div>
       <div class="pe-item">
         <div class="pe-label">THE NUMBER</div>
-        <div class="pe-text">Estimated probability that a world-war-scale conflict begins within the next 12 months, based on live news signals.</div>
+        <div class="pe-text">Estimated chance a world-war-scale conflict starts within 12 months, read from live news. For scale: ~0.1% baseline · ≥8% acute crisis · ~40% = Cuba 1962.</div>
       </div>
       <div class="pe-item">
-        <div class="pe-label">REFERENCE SCALE</div>
-        <div class="pe-scale">
-          <div class="pe-scale-row"><span class="pe-val">~0.1%</span><span class="pe-desc">Historical baseline — 2 world wars across 2,000 years</span></div>
-          <div class="pe-scale-row"><span class="pe-val">1–3%</span><span class="pe-desc">Elevated — tracking current 2026 geopolitics</span></div>
-          <div class="pe-scale-row"><span class="pe-val">≥8%</span><span class="pe-desc">Acute crisis territory — rare, serious</span></div>
-          <div class="pe-scale-row"><span class="pe-val">40–50%</span><span class="pe-desc">Cuban Missile Crisis equivalent</span></div>
-        </div>
+        <div class="pe-label">THE 8 BARS</div>
+        <div class="pe-text">Risk domains (military, nuclear, diplomatic…). Several spiking at once compounds danger. Click a bar to see the articles behind it.</div>
       </div>
       <div class="pe-item">
-        <div class="pe-label">DOMAINS</div>
-        <div class="pe-text">The 8 coloured bars are risk categories (military, nuclear, diplomatic, etc.). When several spike at once, danger compounds faster than any single one suggests. Click any bar to audit it — the article feed filters to the signals feeding that score. "signals" = articles tagged to the domain; "gt-power" = those involving the US, Russia, China, or NATO.</div>
-      </div>
-      <div class="pe-item">
-        <div class="pe-label">REGIME × — HOW DANGEROUS IS THE ERA ITSELF?</div>
-        <div class="pe-text">One number for the <b>slow-moving backdrop</b> — active wars, collapsed arms-control treaties, hardened nuclear postures — the conditions that are true for months or years, before a single headline is read. It <b>multiplies the historical baseline</b> (≈0.10%/yr) to set today's starting floor: e.g. a 5× regime means the era alone puts baseline risk 5× above the long-run average. It sets the floor; live news then moves the number above it. It is <b>not</b> applied to the final percentage and it never reacts to one story. <a href="{{BASE_PATH}}/methodology#regime" style="color:var(--purple);text-decoration:none">Full breakdown ↗</a></div>
+        <div class="pe-label">REGIME ×</div>
+        <div class="pe-text">A multiplier for slow-moving conditions (wars, treaties, nuclear posture) that sets the floor before any news is read. <a href="{{BASE_PATH}}/methodology#regime" style="color:var(--purple);text-decoration:none">More ↗</a></div>
       </div>
       <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
     </div>
