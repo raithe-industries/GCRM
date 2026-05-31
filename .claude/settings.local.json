@@ -62,7 +62,11 @@
       "Bash(grep *)",
       "Bash(xxd)",
       "Bash(cargo check *)",
-      "Bash(cargo clippy *)"
+      "Bash(cargo clippy *)",
+      "Read(//tmp/gcrm-verify/**)",
+      "Bash(/home/st0n3/Desktop/GCRM/target/debug/gcrm)",
+      "Bash(echo \"pid=$!\")",
+      "Bash(echo \"launched, pid $!\")"
     ]
   }
 }
