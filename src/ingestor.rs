@@ -134,10 +134,15 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.realcleardefense.com/index.xml",                   source: "realcleardefense",tier: SourceTier::Tier2 },
     // Think-tanks / policy Tier 2
     FeedSpec { url: "https://www.atlanticcouncil.org/feed/",                        source: "atlanticcouncil", tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.brookings.edu/feed/",                              source: "brookings",       tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://carnegieendowment.org/feed/",                          source: "carnegie",        tier: SourceTier::Tier2 },
+    // brookings retired its public RSS (now serves HTML); replaced with CFR's main feed.
+    FeedSpec { url: "https://feeds.cfr.org/cfr_main",                               source: "cfr",             tier: SourceTier::Tier1 },
+    // carnegieendowment migrated to a feed-less Next.js site; replaced with RAND Corporation.
+    FeedSpec { url: "https://www.rand.org/news.xml",                                source: "rand",            tier: SourceTier::Tier2 },
     FeedSpec { url: "https://mwi.westpoint.edu/feed/",                              source: "mwi",             tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://jamestown.org/feed/",                                  source: "jamestown",       tier: SourceTier::Tier2 },
+    // jamestown ran aggressive Cloudflare bot-fight from the prod IP (HTML challenge,
+    // unfixable by UA); replaced with OSW (Centre for Eastern Studies, Warsaw) — same
+    // Russia/Eurasia/Central-Asia security-analysis niche, non-Cloudflare host.
+    FeedSpec { url: "https://www.osw.waw.pl/en/rss.xml",                            source: "osw",             tier: SourceTier::Tier2 },
     FeedSpec { url: "https://responsiblestatecraft.org/feed/",                       source: "responsiblestatecraft", tier: SourceTier::Tier2 },
     // Official / intergovernmental
     FeedSpec { url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml",       source: "un_news",         tier: SourceTier::Tier2 },
@@ -158,18 +163,20 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.xinhuanet.com/english/rss/worldrss.xml",           source: "xinhua",          tier: SourceTier::Tier2 },
     // Asia-Pacific
     FeedSpec { url: "https://www.japantimes.co.jp/feed/",                           source: "japantimes",      tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.koreaherald.com/rss/060000000000.xml",             source: "koreaherald",     tier: SourceTier::Tier2 },
+    // koreaherald's RSS now returns empty shells after a CMS migration; replaced with Yonhap (ROK national wire).
+    FeedSpec { url: "https://en.yna.co.kr/RSS/news.xml",                            source: "yonhap",          tier: SourceTier::Tier2 },
     // South Asia
     FeedSpec { url: "https://www.dawn.com/feeds/home",                              source: "dawn_pk",         tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://theprint.in/feed/",                                    source: "theprint_in",     tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://theprint.in/category/world/feed/",                      source: "theprint_in",     tier: SourceTier::Tier2 },
     // Middle East
     FeedSpec { url: "https://www.arabnews.com/rss.xml",                             source: "arabnews",        tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.aa.com.tr/en/rss/default?cat=world",               source: "anadolu",         tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.haaretz.com/cmlink/1.628752",                      source: "haaretz",         tier: SourceTier::Tier2 },
+    // haaretz retired its public cmlink RSS (now serves HTML); replaced with Ynetnews (Israel).
+    FeedSpec { url: "https://www.ynetnews.com/Integration/StoryRss3082.xml",        source: "ynet",            tier: SourceTier::Tier2 },
     // Investigative / OSINT Tier 2
     FeedSpec { url: "https://meduza.io/rss/en/all",                                 source: "meduza",          tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.occrp.org/en/feed",                                source: "occrp",           tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.rferl.org/api/zqpqpqtlvrpqty",                     source: "rferl",           tier: SourceTier::Tier2 },
+    FeedSpec { url: "https://www.rferl.org/api/epiqq",                              source: "rferl",           tier: SourceTier::Tier2 },
 
     // ── 2026-05 expansion — 35 feeds added to broaden global coverage past 100 ──
     // Every URL below was probed from the production host and confirmed to return
@@ -185,7 +192,10 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     // Defense / military analysis — Tier 1
     FeedSpec { url: "https://news.usni.org/feed",                                   source: "usni",            tier: SourceTier::Tier1 },
     FeedSpec { url: "https://www.militarytimes.com/arc/outboundfeeds/rss/",         source: "militarytimes",   tier: SourceTier::Tier1 },
-    FeedSpec { url: "https://www.longwarjournal.org/feed",                          source: "longwarjournal",  tier: SourceTier::Tier1 },
+    // longwarjournal ran aggressive Cloudflare bot-fight from the prod IP (unfixable
+    // by UA); replaced with The Cipher Brief — national-security/intelligence analysis,
+    // non-Cloudflare host.
+    FeedSpec { url: "https://www.thecipherbrief.com/feed",                          source: "cipherbrief",     tier: SourceTier::Tier1 },
     // Regional / national outlets — Tier 2
     FeedSpec { url: "https://moxie.foxnews.com/google-publisher/world.xml",         source: "foxnews",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://nationalpost.com/feed/",                               source: "nationalpost",    tier: SourceTier::Tier2 },
@@ -304,6 +314,21 @@ impl SeenCache {
         }
         true
     }
+
+    /// Mark a (url, title) as already-seen without reporting novelty. Used at boot
+    /// to seed the cache from disk-restored articles so live re-fetches of the same
+    /// stories aren't stored a second time (the dedup cache is not itself persisted).
+    pub fn mark_seen(&mut self, url: &str, title: &str) {
+        let k = Self::key(url, title);
+        if self.cache.insert(k.clone()) {
+            self.order.push_back(k);
+            if self.order.len() > self.max_size {
+                if let Some(old) = self.order.pop_front() {
+                    self.cache.remove(&old);
+                }
+            }
+        }
+    }
 }
 
 // ── Source health tracking ────────────────────────────────────────────────────
@@ -362,7 +387,10 @@ impl SourceHealth {
 fn build_client(timeout_secs: u64) -> reqwest::Result<Client> {
     Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
-        .user_agent("Mozilla/5.0 (compatible; GCRM/1.0; research)")
+        // Realistic browser UA: Cloudflare bot-fight challenges obvious bot UAs
+        // from datacenter IPs, returning an HTML challenge page that fails RSS
+        // parsing. A normal browser UA clears it for most Cloudflare-fronted feeds.
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
         .build()
 }
 
@@ -446,6 +474,20 @@ impl Ingestor {
             RSS_FEEDS.len(), MAX_CONCURRENT_RSS, GNEWS_QUERIES.len(), GDELT_QUERIES.len(),
             self.poll_interval_s,
         );
+
+        // Seed the dedup cache from articles restored on boot (load_articles) so
+        // live feeds re-fetching the same stories don't store them a second time.
+        // Without this the feed shows duplicate pairs after every restart.
+        {
+            let store = self.state.article_store.lock().await;
+            let mut seen = self.seen.lock().await;
+            for a in store.articles.iter() {
+                seen.mark_seen(&a.url, &a.title);
+            }
+            if store.articles.len() > 0 {
+                info!("Ingestor: seeded dedup cache with {} restored articles", store.articles.len());
+            }
+        }
 
         let ingestor = Arc::new(self);
 
@@ -726,9 +768,14 @@ impl Ingestor {
             source:       article.source.clone(),
             tier:         article.source_tier as u8,
             published_at: article.published_at.to_rfc3339(),
+            ingested_at:  article.fetched_at.to_rfc3339(),
             body:         article.body.chars().take(500).collect(), // raised from 300
             domain_tags:  vec![],
         };
+        // Durable archive: append to date-rotated JSONL so the feed survives
+        // restarts (the dedup cache otherwise suppresses re-ingest, leaving the
+        // feed empty on boot). Best-effort — never blocks the pipeline.
+        crate::aggregator::append_article(&stored).await;
         self.state.article_store.lock().await.push(stored);
         let mut registry = self.state.source_registry.lock().await;
         *registry.entry(article.source.clone()).or_insert(0) += 1;
@@ -894,13 +941,17 @@ mod tests {
     #[test]
     fn rss_feeds_tier1_count() {
         let tier1 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier1).count();
-        assert_eq!(tier1, 32, "Expected 32 Tier-1 feeds");
+        // 33 since brookings (dead RSS, was Tier-2) was replaced by CFR (Tier-1,
+        // peer to Foreign Affairs — CFR's own journal — which is already Tier-1).
+        assert_eq!(tier1, 33, "Expected 33 Tier-1 feeds");
     }
 
     #[test]
     fn rss_feeds_tier2_count() {
         let tier2 = RSS_FEEDS.iter().filter(|f| f.tier == SourceTier::Tier2).count();
-        assert_eq!(tier2, 71, "Expected 71 Tier-2 feeds");
+        // 70 after brookings (Tier-2) was promoted to its CFR replacement at Tier-1;
+        // carnegie→rand, koreaherald→yonhap, haaretz→ynet all stayed Tier-2.
+        assert_eq!(tier2, 70, "Expected 70 Tier-2 feeds");
     }
 
     #[test]

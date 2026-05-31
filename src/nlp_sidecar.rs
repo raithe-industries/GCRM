@@ -155,8 +155,13 @@ impl NlpSidecar {
                     };
 
                     if let Some(event) = final_event {
-                        self.app_state.article_store.lock().await
+                        let tagged_article = self.app_state.article_store.lock().await
                             .set_domain_tags(&article_id, event.domain_tags.clone());
+                        // Persist the tagged copy so the archive reflects final
+                        // domain tags (boot loader keeps the last copy per id).
+                        if let Some(a) = tagged_article {
+                            crate::aggregator::append_article(&a).await;
+                        }
 
                         tagged += 1;
                         if self.event_tx.send(event).await.is_err() {

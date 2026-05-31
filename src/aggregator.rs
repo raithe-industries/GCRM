@@ -67,6 +67,22 @@ fn today_timeline_path() -> String {
     timeline_path_for_date(&Utc::now().date_naive())
 }
 
+// ── Article archive paths (mirrors the timeline rotation) ──────────────────────
+
+fn article_path_for_date(date: &chrono::NaiveDate) -> String {
+    format!("logs/articles_{}.jsonl", date.format("%Y-%m-%d"))
+}
+
+fn today_article_path() -> String {
+    article_path_for_date(&Utc::now().date_naive())
+}
+
+// ── Event archive paths (mirrors the timeline rotation) ────────────────────────
+
+fn today_event_path() -> String {
+    format!("logs/events_{}.jsonl", Utc::now().date_naive().format("%Y-%m-%d"))
+}
+
 // ── Snapshot serialisation ────────────────────────────────────────────────────
 
 pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
@@ -144,9 +160,6 @@ async fn append_timeline(snap: &RiskSnapshot) {
         Ok(s) => s + "\n",
         Err(e) => { warn!("Timeline serialise failed: {e}"); return; }
     };
-    if let Err(e) = tokio::fs::create_dir_all("logs").await {
-        warn!("Could not create logs dir: {e}"); return;
-    }
     let path = today_timeline_path();
     match OpenOptions::new().create(true).append(true).open(&path).await {
         Ok(mut f) => {
@@ -158,12 +171,62 @@ async fn append_timeline(snap: &RiskSnapshot) {
     }
 }
 
+// ── Article persistence ─────────────────────────────────────────────────────────
+//
+// Appends one StoredArticle per line to a date-rotated JSONL file
+// (logs/articles_YYYY-MM-DD.jsonl). Called twice per article over its life:
+// once at ingest (empty tags) and once after NLP applies domain tags. The boot
+// loader (load_articles) dedups by id keeping the last occurrence, so a reloaded
+// article carries its final tags. Best-effort: a write failure is logged but
+// never blocks ingestion.
+
+pub async fn append_article(article: &StoredArticle) {
+    let line = match serde_json::to_string(article) {
+        Ok(s) => s + "\n",
+        Err(e) => { warn!("Article serialise failed: {e}"); return; }
+    };
+    let path = today_article_path();
+    match OpenOptions::new().create(true).append(true).open(&path).await {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(line.as_bytes()).await {
+                warn!("Article write to {path}: {e}");
+            }
+        }
+        Err(e) => warn!("Article open {path}: {e}"),
+    }
+}
+
+// ── Event persistence ───────────────────────────────────────────────────────────
+//
+// Appends one scored GeopoliticalEvent per line to a date-rotated JSONL file
+// (logs/events_YYYY-MM-DD.jsonl) when it first enters the window. load_events()
+// restores the window at boot so domain scores and P(WWIII) survive restarts
+// instead of resetting to baseline (which made rare domains like WMD read 0%
+// for a long time post-redeploy). Best-effort: a write failure is logged, never
+// blocks the aggregator.
+
+pub async fn append_event(event: &GeopoliticalEvent) {
+    let line = match serde_json::to_string(event) {
+        Ok(s) => s + "\n",
+        Err(e) => { warn!("Event serialise failed: {e}"); return; }
+    };
+    let path = today_event_path();
+    match OpenOptions::new().create(true).append(true).open(&path).await {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(line.as_bytes()).await {
+                warn!("Event write to {path}: {e}");
+            }
+        }
+        Err(e) => warn!("Event open {path}: {e}"),
+    }
+}
+
 // ── Article store ─────────────────────────────────────────────────────────────
 // Backed by VecDeque for O(1) front-pop eviction.
 // Index maps article id → absolute insertion counter (not a raw deque offset)
 // so it remains valid after front-pops without a full rebuild.
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoredArticle {
     pub id:           String,
     pub title:        String,
@@ -171,6 +234,10 @@ pub struct StoredArticle {
     pub source:       String,
     pub tier:         u8,
     pub published_at: String,
+    /// RFC3339 timestamp of when GCRM fetched the article (carried from
+    /// RawArticle.fetched_at). Surfaced to the dashboard as "GCRM pulled … ET".
+    #[serde(default)]
+    pub ingested_at:  String,
     pub body:         String,
     pub domain_tags:  Vec<String>,
 }
@@ -213,7 +280,10 @@ impl ArticleStore {
     ///
     /// Debug builds: panic on mismatch (catches bugs during testing).
     /// Release builds: WARN log + skip write (no silent data corruption).
-    pub fn set_domain_tags(&mut self, id: &str, tags: Vec<String>) {
+    ///
+    /// Returns a clone of the updated article on success so the caller can
+    /// persist the now-tagged copy to the on-disk archive.
+    pub fn set_domain_tags(&mut self, id: &str, tags: Vec<String>) -> Option<StoredArticle> {
         if let Some(&abs_pos) = self.index.get(id) {
             let slot = abs_pos.wrapping_sub(self.front_counter);
             if let Some(art) = self.articles.get_mut(slot) {
@@ -230,11 +300,13 @@ impl ArticleStore {
                          front_counter={}, abs_pos={}",
                         art.id, id, self.front_counter, abs_pos
                     );
-                    return;
+                    return None;
                 }
                 art.domain_tags = tags;
+                return Some(art.clone());
             }
         }
+        None
     }
 
     pub fn query(&self, limit: usize, source_filter: Option<&str>, domain_filter: Option<&str>) -> Vec<&StoredArticle> {
@@ -335,6 +407,103 @@ pub async fn load_epoch() -> EpochStore {
         info!("EpochStore: {total_loaded} total entries loaded");
     }
     store
+}
+
+/// Boot loader: restores the article feed from the date-rotated JSONL archive
+/// (today + yesterday) so the dashboard has history immediately on restart
+/// instead of waiting for live feeds to refill. Lines are read chronologically
+/// and deduped by id (last occurrence wins) so the tagged copy supersedes the
+/// at-ingest copy. The resulting store keeps the newest `max_size` articles.
+pub async fn load_articles(max_size: usize) -> ArticleStore {
+    let today = Utc::now().date_naive();
+    let yesterday = today.pred_opt().unwrap_or(today);
+    let paths = [
+        article_path_for_date(&yesterday),
+        article_path_for_date(&today),
+    ];
+
+    // First-seen order preserved in `order`; latest content kept in `latest`.
+    let mut order: Vec<String> = Vec::new();
+    let mut latest: HashMap<String, StoredArticle> = HashMap::new();
+    for path_str in &paths {
+        let path = PathBuf::from(path_str);
+        if !path.exists() { continue; }
+        match tokio::fs::read_to_string(&path).await {
+            Ok(text) => {
+                for line in text.lines() {
+                    if let Ok(a) = serde_json::from_str::<StoredArticle>(line) {
+                        if !latest.contains_key(&a.id) { order.push(a.id.clone()); }
+                        latest.insert(a.id.clone(), a);
+                    }
+                }
+            }
+            Err(e) => warn!("ArticleStore boot read failed for {path_str}: {e}"),
+        }
+    }
+
+    let mut store = ArticleStore::new(max_size);
+    for id in &order {
+        if let Some(a) = latest.remove(id) {
+            store.push(a);
+        }
+    }
+    if store.len() == 0 {
+        info!("ArticleStore: no article archive found — starting empty");
+    } else {
+        info!("ArticleStore: restored {} articles from archive", store.len());
+    }
+    store
+}
+
+/// Boot loader: restores the Bayesian event window from the date-rotated event
+/// archive so domain scores + P(WWIII) survive restarts. Reads `logs/events_*.jsonl`
+/// newest-file-first AND newest-line-first within each file (events are appended
+/// in arrival order, so the last line is the most recent), parsing until
+/// MAX_WINDOW_EVENTS events are collected. Reading newest-first matters when the
+/// archive exceeds the cap: the surviving events are then the *newest* ones, which
+/// is what the run loop's own cap keeps — reading oldest-first would instead keep
+/// stale events and leave a hole in recent history. The aggregator's preload_events
+/// then applies the same age filter and cap, so older/over-cap events are dropped
+/// consistently.
+pub async fn load_events() -> Vec<GeopoliticalEvent> {
+    // Collect event archive filenames (newest first by name — date-stamped sorts lexically).
+    let mut files: Vec<String> = Vec::new();
+    match tokio::fs::read_dir("logs").await {
+        Ok(mut rd) => {
+            while let Ok(Some(entry)) = rd.next_entry().await {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with("events_") && name.ends_with(".jsonl") {
+                        files.push(format!("logs/{name}"));
+                    }
+                }
+            }
+        }
+        Err(_) => { info!("EventWindow: no logs dir — starting with empty window"); return Vec::new(); }
+    }
+    files.sort_unstable();
+    files.reverse(); // newest date first
+
+    let mut events: Vec<GeopoliticalEvent> = Vec::new();
+    for path in &files {
+        if events.len() >= MAX_WINDOW_EVENTS { break; }
+        match tokio::fs::read_to_string(path).await {
+            Ok(text) => {
+                for line in text.lines().rev() {
+                    if let Ok(ev) = serde_json::from_str::<GeopoliticalEvent>(line) {
+                        events.push(ev);
+                        if events.len() >= MAX_WINDOW_EVENTS { break; }
+                    }
+                }
+            }
+            Err(e) => warn!("EventWindow boot read failed for {path}: {e}"),
+        }
+    }
+    if events.is_empty() {
+        info!("EventWindow: no event archive found — starting with empty window");
+    } else {
+        info!("EventWindow: loaded {} events from archive", events.len());
+    }
+    events
 }
 
 // ── Shared application state ──────────────────────────────────────────────────
@@ -648,6 +817,21 @@ impl Aggregator {
         }
     }
 
+    /// Seed the event window from disk (load_events) before the run loop starts,
+    /// so domain scores + P(WWIII) are restored on boot instead of resetting to
+    /// baseline. Applies the same age filter, sort, and cap the run loop uses,
+    /// then rebuilds the corroboration index to stay in sync.
+    pub fn preload_events(&mut self, mut events: Vec<GeopoliticalEvent>) {
+        if events.is_empty() { return; }
+        let now = Utc::now();
+        events.retain(|e| age_hours(&e.published_at, &now) < self.max_age_hours);
+        events.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+        events.truncate(MAX_WINDOW_EVENTS);
+        self.corr_index.rebuild_from_window(&events);
+        info!("Aggregator: preloaded {} events into window from archive", events.len());
+        self.event_window = events;
+    }
+
     pub async fn run(mut self) {
         info!(
             "Aggregator: {}ms interval, {:.0}h window, max {} events",
@@ -662,6 +846,9 @@ impl Aggregator {
             let mut new_count    = 0usize;
             let mut corroborated = 0usize;
             let now_drain        = Utc::now();
+            // New events to persist — collected here and written after the drain
+            // loop so disk IO stays out of the tight try_recv path.
+            let mut to_persist: Vec<GeopoliticalEvent> = Vec::new();
             loop {
                 match self.event_rx.try_recv() {
                     Ok(event) => {
@@ -670,6 +857,7 @@ impl Aggregator {
                         } else {
                             // Not a corroboration — index the new event, then append
                             self.corr_index.push(&event.title);
+                            to_persist.push(event.clone());
                             self.event_window.push(event);
                             new_count += 1;
                         }
@@ -681,6 +869,8 @@ impl Aggregator {
                     }
                 }
             }
+            // Persist newly-added events to the date-rotated archive (for restart restore).
+            for ev in &to_persist { append_event(ev).await; }
 
             // Evict stale
             let now = Utc::now();
@@ -1002,6 +1192,7 @@ mod tests {
             id: id.to_string(), title: format!("Headline {id}"),
             url: format!("https://example.com/{id}"), source: source.to_string(),
             tier: 1, published_at: Utc::now().to_rfc3339(),
+            ingested_at: Utc::now().to_rfc3339(),
             body: "body".to_string(), domain_tags: vec![],
         }
     }

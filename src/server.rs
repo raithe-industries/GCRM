@@ -27,7 +27,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
-    response::{Html, IntoResponse, Json},
+    response::{Html, IntoResponse, Json, Redirect},
     routing::get,
     Router,
 };
@@ -358,7 +358,16 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
     if bp.is_empty() {
         inner
     } else {
-        Router::new().nest(bp, inner)
+        // axum's nest() serves the nested root at "/risk" but NOT "/risk/", so a
+        // trailing-slash link (the methodology "back to dashboard" link uses
+        // {{BASE_PATH}}/) 404s. Redirect "/risk/" → "/risk" to fix it.
+        let target = bp.to_string();
+        Router::new()
+            .nest(bp, inner)
+            .route(&format!("{bp}/"), get(move || {
+                let t = target.clone();
+                async move { Redirect::temporary(&t) }
+            }))
     }
 }
 
@@ -453,8 +462,9 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .lm-sub{font-size:9px;color:var(--t3);margin-top:1px}
 .center-panel{display:flex;flex-direction:column;overflow:hidden}
 .domains{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
-.domain{background:var(--bg);padding:7px 9px;cursor:default;transition:background .2s}
+.domain{background:var(--bg);padding:7px 9px;cursor:pointer;transition:background .2s}
 .domain:hover{background:var(--bg3)}
+.domain.active{background:#0d0d20;box-shadow:inset 0 0 0 1px var(--purple)}
 .dn{font-size:8px;color:var(--t3);margin-bottom:3px;letter-spacing:.04em}
 .dbar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden;margin-bottom:3px}
 .dfill{height:100%;border-radius:1px;transition:width .5s ease}
@@ -551,7 +561,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
 .plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex-shrink:0}
-.pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:var(--t4);text-transform:uppercase;margin-bottom:8px}
+.pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
 .pe-item{margin-bottom:7px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
 .pe-text{font-size:9px;color:var(--t4);line-height:1.55}
@@ -671,7 +681,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       </div>
       <div class="pe-item">
         <div class="pe-label">DOMAINS</div>
-        <div class="pe-text">The 8 coloured bars are risk categories (military, nuclear, diplomatic, etc.). When several spike at once, danger compounds faster than any single one suggests.</div>
+        <div class="pe-text">The 8 coloured bars are risk categories (military, nuclear, diplomatic, etc.). When several spike at once, danger compounds faster than any single one suggests. Click any bar to audit it — the article feed filters to the signals feeding that score. "signals" = articles tagged to the domain; "gt-power" = those involving the US, Russia, China, or NATO.</div>
       </div>
       <div class="pe-item">
         <div class="pe-label">REGIME ×</div>
@@ -732,6 +742,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <button class="tf-btn"        data-min="672"  data-max="4368" onclick="setAgeFilter(672,4368,this)">4w–6m</button>
       <button class="tf-btn"        data-min="4368" data-max="8760" onclick="setAgeFilter(4368,8760,this)">6–12m</button>
     </div>
+    <div style="padding:2px 8px;font-size:7px;color:var(--t4);border-bottom:0.5px solid var(--border);flex-shrink:0;letter-spacing:.02em">▣ Tip: click any domain card to audit the articles feeding its score</div>
     <div class="panel-body" id="panel-articles"></div>
     <div class="panel-body" id="panel-sources" style="display:none"></div>
     <div class="panel-body" id="panel-log" style="display:none"><div id="log-body"></div></div>
@@ -838,6 +849,11 @@ let lastMovers=new Set(),_artDomainFilter='',_artSrcFilter='',_artAgeMin=0,_artA
 // not a cumulative "last X hours" window. min/max are in hours; (0,0) = All.
 // e.g. (672,4368) = items aged 4 weeks to 6 months — "what GCRM pulled ~a month ago".
 function setAgeFilter(min,max,btn){_artAgeMin=min;_artAgeMax=max;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');renderArticles(_artCache,_artTotal);}
+// Article timestamps are shown in Toronto time (ET) as the primary clock, with
+// the absolute UTC instant as a secondary reference and the time GCRM actually
+// pulled the article on a second line — so it reads clearly as "got X at Y ET
+// (Z UTC), pulled at W ET". Source feeds deliver UTC-normalised timestamps
+// (feed-rs converts on parse), so UTC is the honest universal reference.
 function fmtArticleDate(isoStr,ingestedIso){
   try{if(!isoStr)return'<span style="color:#404060">— no date —</span>';const pub=new Date(isoStr);if(isNaN(pub.getTime()))return`<span style="color:#404060">${isoStr}</span>`;
   const now=Date.now();const ageMs=now-pub.getTime();const ageH=ageMs/3600000;
@@ -846,17 +862,24 @@ function fmtArticleDate(isoStr,ingestedIso){
   const torontoDate=pub.toLocaleDateString('en-US',{timeZone:'America/Toronto',month:'short',day:'numeric'});
   const todayDate=new Date().toLocaleDateString('en-US',{timeZone:'America/Toronto',month:'short',day:'numeric'});
   const torontoFull=(torontoDate!==todayDate)?torontoDate+' '+torontoTime+' ET':torontoTime+' ET';
-  let ingLine='';if(ingestedIso){const ing=new Date(ingestedIso);if(!isNaN(ing.getTime())){const ingT=ing.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true});ingLine='<span style="color:#343448;margin-left:5px;font-size:8px">· pulled '+ingT+' ET</span>';}}
-  if(isFuture){return'<span style="font-family:monospace;color:#606080">'+torontoFull+'</span><span style="color:#404058;font-size:7px;margin-left:3px">(src tz)</span>'+ingLine;}
+  const utcTime=pub.toLocaleTimeString('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',hour12:false});
+  // Secondary line: when GCRM pulled it (ET) + the absolute UTC reference.
+  let pulledPart='';if(ingestedIso){const ing=new Date(ingestedIso);if(!isNaN(ing.getTime())){const ingT=ing.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true});pulledPart='pulled '+ingT+' ET · ';}}
+  const subLine='<span style="display:block;color:#404058;font-size:7px;margin-top:1px">'+pulledPart+utcTime+' UTC</span>';
+  if(isFuture){return'<span style="display:block;font-family:monospace;color:#606080">'+torontoFull+' <span style="color:#404058;font-size:7px">(future-dated by source)</span></span>'+subLine;}
   let relAge;if(ageH<1){const m=Math.floor(ageMs/60000);relAge=m<=1?'just now':m+'m ago';}else if(ageH<24){const h=Math.floor(ageH),m=Math.floor((ageH-h)*60);relAge=m>0?h+'h '+m+'m ago':h+'h ago';}else if(ageH<168){relAge=Math.floor(ageH/24)+'d '+Math.floor(ageH%24)+'h ago';}else{relAge=Math.floor(ageH/24)+'d ago';}
   let badge='';if(ageH>168)badge='<span style="font-size:7px;padding:1px 4px;background:#200800;color:#c05818;border-radius:2px;margin-left:4px">'+Math.floor(ageH/24)+'d OLD</span>';else if(ageH>24)badge='<span style="font-size:7px;padding:1px 4px;background:#141400;color:#7a7a20;border-radius:2px;margin-left:4px">'+Math.floor(ageH)+'h OLD</span>';
-  return'<span style="font-family:monospace;color:#9090c0">'+torontoFull+'</span><span style="color:#505070;margin-left:5px">· '+relAge+'</span>'+badge+ingLine;
+  return'<span style="display:block;font-family:monospace;color:#9090c0">'+torontoFull+'<span style="color:#505070;font-family:inherit"> · '+relAge+'</span>'+badge+'</span>'+subLine;
   }catch(err){return'<span style="color:#404060">'+(isoStr||'unknown date')+'</span>';}}
-function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=filtered.length+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
-function filterByDomain(dt){_artDomainFilter=(_artDomainFilter===dt)?'':dt;fetchArticles();}
-function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artAgeMin=0;_artAgeMax=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',b.dataset.min==='0'&&b.dataset.max==='0'));fetchArticles();}
+function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const RENDER_CAP=400;const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=(filtered.length>RENDER_CAP?(RENDER_CAP+' of '+filtered.length):filtered.length)+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.slice(0,RENDER_CAP).map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
+// Keep the visible filter label + domain-card highlight in sync with the active
+// domain filter so the audit path is discoverable (a domain card click filters
+// the feed to the articles feeding that score).
+function syncDomainFilterUI(){const lbl=document.getElementById('art-filter-label');if(lbl)lbl.textContent=_artDomainFilter?('▣ '+domainLabel(_artDomainFilter)+' signals'):'';document.querySelectorAll('#domain-grid .domain').forEach((d,i)=>{d.classList.toggle('active',DID[i]===_artDomainFilter);});}
+function filterByDomain(dt){_artDomainFilter=(_artDomainFilter===dt)?'':dt;syncDomainFilterUI();fetchArticles();}
+function clearFilters(){_artDomainFilter='';_artSrcFilter='';_artAgeMin=0;_artAgeMax=0;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('active',b.dataset.min==='0'&&b.dataset.max==='0'));syncDomainFilterUI();fetchArticles();}
 let _artCache=[],_artTotal=0;
-async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=6000';const r=await fetch(url);const d=await r.json();
+async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=6000'+(_artDomainFilter?('&domain='+encodeURIComponent(_artDomainFilter)):'');const r=await fetch(url);const d=await r.json();
   // Merge rather than replace, so a manual refresh never discards deeper history
   // already accumulated via the WS push merge.
   const have=new Set(_artCache.map(a=>a.id||a.url));
@@ -915,7 +938,7 @@ function applyData(d){
   const ab=document.getElementById('alert-bar');const al=d.alert.level;
   ab.className='alert-bar'+(al==='critical'?' critical':al==='elevated'?' elevated':'');ab.textContent=d.alert.message||'';
   const grid=document.getElementById('domain-grid');grid.innerHTML='';
-  DID.forEach(id=>{const ds=doms[id]||{score:0,label:'low',confidence:0,event_count:0,great_power_events:0};const prev=prevDomainScores[id]||0;const delta=ds.score-prev;const pct=Math.round(ds.score*100);const col=dc(ds.score);let arrow='';if(Math.abs(delta)>0.01){arrow=delta>0?'<span class="ddelta" style="color:#E24B4A">▲</span>':'<span class="ddelta" style="color:#1D9E75">▼</span>';}const tag=DTAGS[id]||'?';const tagCol=TAG_COLORS[tag]||'#6060a0';const div=document.createElement('div');div.className='domain';div.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>'+id.replace(/_/g,' ').toUpperCase()+'</span><span class="art-tag" style="background:'+tagCol+'22;color:'+tagCol+'">'+tag+'</span></div><div class="dbar"><div class="dfill" style="width:'+pct+'%;background:'+col+'"></div></div><div class="drow"><span class="dscore" style="color:'+col+'">'+pct+'%'+arrow+'</span><span class="dlabel '+(ds.label||'low')+'">'+(ds.label||'low')+'</span></div><div class="dconf">'+(ds.event_count||0)+' ev · '+Math.round((ds.confidence||0)*100)+'%'+(ds.great_power_events>0?' · GP:'+ds.great_power_events:'')+'</div>';grid.appendChild(div);});
+  DID.forEach(id=>{const ds=doms[id]||{score:0,label:'low',confidence:0,event_count:0,great_power_events:0};const prev=prevDomainScores[id]||0;const delta=ds.score-prev;const pct=Math.round(ds.score*100);const col=dc(ds.score);let arrow='';if(Math.abs(delta)>0.01){arrow=delta>0?'<span class="ddelta" style="color:#E24B4A">▲</span>':'<span class="ddelta" style="color:#1D9E75">▼</span>';}const tag=DTAGS[id]||'?';const tagCol=TAG_COLORS[tag]||'#6060a0';const div=document.createElement('div');div.className=(_artDomainFilter===id)?'domain active':'domain';div.title='Click to audit '+id.replace(/_/g,' ')+': filters the article feed to the signals feeding this score. "signals" = articles tagged to this domain; "gt-power" = those involving the US, Russia, China, or NATO.';div.onclick=()=>filterByDomain(id);div.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>'+id.replace(/_/g,' ').toUpperCase()+'</span><span class="art-tag" style="background:'+tagCol+'22;color:'+tagCol+'">'+tag+'</span></div><div class="dbar"><div class="dfill" style="width:'+pct+'%;background:'+col+'"></div></div><div class="drow"><span class="dscore" style="color:'+col+'">'+pct+'%'+arrow+'</span><span class="dlabel '+(ds.label||'low')+'">'+(ds.label||'low')+'</span></div><div class="dconf">'+(ds.event_count||0)+' signals · '+Math.round((ds.confidence||0)*100)+'% conf'+(ds.great_power_events>0?' · '+ds.great_power_events+' gt-power':'')+'</div>';grid.appendChild(div);});
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
   dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
   document.getElementById('f-adj').textContent=d.prior.adjusted_prior.toFixed(6);
@@ -935,7 +958,7 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>350000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>15000){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
     // fetch every ~9s and the age brackets would lose all their history.
@@ -1262,14 +1285,14 @@ P₀<span class="c">,adj</span> &nbsp;=&nbsp; P₀ × regime &nbsp;=&nbsp; 0.000
 
 <section id="nlp">
 <h2><span class="num">05</span>From headline to domain score</h2>
-<p>Each article is scored against <strong>eight risk domains</strong>. A single event contributes a per-domain signal in <code>[0,1]</code> built from an explicit, bounded budget:</p>
-<div class="eq">base &nbsp;=&nbsp; severity·<span class="v">0.43</span> &nbsp;+&nbsp; escalation·<span class="v">0.25</span> &nbsp;+&nbsp; nlp_keyword·<span class="v">0.20</span> &nbsp;+&nbsp; gp_bonus<span class="c">(≤0.12)</span><br>
+<p>Each article is scored against <strong>eight risk domains</strong>. A single event contributes a per-domain signal in <code>[0,1]</code> built from an explicit, bounded budget. The <em>domain-specific</em> keyword evidence is the primary driver, so each domain reflects what its own slice of the coverage actually says rather than the event's raw severity:</p>
+<div class="eq">base &nbsp;=&nbsp; nlp_keyword·<span class="v">0.50</span> &nbsp;+&nbsp; severity·<span class="v">0.30</span> &nbsp;+&nbsp; escalation·<span class="v">0.20</span> &nbsp;+&nbsp; gp_bonus<span class="c">(≤0.12, great-power domain only)</span><br>
 signal &nbsp;=&nbsp; clamp( base × (1 − 0.15·sentiment) , 0, 1 )</div>
 <ul>
+<li><strong>nlp_keyword</strong> — noisy-OR keyword evidence strength for <em>this</em> domain (definitive terms beat ambient ones). The dominant term, so domains stay distinct.</li>
 <li><strong>severity</strong> — event-type seriousness, casualties, nuclear/WMD indicators.</li>
 <li><strong>escalation</strong> — density of escalatory language vs conciliatory.</li>
-<li><strong>nlp_keyword</strong> — noisy-OR keyword evidence strength (definitive terms beat ambient ones).</li>
-<li><strong>gp_bonus</strong> — +0.12 if a great power (US, Russia, China, NATO) is directly involved.</li>
+<li><strong>gp_bonus</strong> — +0.12 added only to the <strong>great-power conflict</strong> domain when a great power (US, Russia, China, NATO) is directly involved. It no longer leaks into every domain, so e.g. diplomatic breakdown and great-power conflict are now independent readings.</li>
 <li><strong>sentiment</strong> — hostile tone amplifies up to +15%, conciliatory tone damps up to −15%. Tone refines, never dominates.</li>
 </ul>
 <p>Each signal is then weighted by <strong>credibility</strong> (source tier + corroboration from independent outlets, capped) and <strong>recency</strong> (next section) before contributing to its domain. The optional local LLM runs a second pass per article and is merged in at the max of the two scores, discounted 10% so a definitive keyword hit always outranks an LLM estimate.</p>
@@ -1538,5 +1561,17 @@ mod tests {
             vec![],
         );
         let _router = build_router(state, op_state, "");
+    }
+
+    // Regression: build_router with a non-empty base path nests the inner router
+    // AND registers a trailing-slash redirect ("/risk/" → "/risk"). axum builds
+    // its route table eagerly, so a route conflict between the nest and the
+    // redirect would panic here at construction — the prod path uses a base path.
+    #[test]
+    fn route_build_with_base_path_does_not_panic() {
+        let app_state  = crate::aggregator::AppState::new();
+        let (state, _) = ServerState::new(Arc::clone(&app_state), "/risk");
+        let op_state   = crate::api::OperatorState::new(app_state, "test_key".into(), vec![]);
+        let _router = build_router(state, op_state, "/risk");
     }
 }
