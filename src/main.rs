@@ -42,7 +42,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use aggregator::{Aggregator, AppState, load_epoch};
+use aggregator::{Aggregator, AppState, load_epoch, load_articles, load_events};
 use ingestor::Ingestor;
 use models::{
     AlertSettings, DashboardSettings, IngestionSettings, LlmSettings,
@@ -246,10 +246,23 @@ async fn main() {
     // ── Shared state ──────────────────────────────────────────────────────────
     let app_state = AppState::new();
 
+    // Ensure the logs dir exists once at startup; the timeline/article/event
+    // append paths assume it exists (no per-write create_dir_all → fewer syscalls).
+    if let Err(e) = std::fs::create_dir_all("logs") {
+        warn!("Could not create logs dir: {e}");
+    }
+
     // ── Boot EpochStore — load full timeline history from disk before serving ─
     {
         let epoch = load_epoch().await;
         *app_state.epoch_store.lock().await = epoch;
+    }
+
+    // ── Boot ArticleStore — restore the article feed from disk before serving ─
+    {
+        let max_size = app_state.article_store.lock().await.max_size;
+        let articles = load_articles(max_size).await;
+        *app_state.article_store.lock().await = articles;
     }
 
     // ── Server state ──────────────────────────────────────────────────────────
@@ -263,7 +276,7 @@ async fn main() {
     );
 
     // ── Aggregator ────────────────────────────────────────────────────────────
-    let aggregator = Aggregator::new(
+    let mut aggregator = Aggregator::new(
         settings.regime_factors.clone(),
         settings.alerts.clone(),
         event_rx,
@@ -271,6 +284,9 @@ async fn main() {
         Arc::clone(&app_state),
         settings.ingestion.poll_interval_seconds,
     );
+    // Restore the Bayesian event window from disk so domain scores + P(WWIII)
+    // survive restarts instead of resetting to baseline.
+    aggregator.preload_events(load_events().await);
 
     // ── Operator API state ────────────────────────────────────────────────────
     *app_state.shared_regime.lock().await = settings.regime_factors.clone();

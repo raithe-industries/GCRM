@@ -290,18 +290,28 @@ impl DomainScorer {
                     (event.credibility_weight + corroboration_factor).min(1.0);
                 let effective_weight = rw * effective_credibility;
 
-                let gp_bonus = if event.great_power_involved { 0.12 } else { 0.0 };
+                // Great-power involvement is the great_power_conflict domain's OWN
+                // signal — applied only here, not to every domain a GP event touches.
+                // Previously the bonus leaked into all tagged domains, making e.g.
+                // diplomatic_breakdown track great_power_conflict. Cross-domain GP
+                // amplification is already handled by the regime multiplier and the
+                // co-occurrence boost.
+                let gp_bonus = if domain == "great_power_conflict" && event.great_power_involved {
+                    0.12
+                } else {
+                    0.0
+                };
 
-                // nlp_signal [0,1] is the noisy-OR keyword-evidence strength from
-                // the NLP layer. Weighted at 0.20 (raised from 0.08) so in-article
-                // keyword evidence is a first-class contributor: a high-severity
-                // event tagged only by weak keywords now scores meaningfully lower
-                // than one carrying definitive keywords at the same severity.
-                // Additive budget (severity 0.43 + escalation 0.25 + nlp 0.20 +
-                // gp_bonus ≤ 0.12) sums to 1.0 at maximum.
-                let base_signal = event.severity        * 0.43
-                    + event.escalation_language_score   * 0.25
-                    + nlp_signal                        * 0.20
+                // Domain-specific evidence is the PRIMARY driver. nlp_signal [0,1] is
+                // the noisy-OR keyword/LLM strength for THIS domain; severity and
+                // escalation refine intensity but no longer dominate. This keeps each
+                // domain reflecting what its slice of the corpus actually says, so
+                // domains that merely co-occur on the same severe story no longer
+                // collapse to near-identical scores. Additive budget (nlp 0.50 +
+                // severity 0.30 + escalation 0.20) sums to 1.0; the GP domain adds ≤0.12.
+                let base_signal = nlp_signal              * 0.50
+                    + event.severity                      * 0.30
+                    + event.escalation_language_score     * 0.20
                     + gp_bonus;
 
                 // Sentiment modulator: sentiment_score ∈ [-1, 1] where positive is
