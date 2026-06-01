@@ -520,9 +520,14 @@ mod tests {
     #[test]
     fn dashboard_html_has_v2_sections() {
         // Restored cockpit, evolved to the v2 theater model: systemic index in the
-        // command bar, the live theater-ladder strip, and the real timeline chart.
+        // command bar, the live theater model feeding the "hottest theater" driver,
+        // and the real timeline chart. NOTE: v2 intentionally dropped the dedicated
+        // "theater-ladder" strip (see dashboard.html: "theaters now surface only via
+        // the systemic-index headline + 'hottest theater' driver in the command
+        // strip"), so we assert the live `d.theaters` data binding that drives it
+        // rather than a removed CSS hook.
         assert!(DASHBOARD_HTML.contains("GLOBAL CONFLICT RISK MONITOR"));
-        assert!(DASHBOARD_HTML.contains("theater-ladder"));
+        assert!(DASHBOARD_HTML.contains("d.theaters"));
         assert!(DASHBOARD_HTML.contains("systemic index"));
         assert!(DASHBOARD_HTML.contains("timeline-chart"));
     }
