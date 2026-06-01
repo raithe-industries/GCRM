@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<!-- RAiTHE INDUSTRIES INCORPORATED © 2026 — GCRM v2 Methodology -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCRM — Methodology (v2)</title>
+<link rel="icon" type="image/png" sizes="32x32" href="{{BASE_PATH}}/favicon-32x32.png?v={{LOGO_VER}}">
+<style>
+:root{--bg:#0a0e17;--panel:#111725;--line:#1e2940;--ink:#e6ecf5;--dim:#8a98b3;--faint:#5d6b86;--accent:#5b8def}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:840px;margin:0 auto;padding:0 22px 80px}
+header{display:flex;align-items:center;gap:13px;padding:20px 0;border-bottom:1px solid var(--line);margin-bottom:8px}
+header img{width:28px;height:28px}
+.brand{font-weight:700;letter-spacing:.14em;font-size:13px}
+.hgrow{flex:1}
+h1{font-size:27px;letter-spacing:-.01em;margin:30px 0 6px}
+.sub{color:var(--dim);margin:0 0 10px}
+h2{font-size:19px;margin:38px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:15px;color:var(--ink);margin:20px 0 6px}
+p,li{color:#cdd6e6}
+code{background:#0d1320;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bcd3ff}
+pre{background:#0d1320;border:1px solid var(--line);border-radius:9px;padding:14px 16px;overflow:auto;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#bcd3ff}
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 18px;margin:18px 0}
+.toc a{display:inline-block;margin:3px 14px 3px 0;font-size:13px;color:var(--dim)}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+th{color:var(--faint);font-weight:600;background:#0d1320}
+.note{background:#10182a;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin:16px 0;color:#cdd6e6;font-size:14px}
+.warn{border-left-color:#f59e0b}
+footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <img src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="RAiTHE">
+  <div class="brand">GCRM · METHODOLOGY</div>
+  <div class="hgrow"></div>
+  <a href="{{BASE_PATH}}/">← Live dashboard</a>
+</header>
+
+<h1>How GCRM works (v2)</h1>
+<p class="sub">The Global Conflict Risk Monitor is a real-time OSINT aggregation and probabilistic risk index. This page documents the v2 model exactly as implemented.</p>
+
+<div class="toc">
+  <a href="#what">What it is</a><a href="#pipeline">Pipeline</a><a href="#baseline">Baseline prior</a>
+  <a href="#modalities">Modalities</a><a href="#theaters">Theaters &amp; ladder</a><a href="#couplers">Couplers</a>
+  <a href="#likelihood">Likelihood</a><a href="#index">Systemic index</a><a href="#calibration">Calibration</a>
+  <a href="#ai">AI layer</a><a href="#confidence">Confidence</a><a href="#nuclear">Nuclear detector</a><a href="#limits">Limits</a>
+</div>
+
+<h2 id="what">What GCRM is — and is not</h2>
+<p>GCRM continuously ingests geopolitical news, codes each item into structured signal, and computes a <b>calibrated risk index</b> of systemic (great-power) war. The headline is a <b>systemic index (0–100)</b> aligned to an escalation ladder; an annualized P(systemic war) is shown as a secondary figure.</p>
+<p>It is <b>not</b> a forecast of certainty and <b>not</b> derived from a generative model. "Probability" here means the output of a calibrated index, not a formal Bayesian posterior. Every input is openly available; no classified or restricted sources.</p>
+
+<h2 id="pipeline">Pipeline</h2>
+<pre>Ingestor (RSS / GNews / GDELT)
+  → NLP processor (pure-Rust dedup + keyword modality scoring + theater assignment)
+  → LLM structured extraction (concurrent worker pool, Ollama) — optional
+  → Aggregator (event window, corroboration)
+  → Theater + systemic engine → RiskSnapshot
+  → WebSocket → dashboard</pre>
+<p>Each stage is an independent async task. The LLM runs in a bounded concurrent worker pool, so model latency never serializes ingestion.</p>
+
+<h2 id="baseline">The baseline prior (no more 2000-year anchor)</h2>
+<p>v1 anchored risk to two world wars over ~2026 years (<code>≈ 0.0987%/yr</code>) — a non-stationary frequentist error that treated systemic war as a Poisson process running since antiquity, ignoring that the nuclear-armed multipolar system did not exist before 1945. It pinned the prior sub-0.1% and the model fought to climb out of that hole.</p>
+<p>v2 uses a flat <b>modern quiet-year baseline</b> (<code>BASELINE_ANNUAL ≈ 1.5%/yr</code>) as the logistic prior — the structural regime no longer inflates the prior; it enters the likelihood as a guardrail amplifier (below). A structurally calm world therefore sits near the baseline, and acute signal does the lifting.</p>
+
+<h2 id="modalities">Five orthogonal modalities</h2>
+<p>Risk is scored on five genuinely independent <i>modalities</i> — the kind of force in play — measured per theater and globally:</p>
+<table><tr><th>Modality</th><th>Captures</th></tr>
+<tr><td>Kinetic</td><td>Armed force actually in use (strikes, ground combat, great-power war, CBRN attack)</td></tr>
+<tr><td>Nuclear</td><td>Posture, signaling, doctrine, alerting, use</td></tr>
+<tr><td>Coercive-economic</td><td>Blockade, energy weaponization, SWIFT/sanctions-as-war</td></tr>
+<tr><td>Cyber / info</td><td>Infrastructure attacks, influence operations</td></tr>
+<tr><td>Diplomatic</td><td>Collapse of off-ramps / negotiation channels</td></tr></table>
+<p>v1's eight domains were not orthogonal — <code>great_power_conflict</code> and <code>alliance_activation</code> described <i>who</i>, not a kind of force, and <code>wmd_mass_casualty</code> overlapped nuclear. One great-power strike lit four buckets at once and was counted ~4×. v2 removes the three non-orthogonal axes: great-power involvement and alliances become <b>couplers</b>; WMD becomes an escalation <b>rung</b> override.</p>
+
+<h3>Peak-aware aggregation</h3>
+<p>v1 scored each domain by the <i>mean</i> signal over all tagged events, so a handful of severe signals were averaged against hundreds of ambient mentions — more chatter <i>lowered</i> risk (a signal-inversion bug). v2 scores each modality from the strength of its <b>top-K</b> recency-and-credibility-weighted contributions, so a real crisis is not diluted by background noise.</p>
+
+<h2 id="theaters">Theaters and the escalation ladder</h2>
+<p>A systemic war is not "many global domains light up" — it is a regional war in a theater that couples to great powers while other theaters are also hot. v2 scores each theater independently: <b>NATO–Russia, US/Israel–Iran, US–China/Taiwan, India–Pakistan, Korea</b>.</p>
+<p>Each theater is placed on a Kahn / CrisisWatch-style discrete <b>escalation ladder</b> with a trend arrow:</p>
+<pre>Stable → Tension → Crisis → Limited War → Great-Power War → Systemic War</pre>
+<p>A direct great power in a war forces Great-Power War; a chemical/biological attack floors a theater at Limited War; confirmed nuclear <i>use</i> forces the Systemic rung.</p>
+
+<h2 id="couplers">Systemic couplers</h2>
+<p>The factors that turn a regional war into a world war — they multiply the systemic likelihood:</p>
+<ul>
+<li><b>Great-power entanglement</b> — distinct great powers active across hot theaters.</li>
+<li><b>Multi-theater concurrency</b> — the real co-occurrence signal: simultaneous hot theaters (Gulf + Ukraine + Taiwan), applied modestly so breadth does not swamp a single brink.</li>
+<li><b>Alliance-chain activation</b> — Article 5 / mutual-defense invocation.</li>
+<li><b>Guardrail collapse</b> — arms-control / deterrence erosion (carries the operator-tunable regime factors).</li>
+<li><b>Nuclear brink</b> — a direct ≥2-great-power nuclear confrontation in the hottest theater is the apex amplifier, so single-theater intensity (Cuba 1962) outranks multi-theater breadth.</li>
+</ul>
+
+<h2 id="likelihood">Systemic likelihood &amp; the risk index</h2>
+<p>The hottest theater's heat is amplified by the couplers into a systemic likelihood <code>L_sys</code>, folded into a flat baseline prior on the log-odds scale:</p>
+<pre>L_sys = max_theater_heat × brink × coupling × concurrency × guardrail
+P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at 0.90</pre>
+<p>L = 0 reproduces the baseline; large L saturates toward the ceiling along an S-curve. The <b>0.90 ceiling</b> is an engineering choice (epistemic humility, raised from v1's 0.85), not a probabilistic prior — the model has no ground truth and must never emit near-certainty.</p>
+
+<h2 id="index">The systemic index (0–100)</h2>
+<p>The public headline is aligned to the escalation ladder so it reads as a rung, not an opaque number: <code>index = 100 · (max_rung_level + within-band heat) / 6</code>. Great-Power War with deep heat reads ~75–83; a quiet world reads near zero.</p>
+
+<h2 id="calibration">Calibration &amp; backtest</h2>
+<p>The constants are <b>fitted, not guessed</b>. A backtest harness replays synthetic historical analogs through the full engine on every CI run and asserts both the bands and the ordering:</p>
+<table><tr><th>Analog</th><th>P(systemic war), annualized</th></tr>
+<tr><td>Quiet modern year</td><td>~2%</td></tr>
+<tr><td>Ukraine, Feb 2022 (one full-war theater)</td><td>~39%</td></tr>
+<tr><td>Present world (idealized full-intensity)</td><td>~65% (live corpus, a fragile ceasefire, reads lower)</td></tr>
+<tr><td>Cuba, Oct 1962 (direct nuclear brink)</td><td>~80%</td></tr></table>
+<p>Ordering <code>quiet &lt; Ukraine &lt; current &lt; Cuba</code> is enforced. The brink term is what lets one nuclear-superpower standoff outrank three concurrent regional wars.</p>
+
+<h2 id="ai">The AI layer</h2>
+<p>A local LLM (Ollama) performs <b>structured event extraction</b> — actor → action → target, theater, a signed Goldstein-style escalation step, severity, and the five modality scores — not plain re-scoring. It runs in a bounded concurrent worker pool and falls back silently to keyword scoring if unavailable. An <b>I&amp;W board</b> tracks nine deterministic observable warning conditions, and a periodic <b>analyst brief</b> explains the current reading in prose (with a templated fallback). Optional embedding-based semantic dedup collapses paraphrased headlines of one event.</p>
+
+<h2 id="confidence">Confidence</h2>
+<p>An estimate-confidence score reflects source tier quality, event volume, and active-source breadth. Low event volume or thin sourcing lowers confidence; it is reported alongside the index, never hidden.</p>
+
+<h2 id="nuclear">Nuclear detector</h2>
+<p>A dedicated subsystem monitors FDSN seismic networks, public CTBTO statements, and nuclear-news spikes, fusing them into a confidence-weighted alert. Alerts are honestly labeled "SEISMIC ANOMALY" until official confirmation — the detector never claims a detonation.</p>
+
+<h2 id="limits">Honest limitations</h2>
+<div class="note warn">The output is a <b>calibrated risk index</b>, not a true probability and not a formal posterior. It cannot see intentions, classified intelligence, or the future. Calibration is anchored to a handful of historical analogs and expert priors; reasonable analysts would set different bands. The 0.90 ceiling means the model deliberately refuses to express near-certainty. Treat it as a defensible, transparent thermometer of open-source signal — not an oracle.</div>
+
+<footer>RAiTHE INDUSTRIES INCORPORATED © 2026. All rights reserved. <a href="{{BASE_PATH}}/">Return to the live dashboard →</a></footer>
+</div>
+</body>
+</html>

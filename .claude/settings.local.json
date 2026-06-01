@@ -81,7 +81,13 @@
       "Bash(ps -eo pid,lstart,etime,args)",
       "Bash(awk '/fn route_count/,/^    }$/' src/server.rs)",
       "Bash(awk '/fn __TRACKED_VAR__/,/^    }$/' src/server.rs)",
-      "Bash(echo \"launching pid $!\")"
+      "Bash(echo \"launching pid $!\")",
+      "Bash(command -v convert)",
+      "Bash(identify \"/home/st0n3/Pictures/Screenshots/Screenshot from 2026-05-31 20-31-44.png\")",
+      "Bash(python3 -c \"from PIL import Image; im=Image.open\\('/home/st0n3/Pictures/Screenshots/Screenshot from 2026-05-31 20-31-44.png'\\); print\\(im.size\\)\")",
+      "Bash(/snap/bin/codium --version)",
+      "Bash(/snap/bin/codium --list-extensions)",
+      "WebSearch"
     ]
   }
 }

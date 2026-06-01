@@ -17,9 +17,24 @@ use uuid::Uuid;
 // bayesian.rs imports this so both modules always agree on "elevated".
 pub const ELEVATION_THRESHOLD: f64 = 0.32;
 
-// ── Historical anchor ─────────────────────────────────────────────────────────
-// Two world wars over 2026 years → P₀ = 0.000987 / yr
-pub const HISTORICAL_ANCHOR: f64 = 2.0 / 2026.0;
+// ── Baseline annual prior ──────────────────────────────────────────────────────
+// GCRM v2: the old "2 world wars / 2026 years" anchor (0.0987%/yr) was a
+// non-stationary frequentist error — it modelled systemic war as a Poisson
+// process running since 1 AD, ignoring that the nuclear-armed multipolar system
+// did not exist before 1945. It pinned the prior sub-0.1% so the whole model
+// fought to climb out of a hole.
+//
+// BASELINE_ANNUAL is the calibrated quiet-year baseline for the MODERN system:
+// the annualized probability of a systemic (great-power) war in a structurally
+// calm year, anchored to expert/forecaster priors and backtested against analogs.
+// v2 uses it as the FLAT logistic prior (the structural regime no longer inflates
+// the prior — it enters the systemic likelihood as a guardrail amplifier). Fitted
+// in the Phase-3 backtest so quiet ≈ 2%; the final value is Robert's calibration.
+pub const BASELINE_ANNUAL: f64 = 0.015;
+
+// Back-compat alias — some call sites/tests still reference the old name. Points
+// at the new baseline so there is a single source of truth. Prefer BASELINE_ANNUAL.
+pub const HISTORICAL_ANCHOR: f64 = BASELINE_ANNUAL;
 
 // ── Source tier ───────────────────────────────────────────────────────────────
 
@@ -90,18 +105,178 @@ impl std::fmt::Display for AlertLevel {
     }
 }
 
-// ── Domain IDs ────────────────────────────────────────────────────────────────
-
+// ── Modality (domain) IDs ───────────────────────────────────────────────────────
+//
+// GCRM v2: the scored axes are now FIVE genuinely orthogonal *modalities* — the
+// kind of force in play — measured per theater and globally. The id strings are
+// kept stable (reusing five of the legacy eight) so storage, the operator API and
+// the dashboard keep working; the three dropped axes were not modalities:
+//   • great_power_conflict / alliance_activation → describe WHO, not what kind of
+//     force. They become SYSTEMIC COUPLERS (Phase 2), not scored domains.
+//   • wmd_mass_casualty → an OUTCOME threshold. It becomes an escalation-ladder
+//     RUNG override driven by event.wmd_indicator, not a continuous axis.
+// Dropping them removes the collinearity where one great-power strike lit up four
+// buckets at once and was counted ~4×.
+//
+//   military_escalation  → KINETIC          (armed force actually in use)
+//   nuclear_posture      → NUCLEAR          (posture / signaling / doctrine / use)
+//   economic_warfare     → COERCIVE-ECONOMIC (blockade, energy weaponization, SWIFT)
+//   cyber_info_ops       → CYBER / INFO
+//   diplomatic_breakdown → DIPLOMATIC        (off-ramp / channel breakdown risk)
 pub const DOMAIN_IDS: &[&str] = &[
     "military_escalation",
     "nuclear_posture",
-    "diplomatic_breakdown",
     "economic_warfare",
     "cyber_info_ops",
-    "alliance_activation",
-    "great_power_conflict",
-    "wmd_mass_casualty",
+    "diplomatic_breakdown",
 ];
+
+// ── Theater (dyad) ──────────────────────────────────────────────────────────────
+//
+// A systemic war is a regional war in a theater that couples to great powers while
+// other theaters are also hot. v2 scores each theater independently. theater_of()
+// maps an event's canonical actor_ids (+ region) to a theater so per-theater
+// escalation can be tracked instead of a single global average.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Theater {
+    NatoRussia,
+    UsIran,
+    UsChinaTaiwan,
+    IndiaPakistan,
+    Korea,
+    Other,
+}
+
+impl Theater {
+    pub fn id(&self) -> &'static str {
+        match self {
+            Theater::NatoRussia    => "nato_russia",
+            Theater::UsIran        => "us_iran",
+            Theater::UsChinaTaiwan => "us_china_taiwan",
+            Theater::IndiaPakistan => "india_pakistan",
+            Theater::Korea         => "korea",
+            Theater::Other         => "other",
+        }
+    }
+
+    #[allow(dead_code)] // consumed by the theater UI / snapshot in Phase 2
+    pub fn label(&self) -> &'static str {
+        match self {
+            Theater::NatoRussia    => "NATO–Russia",
+            Theater::UsIran        => "US/Israel–Iran",
+            Theater::UsChinaTaiwan => "US–China / Taiwan",
+            Theater::IndiaPakistan => "India–Pakistan",
+            Theater::Korea         => "Korean Peninsula",
+            Theater::Other         => "Other / Diffuse",
+        }
+    }
+
+    /// All theaters except the catch-all, in display priority order.
+    pub fn primary() -> [Theater; 5] {
+        [Theater::NatoRussia, Theater::UsIran, Theater::UsChinaTaiwan,
+         Theater::IndiaPakistan, Theater::Korea]
+    }
+}
+
+/// Map the canonical actor_ids present in an event (plus its resolved region) to a
+/// theater. Counts actor hits per theater and takes the max; ties break by the
+/// Theater::primary() priority order. Returns Other when nothing matches — a story
+/// with no tracked dyad does not belong to a named theater.
+pub fn theater_of(actor_ids: &[String], region: Option<&str>) -> Theater {
+    // Actor → theater membership. An actor can belong to multiple theaters (e.g.
+    // united_states appears in several); the per-theater count + region tiebreak
+    // resolves which one a given story is actually about.
+    fn theaters_for(actor: &str) -> &'static [Theater] {
+        match actor {
+            "russia" | "russia_military" | "russia_wagner" | "ukraine" | "ukraine_military"
+                => &[Theater::NatoRussia],
+            "nato"  => &[Theater::NatoRussia],
+            "iran"  | "iran_military" | "israel" | "israel_military"
+            | "hezbollah" | "hamas" | "houthis" | "saudi_arabia" | "syria"
+                => &[Theater::UsIran],
+            "china" | "china_military" | "taiwan"
+                => &[Theater::UsChinaTaiwan],
+            "india" | "pakistan"
+                => &[Theater::IndiaPakistan],
+            "north_korea" | "south_korea"
+                => &[Theater::Korea],
+            // Great powers that span theaters — counted toward whichever theater
+            // their co-actors already implicate (handled via region tiebreak below).
+            _ => &[],
+        }
+    }
+
+    let mut counts: [usize; 5] = [0; 5];
+    let idx = |t: Theater| Theater::primary().iter().position(|x| *x == t).unwrap();
+    for aid in actor_ids {
+        for t in theaters_for(aid) {
+            counts[idx(*t)] += 1;
+        }
+    }
+
+    // Region as a soft tiebreak / weak signal when actors are ambiguous.
+    if let Some(r) = region {
+        let bump = match r {
+            "europe_eurasia" => Some(Theater::NatoRussia),
+            "middle_east"    => Some(Theater::UsIran),
+            "asia_pacific"   => Some(Theater::UsChinaTaiwan),
+            "south_asia"     => Some(Theater::IndiaPakistan),
+            _ => None,
+        };
+        if let Some(t) = bump { counts[idx(t)] += 1; }
+    }
+
+    let max = *counts.iter().max().unwrap_or(&0);
+    if max == 0 { return Theater::Other; }
+    // First theater (in priority order) achieving the max wins.
+    let pos = counts.iter().position(|&c| c == max).unwrap();
+    Theater::primary()[pos]
+}
+
+// ── Escalation ladder ───────────────────────────────────────────────────────────
+//
+// Kahn / CrisisWatch-style discrete, legible rungs. Each theater sits on one rung,
+// derived from its modality scores (Phase 2). WMD/nuclear use force a rung override
+// rather than being a continuous domain.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EscalationRung {
+    #[default]
+    Stable,
+    Tension,
+    Crisis,
+    LimitedWar,
+    GreatPowerWar,
+    Systemic,
+}
+
+impl EscalationRung {
+    /// 0..5 numeric level for ordering, charts, and the systemic index.
+    pub fn level(&self) -> u8 {
+        match self {
+            EscalationRung::Stable        => 0,
+            EscalationRung::Tension       => 1,
+            EscalationRung::Crisis        => 2,
+            EscalationRung::LimitedWar    => 3,
+            EscalationRung::GreatPowerWar => 4,
+            EscalationRung::Systemic      => 5,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            EscalationRung::Stable        => "Stable",
+            EscalationRung::Tension       => "Tension",
+            EscalationRung::Crisis        => "Crisis",
+            EscalationRung::LimitedWar    => "Limited War",
+            EscalationRung::GreatPowerWar => "Great-Power War",
+            EscalationRung::Systemic      => "Systemic War",
+        }
+    }
+}
 
 // ── Region map ────────────────────────────────────────────────────────────────
 
@@ -341,6 +516,24 @@ pub struct GeopoliticalEvent {
     pub target_actor_ids: Vec<String>,
     pub great_power_involved: bool,
 
+    /// v2: theater id this event belongs to (from theater_of()). Option/String
+    /// rather than the enum so older serialised events (no field) deserialize via
+    /// serde default, and the on-disk archive stays human-readable.
+    #[serde(default)]
+    pub theater: Option<String>,
+
+    /// v2: signed Goldstein-style escalation step in [-1.0, 1.0]. Negative =
+    /// de-escalatory (ceasefire/talks), positive = escalatory. A keyword-derived
+    /// placeholder in Phase 1; the LLM extractor produces the real value in Phase 4.
+    #[serde(default)]
+    pub escalation_step: f64,
+
+    /// v2: true if the article invokes a mutual-defense alliance (Article 5, NATO
+    /// invoked, collective defence). Feeds the alliance-chain systemic coupler
+    /// (Phase 2) instead of being its own scored domain.
+    #[serde(default)]
+    pub alliance_indicator: bool,
+
     pub casualties:       Option<u32>,
     pub civilian_impact:  bool,
     pub severity:         f64,
@@ -389,6 +582,7 @@ impl GeopoliticalEvent {
             actors: vec![], actor_ids: vec![],
             target_actors: vec![], target_actor_ids: vec![],
             great_power_involved: false,
+            theater: None, escalation_step: 0.0, alliance_indicator: false,
             casualties: None, civilian_impact: false,
             severity: 0.0, nuclear_indicator: false, wmd_indicator: false,
             source, source_tier: tier, credibility_weight: weight,
@@ -439,6 +633,46 @@ impl DomainScore {
     }
 }
 
+// ── Theater state (v2) ──────────────────────────────────────────────────────────
+//
+// Per-theater escalation snapshot. Each named theater is scored independently from
+// the events assigned to it, producing a heat (0..1 weighted modality intensity), a
+// discrete escalation rung, a trend vs the previous tick, and its dominant actors.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TheaterState {
+    pub theater_id:       String,
+    pub label:            String,
+    pub rung:             EscalationRung,
+    pub rung_label:       String,
+    pub heat:             f64,                    // 0..1
+    pub modality_scores:  HashMap<String, f64>,   // modality_id → 0..1
+    pub trend:            String,                 // "rising" | "falling" | "stable"
+    pub delta:            f64,
+    pub event_count:      usize,
+    pub gp_involved:      bool,
+    pub alliance_invoked: bool,
+    pub top_actors:       Vec<String>,
+}
+
+// ── Systemic couplers (v2) ──────────────────────────────────────────────────────
+//
+// The factors that turn a regional war into a *world* war. These replace the flat
+// regime-multiplier product as the conceptual driver of the systemic index: a
+// regional crisis that couples to great powers, activates alliance chains, runs
+// concurrently with other hot theaters, and has lost its guardrails is the systemic
+// signature. (The operator-tunable regime multiplier still feeds the structural /
+// guardrail component until settings migration in a later pass.)
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SystemicCouplers {
+    pub gp_entanglement:     f64,   // 0..1 — distinct great powers active across hot theaters
+    pub alliance_activation: f64,   // 0..1 — mutual-defense invocation signal
+    pub concurrency:         f64,   // fractional count of simultaneously-hot theaters
+    pub guardrail_collapse:  f64,   // 0..1 — arms-control / deterrence guardrails gone
+    pub coupling_multiplier: f64,   // combined multiplier applied to the systemic likelihood
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,6 +709,21 @@ pub struct RiskSnapshot {
 
     pub delta_annual: f64,
     pub delta_30day:  f64,
+
+    // ── v2 systemic layer ──
+    /// 0..100 legible headline index (Doomsday-Clock / DEFCON style), derived from
+    /// the systemic likelihood. The new public hero metric; p_wwiii_* is secondary.
+    #[serde(default)]
+    pub systemic_index: f64,
+    /// Per-theater escalation states (NATO–Russia, US/Israel–Iran, …).
+    #[serde(default)]
+    pub theaters: Vec<TheaterState>,
+    /// The couplers that drive systemic escalation.
+    #[serde(default)]
+    pub couplers: SystemicCouplers,
+    /// Human-readable driver string, e.g. "US/Israel–Iran at Great-Power War; 2 theaters hot".
+    #[serde(default)]
+    pub driver: String,
 }
 
 impl Default for RiskSnapshot {
@@ -504,6 +753,10 @@ impl Default for RiskSnapshot {
             top_actors: vec![],
             delta_annual: 0.0,
             delta_30day: 0.0,
+            systemic_index: 0.0,
+            theaters: vec![],
+            couplers: SystemicCouplers::default(),
+            driver: String::new(),
         }
     }
 }
@@ -570,23 +823,40 @@ pub struct LlmSettings {
     pub endpoint:     String,
     #[serde(default = "LlmSettings::default_model")]
     pub model:        String,
+    /// Embedding model for semantic dedup (v2 Phase 4).
+    #[serde(default = "LlmSettings::default_embed_model")]
+    pub embed_model:  String,
+    /// Enable embedding-based semantic dedup (catches same-event paraphrases the
+    /// MinHash title dedup misses). Off by default — it adds one embeddings call per
+    /// LLM-gated article on top of extraction. Requires the embed_model pulled.
+    #[serde(default)]
+    pub semantic_dedup: bool,
+    /// Number of concurrent LLM extraction calls (worker-pool size). Higher values
+    /// use more of the machine's GPU/CPU; match it to Ollama's OLLAMA_NUM_PARALLEL.
+    #[serde(default = "LlmSettings::default_concurrency")]
+    pub concurrency: usize,
     #[serde(default = "LlmSettings::default_timeout")]
     pub timeout_secs: u64,
 }
 
 impl LlmSettings {
-    fn default_endpoint() -> String { "http://localhost:11434".into() }
-    fn default_model()    -> String { "qwen2.5:7b".into() }
-    fn default_timeout()  -> u64   { 10 }
+    fn default_endpoint()    -> String { "http://localhost:11434".into() }
+    fn default_model()       -> String { "qwen2.5:7b".into() }
+    fn default_embed_model() -> String { "nomic-embed-text".into() }
+    fn default_concurrency() -> usize  { 8 }
+    fn default_timeout()     -> u64    { 10 }
 }
 
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            enabled:      false,
-            endpoint:     Self::default_endpoint(),
-            model:        Self::default_model(),
-            timeout_secs: Self::default_timeout(),
+            enabled:        false,
+            endpoint:       Self::default_endpoint(),
+            model:          Self::default_model(),
+            embed_model:    Self::default_embed_model(),
+            semantic_dedup: false,
+            concurrency:    Self::default_concurrency(),
+            timeout_secs:   Self::default_timeout(),
         }
     }
 }
@@ -651,13 +921,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn historical_anchor_is_two_over_2026() {
-        assert!((HISTORICAL_ANCHOR - 2.0 / 2026.0).abs() < 1e-12);
+    fn baseline_annual_is_modern_not_2_over_2026() {
+        // v2: the 2/2026 frequentist anchor was removed. The baseline is now a
+        // modern quiet-year prior, and the old name aliases the new constant.
+        assert!((BASELINE_ANNUAL - 0.015).abs() < 1e-9);
+        assert_eq!(HISTORICAL_ANCHOR, BASELINE_ANNUAL);
+        assert!((BASELINE_ANNUAL - 2.0 / 2026.0).abs() > 1e-4, "must no longer equal 2/2026");
     }
 
     #[test]
-    fn historical_anchor_less_than_one_percent() {
-        assert!(HISTORICAL_ANCHOR < 0.01);
+    fn baseline_annual_plausible_range() {
+        // A modern quiet-year systemic-war prior: well under 5%, well over the old
+        // sub-0.1% floor that pinned the model.
+        assert!(BASELINE_ANNUAL > 0.001 && BASELINE_ANNUAL < 0.05);
+    }
+
+    #[test]
+    fn theater_of_resolves_known_dyads() {
+        assert_eq!(theater_of(&["russia".into(), "ukraine".into()], Some("europe_eurasia")), Theater::NatoRussia);
+        assert_eq!(theater_of(&["iran".into(), "israel".into()], Some("middle_east")), Theater::UsIran);
+        assert_eq!(theater_of(&["china".into(), "taiwan".into()], Some("asia_pacific")), Theater::UsChinaTaiwan);
+        assert_eq!(theater_of(&["india".into(), "pakistan".into()], Some("south_asia")), Theater::IndiaPakistan);
+        assert_eq!(theater_of(&["north_korea".into()], None), Theater::Korea);
+    }
+
+    #[test]
+    fn theater_of_unknown_is_other() {
+        assert_eq!(theater_of(&["brazil".into()], Some("latin_america")), Theater::Other);
+        assert_eq!(theater_of(&[], None), Theater::Other);
+    }
+
+    #[test]
+    fn escalation_rung_levels_ordered() {
+        assert_eq!(EscalationRung::Stable.level(), 0);
+        assert_eq!(EscalationRung::Systemic.level(), 5);
+        assert!(EscalationRung::LimitedWar.level() > EscalationRung::Crisis.level());
     }
 
     #[test]
@@ -909,10 +1207,14 @@ mod tests {
     }
 
     #[test]
-    fn all_domain_ids_present() {
-        assert_eq!(DOMAIN_IDS.len(), 8);
+    fn modality_ids_are_five_orthogonal_axes() {
+        assert_eq!(DOMAIN_IDS.len(), 5);
         assert!(DOMAIN_IDS.contains(&"nuclear_posture"));
-        assert!(DOMAIN_IDS.contains(&"wmd_mass_casualty"));
+        assert!(DOMAIN_IDS.contains(&"military_escalation"));
+        // The three non-orthogonal axes were dropped (now couplers / a rung).
+        assert!(!DOMAIN_IDS.contains(&"wmd_mass_casualty"));
+        assert!(!DOMAIN_IDS.contains(&"great_power_conflict"));
+        assert!(!DOMAIN_IDS.contains(&"alliance_activation"));
     }
 
     #[test]

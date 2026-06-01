@@ -109,7 +109,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         "computed_at":  snap.computed_at.to_rfc3339(),
         "prior": {
             "historical_anchor": snap.historical_anchor,
-            "formula":           "2 / 2026 = 0.000987/yr",
+            "formula":           "modern quiet-year baseline (v2; backtested, not a 2000-yr frequency)",
             "regime_multiplier": snap.regime_multiplier,
             "adjusted_prior":    snap.adjusted_prior,
         },
@@ -136,6 +136,14 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "level":   snap.alert_level.to_string(),
             "message": snap.alert_message,
         },
+        // ── v2 systemic layer (headline index + escalation ladder + couplers) ──
+        "systemic": {
+            "index":  snap.systemic_index,
+            "driver": snap.driver,
+        },
+        "theaters": snap.theaters,
+        "couplers": snap.couplers,
+        "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
             "sources_active":           snap.sources_active,
@@ -534,6 +542,9 @@ pub struct AppState {
     /// set, or manual event assertion). Surfaced in every snapshot broadcast so the
     /// dashboard can show an honest "model updated" indicator to public users.
     pub last_calibrated_at: Mutex<Option<DateTime<Utc>>>,
+    /// Cached AI analyst brief (v2 Phase 4) — regenerated periodically by the brief
+    /// task, served at GET {base}/api/brief. None until the first generation.
+    pub analyst_brief:     Mutex<Option<serde_json::Value>>,
 }
 
 impl AppState {
@@ -545,6 +556,7 @@ impl AppState {
             nuclear_alerts:     Mutex::new(Vec::new()),
             operator_events:    Mutex::new(Vec::new()),
             shared_regime:      Mutex::new(Vec::new()),
+            analyst_brief:      Mutex::new(None),
             epoch_store:        Mutex::new(EpochStore::new()),
             last_calibrated_at: Mutex::new(None),
         })

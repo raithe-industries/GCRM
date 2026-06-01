@@ -35,14 +35,26 @@
 //     main.rs holds the returned NlpSidecarHandle and calls handle.shutdown()
 //     in the wait_for_shutdown() select arm before the process exits.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::{mpsc, watch, Mutex, Semaphore};
 use tracing::{info, warn};
 
 use crate::aggregator::AppState;
-use crate::llm_enricher::{LlmEnricher, LlmScores};
+use crate::llm_enricher::{cosine_similarity, LlmEnricher, LlmExtraction};
 use crate::models::{GeopoliticalEvent, LlmSettings, RawArticle, is_great_power};
 use crate::processor::{FuzzyDedup, NlpProcessor};
+
+/// Embedding-based semantic dedup (v2 Phase 4, opt-in via llm.semantic_dedup). Two
+/// titles whose embeddings are at least this cosine-similar are treated as the same
+/// real-world event, so 50 paraphrases of one strike become one escalation — also
+/// dampening the volume that the MinHash title dedup lets through.
+const SEMANTIC_THRESHOLD: f32 = 0.95;
+const SEM_RING_CAP: usize = 256;
+
+/// Shared ring of recent title embeddings for semantic dedup.
+type SemRing = Arc<Mutex<VecDeque<Vec<f32>>>>;
 
 // ── NlpSidecarHandle ─────────────────────────────────────────────────────────
 //
@@ -91,15 +103,27 @@ impl NlpSidecar {
     pub async fn run(mut self) {
         let _ = is_great_power("test");
 
-        let fuzzy     = FuzzyDedup::load();
+        let fuzzy         = FuzzyDedup::load();
         let mut processor = NlpProcessor::with_dedup(fuzzy);
-        let enricher  = LlmEnricher::new(self.llm_settings.clone());
+        let enricher      = Arc::new(LlmEnricher::new(self.llm_settings.clone()));
+        // Worker-pool size — configurable so it can saturate the machine's Ollama
+        // parallelism (match to OLLAMA_NUM_PARALLEL). The recv loop does the fast
+        // sequential work (dedup + keyword) and dispatches the slow LLM call here, so
+        // model latency no longer serializes the pipeline (the old per-article
+        // `classify().await` block was the dominant backend bottleneck).
+        let concurrency   = self.llm_settings.concurrency.max(1);
+        let sem           = Arc::new(Semaphore::new(concurrency));
 
-        info!("NLP processor: online — pure Rust, dedup cache loaded");
+        // Shared across the recv loop and the concurrent worker tasks.
+        let processed = Arc::new(AtomicU64::new(0));
+        let tagged    = Arc::new(AtomicU64::new(0));
+        let llm_hits  = Arc::new(AtomicU64::new(0));
+        let sem_ring: SemRing = Arc::new(Mutex::new(VecDeque::new()));
 
-        let mut processed   = 0u64;
-        let mut tagged      = 0u64;
-        let mut llm_hits    = 0u64;
+        info!(
+            "NLP processor: online — pure Rust dedup + structured LLM extraction (concurrency {})",
+            if enricher.is_enabled() { concurrency } else { 0 }
+        );
 
         loop {
             tokio::select! {
@@ -109,96 +133,97 @@ impl NlpSidecar {
                     let article = match maybe_article {
                         Some(a) => a,
                         None => {
-                            warn!(
-                                "NLP: raw_rx closed unexpectedly ({} processed, {} tagged). \
-                                 Saving dedup cache before exit.",
-                                processed, tagged
-                            );
+                            warn!("NLP: raw_rx closed unexpectedly. Saving dedup cache before exit.");
                             processor.dedup().save();
                             tracing::error!("NLP: pipeline broken (raw_rx closed). Exiting.");
                             std::process::exit(1);
                         }
                     };
 
-                    let article_id = article.id.clone();
-                    processed += 1;
+                    let p = processed.fetch_add(1, Ordering::Relaxed) + 1;
 
-                    // ── Keyword scoring ───────────────────────────────────────
-                    let keyword_event = processor.process(&article);
+                    // ── FAST sequential stage: dedup + keyword scoring ─────────
+                    // Must stay in the recv loop — FuzzyDedup is stateful/sequential.
+                    let kw_event = processor.process(&article);
 
-                    // ── LLM enrichment ────────────────────────────────────────
-                    // Path A: keyword produced an event → enrich with LLM scores
-                    // Path B: keyword found nothing but article has geopolitical
-                    //         trigger words → try LLM as the gate instead
-                    let final_event: Option<GeopoliticalEvent> = if let Some(mut ev) = keyword_event {
-                        if enricher.is_enabled() {
-                            if let Some(llm) = enricher.classify(&article.title, &article.body).await {
-                                merge_llm_scores(&mut ev, &llm);
-                                llm_hits += 1;
-                            }
-                        }
-                        Some(ev)
-                    } else if enricher.is_enabled() && has_geopolitical_trigger(&article.title) {
-                        // Keyword gate missed it — give LLM a chance
-                        if let Some(llm) = enricher.classify(&article.title, &article.body).await {
-                            if llm.max_domain_score() >= 0.45 {
-                                llm_hits += 1;
-                                Some(make_event_from_llm(&article, llm))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
+                    let do_llm = enricher.is_enabled()
+                        && (kw_event.is_some()
+                            || (kw_event.is_none() && has_geopolitical_trigger(&article.title)));
+
+                    if !do_llm {
+                        // No LLM needed: emit the keyword event directly if present.
+                        if let Some(event) = kw_event {
+                            emit_event(&self.app_state, &self.event_tx, &article.id, event, &tagged).await;
                         }
                     } else {
-                        None
-                    };
-
-                    if let Some(event) = final_event {
-                        let tagged_article = self.app_state.article_store.lock().await
-                            .set_domain_tags(&article_id, event.domain_tags.clone());
-                        // Persist the tagged copy so the archive reflects final
-                        // domain tags (boot loader keeps the last copy per id).
-                        if let Some(a) = tagged_article {
-                            crate::aggregator::append_article(&a).await;
-                        }
-
-                        tagged += 1;
-                        if self.event_tx.send(event).await.is_err() {
-                            warn!(
-                                "NLP: event_tx closed unexpectedly ({} processed, {} tagged). \
-                                 Saving dedup cache before exit.",
-                                processed, tagged
-                            );
-                            processor.dedup().save();
-                            tracing::error!("NLP: pipeline broken (event_tx closed). Exiting.");
-                            std::process::exit(1);
-                        }
+                        // ── Dispatch LLM extraction to the bounded worker pool ──
+                        // acquire_owned() awaits ONLY when LLM_CONCURRENCY calls are
+                        // already in flight — correct backpressure, not the old
+                        // per-article serial block.
+                        let permit = match sem.clone().acquire_owned().await {
+                            Ok(pm) => pm,
+                            Err(_) => break, // semaphore closed
+                        };
+                        let enricher  = enricher.clone();
+                        let event_tx  = self.event_tx.clone();
+                        let app_state = self.app_state.clone();
+                        let tagged    = tagged.clone();
+                        let llm_hits  = llm_hits.clone();
+                        let sem_ring  = sem_ring.clone();
+                        tokio::spawn(async move {
+                            let _permit = permit; // released on drop
+                            let llm = enricher.classify(&article.title, &article.body).await;
+                            let final_event: Option<GeopoliticalEvent> = match (kw_event, llm) {
+                                (Some(mut ev), Some(x)) => {
+                                    merge_llm_scores(&mut ev, &x);
+                                    llm_hits.fetch_add(1, Ordering::Relaxed);
+                                    Some(ev)
+                                }
+                                // LLM failed → keyword-only (silent fallback discipline).
+                                (Some(ev), None) => Some(ev),
+                                // Path B: keyword missed; LLM is the gate.
+                                (None, Some(x)) if x.max_modality() >= 0.45 => {
+                                    llm_hits.fetch_add(1, Ordering::Relaxed);
+                                    Some(make_event_from_llm(&article, &x))
+                                }
+                                _ => None,
+                            };
+                            if let Some(event) = final_event {
+                                // Optional embedding-based semantic dedup: drop the
+                                // event if a near-identical title (by meaning) was
+                                // seen recently. Falls back to no-op if embeddings
+                                // are unavailable — MinHash already ran.
+                                if enricher.is_semantic_dedup() {
+                                    if let Some(emb) = enricher.embed(&event.title).await {
+                                        let mut ring = sem_ring.lock().await;
+                                        if ring.iter().any(|e| cosine_similarity(e, &emb) >= SEMANTIC_THRESHOLD) {
+                                            return; // semantic duplicate — already counted
+                                        }
+                                        if ring.len() >= SEM_RING_CAP { ring.pop_front(); }
+                                        ring.push_back(emb);
+                                    }
+                                }
+                                emit_event(&app_state, &event_tx, &article.id, event, &tagged).await;
+                            }
+                        });
                     }
 
-                    if processed % 100 == 0 {
-                        let pct = tagged * 100 / processed;
+                    if p % 100 == 0 {
+                        let t = tagged.load(Ordering::Relaxed);
                         if enricher.is_enabled() {
-                            info!(
-                                "NLP: {} processed, {} tagged ({}% geo) | {} LLM enrichments",
-                                processed, tagged, pct, llm_hits
-                            );
+                            info!("NLP: {p} processed, {t} tagged | {} LLM extractions (concurrency {concurrency})",
+                                  llm_hits.load(Ordering::Relaxed));
                         } else {
-                            info!(
-                                "NLP processor: {} processed, {} tagged ({}% geopolitical)",
-                                processed, tagged, pct
-                            );
+                            info!("NLP processor: {p} processed, {t} tagged");
                         }
                     }
                 }
 
                 _ = self.shutdown_rx.changed() => {
                     if *self.shutdown_rx.borrow() {
-                        info!(
-                            "NLP processor: shutdown — {} processed, {} tagged, {} LLM hits. \
-                             Saving dedup cache...",
-                            processed, tagged, llm_hits
-                        );
+                        info!("NLP processor: shutdown — {} processed, {} tagged, {} LLM. Saving dedup cache...",
+                              processed.load(Ordering::Relaxed), tagged.load(Ordering::Relaxed),
+                              llm_hits.load(Ordering::Relaxed));
                         processor.dedup().save();
                         info!("NLP processor: dedup cache saved. Exiting cleanly.");
                         return;
@@ -209,47 +234,101 @@ impl NlpSidecar {
     }
 }
 
+/// Persist the article's final domain tags and forward the scored event downstream.
+/// Used by both the no-LLM fast path and the concurrent LLM workers.
+async fn emit_event(
+    app_state:  &Arc<AppState>,
+    event_tx:   &mpsc::Sender<GeopoliticalEvent>,
+    article_id: &str,
+    event:      GeopoliticalEvent,
+    tagged:     &Arc<AtomicU64>,
+) {
+    let tagged_article = app_state.article_store.lock().await
+        .set_domain_tags(article_id, event.domain_tags.clone());
+    if let Some(a) = tagged_article {
+        crate::aggregator::append_article(&a).await;
+    }
+    tagged.fetch_add(1, Ordering::Relaxed);
+    if event_tx.send(event).await.is_err() {
+        // Aggregator gone — main's task-join will surface the shutdown; just warn.
+        warn!("NLP: event_tx closed — dropping event (aggregator down?)");
+    }
+}
+
 // ── LLM merge helpers ─────────────────────────────────────────────────────────
 
 const LLM_TAG_THRESHOLD: f64 = 0.50;
 const LLM_SCORE_DISCOUNT: f64 = 0.90; // slight discount so keyword 1.0 beats LLM
 
-/// Merge LLM domain scores into an existing keyword-derived event.
-/// Takes the max of keyword score and discounted LLM score for each domain.
-fn merge_llm_scores(event: &mut GeopoliticalEvent, llm: &LlmScores) {
-    for (domain, llm_score) in &llm.as_domain_pairs() {
-        if *llm_score <= 0.0 { continue; }
-        let discounted = llm_score * LLM_SCORE_DISCOUNT;
-        let existing   = event.domain_signals.get(*domain).copied().unwrap_or(0.0);
-        event.domain_signals.insert(domain.to_string(), existing.max(discounted));
+/// Valid theater ids the LLM hint is allowed to set (must match models::Theater ids).
+fn is_valid_theater(t: &str) -> bool {
+    matches!(t, "nato_russia" | "us_iran" | "us_china_taiwan" | "india_pakistan" | "korea")
+}
+
+/// Merge structured LLM extraction into an existing keyword-derived event: max of
+/// keyword and discounted LLM per modality, blend severity, adopt the LLM's signed
+/// escalation step (the real Goldstein value, replacing the keyword placeholder), and
+/// fill the theater hint only when the deterministic keyword resolver left it Other.
+fn merge_llm_scores(event: &mut GeopoliticalEvent, x: &LlmExtraction) {
+    for (modality, score) in x.modality_pairs() {
+        if score <= 0.0 { continue; }
+        let discounted = score * LLM_SCORE_DISCOUNT;
+        let existing   = event.domain_signals.get(modality).copied().unwrap_or(0.0);
+        event.domain_signals.insert(modality.to_string(), existing.max(discounted));
     }
-    // Rebuild tag list from updated signals
-    event.domain_tags = event.domain_signals
-        .iter()
+    event.domain_tags = event.domain_signals.iter()
         .filter(|(_, &v)| v >= LLM_TAG_THRESHOLD)
         .map(|(k, _)| k.clone())
         .collect();
-    // Blend severity upward if LLM sees more than keywords did
-    if llm.severity > event.severity {
-        event.severity = (event.severity + llm.severity) / 2.0;
+
+    if x.severity > event.severity {
+        event.severity = (event.severity + x.severity) / 2.0;
+    }
+    if x.escalation_step != 0.0 {
+        event.escalation_step = x.escalation_step.clamp(-1.0, 1.0);
+    }
+    // Keyword theater_of is deterministic from canonical actors; only let the LLM hint
+    // fill in when there was no tracked dyad (Other / None).
+    let needs_theater = event.theater.as_deref().map_or(true, |t| t == "other");
+    if needs_theater && is_valid_theater(&x.theater) {
+        event.theater = Some(x.theater.clone());
+    }
+    if let Some(coded) = coded_summary(x) {
+        event.summary = coded;
     }
 }
 
-/// Create a GeopoliticalEvent from LLM scores alone (keyword gate missed it).
-fn make_event_from_llm(article: &RawArticle, llm: LlmScores) -> GeopoliticalEvent {
+/// A clean "actor action target" line from the structured extraction, for the feed
+/// and the analyst brief. None if the model returned no action.
+fn coded_summary(x: &LlmExtraction) -> Option<String> {
+    if x.action.trim().is_empty() { return None; }
+    let coded = format!("{} {} {}", x.actor.trim(), x.action.trim(), x.target.trim());
+    let coded = coded.split_whitespace().collect::<Vec<_>>().join(" ");
+    if coded.len() > 3 { Some(coded) } else { None }
+}
+
+/// Create a GeopoliticalEvent from a structured extraction alone (keyword gate missed
+/// it). The theater comes from the LLM hint since there are no keyword actors here.
+fn make_event_from_llm(article: &RawArticle, x: &LlmExtraction) -> GeopoliticalEvent {
     let mut event = GeopoliticalEvent::new(
         article.title.clone(),
         article.source.clone(),
         article.source_tier,
         article.published_at,
     );
-    for (domain, score) in &llm.as_domain_pairs() {
-        if *score >= LLM_TAG_THRESHOLD {
-            event.domain_signals.insert(domain.to_string(), *score * LLM_SCORE_DISCOUNT);
-            event.domain_tags.push(domain.to_string());
+    event.raw_article_id = article.id.clone();
+    for (modality, score) in x.modality_pairs() {
+        if score >= LLM_TAG_THRESHOLD {
+            event.domain_signals.insert(modality.to_string(), score * LLM_SCORE_DISCOUNT);
+            event.domain_tags.push(modality.to_string());
         }
     }
-    event.severity = llm.severity;
+    event.severity        = x.severity;
+    event.escalation_step = x.escalation_step.clamp(-1.0, 1.0);
+    event.theater = Some(if is_valid_theater(&x.theater) { x.theater.clone() } else { "other".to_string() });
+    if let Some(coded) = coded_summary(x) {
+        event.summary = coded;
+    }
     event
 }
 
@@ -403,6 +482,61 @@ mod tests {
         let path = std::env::var("GCRM_NLP_SOCKET").unwrap_or_default();
         assert_eq!(path, "/custom/path.sock");
         unsafe { std::env::remove_var("GCRM_NLP_SOCKET"); }
+    }
+
+    // ── Structured LLM extraction merge (v2 Phase 4) ──────────────────────────
+
+    fn extraction(mil: f64, nuc: f64, esc: f64, theater: &str) -> LlmExtraction {
+        LlmExtraction {
+            military_escalation: mil, nuclear_posture: nuc,
+            escalation_step: esc, severity: 0.8, theater: theater.to_string(),
+            actor: "Russia".into(), action: "launched strikes on".into(), target: "Kyiv".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn valid_theater_ids() {
+        assert!(is_valid_theater("us_iran"));
+        assert!(is_valid_theater("nato_russia"));
+        assert!(!is_valid_theater("other"));
+        assert!(!is_valid_theater("atlantis"));
+    }
+
+    #[test]
+    fn merge_takes_max_modality_and_sets_fields() {
+        let mut ev = GeopoliticalEvent::new(
+            "Russia strikes Kyiv".into(), "bbc".into(), SourceTier::Tier1, Utc::now());
+        ev.domain_signals.insert("military_escalation".into(), 0.4);
+        ev.theater = Some("other".into());
+        merge_llm_scores(&mut ev, &extraction(0.9, 0.0, 0.8, "nato_russia"));
+        assert!(ev.domain_signals["military_escalation"] > 0.7, "LLM 0.9 (disc 0.81) should beat keyword 0.4");
+        assert!(ev.domain_tags.contains(&"military_escalation".to_string()));
+        assert!((ev.escalation_step - 0.8).abs() < 1e-9);
+        assert_eq!(ev.theater.as_deref(), Some("nato_russia"), "Other should be filled by the LLM hint");
+        assert_eq!(ev.summary, "Russia launched strikes on Kyiv");
+    }
+
+    #[test]
+    fn merge_keeps_deterministic_theater_when_already_set() {
+        let mut ev = GeopoliticalEvent::new(
+            "US strikes Iran".into(), "bbc".into(), SourceTier::Tier1, Utc::now());
+        ev.theater = Some("us_iran".into());
+        merge_llm_scores(&mut ev, &extraction(0.8, 0.0, 0.7, "nato_russia"));
+        assert_eq!(ev.theater.as_deref(), Some("us_iran"), "keyword theater must not be overridden");
+    }
+
+    #[test]
+    fn make_event_from_extraction_builds_tagged_event() {
+        let art = make_article("Cyber attack on power grid", "");
+        let x = LlmExtraction {
+            cyber_info_ops: 0.7, severity: 0.6, escalation_step: 0.5,
+            theater: "us_china_taiwan".into(), ..Default::default()
+        };
+        let ev = make_event_from_llm(&art, &x);
+        assert!(ev.domain_tags.contains(&"cyber_info_ops".to_string()));
+        assert_eq!(ev.theater.as_deref(), Some("us_china_taiwan"));
+        assert!((ev.escalation_step - 0.5).abs() < 1e-9);
     }
 
     // Sidecar wrapper stubs — retained for historical documentation
