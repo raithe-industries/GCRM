@@ -464,6 +464,25 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("naval clash",           1.00),
             ("military operation",    0.90),
             ("armed forces",          0.80),
+            // v2: folded from the removed great_power_conflict / wmd_mass_casualty /
+            // alliance_activation axes. A great-power war, a chemical/bio attack, or a
+            // mutual-defense invocation all imply kinetic force in use, so they tag
+            // kinetic here AND set their own coupler/rung signal elsewhere
+            // (event.wmd_indicator for CBRN, event.alliance_indicator for Article 5 —
+            // both consumed by the Phase-2 systemic couplers). Nuclear use stays in
+            // nuclear_posture.
+            ("us-china war",          1.00),
+            ("us-russia war",         1.00),
+            ("chemical attack",       0.95),
+            ("nerve agent attack",    0.95),
+            ("biological attack",     0.90),
+            ("article 5 invoked",     0.90),
+            ("nato invoked",          0.90),
+            ("alliance activated",    0.85),
+            ("collective defence",    0.85),
+            ("collective defense",    0.85),
+            ("mutual defence",        0.85),
+            ("mutual defense",        0.85),
             // Strong
             ("airstrike",             0.70),
             ("air strike",            0.70),
@@ -636,91 +655,26 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("cyber",                 0.20),
             ("hack",                  0.15),
         ]),
-        ("alliance_activation", vec![
-            // Definitive
-            ("article 5 invoked",     1.00),
-            ("nato invoked",          1.00),
-            ("treaty invoked",        1.00),
-            ("alliance activated",    1.00),
-            ("collective defence",    0.90),
-            ("mutual defence",        0.90),
-            ("allied response",       0.85),
-            // Strong
-            ("article 5",             0.80),
-            ("security pact",         0.75),
-            ("defense treaty",        0.75),
-            ("military alliance",     0.70),
-            ("collective security",   0.70),
-            ("aukus",                 0.65),
-            ("five eyes",             0.65),
-            ("trilateral",            0.55),
-            ("joint exercises",       0.55),
-            ("security cooperation",  0.50),
-            ("military cooperation",  0.45),
-            ("coalition",             0.45),
-            ("allied forces",         0.50),
-            ("quad",                  0.45),
-            // Weak
-            ("nato",                  0.20),
-        ]),
-        ("great_power_conflict", vec![
-            // Definitive
-            ("us-china war",          1.00),
-            ("us-russia war",         1.00),
-            ("nato expansion",        0.85),
-            ("strategic competition", 0.80),
-            ("geopolitical rivalry",  0.80),
-            ("power competition",     0.75),
-            ("great power",           0.75),
-            ("indo-pacific",          0.65),
-            ("containment",           0.65),
-            ("superpower",            0.65),
-            ("hegemony",              0.65),
-            ("us-china",              0.60),
-            ("us-russia",             0.60),
-            // Moderate
-            ("south china sea",       0.50),
-            ("taiwan strait",         0.55),
-            ("korean peninsula",      0.45),
-            ("ukraine",               0.25),
-            ("taiwan",                0.30),
-            // Weak — retained; more specific than removed entries
-            ("us military",           0.20),
-            ("pla",                   0.20),
-            ("pentagon",              0.20),
-            ("kremlin",               0.15),
-        ]),
-        ("wmd_mass_casualty", vec![
-            // Definitive
-            ("chemical weapon used",  1.00),
-            ("biological weapon used", 1.00),
-            ("nerve agent attack",    1.00),
-            ("nuclear weapon used",   1.00),
-            ("mass casualty weapon",  1.00),
-            ("dirty bomb detonated",  1.00),
-            ("civilian massacre",     0.90),
-            ("genocide",              0.90),
-            ("mass destruction",      0.85),
-            ("cbrn",                  0.85),
-            // Strong
-            ("sarin",                 0.90),
-            ("novichok",              0.90),
-            ("nerve agent",           0.85),
-            ("chemical attack",       0.85),
-            ("biological attack",     0.85),
-            ("dirty bomb",            0.85),
-            ("anthrax",               0.80),
-            ("mustard gas",           0.80),
-            ("radiological",          0.75),
-            ("chemical weapon",       0.80),
-            ("biological weapon",     0.80),
-            ("nuclear weapon",        0.75),
-            // Moderate
-            ("mass casualty",         0.60),
-            ("wmd",                   0.55),
-        ]),
+        // v2: great_power_conflict, alliance_activation and wmd_mass_casualty were
+        // removed as scored modalities. They were not "kinds of force": great-power
+        // involvement and alliance invocation describe WHO (now systemic couplers),
+        // and WMD/mass-casualty is an OUTCOME (now an escalation-rung override driven
+        // by event.wmd_indicator). Their distinctive keywords were folded into the
+        // five orthogonal axes above (great-power war + CBRN attack → kinetic);
+        // alliance invocation is detected separately into event.alliance_indicator.
     ]
 }
+
+// ── Alliance-invocation detection (feeds the alliance-chain coupler, not a domain) ──
+
+/// Mutual-defense / collective-defense invocation phrases. Detected as a boolean
+/// indicator on the event rather than a scored modality — it is a WHO/coupling
+/// signal (does a treaty drag more states in), not a kind of force.
+const ALLIANCE_INVOCATION_PHRASES: &[&str] = &[
+    "article 5", "nato invoked", "treaty invoked", "alliance activated",
+    "collective defence", "collective defense", "mutual defence", "mutual defense",
+    "allied response", "collective security", "defense treaty",
+];
 
 /// Minimum domain signal to tag a domain (I-05), recalibrated for the noisy-OR
 /// signal model in `score_domains`. Under noisy-OR a single matched keyword
@@ -1004,6 +958,19 @@ impl NlpProcessor {
         event.wmd_indicator             = has_wmd;
         event.escalation_language_score = escalation_language_score;
         event.sentiment_score           = sentiment_score;
+        // v2: theater assignment, alliance-coupler flag, and a signed escalation step.
+        event.theater            = Some(
+            crate::models::theater_of(&event.actor_ids, event.region.as_deref()).id().to_string()
+        );
+        event.alliance_indicator = ALLIANCE_INVOCATION_PHRASES.iter().any(|p| tl.contains(p));
+        event.escalation_step    = {
+            // Sign from tone (hostile → escalatory), magnitude from severity. A
+            // keyword-derived placeholder; the LLM extractor replaces it in Phase 4.
+            let dir = if sentiment_score < -0.15 { 1.0 }
+                      else if sentiment_score >  0.15 { -1.0 }
+                      else { 0.4 };
+            (severity * dir).clamp(-1.0, 1.0)
+        };
         event.domain_signals            = domain_signals;
         event.domain_tags               = domain_tags;
         event.credibility_weight        = credibility_weight;
@@ -1309,11 +1276,17 @@ mod tests {
     }
 
     #[test]
-    fn domain_tagging_wmd_single_keyword() {
+    fn cbrn_attack_tags_kinetic_and_sets_wmd_indicator() {
+        // v2: WMD is no longer a scored domain. A chemical/bio attack tags KINETIC
+        // (military_escalation) and the event carries wmd_indicator for the Phase-2
+        // escalation-rung override.
         let mut proc = NlpProcessor::new();
-        let article = make_article("Chemical weapon used in Syria attack", "");
+        let article = make_article("Chemical weapon used in nerve agent attack in Syria", "");
         let event = proc.process(&article).unwrap();
-        assert!(event.domain_tags.contains(&"wmd_mass_casualty".to_string()));
+        assert!(event.domain_tags.contains(&"military_escalation".to_string()));
+        assert!(event.wmd_indicator, "chemical weapon should set wmd_indicator");
+        assert!(!event.domain_tags.contains(&"wmd_mass_casualty".to_string()),
+            "wmd_mass_casualty is no longer a scored domain");
     }
 
     #[test]
@@ -1336,14 +1309,18 @@ mod tests {
     }
 
     #[test]
-    fn great_power_conflict_discriminative_keyword_tags_correctly() {
+    fn great_power_war_keyword_tags_kinetic_and_resolves_theater() {
+        // v2: great_power_conflict is no longer a domain (it became a coupler).
+        // An explicit great-power WAR phrase tags KINETIC, and theater resolution
+        // assigns the US–China dyad.
         let mut proc = NlpProcessor::new();
         let article = make_article(
-            "Strategic competition between US and China intensifies over Indo-Pacific",
-            "Great power rivalry continues to define geopolitical landscape"
+            "US-China war fears grow as forces clash in the South China Sea",
+            "Warships exchange fire near contested waters"
         );
         let event = proc.process(&article).unwrap();
-        assert!(event.domain_tags.contains(&"great_power_conflict".to_string()));
+        assert!(event.domain_tags.contains(&"military_escalation".to_string()));
+        assert_eq!(event.theater.as_deref(), Some("us_china_taiwan"));
     }
 
     #[test]
@@ -1456,26 +1433,32 @@ mod tests {
     }
 
     #[test]
-    fn wmd_definitive_keywords_produce_high_signal() {
+    fn cbrn_attack_produces_high_kinetic_signal() {
+        // v2: CBRN attacks route into KINETIC at high weight (folded from the removed
+        // WMD axis); the event also flags wmd_indicator for the rung override.
         let mut proc = NlpProcessor::new();
         let article = make_article(
-            "Sarin nerve agent used in chemical attack causing mass casualties",
-            "Biological weapon suspected in mass casualty event"
+            "Nerve agent attack and chemical attack cause mass casualties",
+            "Biological attack suspected in mass casualty event"
         );
         let event = proc.process(&article).unwrap();
-        let signal = event.domain_signals.get("wmd_mass_casualty").copied().unwrap_or(0.0);
+        let signal = event.domain_signals.get("military_escalation").copied().unwrap_or(0.0);
         assert!(signal > 0.15,
-            "Multiple definitive WMD keywords should produce strong signal, got {signal:.4}");
+            "Multiple definitive CBRN-attack keywords should produce strong kinetic signal, got {signal:.4}");
     }
 
     #[test]
-    fn alliance_definitive_keyword_alone_tags_domain() {
+    fn alliance_invocation_tags_kinetic_and_sets_indicator() {
+        // v2: alliance_activation is no longer a scored domain. An Article-5 invocation
+        // tags KINETIC (it implies an armed attack) and sets alliance_indicator, which
+        // the Phase-2 alliance-chain coupler consumes.
         let mut proc = NlpProcessor::new();
         let article = make_article("NATO article 5 invoked following attack", "");
         let event = proc.process(&article).unwrap();
-        assert!(event.domain_signals.contains_key("alliance_activation"));
-        let signal = event.domain_signals["alliance_activation"];
-        assert!(signal > MIN_DOMAIN_SIGNAL);
+        assert!(event.domain_signals.contains_key("military_escalation"));
+        assert!(event.alliance_indicator, "Article 5 invocation should set alliance_indicator");
+        assert!(!event.domain_signals.contains_key("alliance_activation"),
+            "alliance_activation is no longer a scored domain");
     }
 
     #[test]
@@ -1500,7 +1483,7 @@ mod tests {
     #[test]
     fn tier3_credibility_weight_correct() {
         let mut proc = NlpProcessor::new();
-        let mut article = make_article("Chemical weapon attack kills civilians", "");
+        let mut article = make_article("Chemical attack kills civilians in airstrike", "");
         article.source_tier = SourceTier::Tier3;
         let event = proc.process(&article).unwrap();
         assert_eq!(event.credibility_weight, 0.20);
@@ -1530,8 +1513,8 @@ mod tests {
     fn location_extraction_taiwan() {
         let mut proc = NlpProcessor::new();
         let article = make_article(
-            "China escalates military exercises around Taiwan",
-            "PLA aircraft enter Taiwan strait airspace"
+            "China launches military operation around Taiwan",
+            "PLA warships enter Taiwan strait as forces clash"
         );
         let event = proc.process(&article).unwrap();
         assert!(event.location.to_lowercase().contains("taiwan") ||

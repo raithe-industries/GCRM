@@ -16,26 +16,18 @@ use crate::models::{
     AlertLevel, DomainScore, GeopoliticalEvent, RegimeFactor,
     RiskSnapshot, SourceTier, ELEVATION_THRESHOLD, HISTORICAL_ANCHOR,
 };
+use crate::theater::{TheaterEngine, EVIDENCE_GAIN_SYS};
 
 // ── Core constants ─────────────────────────────────────────────────────────────
 
 /// Domain-specific decay half-lives in hours.
 /// Fast-moving domains decay quickly; structural ones persist longer.
 pub const DOMAIN_HALF_LIVES: &[(&str, f64)] = &[
-    ("military_escalation",  24.0),   // Battles — active wars are persistent
-    ("nuclear_posture",      72.0),   // Nuclear posture changes persist
-    ("diplomatic_breakdown", 48.0),   // Diplomatic crises linger
-    ("economic_warfare",     96.0),   // Sanctions are long-lasting
-    ("cyber_info_ops",       24.0),   // Cyber attacks are episodic
-    ("alliance_activation",  72.0),   // Alliance decisions persist
-    ("great_power_conflict", 48.0),   // Great power moves have lasting effects
-    ("wmd_mass_casualty",    35064.0),// WMD use redefines the strategic situation
-                                      // for the full window (≈4yr / one presidential
-                                      // term). Intentionally long so a WMD event
-                                      // persists across the analysis window, anchoring
-                                      // a cross-presidency record of which actors
-                                      // cross the threshold. Half-life == window, so
-                                      // weight is still ~0.5 at the 4-year horizon.
+    ("military_escalation",  24.0),   // KINETIC — battles; active wars are persistent
+    ("nuclear_posture",      72.0),   // NUCLEAR — posture changes persist
+    ("economic_warfare",     96.0),   // COERCIVE-ECONOMIC — blockades/sanctions linger
+    ("cyber_info_ops",       24.0),   // CYBER/INFO — episodic
+    ("diplomatic_breakdown", 48.0),   // DIPLOMATIC — channel breakdown lingers
 ];
 
 fn domain_half_life(domain: &str) -> f64 {
@@ -50,16 +42,15 @@ fn domain_half_life(domain: &str) -> f64 {
 /// if issues arise.
 pub const MAX_EVENT_AGE_HOURS: f64 = 35064.0;
 
-/// Domain weights — relative contribution to WWIII likelihood.
+/// Modality weights — relative contribution of each orthogonal axis to systemic-war
+/// likelihood. Five axes only (v2): great-power/alliance/WMD were removed as domains
+/// (they are couplers / a rung now), so the remaining weights are rebalanced.
 pub const DOMAIN_WEIGHTS: &[(&str, f64)] = &[
-    ("military_escalation",  1.5),
-    ("nuclear_posture",      3.0),  // Highest — direct WWIII trigger mechanism
-    ("diplomatic_breakdown", 1.1),
-    ("economic_warfare",     1.4),
-    ("cyber_info_ops",       0.9),
-    ("alliance_activation",  1.6),
-    ("great_power_conflict", 2.0),
-    ("wmd_mass_casualty",    2.8),  // Second highest
+    ("military_escalation",  1.6),  // KINETIC
+    ("nuclear_posture",      3.0),  // NUCLEAR — highest; direct systemic-war mechanism
+    ("economic_warfare",     1.3),  // COERCIVE-ECONOMIC
+    ("cyber_info_ops",       0.9),  // CYBER/INFO
+    ("diplomatic_breakdown", 1.0),  // DIPLOMATIC — breakdown removes off-ramps
 ];
 
 pub fn domain_weight(domain: &str) -> f64 {
@@ -69,29 +60,40 @@ pub fn domain_weight(domain: &str) -> f64 {
         .unwrap_or(1.0)
 }
 
+#[allow(dead_code)] // v2 risk uses theater heat (theater.rs has its own); kept for reference
 fn max_weighted_sum() -> f64 {
     DOMAIN_WEIGHTS.iter().map(|(_, w)| w).sum()
 }
 
-/// Co-occurrence boost anchor points: (elevated-domain count, multiplier).
-/// The boost is a continuous piecewise-linear interpolation through these
-/// anchors evaluated on a *soft* elevation count (`soft_elevation_weight`), so
-/// the multiplier responds smoothly as a domain approaches the elevation
-/// threshold instead of stepping when it crosses. Integer anchors preserve the
-/// original calibration (2→1.3, 3→2.0, 4→3.5, 5→5.0) and extend with
-/// diminishing increments to all 8 domains — a simultaneous escalation across
-/// every domain is an unprecedented, near-certain systemic-war signature.
+/// Co-occurrence boost anchor points: (elevated-modality count, multiplier).
+/// The boost is a continuous piecewise-linear interpolation through these anchors
+/// evaluated on a *soft* elevation count (`soft_elevation_weight`), so the
+/// multiplier responds smoothly as a modality approaches the elevation threshold
+/// instead of stepping when it crosses.
+///
+/// v2 retune: there are now FIVE orthogonal modalities, not eight overlapping
+/// domains. The old curve (4→3.5, 5→5.0, …→7.0 over eight domains) was calibrated
+/// for a world where four lit buckets was rare and partly collinear; with five
+/// orthogonal axes, four elevated is a normal acute-crisis signature, so the curve
+/// is compressed to top out near 2.6× at all five. NOTE: provisional — the final
+/// curve is fitted against historical analogs in the Phase-3 backtest harness.
 const CO_OCCURRENCE_ANCHORS: &[(f64, f64)] = &[
-    (0.0, 1.0),
-    (1.0, 1.0),
-    (2.0, 1.3),
-    (3.0, 2.0),
-    (4.0, 3.5),
-    (5.0, 5.0),
-    (6.0, 5.7),
-    (7.0, 6.4),
-    (8.0, 7.0),
+    (0.0, 1.00),
+    (1.0, 1.00),
+    (2.0, 1.25),
+    (3.0, 1.60),
+    (4.0, 2.10),
+    (5.0, 2.60),
 ];
+
+/// Peak-aware aggregation width (v2). The old scorer used the MEAN signal over
+/// every event tagged to a domain, so a handful of severe, fresh, corroborated
+/// signals were averaged against hundreds of ambient mentions — more chatter
+/// pushed risk DOWN (a signal-inversion bug). v2 scores a domain from the strength
+/// of its TOP-K strongest contributions instead, so a real crisis is not diluted
+/// by background noise. Volume still adds a small breadth bonus but can never
+/// dilute the peak.
+const PEAK_K: usize = 5;
 
 /// Half-width of the smooth ramp centred on ELEVATION_THRESHOLD used to compute
 /// a domain's partial elevation weight. A domain scoring ≥ threshold+ramp counts
@@ -143,6 +145,7 @@ pub fn co_occurrence_boost(soft_elevated: f64) -> f64 {
 /// (regime ≈ 1.5): L≈1.1 → ~1.5% (elevated), L≈1.8 → ~5% (critical),
 /// L≈2.6 → ~22%, L≈5 → ceiling. Precise crisis calibration (Cuba/Ukraine)
 /// requires backtesting against historical event replays.
+#[allow(dead_code)] // superseded by theater::EVIDENCE_GAIN_SYS in v2 (Phase 2); kept for reference
 const EVIDENCE_GAIN: f64 = 2.0;
 
 /// Logistic function. Maps log-odds → probability in (0, 1).
@@ -361,15 +364,24 @@ impl DomainScorer {
             let anomaly     = *anomalies.get(domain).unwrap_or(&false);
 
             let raw_score = if !signals.is_empty() {
-                let mean_signal = signals.iter().sum::<f64>() / event_count as f64;
-                let volume_factor = (1.0 + event_count as f64).ln()
-                    / (1.0 + 20.0_f64).ln();
-                let volume_factor = volume_factor.min(1.0);
+                // Peak-aware core: blend the single strongest contribution with the
+                // mean of the top-K. Severe corroborated signals dominate; ambient
+                // chatter no longer dilutes (v2 fix for the mean-inversion bug).
+                let mut sorted = signals.clone();
+                sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+                let k         = sorted.len().min(PEAK_K);
+                let peak      = sorted[0];
+                let topk_mean = sorted[..k].iter().sum::<f64>() / k as f64;
+                let core      = 0.60 * peak + 0.40 * topk_mean;
+
+                // Volume = breadth bonus only (corroborating coverage), never dilution.
+                let volume_factor = ((1.0 + event_count as f64).ln()
+                    / (1.0 + 20.0_f64).ln()).min(1.0);
                 let actor_set  = domain_actors.get(domain)
                     .map(|s| s.len())
                     .unwrap_or(0);
                 let actor_diversity = (actor_set as f64 / 4.0).min(1.0);
-                let mut s = mean_signal * (0.7 + 0.2 * volume_factor + 0.1 * actor_diversity);
+                let mut s = core * (0.85 + 0.10 * volume_factor + 0.05 * actor_diversity);
                 if anomaly {
                     s = (s * 1.3).min(1.0);
                     info!("ANOMALY detected in domain: {domain} (event spike)");
@@ -511,8 +523,8 @@ impl ActorTracker {
 ///   P_risk = sigmoid( logit(P₀_adj) + β × L )   clamped to [0, 0.85]
 ///
 /// where:
-///   P₀_adj = HISTORICAL_ANCHOR × regime_multiplier
-///           = (2/2026) × product(active_regime_factors)
+///   P₀_adj = BASELINE_ANNUAL × regime_multiplier
+///           = (modern quiet-year baseline) × product(active_regime_factors)
 ///   L      = weighted_domain_sum / max_weighted_sum × co_occurrence_boost
 ///   β      = EVIDENCE_GAIN
 ///
@@ -549,6 +561,7 @@ pub struct BayesianRiskEngine {
     alert_critical: f64,
     prev_annual:    f64,
     prev_30day:     f64,
+    theater_engine: TheaterEngine,
 }
 
 impl BayesianRiskEngine {
@@ -565,6 +578,7 @@ impl BayesianRiskEngine {
             alert_critical,
             prev_annual:    HISTORICAL_ANCHOR,
             prev_30day:     0.0,
+            theater_engine: TheaterEngine::new(),
         }
     }
 
@@ -624,7 +638,9 @@ impl BayesianRiskEngine {
         snap.elevated_domains    = elevated;
         snap.co_occurrence_boost = (co_occurrence_boost(soft_elevated) * 1e4).round() / 1e4;
 
-        // ── Step 6: Likelihood ──
+        // ── Step 6: Global modality weighted sum (compat display only) ──
+        // The v2 risk driver is the per-theater systemic likelihood (Step 6b). This
+        // global weighted sum is retained only for the legacy domain-grid display.
         let weighted_sum: f64 = DOMAIN_WEIGHTS.iter()
             .map(|(d, w)| {
                 snap.domain_scores.get(*d)
@@ -633,17 +649,34 @@ impl BayesianRiskEngine {
             })
             .sum();
         snap.weighted_domain_sum = (weighted_sum * 1e6).round() / 1e6;
-        let raw_likelihood = (weighted_sum / max_weighted_sum()) * snap.co_occurrence_boost;
-        snap.likelihood_ratio = (raw_likelihood * 1e6).round() / 1e6;
+
+        // ── Step 6b: Theater decomposition + systemic likelihood (v2) ──
+        // Risk is no longer a global average. It is the hottest theater amplified by
+        // great-power coupling, multi-theater concurrency, and guardrail collapse —
+        // the actual signature of a regional war going systemic.
+        let mut tout = self.theater_engine.compute(events);
+        // Guardrail collapse is carried by the operator-tunable regime multiplier
+        // (arms-control death, deterrence erosion, …) until settings migrate to
+        // explicit couplers. Normalise it to 0..1 for display and as a soft amplifier.
+        let guardrail = ((snap.regime_multiplier - 1.0) / 4.0).clamp(0.0, 1.0);
+        tout.couplers.guardrail_collapse = (guardrail * 1e3).round() / 1e3;
+        let l_sys = tout.l_sys * (1.0 + 0.12 * guardrail);
+        snap.theaters         = tout.theaters;
+        snap.couplers         = tout.couplers;
+        snap.systemic_index   = tout.systemic_index;
+        snap.driver           = tout.driver;
+        snap.likelihood_ratio = (l_sys * 1e6).round() / 1e6;
 
         // ── Step 7: Risk index computation (log-odds / logistic) ──
-        // Combine the regime-adjusted prior with the likelihood evidence on the
-        // log-odds scale, then map back to a probability. L = 0 reproduces the
-        // prior exactly; large L saturates toward the ceiling along an S-curve.
-        let prior         = snap.adjusted_prior.clamp(1e-9, 0.5);
+        // v2: the logistic prior is the FLAT modern baseline (quiet-year floor). The
+        // structural regime no longer inflates the prior — it enters l_sys above as a
+        // guardrail amplifier — so a calm world sits at the baseline and the SYSTEMIC
+        // likelihood does all the lifting. L = 0 reproduces the baseline; large L
+        // saturates toward the 0.90 ceiling along an S-curve.
+        let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5); // BASELINE_ANNUAL (flat)
         let prior_logodds = (prior / (1.0 - prior)).ln();
-        let raw = sigmoid(prior_logodds + EVIDENCE_GAIN * raw_likelihood)
-            .min(0.85); // Engineering ceiling — epistemic humility, not a prior (I-13)
+        let raw = sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * l_sys)
+            .min(0.90); // Engineering ceiling — epistemic humility, not a prior (raised 0.85→0.90, v2)
         snap.p_wwiii_annual = (raw * 1e8).round() / 1e8;
 
         snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(1.0 / 12.0)) * 1e8).round() / 1e8;
@@ -704,14 +737,16 @@ impl BayesianRiskEngine {
         }
 
         info!(
-            "P(WWIII)={:.4}% | Δ{:+.4}% | regime×{} | elevated={}/{} | \
-             L={:.4} | events={} | confidence={:.0}%",
+            "P(WWIII)={:.4}% | idx={:.0} | {} | Δ{:+.4}% | regime×{} | elevated={}/{} | \
+             L_sys={:.4} | events={} | confidence={:.0}%",
             raw * 100.0,
+            snap.systemic_index,
+            snap.driver,
             snap.delta_annual * 100.0,
             snap.regime_multiplier,
             elevated,
             DOMAIN_WEIGHTS.len(),
-            raw_likelihood,
+            l_sys,
             snap.events_in_window,
             snap.estimate_confidence * 100.0,
         );
@@ -742,8 +777,8 @@ mod tests {
                 RegimeFactor { id: "war_in_europe".into(),     label: "War in Europe".into(),       multiplier: 1.6, active: true  },
                 RegimeFactor { id: "deterrence_intact".into(), label: "Deterrence intact".into(),   multiplier: 0.7, active: true  },
             ],
-            0.015,  // elevated threshold
-            0.05,   // critical threshold
+            0.025,  // elevated threshold
+            0.08,   // critical threshold
         )
     }
 
@@ -759,6 +794,7 @@ mod tests {
         e.severity                = severity;
         e.escalation_language_score = 0.3;
         e.event_type              = EventType::MilitaryStrike;
+        e.theater                 = Some("us_iran".to_string()); // v2: drive a real theater
         e
     }
 
@@ -775,19 +811,24 @@ mod tests {
         e.severity                = severity;
         e.escalation_language_score = 0.3;
         e.event_type              = EventType::MilitaryStrike;
+        e.theater                 = Some("us_iran".to_string()); // v2: drive a real theater
         e
     }
 
     // ── Historical prior ──────────────────────────────────────────────────────
 
     #[test]
-    fn anchor_value() {
-        assert!((HISTORICAL_ANCHOR - 2.0 / 2026.0).abs() < 1e-10);
+    fn anchor_is_modern_baseline() {
+        // v2: anchor is the modern quiet-year baseline, not the 2/2026 frequency.
+        assert!((HISTORICAL_ANCHOR - 0.015).abs() < 1e-9);
+        assert!((HISTORICAL_ANCHOR - 2.0 / 2026.0).abs() > 1e-4);
     }
 
     #[test]
-    fn anchor_less_than_one_percent() {
-        assert!(HISTORICAL_ANCHOR < 0.01);
+    fn anchor_is_modest_quiet_year_floor() {
+        // v2: the modern quiet-year baseline (~1.5%) sits above the old sub-1% floor
+        // but well below the elevated alert threshold (2.5%).
+        assert!(HISTORICAL_ANCHOR > 0.005 && HISTORICAL_ANCHOR < 0.025);
     }
 
     // ── Recency decay ─────────────────────────────────────────────────────────
@@ -1003,7 +1044,9 @@ mod tests {
     fn baseline_probability_below_alert() {
         let mut engine = minimal_engine();
         let snap = engine.compute(&[]);
-        assert!(snap.p_wwiii_annual < 0.015);
+        // v2 flat prior: an empty/quiet world sits at the baseline (~1.5%), below the
+        // 2.5% elevated threshold.
+        assert!(snap.p_wwiii_annual <= 0.016, "empty world should sit at the flat baseline");
         assert_eq!(snap.alert_level, AlertLevel::Normal);
     }
 
@@ -1110,23 +1153,23 @@ mod tests {
 
     #[test]
     fn co_occurrence_boost_values() {
-        // Integer anchors preserve the original calibration.
-        assert!((co_occurrence_boost(0.0) - 1.0).abs() < 1e-9);
-        assert!((co_occurrence_boost(1.0) - 1.0).abs() < 1e-9);
-        assert!((co_occurrence_boost(2.0) - 1.3).abs() < 1e-9);
-        assert!((co_occurrence_boost(3.0) - 2.0).abs() < 1e-9);
-        assert!((co_occurrence_boost(4.0) - 3.5).abs() < 1e-9);
-        assert!((co_occurrence_boost(5.0) - 5.0).abs() < 1e-9);
-        // Extends with diminishing increments up to all 8 domains, then saturates.
-        assert!((co_occurrence_boost(8.0) - 7.0).abs() < 1e-9);
-        assert!((co_occurrence_boost(12.0) - 7.0).abs() < 1e-9);
+        // v2 five-modality curve.
+        assert!((co_occurrence_boost(0.0) - 1.00).abs() < 1e-9);
+        assert!((co_occurrence_boost(1.0) - 1.00).abs() < 1e-9);
+        assert!((co_occurrence_boost(2.0) - 1.25).abs() < 1e-9);
+        assert!((co_occurrence_boost(3.0) - 1.60).abs() < 1e-9);
+        assert!((co_occurrence_boost(4.0) - 2.10).abs() < 1e-9);
+        assert!((co_occurrence_boost(5.0) - 2.60).abs() < 1e-9);
+        // Saturates at five orthogonal modalities — no eighth domain to climb to.
+        assert!((co_occurrence_boost(8.0) - 2.60).abs() < 1e-9);
+        assert!((co_occurrence_boost(12.0) - 2.60).abs() < 1e-9);
     }
 
     #[test]
     fn co_occurrence_boost_is_continuous_and_monotonic() {
-        // Fractional input interpolates linearly between anchors (2→1.3, 3→2.0).
+        // Fractional input interpolates linearly between anchors (2→1.25, 3→1.60).
         let mid = co_occurrence_boost(2.5);
-        assert!((mid - 1.65).abs() < 1e-9, "expected 1.65 midpoint, got {mid}");
+        assert!((mid - 1.425).abs() < 1e-9, "expected 1.425 midpoint, got {mid}");
         // Monotonic non-decreasing across the whole range — no step discontinuity.
         let mut prev = co_occurrence_boost(0.0);
         let mut x = 0.0;

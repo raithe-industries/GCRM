@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<!-- RAiTHE INDUSTRIES INCORPORATED © 2026 — Global Conflict Risk Monitor (v2 dashboard) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCRM — Global Conflict Risk Monitor</title>
+<link rel="icon" type="image/png" sizes="32x32" href="{{BASE_PATH}}/favicon-32x32.png?v={{LOGO_VER}}">
+<link rel="icon" type="image/png" sizes="16x16" href="{{BASE_PATH}}/favicon-16x16.png?v={{LOGO_VER}}">
+<link rel="apple-touch-icon" href="{{BASE_PATH}}/apple-touch-icon.png?v={{LOGO_VER}}">
+<style>
+:root{
+  --bg:#0a0e17; --panel:#111725; --panel2:#0d1320; --line:#1e2940;
+  --ink:#e6ecf5; --dim:#8a98b3; --faint:#5d6b86;
+  --green:#22c55e; --lime:#84cc16; --amber:#f59e0b; --orange:#f97316; --red:#ef4444; --crit:#dc2626; --sys:#a21caf;
+  --accent:#5b8def;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1240px;margin:0 auto;padding:0 20px 60px}
+/* ── header ── */
+header{display:flex;align-items:center;gap:14px;padding:18px 0 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:linear-gradient(var(--bg),var(--bg) 80%,transparent);z-index:5}
+header img{width:30px;height:30px;opacity:.95}
+.brand{font-weight:700;letter-spacing:.14em;font-size:13px}
+.brand small{display:block;color:var(--faint);font-weight:500;letter-spacing:.18em;font-size:10px}
+.hgrow{flex:1}
+.live{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pulse 2.4s infinite}
+.dot.stale{background:var(--faint);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.navlink{color:var(--dim);font-size:12px;letter-spacing:.05em}
+/* ── hero ── */
+.hero{display:grid;grid-template-columns:300px 1fr;gap:26px;margin:26px 0;align-items:center}
+@media(max-width:760px){.hero{grid-template-columns:1fr}}
+.gauge{position:relative;width:240px;height:240px;margin:0 auto}
+.gauge svg{transform:rotate(-90deg)}
+.gauge .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge .num{font-size:62px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.gauge .unit{color:var(--faint);font-size:11px;letter-spacing:.22em;margin-top:6px}
+.hero-main{min-width:0}
+.rung-badge{display:inline-flex;align-items:center;gap:9px;padding:8px 15px;border-radius:8px;font-weight:700;letter-spacing:.04em;font-size:18px;border:1px solid var(--line)}
+.driver{color:var(--dim);margin:12px 0 18px;font-size:15px}
+.driver b{color:var(--ink)}
+.secondary{display:flex;flex-wrap:wrap;gap:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 15px;min-width:118px}
+.stat .k{color:var(--faint);font-size:10px;letter-spacing:.13em;text-transform:uppercase}
+.stat .v{font-size:21px;font-weight:700;margin-top:3px}
+.stat .v small{font-size:12px;color:var(--dim);font-weight:600}
+.alert-bar{margin:0 0 4px;padding:10px 16px;border-radius:8px;font-size:13px;display:none}
+.alert-bar.show{display:block}
+/* ── sections ── */
+h2{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin:34px 0 14px;font-weight:700}
+.grid{display:grid;gap:14px}
+.theaters{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 16px}
+.card.hot{border-color:#3a2230}
+.t-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.t-name{font-weight:700;font-size:15px}
+.t-rung{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.03em}
+.t-trend{font-weight:700;margin-left:6px}
+.heatbar{height:7px;border-radius:4px;background:#0c1322;margin:11px 0 9px;overflow:hidden}
+.heatbar i{display:block;height:100%;border-radius:4px;transition:width .6s}
+.mods{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.mod{font-size:10px;letter-spacing:.04em;color:var(--dim);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+.mod b{color:var(--ink);font-weight:700}
+.actors{color:var(--faint);font-size:11px;margin-top:9px}
+/* ── indicators ── */
+.iw{grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}
+.ind{display:flex;gap:11px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+.ind.trip{border-color:#3a2230;background:linear-gradient(180deg,#15101a,var(--panel))}
+.ind .box{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--faint);flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.ind.trip .box{border-color:var(--red);color:var(--red)}
+.ind .l{font-weight:600;font-size:13px}
+.ind .d{color:var(--faint);font-size:11px;margin-top:2px}
+/* ── brief + couplers ── */
+.split{display:grid;grid-template-columns:1.6fr 1fr;gap:14px}
+@media(max-width:820px){.split{grid-template-columns:1fr}}
+.brief{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px 20px}
+.brief .meta{display:flex;gap:10px;align-items:center;color:var(--faint);font-size:11px;margin-bottom:11px}
+.tag{font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:5px;border:1px solid var(--line);color:var(--dim)}
+.brief p{margin:0 0 11px;color:#cfd8e8;font-size:14px;line-height:1.65}
+.coup .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.coup .row:last-child{border:0}
+.coup .bn{height:6px;width:110px;background:#0c1322;border-radius:3px;overflow:hidden}
+.coup .bn i{display:block;height:100%;background:var(--accent)}
+/* ── timeline ── */
+.spark{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+#sparkc{width:100%;height:90px;display:block}
+/* ── footer ── */
+footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:11px;line-height:1.7}
+.muted{color:var(--faint)}
+/* ── operator console ── */
+.opbtn{background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:7px;width:30px;height:30px;cursor:pointer;font-size:15px}
+.opbtn:hover{color:var(--ink);border-color:var(--accent)}
+.op-ov{position:fixed;inset:0;background:#000a;opacity:0;pointer-events:none;transition:.2s;z-index:40}
+.op-ov.open{opacity:1;pointer-events:auto}
+.op-drawer{position:fixed;top:0;right:0;height:100%;width:380px;max-width:92vw;background:var(--panel2);border-left:1px solid var(--line);transform:translateX(100%);transition:.24s;z-index:41;overflow-y:auto;padding:18px 18px 40px}
+.op-drawer.open{transform:none}
+.op-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.op-h button{background:none;border:0;color:var(--dim);font-size:18px;cursor:pointer}
+.op-drawer h4{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:20px 0 8px}
+.op-drawer input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;color:var(--ink);padding:9px 11px;margin:4px 0;font-size:13px}
+.op-go{background:var(--accent);border:0;color:#fff;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-top:6px}
+.op-list{display:flex;flex-direction:column;gap:6px}
+.op-row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:12px}
+.op-row i{color:var(--faint);font-style:normal}
+.op-tog{background:var(--bg);border:1px solid var(--line);color:var(--dim);border-radius:5px;padding:3px 9px;cursor:pointer;font-size:11px}
+.op-tog:hover{color:var(--ink);border-color:var(--accent)}
+.op-li{color:var(--dim);font-size:11px;border-bottom:1px solid var(--line);padding:5px 0}
+.op-res{color:var(--dim);font-size:12px;margin-top:7px;min-height:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <img src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="RAiTHE">
+  <div class="brand">GCRM<small>RAiTHE · GLOBAL CONFLICT RISK MONITOR</small></div>
+  <div class="hgrow"></div>
+  <div class="live"><span id="dot" class="dot stale"></span><span id="ts">connecting…</span></div>
+  <a class="navlink" href="{{BASE_PATH}}/methodology">Methodology ↗</a>
+  <button id="opbtn" class="opbtn" title="Operator console">⚙</button>
+</header>
+
+<div id="alert" class="alert-bar"></div>
+
+<section class="hero">
+  <div class="gauge">
+    <svg width="240" height="240" viewBox="0 0 240 240">
+      <circle cx="120" cy="120" r="104" fill="none" stroke="#16203400" stroke-width="0"/>
+      <circle cx="120" cy="120" r="104" fill="none" stroke="#16213a" stroke-width="16"/>
+      <circle id="arc" cx="120" cy="120" r="104" fill="none" stroke="var(--amber)" stroke-width="16"
+              stroke-linecap="round" stroke-dasharray="653" stroke-dashoffset="653"/>
+    </svg>
+    <div class="val"><div id="idx" class="num">—</div><div class="unit">SYSTEMIC INDEX / 100</div></div>
+  </div>
+  <div class="hero-main">
+    <span id="rung" class="rung-badge">Awaiting data</span>
+    <div id="driver" class="driver">Connecting to the live model…</div>
+    <div class="secondary">
+      <div class="stat"><div class="k">P(systemic war) ann.</div><div class="v"><span id="pann">—</span><small>/yr</small></div></div>
+      <div class="stat"><div class="k">30-day</div><div class="v" id="p30">—</div></div>
+      <div class="stat"><div class="k">90-day</div><div class="v" id="p90">—</div></div>
+      <div class="stat"><div class="k">Confidence</div><div class="v" id="conf">—</div></div>
+      <div class="stat"><div class="k">Events / sources</div><div class="v" id="evs">—</div></div>
+    </div>
+  </div>
+</section>
+
+<h2>Theater escalation ladder</h2>
+<div id="theaters" class="grid theaters"></div>
+
+<div class="split">
+  <div>
+    <h2>AI analyst brief</h2>
+    <div class="brief">
+      <div class="meta"><span class="tag" id="brief-src">…</span><span id="brief-time"></span></div>
+      <div id="brief-text"><p class="muted">Loading brief…</p></div>
+    </div>
+  </div>
+  <div>
+    <h2>Systemic couplers</h2>
+    <div class="brief coup" id="coup"></div>
+  </div>
+</div>
+
+<h2>Indications &amp; warning</h2>
+<div id="iw" class="grid iw"></div>
+
+<h2>Systemic index — recent</h2>
+<div class="spark"><canvas id="sparkc"></canvas></div>
+
+<footer>
+  <b>RAiTHE INDUSTRIES INCORPORATED © 2026.</b> The Global Conflict Risk Monitor is an open-source-intelligence
+  aggregation and probabilistic risk index. The systemic index and P(systemic war) are a calibrated risk index —
+  <b>not</b> a forecast of certainty and not derived from a generative model. Calibrated against historical analogs
+  (1962 / 2022 / present). All times Eastern. <a href="{{BASE_PATH}}/methodology">Read the methodology →</a>
+</footer>
+</div>
+
+<div id="opov" class="op-ov"></div>
+<aside id="opdrawer" class="op-drawer">
+  <div class="op-h"><b>Operator console</b><button id="opclose" title="Close">✕</button></div>
+  <p class="muted" style="font-size:12px">Key-protected. Changes apply to the next model tick and are surfaced to users via the calibration indicator.</p>
+  <h4>Operator key</h4>
+  <input id="opkey" type="password" placeholder="X-GCRM-Key" autocomplete="off">
+  <button id="opsave" class="op-go">Save key &amp; load</button>
+  <h4>Regime / guardrail factors</h4>
+  <div id="opfactors" class="op-list"><span class="muted" style="font-size:12px">Enter key and load.</span></div>
+  <h4>Assert event</h4>
+  <input id="opdesc" placeholder="Event description">
+  <input id="opsev" type="number" min="0" max="1" step="0.05" placeholder="severity 0-1">
+  <button id="opassert" class="op-go">Assert event</button>
+  <div id="opresult" class="op-res"></div>
+  <h4>Audit log</h4>
+  <div id="oplog" class="op-list"></div>
+</aside>
+
+<script>
+const BASE_PATH='{{BASE_PATH}}';
+const MOD={military_escalation:'Kinetic',nuclear_posture:'Nuclear',economic_warfare:'Economic',cyber_info_ops:'Cyber',diplomatic_breakdown:'Diplomatic'};
+const RUNG_COLOR={Stable:'var(--green)',Tension:'var(--lime)',Crisis:'var(--amber)','Limited War':'var(--orange)','Great-Power War':'var(--red)','Systemic War':'var(--sys)'};
+const LEVEL_COLOR=i=>i<17?'var(--green)':i<34?'var(--lime)':i<50?'var(--amber)':i<67?'var(--orange)':i<84?'var(--red)':'var(--sys)';
+const ALERT_BG={normal:'',elevated:'background:#3a2c08;border:1px solid #6b520f;color:#fde68a',critical:'background:#3a0f12;border:1px solid #7f1d1d;color:#fecaca'};
+const $=id=>document.getElementById(id);
+const fmtPct=v=>(v==null?'—':(v*100).toFixed(v<0.01?3:1)+'%');
+const sparkData=[];
+
+function setArc(idx){
+  const C=653, off=C*(1-Math.max(0,Math.min(100,idx))/100);
+  const a=$('arc'); a.style.stroke=LEVEL_COLOR(idx); a.style.strokeDashoffset=off;
+}
+
+function renderSnapshot(d){
+  const sy=d.systemic||{}, pb=d.probabilities||{}, al=d.alert||{}, meta=d.meta||{};
+  const idx=+sy.index||0;
+  $('idx').textContent=Math.round(idx); $('idx').style.color=LEVEL_COLOR(idx); setArc(idx);
+  // hero rung from hottest theater
+  const ths=(d.theaters||[]).slice().sort((a,b)=>b.heat-a.heat);
+  const top=ths[0];
+  const rungLabel=top?top.rung_label:'—';
+  $('rung').textContent=rungLabel;
+  $('rung').style.color=RUNG_COLOR[rungLabel]||'var(--dim)';
+  $('rung').style.borderColor=RUNG_COLOR[rungLabel]||'var(--line)';
+  $('driver').innerHTML='Driver: <b>'+(sy.driver||'—')+'</b>';
+  $('pann').textContent=(pb.annual_pct!=null?pb.annual_pct.toFixed(1):'—')+'%';
+  $('pann').style.color=LEVEL_COLOR(idx);
+  $('p30').textContent=fmtPct(pb.thirty_day); $('p90').textContent=fmtPct(pb.ninety_day);
+  $('conf').textContent=d.confidence!=null?Math.round(d.confidence*100)+'%':'—';
+  $('evs').innerHTML=(meta.events_in_window||0)+' <small>/ '+(meta.sources_active||0)+'</small>';
+  // alert bar
+  const ab=$('alert'); const lvl=(al.level||'normal');
+  if(lvl==='normal'||!al.message){ab.className='alert-bar';}
+  else{ab.className='alert-bar show';ab.style.cssText=ALERT_BG[lvl]||'';ab.textContent=al.message;}
+  // theaters
+  $('theaters').innerHTML=ths.map(t=>{
+    const c=RUNG_COLOR[t.rung_label]||'var(--dim)';
+    const tr=t.trend==='rising'?'<span class="t-trend" style="color:var(--red)">▲</span>':t.trend==='falling'?'<span class="t-trend" style="color:var(--green)">▼</span>':'<span class="t-trend" style="color:var(--faint)">—</span>';
+    const mods=Object.entries(t.modality_scores||{}).filter(([k,v])=>v>0.2).sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>'<span class="mod">'+(MOD[k]||k)+' <b>'+v.toFixed(2)+'</b></span>').join('');
+    const acts=(t.top_actors||[]).map(a=>a.replace(/_/g,' ')).join(' · ')||'—';
+    return '<div class="card'+(t.heat>=0.18?' hot':'')+'">'
+      +'<div class="t-top"><span class="t-name">'+t.label+tr+'</span>'
+      +'<span class="t-rung" style="color:'+c+';border:1px solid '+c+'33;background:'+c+'14">'+t.rung_label+'</span></div>'
+      +'<div class="heatbar"><i style="width:'+Math.round(t.heat*100)+'%;background:'+c+'"></i></div>'
+      +'<div class="mods">'+(mods||'<span class="mod">quiet</span>')+'</div>'
+      +'<div class="actors">'+(t.gp_involved?'⬢ great power · ':'')+acts+'</div></div>';
+  }).join('');
+  // couplers
+  const cp=d.couplers||{};
+  const rows=[['Great-power entanglement',cp.gp_entanglement],['Theater concurrency',Math.min(1,(cp.concurrency||0)/3)],['Alliance activation',cp.alliance_activation],['Guardrail collapse',cp.guardrail_collapse]];
+  $('coup').innerHTML=rows.map(([k,v])=>'<div class="row"><span>'+k+'</span><span class="bn"><i style="width:'+Math.round((v||0)*100)+'%"></i></span></div>').join('')
+    +'<div class="row"><span class="muted">coupling multiplier</span><span><b>×'+(cp.coupling_multiplier||1).toFixed(2)+'</b></span></div>';
+  // indicators
+  $('iw').innerHTML=(d.indicators||[]).map(i=>
+    '<div class="ind'+(i.tripped?' trip':'')+'"><div class="box">'+(i.tripped?'✕':'')+'</div>'
+    +'<div><div class="l">'+i.label+'</div><div class="d">'+(i.detail||'')+'</div></div></div>').join('');
+  // sparkline
+  if(idx>0){sparkData.push(idx); if(sparkData.length>240)sparkData.shift(); drawSpark();}
+  // live dot
+  $('dot').className='dot'; $('ts').textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Toronto'})+' ET';
+}
+
+function drawSpark(){
+  const c=$('sparkc'), dpr=window.devicePixelRatio||1;
+  const w=c.clientWidth, h=90; c.width=w*dpr; c.height=h*dpr;
+  const x=c.getContext('2d'); x.scale(dpr,dpr); x.clearRect(0,0,w,h);
+  if(sparkData.length<2)return;
+  const max=100, n=sparkData.length;
+  x.beginPath();
+  sparkData.forEach((v,i)=>{const px=i/(n-1)*w, py=h-4-(v/max)*(h-12); i?x.lineTo(px,py):x.moveTo(px,py);});
+  const last=sparkData[n-1];
+  x.strokeStyle=LEVEL_COLOR(last); x.lineWidth=2; x.stroke();
+  x.lineTo(w,h); x.lineTo(0,h); x.closePath();
+  const g=x.createLinearGradient(0,0,0,h); g.addColorStop(0,LEVEL_COLOR(last)+'33'); g.addColorStop(1,'#0000');
+  x.fillStyle=g; x.fill();
+}
+
+async function loadBrief(){
+  try{
+    const r=await fetch(BASE_PATH+'/api/brief'); const b=await r.json();
+    $('brief-src').textContent=(b.source==='llm'?'AI analyst':b.source==='template'?'auto summary':'pending');
+    $('brief-time').textContent=b.generated_at?('updated '+new Date(b.generated_at).toLocaleTimeString('en-US',{timeZone:'America/Toronto'})+' ET'):'';
+    $('brief-text').innerHTML=(b.text||'').split(/\n\n+/).map(p=>'<p>'+p.replace(/</g,'&lt;')+'</p>').join('')||'<p class="muted">No brief yet.</p>';
+  }catch(e){}
+}
+
+let ws, retry=0;
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.host+BASE_PATH+'/ws');
+  ws.onmessage=e=>{try{const m=JSON.parse(e.data); if(m.type==='snapshot')renderSnapshot(m.data);}catch(x){}};
+  ws.onopen=()=>{retry=0;};
+  ws.onclose=()=>{$('dot').className='dot stale';$('ts').textContent='reconnecting…';retry=Math.min(retry+1,6);setTimeout(connect,500*retry);};
+  ws.onerror=()=>ws.close();
+}
+connect(); loadBrief(); setInterval(loadBrief,60000);
+window.addEventListener('resize',drawSpark);
+
+// ── operator console ──
+const opKey=()=>localStorage.getItem('gcrm_op_key')||'';
+const opHdr=()=>({'X-GCRM-Key':opKey()});
+function opShow(s){$('opdrawer').classList.toggle('open',s);$('opov').classList.toggle('open',s);}
+$('opbtn').onclick=()=>{$('opkey').value=opKey();opShow(true);opLoad();};
+$('opclose').onclick=$('opov').onclick=()=>opShow(false);
+$('opsave').onclick=()=>{localStorage.setItem('gcrm_op_key',$('opkey').value.trim());opLoad();};
+async function opLoad(){
+  try{
+    const r=await fetch(BASE_PATH+'/api/regime',{headers:opHdr()}); const d=await r.json();
+    const fs=Array.isArray(d)?d:(d.factors||[]);
+    $('opfactors').innerHTML=fs.map(f=>
+      '<div class="op-row"><span>'+(f.active?'🟢':'⚪')+' '+f.label+' <i>×'+f.multiplier+'</i></span>'
+      +'<button data-id="'+f.id+'" class="op-tog">'+(f.active?'disable':'enable')+'</button></div>').join('')
+      ||'<span class="muted" style="font-size:12px">no factors</span>';
+    document.querySelectorAll('.op-tog').forEach(b=>b.onclick=()=>opToggle(b.dataset.id));
+  }catch(e){$('opfactors').innerHTML='<span class="muted" style="font-size:12px">load failed — check key</span>';}
+  try{
+    const r=await fetch(BASE_PATH+'/api/operator/log',{headers:opHdr()}); const d=await r.json();
+    const items=Array.isArray(d)?d:(d.log||d.entries||[]);
+    $('oplog').innerHTML=items.slice(-12).reverse().map(e=>'<div class="op-li">'+(e.action||'')+' — '+(e.label||e.description||'')+'</div>').join('')||'<span class="muted" style="font-size:12px">empty</span>';
+  }catch(e){}
+}
+async function opToggle(id){
+  try{await fetch(BASE_PATH+'/api/regime/'+id+'/toggle',{method:'POST',headers:opHdr()});}catch(e){}
+  opLoad();
+}
+$('opassert').onclick=async()=>{
+  const body={description:$('opdesc').value,severity:parseFloat($('opsev').value)||0.5};
+  try{
+    const r=await fetch(BASE_PATH+'/api/operator/assert',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},opHdr()),body:JSON.stringify(body)});
+    $('opresult').textContent=r.ok?'asserted ✓':('failed ('+r.status+')');
+  }catch(e){$('opresult').textContent='request failed';}
+  opLoad();
+};
+</script>
+</body>
+</html>

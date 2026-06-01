@@ -39,21 +39,41 @@ alerts:
   critical:       0.08
   thirty_day_warn: 0.01
 
-# ── LLM Enrichment ───────────────────────────────────────────────────────────
-# Local LLM via Ollama for higher-fidelity domain scoring.
+# ── LLM Enrichment (v2: structured extraction + analyst brief) ───────────────
+# Local LLM via Ollama. v2 upgrades:
+#   • Structured event extraction (actor→action→target, theater, signed escalation
+#     step, severity, 5 modality scores) instead of plain 8-domain re-scoring.
+#   • The enricher runs in a bounded concurrent worker pool (no longer serializes
+#     the pipeline — was the dominant backend bottleneck).
+#   • A periodic analyst-brief task writes a prose brief, served at /api/brief.
 # Setup (one-time):
 #   curl -fsSL https://ollama.com/install.sh | sh
 #   ollama pull qwen2.5:7b
-# Then set enabled: true and restart the service.
+#   ollama pull nomic-embed-text   # only if semantic_dedup: true
+# Falls back silently to keyword-only (and a templated brief) if Ollama is down.
 #
-# The LLM runs two paths:
-#   1. Enrich articles that passed keyword scoring (adds multi-domain coverage)
-#   2. Gate articles keyword filter missed (catches context the keywords can't)
-# Falls back silently to keyword-only if Ollama is unreachable or times out.
+# PERFORMANCE — use the machine. The enricher runs `concurrency` LLM extractions in
+# parallel (a Semaphore-bounded worker pool), so model latency never serializes the
+# pipeline. For real parallelism Ollama must also be allowed to serve that many
+# requests at once — set this on the Ollama side (systemd drop-in or env):
+#     OLLAMA_NUM_PARALLEL=8        # match `concurrency` below
+#     OLLAMA_KEEP_ALIVE=-1         # keep the model resident (no cold reloads)
+#     OLLAMA_FLASH_ATTENTION=1     # faster attention on supported GPUs
+# Then: sudo systemctl restart ollama
 llm:
-  enabled: true
+  enabled: true            # AI on by default (structured extraction + analyst brief)
   endpoint: "http://localhost:11434"
   model: "qwen2.5:7b"
+  # concurrency — parallel LLM extraction calls. Raise to use more of the GPU; keep it
+  # equal to OLLAMA_NUM_PARALLEL. 8 is a good default for a workstation GPU.
+  concurrency: 8
+  # embed_model — embeddings model for semantic_dedup (only used when enabled below).
+  embed_model: "nomic-embed-text"
+  # semantic_dedup — embedding-based same-event dedup of paraphrased headlines.
+  # Off by default: it adds a 2nd Ollama call per article, which TRADES throughput for
+  # dedup quality. Turn on only if your GPU has headroom; requires `ollama pull
+  # nomic-embed-text`.
+  semantic_dedup: false
   timeout_secs: 12
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────

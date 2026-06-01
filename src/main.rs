@@ -26,14 +26,20 @@
 
 mod aggregator;
 mod api;
+#[cfg(test)]
+mod backtest;
+mod backfill;
 mod bayesian;
+mod brief;
 mod detector;
+mod indicators;
 mod ingestor;
 mod llm_enricher;
 mod models;
 mod nlp_sidecar;
 mod processor;
 mod server;
+mod theater;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -174,6 +180,14 @@ async fn wait_for_shutdown() {
 
 #[tokio::main]
 async fn main() {
+    // ── One-shot migration subcommand ──────────────────────────────────────────
+    // `gcrm backfill` tags archived events with their theater (so the systemic layer
+    // lights up immediately on restart) and exits without starting the server.
+    if std::env::args().nth(1).as_deref() == Some("backfill") {
+        backfill::run();
+        return;
+    }
+
     // ── Logging ───────────────────────────────────────────────────────────────
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("gcrm=info,warn"));
@@ -226,7 +240,7 @@ async fn main() {
 
     info!("{}", "=".repeat(60));
     info!("  Global Conflict Risk Monitor (Rust)");
-    info!("  P₀ = 2 / 2026 = {:.6} / yr", models::HISTORICAL_ANCHOR);
+    info!("  P₀ = BASELINE_ANNUAL (modern quiet-year baseline) = {:.6} / yr", models::BASELINE_ANNUAL);
     info!("  Regime: {active_count} active factors × {regime_product:.4} = adjusted prior {:.4}%/yr",
           adjusted_prior * 100.0);
     info!("  Nuclear detector: ENABLED — {} FDSN sources, {} test sites",
@@ -337,6 +351,9 @@ async fn main() {
         }
         _ = tokio::spawn(nuclear_news_monitor.run()) => {
             error!("Nuclear news monitor task exited unexpectedly");
+        }
+        _ = tokio::spawn(brief::run_brief_loop(Arc::clone(&app_state), settings.llm.clone())) => {
+            error!("Analyst brief task exited unexpectedly");
         }
         result = tokio::spawn(serve(host, port, server_state, operator_state, base_path)) => {
             match result {
