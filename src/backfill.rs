@@ -50,7 +50,10 @@ pub fn run() {
         return;
     }
 
-    println!("backfill: scanning {} event archive file(s)…\n", files.len());
+    println!("backfill: scanning {} event archive file(s)…", files.len());
+    println!("backfill: NOTE — run this while the GCRM service is STOPPED. The live\n\
+              \x20         service appends to today's events file; rewriting it under a\n\
+              \x20         running service can drop newly-appended events.\n");
 
     let mut total = 0usize;
     let mut filled = 0usize;
@@ -118,5 +121,6 @@ pub fn run() {
             println!("  {:<16} {}", t, c);
         }
     }
-    println!("\nBackups written as *.jsonl.bak. Restart GCRM to load the tagged window.");
+    println!("\nBackups written as *.jsonl.bak. Now START GCRM to load the tagged window:\n\
+              \x20  sudo systemctl start gcrm.service");
 }

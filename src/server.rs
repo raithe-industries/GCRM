@@ -504,26 +504,27 @@ mod tests {
 
     #[test]
     fn dashboard_html_uses_live_endpoints() {
-        // v2 dashboard is WebSocket-driven plus the analyst-brief endpoint.
+        // The cockpit is WebSocket-driven with the live article feed + sources + epoch.
         assert!(DASHBOARD_HTML.contains("/ws"));
-        assert!(DASHBOARD_HTML.contains("/api/brief"));
+        assert!(DASHBOARD_HTML.contains("/api/articles"));
+        assert!(DASHBOARD_HTML.contains("/api/sources"));
+        assert!(DASHBOARD_HTML.contains("/api/epoch"));
     }
 
     #[test]
     fn dashboard_html_has_raithe_branding() {
-        assert!(DASHBOARD_HTML.contains("RAiTHE"));
-        assert!(DASHBOARD_HTML.contains("RAiTHE INDUSTRIES INCORPORATED"));
+        assert!(DASHBOARD_HTML.contains("RAITHE INDUSTRIES INC."));
+        assert!(DASHBOARD_HTML.contains("raithe-footer"));
     }
 
     #[test]
     fn dashboard_html_has_v2_sections() {
-        // The rebuilt landing leads with the systemic index + escalation ladder and
-        // carries the theater cards, I&W board, couplers, and the analyst brief.
-        assert!(DASHBOARD_HTML.contains("SYSTEMIC INDEX"));
-        assert!(DASHBOARD_HTML.contains("Theater escalation ladder"));
-        assert!(DASHBOARD_HTML.contains("AI analyst brief"));
-        assert!(DASHBOARD_HTML.contains("Indications"));
-        assert!(DASHBOARD_HTML.contains("Systemic couplers"));
+        // Restored cockpit, evolved to the v2 theater model: systemic index in the
+        // command bar, the live theater-ladder strip, and the real timeline chart.
+        assert!(DASHBOARD_HTML.contains("GLOBAL CONFLICT RISK MONITOR"));
+        assert!(DASHBOARD_HTML.contains("theater-ladder"));
+        assert!(DASHBOARD_HTML.contains("systemic index"));
+        assert!(DASHBOARD_HTML.contains("timeline-chart"));
     }
 
     #[test]
@@ -570,23 +571,23 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_html_has_index_sparkline() {
-        assert!(DASHBOARD_HTML.contains("sparkc"));
-        assert!(DASHBOARD_HTML.contains("renderSnapshot"));
+    fn dashboard_html_has_live_chart() {
+        assert!(DASHBOARD_HTML.contains("timeline-chart"));
+        assert!(DASHBOARD_HTML.contains("new Chart"));
+        assert!(DASHBOARD_HTML.contains("applyData"));
     }
 
     #[test]
-    fn dashboard_html_renders_theaters_and_indicators() {
-        assert!(DASHBOARD_HTML.contains("theaters"));
-        assert!(DASHBOARD_HTML.contains("indicators"));
-        assert!(DASHBOARD_HTML.contains("couplers"));
+    fn dashboard_html_renders_theaters() {
+        assert!(DASHBOARD_HTML.contains("d.theaters"));
         assert!(DASHBOARD_HTML.contains("rung_label"));
+        assert!(DASHBOARD_HTML.contains("couplers"));
     }
 
     #[test]
-    fn dashboard_html_has_operator_console() {
-        assert!(DASHBOARD_HTML.contains("Operator console"));
-        assert!(DASHBOARD_HTML.contains("opdrawer"));
+    fn dashboard_html_has_operator_panel() {
+        assert!(DASHBOARD_HTML.contains("Operator Panel"));
+        assert!(DASHBOARD_HTML.contains("op-drawer"));
         assert!(DASHBOARD_HTML.contains("/api/regime/"));
         assert!(DASHBOARD_HTML.contains("/api/operator/assert"));
         assert!(DASHBOARD_HTML.contains("X-GCRM-Key"));
