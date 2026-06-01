@@ -284,14 +284,25 @@ async fn get_articles(
 }
 
 async fn get_sources(State(state): State<ServerState>) -> impl IntoResponse {
-    let registry = state.app_state.source_registry.lock().await.clone();
+    // Honesty: count per-source from the ACTUAL article store (what is currently in
+    // the feed), not the cumulative-since-boot registry. So "live/silent" reflects
+    // which feeds are presently producing, and counts stay correct as old articles
+    // rotate out of the window. A feed that died days ago no longer reads as "live".
+    let counts: std::collections::HashMap<String, usize> = {
+        let store = state.app_state.article_store.lock().await;
+        let mut m = std::collections::HashMap::new();
+        for a in store.articles.iter() {
+            *m.entry(a.source.clone()).or_insert(0) += 1;
+        }
+        m
+    };
     let configured: Vec<_> = RSS_FEEDS.iter().map(|f| json!({
         "url":    f.url,
         "source": f.source,
         "tier":   f.tier as u8,
     })).collect();
     Json(json!({
-        "active_sources":     registry,
+        "active_sources":     counts,
         "configured_sources": configured,
         "total_configured":   RSS_FEEDS.len(),
     }))
@@ -582,8 +593,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 /* RAiTHE "A" brand mark — its own pinned strip at the foot of the left rail
    (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
    in 3D so it reads as a turning badge rather than a flat spin. */
-.left-foot{flex-shrink:0;border-top:0.5px solid var(--border);background:var(--bg2);padding:12px 12px 4px}
-.brand-a{display:flex;justify-content:center;align-items:center;padding:16px 0 6px;perspective:360px;line-height:0;cursor:pointer}
+.left-foot{flex-shrink:0;background:var(--bg);padding:6px 12px 8px}
+.brand-a{display:flex;justify-content:center;align-items:center;padding:12px 0 2px;perspective:360px;line-height:0;cursor:pointer}
 /* Two-faced "coin": front + a back face pre-rotated 180°, both backface-hidden,
    so whichever side faces the viewer always shows the A upright — the spin reads
    as a turning solid badge, never a mirrored or blank flip. */
@@ -1322,12 +1333,12 @@ P₀<span class="c">,adj</span> &nbsp;=&nbsp; P₀ × regime &nbsp;=&nbsp; 0.000
 <section id="nlp">
 <h2><span class="num">05</span>From headline to domain score</h2>
 <p>Each article is scored against <strong>eight risk domains</strong>. A single event contributes a per-domain signal in <code>[0,1]</code> built from an explicit, bounded budget. The <em>domain-specific</em> keyword evidence is the primary driver, so each domain reflects what its own slice of the coverage actually says rather than the event's raw severity:</p>
-<div class="eq">base &nbsp;=&nbsp; nlp_keyword·<span class="v">0.50</span> &nbsp;+&nbsp; severity·<span class="v">0.30</span> &nbsp;+&nbsp; escalation·<span class="v">0.20</span> &nbsp;+&nbsp; gp_bonus<span class="c">(≤0.12, great-power domain only)</span><br>
+<div class="eq">intensity &nbsp;=&nbsp; <span class="v">0.5</span>·severity &nbsp;+&nbsp; <span class="v">0.5</span>·escalation<br>
+base &nbsp;=&nbsp; nlp_keyword · ( <span class="v">0.55</span> + <span class="v">0.45</span>·intensity ) &nbsp;+&nbsp; gp_bonus<span class="c">(≤0.12, great-power domain only)</span><br>
 signal &nbsp;=&nbsp; clamp( base × (1 − 0.15·sentiment) , 0, 1 )</div>
 <ul>
-<li><strong>nlp_keyword</strong> — noisy-OR keyword evidence strength for <em>this</em> domain (definitive terms beat ambient ones). The dominant term, so domains stay distinct.</li>
-<li><strong>severity</strong> — event-type seriousness, casualties, nuclear/WMD indicators.</li>
-<li><strong>escalation</strong> — density of escalatory language vs conciliatory.</li>
+<li><strong>nlp_keyword</strong> — noisy-OR keyword/LLM evidence strength for <em>this</em> domain (definitive terms beat ambient ones). It is the <em>spine</em>: the whole signal is proportional to it, so two domains tagged on the same story diverge by their own evidence instead of collapsing together.</li>
+<li><strong>intensity</strong> — a shared story-level factor (severity + escalation) that <em>multiplies</em> a domain's own evidence rather than adding to it. A severe story amplifies every domain it touches, but only in proportion to each domain's keyword strength — it can't, by itself, lift a weakly-evidenced domain to match a strongly-evidenced one. <strong>severity</strong> = event-type seriousness, casualties, nuclear/WMD indicators; <strong>escalation</strong> = density of escalatory vs conciliatory language.</li>
 <li><strong>gp_bonus</strong> — +0.12 added only to the <strong>great-power conflict</strong> domain when a great power (US, Russia, China, NATO) is directly involved. It no longer leaks into every domain, so e.g. diplomatic breakdown and great-power conflict are now independent readings.</li>
 <li><strong>sentiment</strong> — hostile tone amplifies up to +15%, conciliatory tone damps up to −15%. Tone refines, never dominates.</li>
 </ul>
