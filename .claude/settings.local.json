@@ -83,7 +83,9 @@
       "Bash(file /tmp/live_favicon.bin)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); a=d['active_sources']; print\\('active_source keys:',len\\(a\\),'total_configured:',d.get\\('total_configured'\\)\\); print\\('sample active:',dict\\(list\\(sorted\\(a.items\\(\\),key=lambda x:-x[1]\\)\\)[:15]\\)\\); print\\('configured sample:',[c['source'] for c in d['configured_sources'][:8]]\\)\")",
       "Bash(GCRM_LOG=warn ~/Desktop/GCRM/target/release/gcrm)",
-      "Bash(echo \"pid $!\")"
+      "Bash(echo \"pid $!\")",
+      "Bash(cat .claude/settings.json)",
+      "Bash(python3 -c \"import json;d=json.load\\(open\\('.claude/settings.local.json'\\)\\);print\\(json.dumps\\(d.get\\('permissions',{}\\),indent=1\\)\\)\")"
     ]
   }
 }
