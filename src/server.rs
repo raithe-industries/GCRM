@@ -74,6 +74,7 @@ impl ServerState {
 fn render_base_path(template: &str, base_path: &str) -> String {
     let bp = if base_path == "/" { "" } else { base_path };
     template.replace("{{BASE_PATH}}", bp)
+            .replace("{{LOGO_VER}}", &logo_version())
 }
 
 fn generate_dashboard_html(base_path: &str) -> String {
@@ -348,19 +349,46 @@ async fn get_methodology(State(state): State<ServerState>) -> impl IntoResponse 
     Html((*state.methodology_html).clone())
 }
 
-// RAiTHE "A" mark — shared brand favicon + the rotating branding glyph. Compiled
-// into the binary so the dashboard stays a single self-contained artifact.
-static LOGO_A: &[u8] = include_bytes!("../assets/logo-a.png");
+// RAiTHE "A" mark + full favicon set — vendored from assets/ and compiled into
+// the binary so the dashboard stays a single self-contained artifact. NOTE:
+// include_bytes! freezes these at BUILD time, so swapping a file on disk has no
+// effect until `cargo build` reruns — a service restart alone keeps the old art.
+static LOGO_A:      &[u8] = include_bytes!("../assets/logo-a.png");
+static FAVICON_ICO: &[u8] = include_bytes!("../assets/favicon.ico");
+static FAVICON_16:  &[u8] = include_bytes!("../assets/favicon-16x16.png");
+static FAVICON_32:  &[u8] = include_bytes!("../assets/favicon-32x32.png");
+static APPLE_TOUCH: &[u8] = include_bytes!("../assets/apple-touch-icon.png");
+static ICON_192:    &[u8] = include_bytes!("../assets/icon-192.png");
+static ICON_512:    &[u8] = include_bytes!("../assets/icon-512.png");
 
-async fn get_logo() -> impl IntoResponse {
+// Content-derived cache-buster. Every icon URL carries ?v=<logo_version()>, so a
+// rebuilt binary with changed art yields a NEW url → the browser and the
+// Cloudflare edge miss their day-long cached copy and refetch immediately. This
+// is what makes "I swapped the file" actually show up without a manual purge.
+fn logo_version() -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for a in [LOGO_A, FAVICON_ICO, ICON_192, ICON_512] { a.hash(&mut h); }
+    format!("{:x}", h.finish())
+}
+
+fn icon(content_type: &'static str, bytes: &'static [u8]) -> impl IntoResponse {
     (
         [
-            (axum::http::header::CONTENT_TYPE,  "image/png"),
+            (axum::http::header::CONTENT_TYPE,  content_type),
             (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
         ],
-        LOGO_A,
+        bytes,
     )
 }
+
+async fn get_logo()        -> impl IntoResponse { icon("image/png",     LOGO_A) }
+async fn get_favicon_ico() -> impl IntoResponse { icon("image/x-icon",  FAVICON_ICO) }
+async fn get_favicon_16()  -> impl IntoResponse { icon("image/png",     FAVICON_16) }
+async fn get_favicon_32()  -> impl IntoResponse { icon("image/png",     FAVICON_32) }
+async fn get_apple_touch() -> impl IntoResponse { icon("image/png",     APPLE_TOUCH) }
+async fn get_icon_192()    -> impl IntoResponse { icon("image/png",     ICON_192) }
+async fn get_icon_512()    -> impl IntoResponse { icon("image/png",     ICON_512) }
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
@@ -368,8 +396,13 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
     let inner = Router::new()
         .route("/",              get(get_dashboard))
         .route("/methodology",   get(get_methodology))
-        .route("/logo-a.png",    get(get_logo))
-        .route("/favicon.ico",   get(get_logo))
+        .route("/logo-a.png",           get(get_logo))
+        .route("/favicon.ico",          get(get_favicon_ico))
+        .route("/favicon-16x16.png",    get(get_favicon_16))
+        .route("/favicon-32x32.png",    get(get_favicon_32))
+        .route("/apple-touch-icon.png", get(get_apple_touch))
+        .route("/icon-192.png",         get(get_icon_192))
+        .route("/icon-512.png",         get(get_icon_512))
         .route("/ws",            get(ws_handler))
         .route("/api/latest",    get(get_latest))
         .route("/api/timeline",  get(get_timeline))
@@ -428,8 +461,11 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Global Conflict Risk Monitor</title>
-<link rel="icon" type="image/png" href="{{BASE_PATH}}/logo-a.png">
-<link rel="apple-touch-icon" href="{{BASE_PATH}}/logo-a.png">
+<link rel="icon" type="image/x-icon" href="{{BASE_PATH}}/favicon.ico?v={{LOGO_VER}}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{BASE_PATH}}/favicon-32x32.png?v={{LOGO_VER}}">
+<link rel="icon" type="image/png" sizes="16x16" href="{{BASE_PATH}}/favicon-16x16.png?v={{LOGO_VER}}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{BASE_PATH}}/icon-192.png?v={{LOGO_VER}}">
+<link rel="apple-touch-icon" href="{{BASE_PATH}}/apple-touch-icon.png?v={{LOGO_VER}}">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
@@ -726,7 +762,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the descriptive prose yields when the viewport is short. -->
     <div class="left-foot">
       <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
-      <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><span class="brand-a-coin"><img class="brand-a-face" src="{{BASE_PATH}}/logo-a.png" alt="RAiTHE Industries" width="40" height="40"><img class="brand-a-face brand-a-back" src="{{BASE_PATH}}/logo-a.png" alt="" aria-hidden="true" width="40" height="40"></span></a>
+      <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><span class="brand-a-coin"><img class="brand-a-face" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="RAiTHE Industries" width="40" height="40"><img class="brand-a-face brand-a-back" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="" aria-hidden="true" width="40" height="40"></span></a>
     </div>
   </div>
   <div class="center-panel">
@@ -1208,7 +1244,9 @@ const METHODOLOGY_HTML: &str = r##"<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>GCRM — Methodology &amp; Mathematics</title>
-<link rel="icon" type="image/png" href="{{BASE_PATH}}/logo-a.png">
+<link rel="icon" type="image/x-icon" href="{{BASE_PATH}}/favicon.ico?v={{LOGO_VER}}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{BASE_PATH}}/favicon-32x32.png?v={{LOGO_VER}}">
+<link rel="apple-touch-icon" href="{{BASE_PATH}}/apple-touch-icon.png?v={{LOGO_VER}}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#05080c;--bg2:#0a0f16;--bg3:#0e141e;--border:#1a2333;--t1:#fff;--t2:#c2d2e2;--t3:#7c98b4;--t4:#4a5c70;--purple:#8e86e8;--green:#1D9E75;--amber:#EF9F27;--red:#E24B4A;--code:#0d1320}
