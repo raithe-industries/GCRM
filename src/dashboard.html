@@ -23,9 +23,12 @@
 }
 body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 .cmd-strip{display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg2);border-bottom:0.5px solid var(--border);flex-shrink:0}
-.cmd-cell{padding:7px 14px;border-right:0.5px solid var(--border)}
+.cmd-cell{padding:7px 14px;border-right:0.5px solid var(--border);cursor:pointer;transition:background .15s}
+.cmd-cell:hover{background:var(--bg3)}
 .cmd-cell:last-child{border-right:none}
 .cmd-label{font-size:8px;color:var(--t4);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}
+.cmd-info{margin-left:4px;color:var(--t4);font-weight:400;opacity:.7;transition:color .15s}
+.cmd-cell:hover .cmd-info{color:var(--purple);opacity:1}
 .cmd-val{font-size:13px;font-weight:600;font-family:monospace;color:var(--t1);transition:color .4s}
 .cmd-sub{font-size:9px;color:var(--t3);margin-top:1px}
 .nuke-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;background:rgba(200,0,0,0.15);pointer-events:none;animation:nuke-pulse 1s ease-in-out infinite}
@@ -152,6 +155,20 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .seismic-alert .sa-desc{color:var(--t2);margin-top:3px;line-height:1.4}
 .seismic-alert .sa-conf{color:var(--t4);font-size:9px;margin-top:3px;font-family:monospace}
 .op-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1999}.op-overlay.open{display:block}
+/* Section-explanation modal — every top metric is click-to-explain for full transparency. */
+.info-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2600}
+.info-overlay.open{display:flex;align-items:center;justify-content:center}
+.info-modal{width:min(540px,92vw);max-height:82vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:7px;box-shadow:0 12px 48px rgba(0,0,0,.7)}
+.info-modal-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2)}
+.info-modal-title{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t1)}
+.info-modal-close{cursor:pointer;background:none;border:none;color:var(--t4);font-size:20px;line-height:1;padding:0 2px}
+.info-modal-close:hover{color:var(--t1)}
+.info-modal-body{padding:14px 18px 20px;font-size:12px;line-height:1.7;color:var(--t2)}
+.info-modal-body p{margin:0 0 10px}
+.info-modal-body b{color:var(--t1)}
+.info-modal-body .ih{display:block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:14px 0 4px}
+.info-modal-body code{font-family:monospace;font-size:11px;color:var(--amber);background:var(--bg);padding:1px 4px;border-radius:3px}
+.info-modal-body .pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:3px;margin:0 2px}
 .raithe-footer{background:#000;border-top:1px solid var(--border);padding:0 20px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;flex-shrink:0;height:30px}
 .raithe-footer-left{display:flex;align-items:center;gap:8px}
 .raithe-footer-name{font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--t3);text-transform:uppercase}
@@ -168,21 +185,21 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
    (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
    in 3D so it reads as a turning badge rather than a flat spin. */
 .left-foot{flex-shrink:0;background:var(--bg);padding:6px 12px 8px}
-.brand-a{display:flex;justify-content:center;align-items:center;padding:12px 0 2px;perspective:360px;line-height:0;cursor:pointer}
+.brand-a{display:flex;justify-content:center;align-items:center;padding:14px 0 4px;perspective:720px;line-height:0;cursor:pointer}
 /* Two-faced "coin": front + a back face pre-rotated 180°, both backface-hidden,
    so whichever side faces the viewer always shows the A upright — the spin reads
    as a turning solid badge, never a mirrored or blank flip. */
-.brand-a-coin{position:relative;width:40px;height:40px;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite}
-.brand-a-face{position:absolute;top:0;left:0;width:40px;height:40px;opacity:.45;backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:opacity .3s}
+.brand-a-coin{position:relative;width:80px;height:80px;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite}
+.brand-a-face{position:absolute;top:0;left:0;width:80px;height:80px;opacity:.45;backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:opacity .3s}
 .brand-a-back{transform:rotateY(180deg)}
 .brand-a:hover .brand-a-coin{animation-play-state:paused}
 .brand-a:hover .brand-a-face{opacity:.85}
 @keyframes brand-a-spin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
 @media(prefers-reduced-motion:reduce){.brand-a-coin{animation:none}}
-.pe-title{font-size:8px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
+.pe-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
 .pe-item{margin-bottom:9px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
-.pe-text{font-size:9px;color:var(--t4);line-height:1.55}
+.pe-text{font-size:9px;color:var(--t4);line-height:1.55;text-align:center}
 .pe-scale{display:flex;flex-direction:column;gap:2px;margin-top:4px}
 .pe-scale-row{display:flex;align-items:baseline;gap:5px}
 .pe-val{font-size:9px;font-family:monospace;color:var(--t2);min-width:38px;flex-shrink:0}
@@ -198,7 +215,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .main{grid-template-columns:210px 1fr 350px}
   .logo{font-size:18px}
   .sub,.topbar-right,.tick-item{font-size:12px}
-  .cmd-label,.lm-label,.panel-title,.dn,.pe-title,.pe-label{font-size:10px}
+  .cmd-label,.lm-label,.panel-title,.dn,.pe-label{font-size:10px}
+  .pe-title{font-size:13px}
   .cmd-val,.lm-val,.dscore{font-size:16px}
   .cmd-sub,.lm-sub,.gauge-pct-label,.conf-row,.ddelta{font-size:11px}
   .gauge-val{font-size:27px}
@@ -216,7 +234,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .gauge-val{font-size:31px}
   #gauge-canvas{width:204px;height:113px}
   .art-title,.panel-body,.src-name{font-size:14px}
-  .cmd-label,.lm-label,.panel-title,.dn,.pe-title,.pe-label{font-size:11px}
+  .cmd-label,.lm-label,.panel-title,.dn,.pe-label{font-size:11px}
+  .pe-title{font-size:14px}
 }
 </style>
 </head>
@@ -243,11 +262,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   </div>
 </div>
 <div class="cmd-strip">
-  <div class="cmd-cell"><div class="cmd-label">Threat Level</div><div class="cmd-val" id="cmd-threat">—</div><div class="cmd-sub" id="cmd-threat-sub">awaiting data</div></div>
-  <div class="cmd-cell"><div class="cmd-label">WWIII Risk (Annual)</div><div class="cmd-val" id="cmd-risk">—</div><div class="cmd-sub" id="cmd-risk-delta">—</div></div>
-  <div class="cmd-cell"><div class="cmd-label">Primary Driver</div><div class="cmd-val" id="cmd-driver" style="font-size:11px">—</div><div class="cmd-sub" id="cmd-driver-sub">highest domain</div></div>
-  <div class="cmd-cell"><div class="cmd-label">Confidence</div><div class="cmd-val" id="cmd-conf">—</div><div class="cmd-sub" id="cmd-conf-sub">data quality</div></div>
-  <div class="cmd-cell"><div class="cmd-label">6h Trend</div><div class="cmd-val" id="cmd-trend">—</div><div class="cmd-sub" id="cmd-trend-sub">vs 6 hrs ago</div></div>
+  <div class="cmd-cell" onclick="openInfo('threat')" title="Click for a full explanation"><div class="cmd-label">Threat Level<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-threat">—</div><div class="cmd-sub" id="cmd-threat-sub">awaiting data</div></div>
+  <div class="cmd-cell" onclick="openInfo('risk')" title="Click for a full explanation"><div class="cmd-label">WWIII Risk (Annual)<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-risk">—</div><div class="cmd-sub" id="cmd-risk-delta">—</div></div>
+  <div class="cmd-cell" onclick="openInfo('driver')" title="Click for a full explanation"><div class="cmd-label">Primary Driver<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-driver" style="font-size:11px">—</div><div class="cmd-sub" id="cmd-driver-sub">highest domain</div></div>
+  <div class="cmd-cell" onclick="openInfo('conf')" title="Click for a full explanation"><div class="cmd-label">Confidence<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-conf">—</div><div class="cmd-sub" id="cmd-conf-sub">data quality</div></div>
+  <div class="cmd-cell" onclick="openInfo('trend')" title="Click for a full explanation"><div class="cmd-label">6h Trend<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-trend">—</div><div class="cmd-sub" id="cmd-trend-sub">vs 6 hrs ago</div></div>
 </div>
 <div id="alert-bar" class="alert-bar"></div>
 <div class="ticker"><div class="ticker-inner" id="ticker-inner"><span class="tick-item"><span class="tick-dot" style="background:#6060a0"></span>Awaiting live feed...</span></div></div>
@@ -257,14 +276,14 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="gauge-wrap">
       <canvas id="gauge-canvas" width="148" height="82"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
-      <div class="gauge-pct-label" id="gauge-ratio">— × above baseline</div>
-      <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:1px">annual P(WWIII) — log scale 0.1%→90% · <a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
+      <div class="gauge-pct-label" id="gauge-ratio">— annual P(WWIII)</div>
+      <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:1px">systemic index 0–100 · escalation-ladder severity · <a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       <div class="gauge-context">
-        <div class="gauge-context-row"><span>Baseline:</span><span style="color:var(--t2)">1.5% / year</span></div>
         <div class="gauge-context-row"><span>This reading:</span><span id="gauge-ratio-ctx" style="color:var(--amber)">—</span></div>
-        <div class="gauge-context-row"><span>Normal:</span><span style="color:var(--t2)">~1.5–2.5%</span></div>
-        <div class="gauge-context-row"><span>Elevated:</span><span style="color:var(--amber)">≥2.5%</span></div>
-        <div class="gauge-context-row"><span>Critical:</span><span style="color:var(--red)">≥8.0%</span></div>
+        <div class="gauge-context-row"><span>Normal:</span><span style="color:#40c070">0–16</span></div>
+        <div class="gauge-context-row"><span>Moderate:</span><span style="color:#9090ff">17–33</span></div>
+        <div class="gauge-context-row"><span>Elevated:</span><span style="color:var(--amber)">34–66</span></div>
+        <div class="gauge-context-row"><span>Critical:</span><span style="color:var(--red)">≥67</span></div>
       </div>
       <div class="conf-row">
         <span style="color:var(--t4);font-size:8px">CONF</span>
@@ -276,9 +295,9 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the hero gauge above; regime ×, P₀, GP-event count and elevated-domain tally
          are model internals that live in the methodology and model-state footer. -->
     <div class="left-metrics">
-      <div class="lm"><div class="lm-label">30-DAY WINDOW</div><div class="lm-val" id="m-30d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
-      <div class="lm"><div class="lm-label">90-DAY WINDOW</div><div class="lm-val" id="m-90d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
-      <div class="lm"><div class="lm-label">LAST COMPUTED</div><div class="lm-val" id="m-computed" style="font-size:11px">—</div><div class="lm-sub" style="color:var(--t4)">model update time</div></div>
+      <div class="lm" onclick="openInfo('w30')" style="cursor:pointer"><div class="lm-label">30-DAY WINDOW<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-30d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
+      <div class="lm" onclick="openInfo('w90')" style="cursor:pointer"><div class="lm-label">90-DAY WINDOW<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-90d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
+      <div class="lm" onclick="openInfo('computed')" style="cursor:pointer"><div class="lm-label">LAST COMPUTED<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-computed" style="font-size:11px">—</div><div class="lm-sub" style="color:var(--t4)">model update time</div></div>
     </div>
     <div class="plain-eng">
       <div class="pe-title">WHAT THIS MEANS</div>
@@ -288,19 +307,17 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       </div>
       <div class="pe-item">
         <div class="pe-label">THE 5 BARS</div>
-        <div class="pe-text">Orthogonal force types (kinetic, nuclear, economic, cyber, diplomatic). Several elevated at once compounds danger. Click a bar to audit the articles behind it.</div>
+        <div class="pe-text">The real signal isn't one tall bar — it's several elevated at once, which couple and compound the systemic risk. Click any bar (or its card) to audit the live articles behind its score.</div>
       </div>
       <div class="pe-item">
         <div class="pe-label">THEATERS &amp; INDEX</div>
-        <div class="pe-text">Each theater (Ukraine, Gulf, Taiwan…) sits on an escalation ladder. The systemic index (0–100) is the headline; P(WWIII) is the annualized read.</div>
+        <div class="pe-text">The live flashpoints (Ukraine, the Gulf, Taiwan…) and the 0–100 systemic index they roll up into — the model's headline severity.</div>
       </div>
+      <a href="{{BASE_PATH}}/methodology" class="pe-btn" style="margin-top:6px">Full methodology &amp; math ↗</a>
     </div>
-    <!-- Pinned foot: methodology link + rotating RAiTHE mark. Lives outside the
-         scrollable explainer so it (and the metrics above) stay visible while only
-         the descriptive prose yields when the viewport is short. -->
+    <!-- Pinned foot: rotating RAiTHE brand mark, anchored to the bottom of the rail. -->
     <div class="left-foot">
-      <a href="{{BASE_PATH}}/methodology" class="pe-btn">Full methodology &amp; math ↗</a>
-      <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><span class="brand-a-coin"><img class="brand-a-face" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="RAiTHE Industries" width="40" height="40"><img class="brand-a-face brand-a-back" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="" aria-hidden="true" width="40" height="40"></span></a>
+      <a href="https://raithe.ca" target="_blank" rel="noopener" class="brand-a" title="RAiTHE Industries"><span class="brand-a-coin"><img class="brand-a-face" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="RAiTHE Industries" width="80" height="80"><img class="brand-a-face brand-a-back" src="{{BASE_PATH}}/logo-a.png?v={{LOGO_VER}}" alt="" aria-hidden="true" width="80" height="80"></span></a>
     </div>
   </div>
   <div class="center-panel">
@@ -346,7 +363,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <button class="tf-btn"        data-min="672"  data-max="4368" onclick="setAgeFilter(672,4368,this)">4w–6m</button>
       <button class="tf-btn"        data-min="4368" data-max="8760" onclick="setAgeFilter(4368,8760,this)">6–12m</button>
     </div>
-    <div style="padding:2px 8px;font-size:7px;color:var(--t4);border-bottom:0.5px solid var(--border);flex-shrink:0;letter-spacing:.02em">▣ Tip: click any domain card to audit the articles feeding its score</div>
+    <div style="padding:2px 8px;font-size:7px;color:var(--t4);border-bottom:0.5px solid var(--border);flex-shrink:0;letter-spacing:.02em">▣ Tip: click any domain card or bar to audit the articles feeding its score</div>
     <div class="panel-body" id="panel-articles"></div>
     <div class="panel-body" id="panel-sources" style="display:none"></div>
     <div class="panel-body" id="panel-log" style="display:none"><div id="log-body"></div></div>
@@ -407,28 +424,22 @@ const DTAGS={military_escalation:'KIN',nuclear_posture:'NUC',economic_warfare:'E
 const TAG_COLORS={KIN:'#E24B4A',NUC:'#FF6B35',ECO:'#1D9E75',CYB:'#00CED1',DIP:'#7F77DD'};
 const GC=document.getElementById('gauge-canvas').getContext('2d');
 let lastGaugePct=0;
-// ── Logarithmic risk→gauge mapping ──────────────────────────────────────────
-// Linear 0–5% hid reality: anything above 5% (Ukraine ~10%, Cuba ~40%) pinned
-// at full. A log scale from 0.1% baseline to 50% ceiling spreads the whole
-// historically-meaningful range across the dial so every regime is legible.
-const G_MIN=0.001,G_MAX=0.90,G_DEN=Math.log10(G_MAX/G_MIN); // v2: ceiling raised to 90%
-function riskToFrac(p){
-  if(p<=G_MIN)return 0;
-  return Math.min(1,Math.log10(p/G_MIN)/G_DEN);
-}
-// Zone ends as gauge fractions of the alert thresholds (elevated 1.5%, critical 5%).
-const GZ_ELEV=riskToFrac(0.025),GZ_CRIT=riskToFrac(0.08);
-// Tick reference points (risk → short label).
-const G_TICKS=[{p:0.001,l:'.1'},{p:0.01,l:'1'},{p:0.05,l:'5'},{p:0.20,l:'20'},{p:0.90,l:'90'}];
+// ── Systemic-index gauge mapping ─────────────────────────────────────────────
+// The hero dial reads the 0–100 systemic index (the documented headline metric);
+// annual P(WWIII) is the secondary line. Linear scale; coloured zones at the band
+// thresholds — moderate 17, elevated 34, critical 67.
+const IDX_ZONES=[{e:0.17,c:'#1D9E75'},{e:0.34,c:'#7F77DD'},{e:0.67,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
+// Tick reference points (dial fraction → label).
+const G_TICKS=[{f:0,l:'0'},{f:0.25,l:'25'},{f:0.5,l:'50'},{f:0.75,l:'75'},{f:1,l:'100'}];
 function drawGauge(pct){
   pct=Math.min(1,pct);const W=148,H=82,cx=W/2,cy=H-10,r=58;
   GC.clearRect(0,0,W,H);
   GC.beginPath();GC.arc(cx,cy,r,Math.PI,0);GC.strokeStyle='#1e1e38';GC.lineWidth=9;GC.stroke();
-  const zones=[{e:GZ_ELEV,c:'#1D9E75'},{e:GZ_CRIT,c:'#EF9F27'},{e:1,c:'#E24B4A'}];let s=Math.PI;
+  const zones=IDX_ZONES;let s=Math.PI;
   for(const z of zones){const e=Math.PI+z.e*Math.PI;GC.beginPath();GC.arc(cx,cy,r,s,Math.min(e,Math.PI+pct*Math.PI));GC.strokeStyle=z.c;GC.lineWidth=9;GC.stroke();if(pct<=z.e)break;s=e;}
   // Tick marks + labels at log reference points
   GC.font='6px monospace';GC.fillStyle='#6878a0';GC.textAlign='center';
-  for(const t of G_TICKS){const f=riskToFrac(t.p),a=Math.PI+f*Math.PI;
+  for(const t of G_TICKS){const f=t.f,a=Math.PI+f*Math.PI;
     const x1=cx+(r-5)*Math.cos(a),y1=cy+(r-5)*Math.sin(a),x2=cx+(r+5)*Math.cos(a),y2=cy+(r+5)*Math.sin(a);
     GC.beginPath();GC.moveTo(x1,y1);GC.lineTo(x2,y2);GC.strokeStyle='#3a4560';GC.lineWidth=1;GC.stroke();
     const lx=cx+(r+10)*Math.cos(a),ly=cy+(r+10)*Math.sin(a)+2;GC.fillText(t.l,lx,ly);}
@@ -440,13 +451,63 @@ function animateGauge(target){const diff=target-lastGaugePct;const step=diff*0.1
 const GRID='rgba(255,255,255,0.04)',TICK='#9090c0';
 let spikeAnnotations={};
 const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}}});
-const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:TICK,font:{size:9}}},y:{min:0,max:1,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>Math.round(v*100)+'%'}}},animation:{duration:300,easing:'easeOutQuart'}}});
+const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
+  // Clicking a bar audits that domain — same filter as clicking its card above.
+  onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
+  onHover:(e,els)=>{const c=e?.native?.target;if(c)c.style.cursor=(els&&els.length)?'pointer':'default';},
+  plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:TICK,font:{size:9}}},y:{min:0,max:1,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>Math.round(v*100)+'%'}}},animation:{duration:300,easing:'easeOutQuart'}}});
 let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[],spikeIdx=0;
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
 function pc(p){return p>=.08?'var(--red)':p>=.025?'var(--amber)':'var(--green)'}
 function confLabel(c){return c>=.8?'High':c>=.5?'Medium':'Low'}
 function threatLabel(p){return p>=.08?'CRITICAL':p>=.025?'ELEVATED':p>=.01?'MODERATE':'NORMAL'}
 function domainLabel(id){const i=DID.indexOf(id);return i>=0?DSHORT[i]:id.replace(/_/g,' ').replace(/\b./g,c=>c.toUpperCase())}
+// ── Section explanations ──────────────────────────────────────────────────
+// Every headline metric is click-to-explain so the whole model is transparent:
+// what the number is, how it's built, and how to read it. Opened by openInfo(key).
+const INFO={
+  threat:{title:'Threat Level',html:`
+    <p><b>Threat Level</b> is the headline severity read. The big word is the escalation rung of the hottest theater; the sub-line is the <b>systemic index (0–100)</b> behind it.</p>
+    <span class="ih">Systemic index</span>
+    <p>A 0–100 composite of how close the world is to a <b>systemic</b> (great-power) war right now. It fuses every active theater's heat with how tightly those theaters couple to the great powers and how many are hot at the same time.</p>
+    <span class="ih">Bands</span>
+    <p><span class="pill" style="background:#0a1a10;color:#40c070">0–16 normal</span><span class="pill" style="background:#0d0d20;color:#9090ff">17–33 moderate</span><span class="pill" style="background:#1f1000;color:#ffaa40">34–66 elevated</span><span class="pill" style="background:#2a0000;color:#ff7070">67–100 critical</span></p>
+    <p>The rung label (e.g. "Great-Power War", "Tension") is read from the hottest theater's escalation ladder.</p>`},
+  risk:{title:'WWIII Risk (Annual)',html:`
+    <p><b>WWIII Risk (Annual)</b> is the model's estimate of the probability that a <b>world-war-scale conflict begins within the next 12 months</b>, read continuously from live news.</p>
+    <span class="ih">For scale</span>
+    <p><code>~1.5%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~39%</code> ≈ Ukraine, Feb 2022 · <code>~80%</code> ≈ Cuba, Oct 1962.</p>
+    <span class="ih">How it's built</span>
+    <p>A regime-adjusted prior (the baseline, scaled by standing factors such as an active great-power war) is multiplied by a <b>coupling likelihood</b> drawn from the five force domains. The more domains elevated and entangled across great powers, the higher the read. The sub-line is the change since the previous snapshot.</p>`},
+  driver:{title:'Primary Driver',html:`
+    <p><b>Primary Driver</b> names the single factor contributing most to the current systemic index — the dominant force-domain or coupling pushing the risk right now.</p>
+    <span class="ih">Theaters &amp; the systemic index</span>
+    <p>A <b>theater</b> is a flashpoint dyad (Ukraine–Russia, US–Iran, China–Taiwan…). Each is scored on an <b>escalation ladder</b> that runs from posturing up to open great-power war. The <b>systemic index (0–100)</b> blends every theater's heat with how tightly it pulls in the great powers and how many are hot at once — that's the model's headline severity, and P(WWIII) is its annualized restatement.</p>
+    <span class="ih">Sub-line</span>
+    <p>Shows the <b>hottest theater</b>: the flashpoint dyad with the highest heat this snapshot. If nothing is elevated it reads "no theater elevated".</p>
+    <p>Read it as the "why" behind the number — then click a domain bar or card to audit the live articles driving it.</p>`},
+  conf:{title:'Confidence',html:`
+    <p><b>Confidence</b> is how much to trust the current estimate, from the quality and quantity of evidence behind it — <b>not</b> how dangerous the world is.</p>
+    <span class="ih">Formula</span>
+    <p><code>avg domain confidence ×0.5 + event volume ×0.3 + active sources ×0.2</code>. Event volume saturates near 200 events in the window; sources near 20 feeds.</p>
+    <span class="ih">Bands</span>
+    <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
+  trend:{title:'6h Trend',html:`
+    <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, from this session's rolling sample buffer.</p>
+    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how many samples are in the 6-hour buffer so far.</p>`},
+  w30:{title:'30-Day Window',html:`
+    <p><b>30-Day Window</b> re-expresses the same model over a rolling 30-day horizon — a nearer-term read than the headline annual figure.</p>
+    <p>It moves faster than the annual number, so it's the better gauge of short-run escalation. It's a derived view of one model, not a separate forecast.</p>`},
+  w90:{title:'90-Day Window',html:`
+    <p><b>90-Day Window</b> re-expresses the model over a rolling 90-day (quarter) horizon — between the 30-day and the annual read.</p>
+    <p>Useful for telling whether a spike is sustaining into a trend rather than a single-day blip.</p>`},
+  computed:{title:'Last Computed',html:`
+    <p><b>Last Computed</b> is the timestamp of the most recent model snapshot, in your local time. The engine recomputes about once a second as new events arrive, so this should always sit within moments of now.</p>
+    <p>If it goes stale, the feed or model worker has stalled.</p>`}
+};
+function openInfo(k){const i=INFO[k];if(!i)return;document.getElementById('info-title').textContent=i.title;document.getElementById('info-body').innerHTML=i.html;document.getElementById('info-overlay').classList.add('open');}
+function closeInfo(){document.getElementById('info-overlay').classList.remove('open');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeInfo();});
 // (v2: client-side scenario what-ifs removed; theaters now surface only via the
 //  systemic-index headline + "hottest theater" driver in the command strip)
 let tickerItems=[];
@@ -517,16 +578,17 @@ function applyData(d){
   document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
   const delta6h=get6hDelta(pA);if(delta6h!==null){const d6el=document.getElementById('ca-6h');d6el.textContent=(delta6h>=0?'+':'')+(delta6h*100).toFixed(3)+'%';d6el.style.color=delta6h>0.0005?'#E24B4A':delta6h<-0.0005?'#1D9E75':'var(--t2)';}
-  checkSpike(pA);animateGauge(riskToFrac(pA));
-  const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(2)+'%';gv.style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'#1D9E75';
-  const riskRatio=(pA/0.015).toFixed(1);document.getElementById('gauge-ratio').textContent=riskRatio+'× above baseline (1.5%)';
-  const ctxEl=document.getElementById('gauge-ratio-ctx');if(ctxEl){ctxEl.textContent=riskRatio+'× baseline';ctxEl.style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'#1D9E75';}
+  // Hero gauge = systemic index (0–100, the documented headline); P(WWIII) secondary.
+  const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
+  const idxCol=sysIdx>=67?'#E24B4A':sysIdx>=34?'#EF9F27':sysIdx>=17?'#7F77DD':'#1D9E75';
+  checkSpike(pA);animateGauge(sysIdx/100);
+  const gv=document.getElementById('gauge-val');gv.textContent=sysIdx;gv.style.color=idxCol;
+  document.getElementById('gauge-ratio').textContent='≈ '+(pA*100).toFixed(2)+'% annual P(WWIII)';
+  const ctxEl=document.getElementById('gauge-ratio-ctx');if(ctxEl){ctxEl.textContent=sysIdx+' / 100';ctxEl.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
   const _cd=new Date(d.computed_at);const _et=toET(_cd);
   document.getElementById('ts').textContent='Live · '+_et;
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
-  const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
-  const idxCol=sysIdx>=67?'#E24B4A':sysIdx>=34?'#EF9F27':sysIdx>=17?'#7F77DD':'#1D9E75';
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';
   document.getElementById('cmd-risk').textContent=(pA*100).toFixed(2)+'%';document.getElementById('cmd-risk').style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'var(--t1)';
@@ -606,6 +668,16 @@ setInterval(()=>{if(currentTab==='articles'&&_artCache.length===0)fetchArticles(
 pollNuclear();setInterval(pollNuclear,15000);
 setInterval(refreshSrcCount,30000);
 </script>
+<!-- ── Section-explanation modal (click any top metric / rail card) ──────── -->
+<div class="info-overlay" id="info-overlay" onclick="if(event.target===this)closeInfo()">
+  <div class="info-modal" role="dialog" aria-modal="true" aria-labelledby="info-title">
+    <div class="info-modal-header">
+      <span class="info-modal-title" id="info-title">—</span>
+      <button class="info-modal-close" onclick="closeInfo()" aria-label="Close">&times;</button>
+    </div>
+    <div class="info-modal-body" id="info-body"></div>
+  </div>
+</div>
 <!-- ── Operator panel overlay ──────────────────────────────────────────── -->
 <div class="op-overlay" id="op-overlay" onclick="toggleOperatorPanel()"></div>
 <div class="op-drawer" id="op-drawer">
