@@ -309,17 +309,21 @@ impl DomainScorer {
                     0.0
                 };
 
-                // Domain-specific evidence is the PRIMARY driver. nlp_signal [0,1] is
-                // the noisy-OR keyword/LLM strength for THIS domain; severity and
-                // escalation refine intensity but no longer dominate. This keeps each
-                // domain reflecting what its slice of the corpus actually says, so
-                // domains that merely co-occur on the same severe story no longer
-                // collapse to near-identical scores. Additive budget (nlp 0.50 +
-                // severity 0.30 + escalation 0.20) sums to 1.0; the GP domain adds ≤0.12.
-                let base_signal = nlp_signal              * 0.50
-                    + event.severity                      * 0.30
-                    + event.escalation_language_score     * 0.20
-                    + gp_bonus;
+                // Domain-specific evidence (nlp_signal) is the SPINE. severity and
+                // escalation are event-level — identical for every domain tagged on
+                // the same story — so as an additive pedestal they compressed
+                // co-tagged domains (nuclear/diplomatic/economic/great-power) to
+                // near-identical scores. Here they MULTIPLY the domain's own evidence
+                // instead: story intensity scales each domain by how strong THAT
+                // domain's keyword/LLM evidence is, so two domains on the same severe
+                // story diverge in proportion to their own signal rather than sharing
+                // a common floor. A 0.55 floor keeps a strong-keyword/low-intensity
+                // domain from collapsing; the 0.45 swing lets intensity matter.
+                // gp_bonus stays additive and great-power-domain only. Final clamp
+                // bounds the result to [0,1].
+                let intensity = 0.5 * event.severity
+                              + 0.5 * event.escalation_language_score; // [0,1] shared story intensity
+                let base_signal = nlp_signal * (0.55 + 0.45 * intensity) + gp_bonus;
 
                 // Sentiment modulator: sentiment_score ∈ [-1, 1] where positive is
                 // conciliatory (de-escalatory) and negative is hostile. Hostile
