@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(systemctl status *)",
+      "Bash(systemctl is-active *)",
+      "Bash(systemctl list-units *)",
+      "Bash(systemctl cat *)",
+      "Bash(systemctl show *)",
+      "Bash(sudo systemctl status gcrm --no-pager)",
+      "Bash(journalctl -u gcrm.service -n 50 --no-pager)",
+      "Bash(journalctl -u gcrm.service -n 8 --no-pager)"
+    ]
+  }
+}
