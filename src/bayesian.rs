@@ -153,6 +153,34 @@ fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
+/// Engineering ceiling on P(WWIII) — epistemic humility, not a probabilistic prior.
+/// See the BayesianRiskEngine doc-comment for the rationale (the model has no access
+/// to ground truth, so it must never emit values near certainty). Raised 0.85→0.90 in
+/// v2. Centralised here so the head function and any future caller share one source of
+/// truth instead of a scattered magic literal.
+pub const P_CEILING: f64 = 0.90;
+
+/// Probability head: maps the systemic likelihood `l_sys` to the annual P(WWIII) on
+/// the log-odds scale.
+///
+///   P = sigmoid( logit(BASELINE_ANNUAL) + EVIDENCE_GAIN_SYS · l_sys )   capped at P_CEILING
+///
+/// The prior is the FLAT modern quiet-year baseline (the structural regime enters via
+/// `l_sys`, not the prior), so `l_sys = 0` returns the baseline exactly and larger
+/// `l_sys` rises along a logistic S-curve toward the ceiling. This is the additive
+/// log-odds evidence-combination form (Good-Judgment-Project / Metaculus-style
+/// aggregation) rather than naïve probability multiplication.
+///
+/// Pure and monotonic non-decreasing in `l_sys`; bounded above by `P_CEILING`. These
+/// invariants are locked by unit tests (`p_head_*`) so a future retune of
+/// EVIDENCE_GAIN_SYS or the prior cannot silently break the curve shape that the four
+/// point-anchors do not, on their own, constrain.
+pub fn p_wwiii_from_l_sys(l_sys: f64) -> f64 {
+    let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5); // BASELINE_ANNUAL (flat)
+    let prior_logodds = (prior / (1.0 - prior)).ln();
+    sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * l_sys).min(P_CEILING)
+}
+
 const TRACKED_ACTORS: &[&str] = &[
     "united_states", "united_states_military",
     "russia", "russia_military",
@@ -673,10 +701,7 @@ impl BayesianRiskEngine {
         // guardrail amplifier — so a calm world sits at the baseline and the SYSTEMIC
         // likelihood does all the lifting. L = 0 reproduces the baseline; large L
         // saturates toward the 0.90 ceiling along an S-curve.
-        let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5); // BASELINE_ANNUAL (flat)
-        let prior_logodds = (prior / (1.0 - prior)).ln();
-        let raw = sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * l_sys)
-            .min(0.90); // Engineering ceiling — epistemic humility, not a prior (raised 0.85→0.90, v2)
+        let raw = p_wwiii_from_l_sys(l_sys); // log-odds head, flat baseline prior, P_CEILING cap
         snap.p_wwiii_annual = (raw * 1e8).round() / 1e8;
 
         snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(1.0 / 12.0)) * 1e8).round() / 1e8;
@@ -1147,6 +1172,54 @@ mod tests {
         let concil  = s_concil.score_all(&[concil_ev])["military_escalation"].score;
         assert!(hostile > concil,
             "hostile sentiment ({hostile:.4}) should exceed conciliatory ({concil:.4})");
+    }
+
+    // ── Probability head (curve shape) ────────────────────────────────────────
+    // The four backtest point-anchors pin P at four values of L_sys; these lock the
+    // SHAPE of the head between and beyond them, so a future retune of EVIDENCE_GAIN_SYS
+    // or the prior cannot silently break monotonicity, the baseline-return, or the
+    // ceiling without a test going red.
+
+    #[test]
+    fn p_head_returns_flat_baseline_at_zero() {
+        // L_sys = 0 (a calm world) must reproduce the flat modern baseline exactly —
+        // the logistic head is anchored there by construction.
+        let p0 = p_wwiii_from_l_sys(0.0);
+        assert!((p0 - HISTORICAL_ANCHOR).abs() < 1e-9,
+            "head at L_sys=0 should equal baseline {HISTORICAL_ANCHOR}, got {p0}");
+    }
+
+    #[test]
+    fn p_head_is_monotonic_nondecreasing_in_l_sys() {
+        // Walk L_sys from 0 well past the Cuba anchor (~2.3) into saturation; P must
+        // never decrease. Cheap insurance against a non-monotone retune.
+        let mut prev = p_wwiii_from_l_sys(0.0);
+        let mut l = 0.0;
+        while l <= 12.0 {
+            let p = p_wwiii_from_l_sys(l);
+            assert!(p + 1e-12 >= prev, "P must be non-decreasing in L_sys; dipped at L={l}");
+            prev = p;
+            l += 0.01;
+        }
+    }
+
+    #[test]
+    fn p_head_respects_engineering_ceiling() {
+        // No finite evidence may push the head to certainty; it saturates at P_CEILING.
+        assert!(p_wwiii_from_l_sys(1e6) <= P_CEILING + 1e-12);
+        assert!(p_wwiii_from_l_sys(100.0) > P_CEILING - 1e-6, "should saturate toward the ceiling");
+        // And it sits strictly below the ceiling across the calibrated anchor range.
+        assert!(p_wwiii_from_l_sys(2.4) < P_CEILING, "Cuba-scale L_sys must stay below the ceiling");
+    }
+
+    #[test]
+    fn p_head_reproduces_anchor_ladder() {
+        // Sanity: the head alone, fed the L_sys the backtest reports for each analog,
+        // lands in the right band — locking the head independently of the theater path.
+        assert!((p_wwiii_from_l_sys(0.128) * 100.0 - 2.0).abs() < 1.0,  "quiet ~2%");
+        let u = p_wwiii_from_l_sys(1.554) * 100.0; assert!(u > 30.0 && u < 50.0, "ukraine ~39%, got {u}");
+        let c = p_wwiii_from_l_sys(2.009) * 100.0; assert!(c > 55.0 && c < 75.0, "current ~65%, got {c}");
+        let k = p_wwiii_from_l_sys(2.316) * 100.0; assert!(k > 70.0 && k < 90.0, "cuba ~80%, got {k}");
     }
 
     // ── Co-occurrence boosts ──────────────────────────────────────────────────
