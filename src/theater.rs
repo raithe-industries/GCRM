@@ -240,12 +240,19 @@ impl TheaterEngine {
         let prev = self.prev_heat.get(&id).copied().unwrap_or(0.0);
 
         if tev.is_empty() {
+            // A theater that was hot last tick and now has zero qualifying events has
+            // genuinely de-escalated — report that "falling" honestly rather than a flat
+            // "stable", so a cooling flashpoint shows a ▼ on the ladder strip. (A fresh or
+            // never-hot theater keeps prev≈0 → delta≈0 → "stable", so this only changes
+            // the cool-off transition, never a quiet world. delta can only be ≤0 here.)
+            let delta = 0.0 - prev;
+            let trend = if delta < -0.005 { "falling" } else { "stable" };
             self.prev_heat.insert(id.clone(), 0.0);
             return TheaterState {
                 theater_id: id, label: theater.label().to_string(),
                 rung: EscalationRung::Stable, rung_label: EscalationRung::Stable.label().to_string(),
                 heat: 0.0, modality_scores: HashMap::new(),
-                trend: "stable".into(), delta: 0.0, event_count: 0,
+                trend: trend.into(), delta: (delta * 1e4).round() / 1e4, event_count: 0,
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
             };
         }
@@ -387,6 +394,39 @@ mod tests {
         let o2 = te2.compute(&both);
         assert!(o2.l_sys > o1.l_sys, "two hot theaters {} should exceed one {}", o2.l_sys, o1.l_sys);
         assert!(o2.couplers.concurrency > o1.couplers.concurrency);
+    }
+
+    #[test]
+    fn cooling_theater_reports_falling_not_stable() {
+        // A theater that is hot on one tick and has no qualifying events the next has
+        // de-escalated; the trend must read "falling" (▼), not a misleading "stable".
+        let mut te = TheaterEngine::new();
+        let mut hot = Vec::new();
+        for _ in 0..6 {
+            hot.push(ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true));
+            hot.push(ev("us_iran", "nuclear_posture",     0.90, 0.9, &["iran"], false));
+        }
+        let o1 = te.compute(&hot);
+        let g1 = o1.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert!(g1.heat > 0.1, "precondition: theater should be hot, got {}", g1.heat);
+
+        // Next tick: the window holds no events for this theater — it has cooled off.
+        let o2 = te.compute(&[]);
+        let g2 = o2.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(g2.heat, 0.0, "cooled theater heat should be 0");
+        assert_eq!(g2.trend, "falling",
+            "a theater that cooled from hot to zero must read falling, not stable");
+        assert!(g2.delta < 0.0, "delta should be negative on cool-off, got {}", g2.delta);
+    }
+
+    #[test]
+    fn quiet_world_theaters_stay_stable() {
+        // Symmetric guard: a fresh/never-hot theater must NOT spuriously read "falling".
+        let mut te = TheaterEngine::new();
+        let out = te.compute(&[]);
+        assert!(out.theaters.iter().all(|s| s.trend == "stable"),
+            "a never-hot world must read stable, not falling");
+        assert!(out.theaters.iter().all(|s| s.delta == 0.0));
     }
 
     #[test]
