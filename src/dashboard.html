@@ -257,6 +257,30 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .cmd-label,.lm-label,.panel-title,.dn,.pe-label,.iw-label{font-size:11px}
   .pe-title{font-size:14px}
 }
+/* ── Mobile / phones (≤680px) ─────────────────────────────────────────────────
+   The cockpit is a fixed-height, no-scroll 3-column grid built for desktop. On a
+   phone that can't reflow, so it crammed everything into one screen, clipped the
+   5th stat off the right edge, and the Chart.js responsive canvases (no bounded
+   height) hit a resize→render→resize loop → "Maximum call stack size exceeded".
+   Here we let the document SCROLL, stack the panels into one column, wrap the stat
+   strip, and give the charts explicit heights (kills both the squish and the loop). */
+@media(max-width:680px){
+  body{height:auto;min-height:100dvh;overflow-y:auto;overflow-x:hidden}
+  .topbar{flex-wrap:wrap;gap:4px 10px}
+  .cmd-strip{grid-template-columns:1fr 1fr}
+  .cmd-cell{border-right:none;border-bottom:0.5px solid var(--border)}
+  .cmd-cell:nth-child(odd){border-right:0.5px solid var(--border)}
+  .cmd-val{font-size:15px}
+  .cmd-label,.lm-label,.panel-title{font-size:10px}
+  .main{display:block;overflow:visible}
+  .left-panel,.center-panel,.right-panel{overflow:visible;border:none;border-bottom:0.5px solid var(--border)}
+  .charts-area{display:block;height:auto;overflow:visible}
+  .chart-card{height:auto;overflow:hidden}
+  .chart-inner{height:205px;flex:none}
+  .theater-ladder{grid-template-columns:repeat(2,1fr)}
+  .panel-body{flex:none;max-height:80vh;overflow-y:auto;font-size:13px}
+  .alert-bar,.art-title,.src-name{font-size:13px}
+}
 </style>
 </head>
 <body>
@@ -715,7 +739,7 @@ function applyTimeline(entries){
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);tlChart.update('none');
-  if(entries.length>0){const peaks=entries.map(e=>e.p_annual);sessionPeak=Math.max(...peaks);sessionLow=Math.min(...peaks);}
+  if(entries.length>0){let mx=-Infinity,mn=Infinity;for(let i=0;i<entries.length;i++){const v=entries[i].p_annual;if(v>mx)mx=v;if(v<mn)mn=v;}sessionPeak=mx;sessionLow=mn;}
 }
 function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.classList.toggle('connected',on);}}
 function connect(){
