@@ -88,6 +88,17 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .dlabel.low{background:#0a1a10;color:#40c070}
 .ddelta{font-size:9px;margin-left:4px}
 .dconf{font-size:7px;color:var(--t4);margin-top:2px}
+.tl-head{font-size:8px;color:var(--t4);padding:4px 10px;letter-spacing:.06em;background:var(--bg2);border-bottom:0.5px solid var(--border);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;text-transform:uppercase}
+.tl-head-note{color:var(--t4);font-weight:400;text-transform:none;opacity:.7}
+.theater-ladder{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
+.tl-chip{background:var(--bg);padding:6px 8px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.tl-top{display:flex;justify-content:space-between;align-items:baseline;gap:5px}
+.tl-name{font-size:8px;color:var(--t3);letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-rung{font-size:9px;font-weight:600;font-family:monospace;white-space:nowrap;transition:color .4s}
+.tl-trend{margin-left:3px}
+.tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
+.tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
+.tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
 .charts-area{flex:1;display:grid;grid-template-rows:3fr 2fr;overflow:hidden}
 .chart-card{padding:8px 10px;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .ct{font-size:9px;color:var(--t1);margin-bottom:4px;flex-shrink:0;font-weight:600;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
@@ -322,6 +333,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   </div>
   <div class="center-panel">
     <div class="domains" id="domain-grid"></div>
+    <!-- v2 theater-ladder strip: every tracked flashpoint and the escalation rung it
+         sits on this snapshot, hottest first. The systemic index in the gauge is the
+         roll-up; this is the board it reads from — so an operator sees *where* the
+         risk is, not just how high. (Geographic situational awareness, distinct from
+         the model-internal rail on the left.) -->
+    <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
+    <div class="theater-ladder" id="theater-ladder"></div>
     <div class="charts-area">
       <div class="chart-card">
         <div class="ct"><span>P(WWIII) — full historical timeline (persists across sessions)</span><span style="font-size:8px;color:var(--t4);font-weight:400" id="spike-label"></span></div>
@@ -459,6 +477,10 @@ const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data
 let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[],spikeIdx=0;
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
 function pc(p){return p>=.08?'var(--red)':p>=.025?'var(--amber)':'var(--green)'}
+// Escalation-rung → 0..5 level → severity colour (mirrors EscalationRung::level in
+// the engine; keep in sync if a rung is ever added/removed).
+const RUNG_LVL={stable:0,tension:1,crisis:2,limited_war:3,great_power_war:4,systemic:5};
+function rungColor(l){return l>=4?'#E24B4A':l>=2?'#EF9F27':l>=1?'#7F77DD':'#1D9E75'}
 function confLabel(c){return c>=.8?'High':c>=.5?'Medium':'Low'}
 function threatLabel(p){return p>=.08?'CRITICAL':p>=.025?'ELEVATED':p>=.01?'MODERATE':'NORMAL'}
 function domainLabel(id){const i=DID.indexOf(id);return i>=0?DSHORT[i]:id.replace(/_/g,' ').replace(/\b./g,c=>c.toUpperCase())}
@@ -596,6 +618,21 @@ function applyData(d){
   document.getElementById('cmd-risk-delta').style.color=dA>0?'#E24B4A':dA<0?'#1D9E75':'var(--t4)';
   document.getElementById('cmd-driver').textContent=(d.systemic&&d.systemic.driver)||'—';document.getElementById('cmd-driver').style.color=idxCol;
   document.getElementById('cmd-driver-sub').textContent=topTh.label?('hottest: '+topTh.label):'no theater elevated';
+  // Theater-ladder strip: full flashpoint board, hottest first (ths is pre-sorted).
+  const tl=document.getElementById('theater-ladder');
+  if(tl){
+    tl.innerHTML=(ths.length?ths:[{}]).map(t=>{
+      if(!t.label)return '<div class="tl-chip"><div class="tl-name" style="color:var(--t4)">awaiting theater data…</div></div>';
+      const lvl=RUNG_LVL[t.rung]??0;const col=rungColor(lvl);
+      const heatPct=Math.round((t.heat||0)*100);const ec=t.event_count||0;
+      const tr=t.trend==='rising'?'<span class="tl-trend" style="color:#E24B4A">▲</span>':t.trend==='falling'?'<span class="tl-trend" style="color:#1D9E75">▼</span>':'<span class="tl-trend" style="color:var(--t4)">─</span>';
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(t.gp_involved?' · great power engaged':'')+'">'
+        +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
+        +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
+        +'<div class="tl-sub"><span>'+heatPct+'% heat</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
+        +'</div>';
+    }).join('');
+  }
   const confL=confLabel(conf);document.getElementById('cmd-conf').textContent=confL;document.getElementById('cmd-conf').style.color=conf>=.8?'#1D9E75':conf>=.5?'#EF9F27':'#7070a0';
   document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality';
   const d6=get6hDelta(pA);const trendEl=document.getElementById('cmd-trend');

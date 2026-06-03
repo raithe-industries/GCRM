@@ -585,6 +585,35 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_theater_ladder_is_wired() {
+        // The v2 ladder strip must be a real, populated container — not just the
+        // literal asserted by dashboard_html_has_v2_sections. It reads from the live
+        // theaters array and renders one chip per flashpoint with its escalation rung.
+        assert!(DASHBOARD_HTML.contains("id=\"theater-ladder\""), "ladder container missing");
+        assert!(DASHBOARD_HTML.contains("tl-chip"),  "ladder chips not rendered");
+        assert!(DASHBOARD_HTML.contains("RUNG_LVL"),  "rung-level map missing");
+        assert!(DASHBOARD_HTML.contains("rungColor"), "rung colour helper missing");
+    }
+
+    #[test]
+    fn dashboard_rung_levels_match_engine() {
+        // The client RUNG_LVL map drives the ladder's per-theater colour. It MUST
+        // mirror EscalationRung::level() exactly — otherwise the strip would mis-rank
+        // severity. Lock every rung's snake_case id → numeric level so the two sides
+        // can never silently drift.
+        use crate::models::EscalationRung::*;
+        for (rung, snake) in [
+            (Stable, "stable"), (Tension, "tension"), (Crisis, "crisis"),
+            (LimitedWar, "limited_war"), (GreatPowerWar, "great_power_war"),
+            (Systemic, "systemic"),
+        ] {
+            let pair = format!("{}:{}", snake, rung.level());
+            assert!(DASHBOARD_HTML.contains(&pair),
+                "dashboard RUNG_LVL missing `{pair}` — client/engine rung levels drifted");
+        }
+    }
+
+    #[test]
     fn dashboard_html_has_operator_panel() {
         assert!(DASHBOARD_HTML.contains("Operator Panel"));
         assert!(DASHBOARD_HTML.contains("op-drawer"));
