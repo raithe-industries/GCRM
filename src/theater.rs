@@ -207,11 +207,18 @@ impl TheaterEngine {
         }) { 1.0 } else { 0.0 };
 
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
-        // multiple simultaneously-hot theaters (modestly, so breadth does not swamp a
-        // single nuclear brink); brink is the apex amplifier.
+        // multiple simultaneously-hot theaters with DIMINISHING returns; brink is the
+        // single-theater apex amplifier.
         let coupling_multiplier = 1.0 + 0.45 * gp_entanglement + 0.30 * alliance_activation;
-        let concurrency_mult    = 1.0 + 0.12 * (concurrency - 1.0).max(0.0); // breadth: modest
-        let brink_mult          = 1.0 + 0.70 * brink;                        // single-theater apex
+        // Saturating breadth (recalibrated 2026-06-03): each extra hot theater adds less,
+        // asymptoting at +26%. Previously linear (+0.12 per theater), which let a no-brink
+        // FOUR-theater world (live 2026) drive l_sys ABOVE the Cuba nuclear-brink apex and
+        // peg P(WWIII) flat at the 0.90 ceiling — breadth swamping the brink, the opposite
+        // of the design intent. Saturating it lands that state at ~82% WITH resolution,
+        // while quiet/ukraine/cuba (concurrency ≤ 1) are mathematically unchanged.
+        let breadth          = (concurrency - 1.0).max(0.0);
+        let concurrency_mult = 1.0 + 0.26 * (1.0 - (-breadth / 1.7).exp());
+        let brink_mult       = 1.0 + 0.70 * brink;                           // single-theater apex
 
         let max_heat = top_heat;
         let l_sys = max_heat * brink_mult * coupling_multiplier * concurrency_mult;

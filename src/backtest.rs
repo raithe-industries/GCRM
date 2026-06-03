@@ -101,6 +101,29 @@ fn current_2026() -> (f64, Vec<GeopoliticalEvent>) {
     (5.46, ev)
 }
 
+fn live_hot_2026() -> (f64, Vec<GeopoliticalEvent>) {
+    // The live 2026-06 corpus: FOUR concurrent hot theaters with one (US–China/Taiwan)
+    // escalated to the Great-Power-War rung. Breadth PLUS an active great-power war —
+    // but still no single direct US–Russia nuclear-brink ultimatum à la Cuba. Robert's
+    // target: ~82% (near-apex, off the 0.90 ceiling, with resolution — not a flat peg).
+    let mut ev = evset("us_china_taiwan",
+        &[("great_power_conflict", 0.95, 0.95), ("military_escalation", 0.95, 0.92),
+          ("nuclear_posture", 0.62, 0.65),      ("diplomatic_breakdown", 0.85, 0.75)],
+        &["china", "united_states", "taiwan"], true, 9);
+    ev.extend(evset("us_iran",
+        &[("military_escalation", 0.92, 0.90), ("economic_warfare", 0.85, 0.70),
+          ("diplomatic_breakdown", 0.85, 0.70), ("nuclear_posture", 0.55, 0.60)],
+        &["united_states", "iran", "israel"], true, 8));
+    ev.extend(evset("nato_russia",
+        &[("military_escalation", 0.85, 0.85), ("nuclear_posture", 0.70, 0.70),
+          ("diplomatic_breakdown", 0.80, 0.70)],
+        &["russia", "ukraine", "nato"], true, 8));
+    ev.extend(evset("india_pakistan",
+        &[("military_escalation", 0.62, 0.60), ("diplomatic_breakdown", 0.55, 0.50)],
+        &["india", "pakistan"], false, 5));
+    (5.46, ev)
+}
+
 fn cuba_1962() -> (f64, Vec<GeopoliticalEvent>) {
     // Direct US–USSR nuclear brink in ONE theater: extreme nuclear signaling + naval
     // blockade + ultimatum, both superpowers head-to-head → nuclear-brink apex.
@@ -120,11 +143,12 @@ fn p_of(scn: (f64, Vec<GeopoliticalEvent>)) -> f64 {
 /// Readout of the calibrated bands. Run with `cargo test calibration_readout -- --nocapture`.
 #[test]
 fn calibration_readout() {
-    let scenarios: [(&str, (f64, Vec<GeopoliticalEvent>)); 4] = [
-        ("quiet",        quiet()),
-        ("ukraine_2022", ukraine_2022()),
-        ("current_2026", current_2026()),
-        ("cuba_1962",    cuba_1962()),
+    let scenarios: [(&str, (f64, Vec<GeopoliticalEvent>)); 5] = [
+        ("quiet",         quiet()),
+        ("ukraine_2022",  ukraine_2022()),
+        ("current_2026",  current_2026()),
+        ("live_hot_2026", live_hot_2026()),
+        ("cuba_1962",     cuba_1962()),
     ];
     eprintln!("\n── GCRM v2 calibration backtest ──");
     for (name, scn) in scenarios {
@@ -169,6 +193,12 @@ fn bands_current_full() {
     let c = p_of(current_2026());
     assert!(c > 0.55 && c < 0.75, "current-full should be ~65%, got {:.3}%", c * 100.0);
 }
+
+// NOTE: live_hot_2026 stays in `calibration_readout` as a watch scenario but has no hard
+// band assertion — the synthetic analog under-represents the live corpus's maxed
+// alliance/heat (it reads well below the real live l_sys), so the real ~82% target is
+// verified against the live instance, not pinned to this proxy. The four bands below +
+// the saturating-breadth change are what lock the recalibration.
 
 #[test]
 fn bands_cuba() {

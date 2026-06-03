@@ -1,0 +1,13 @@
+{
+  "name": "gcrm-eyes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GCRM dashboard liveness/invariant checks — the self-improve routine's 'eyes'. Catches BROKEN renders (JS crash, collapsed/squished graph, missing panel) without dictating how the dashboard should look. A floor, not a cage.",
+  "scripts": {
+    "eyes": "node smoke.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.1"
+  }
+}
