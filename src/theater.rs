@@ -59,6 +59,16 @@ pub const BRINK_NUCLEAR_THRESHOLD: f64 = 0.78;
 /// Distinct great powers that must be directly entangled in ONE theater for a brink.
 pub const BRINK_MIN_GREAT_POWERS: usize = 2;
 
+/// Public-facing ceiling for the systemic index (a *forecast*). The 0–100 scale keeps
+/// 100 as its visible terminal point — but 100 means "confirmed by record" (a verified
+/// detonation / mass-casualty great-power war), NOT "the model is certain". Nothing in
+/// GCRM can record-verify that: the top "Systemic" rung is reached via NEWS-keyword
+/// inference (`nuclear_use_in`), and the seismic detector deliberately reports anomalies,
+/// never nuclear confirmations (server.rs). So a model-inferred reading must never print
+/// 100 ("certainty about the future is unwise") — it saturates at 95 ("very high, not
+/// certain"). 100 is reserved for an out-of-band, record-verified assertion, never inference.
+pub const FORECAST_INDEX_CEILING: f64 = 95.0;
+
 /// Canonical great-power actor ids → a coarse great-power label, for counting how
 /// many DISTINCT great powers are entangled across hot theaters.
 fn great_power_label(actor_id: &str) -> Option<&'static str> {
@@ -253,7 +263,12 @@ impl TheaterEngine {
         let max_heat = top_heat;
         let l_sys = max_heat * brink_mult * coupling_multiplier * concurrency_mult;
         let within = within_band(top_heat, max_rung);
-        let systemic_index = (100.0 * (max_rung.level() as f64 + within) / 6.0).clamp(0.0, 100.0);
+        // Forecast headline: saturate at 95, never 100 (see FORECAST_INDEX_CEILING). The
+        // raw escalation-ladder position can hit 100 at the Systemic rung, but that rung is
+        // news-inferred, not record-verified — so a forecast may read "very high" (95), never
+        // "certain" (100). The scale itself stays 0–100 so 100 remains the visible terminal state.
+        let systemic_index =
+            (100.0 * (max_rung.level() as f64 + within) / 6.0).clamp(0.0, FORECAST_INDEX_CEILING);
 
         let hot_count = states.iter().filter(|s| s.heat >= HOT_HEAT).count();
         let driver = if top_heat < 0.06 {

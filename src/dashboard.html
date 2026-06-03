@@ -146,8 +146,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .src-tier.t2{background:#101018;color:var(--t4)}
 #log-body{font-family:monospace;font-size:9px;color:var(--t4);padding:6px 10px;line-height:1.6}
 .op-toggle-btn{background:none;border:1px solid var(--border);color:var(--t3);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:13px;margin-left:12px;transition:all .2s}.op-toggle-btn:hover{border-color:var(--t2);color:var(--t1)}
-.op-drawer{position:fixed;top:0;right:-420px;width:420px;height:100vh;background:var(--bg2);border-left:1px solid var(--border);z-index:2000;display:flex;flex-direction:column;transition:right .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
-.op-drawer.open{right:0}
+/* Hidden via transform (NOT right:-420px): an off-screen position:fixed element
+   parked beyond the right edge makes iOS Safari widen the layout viewport, which
+   defeats the max-width:680px breakpoint and clips the page at the edges on phones.
+   transform:translateX(100%) + visibility hides it without extending the layout. */
+.op-drawer{position:fixed;top:0;right:0;width:min(420px,92vw);max-width:100vw;height:100dvh;background:var(--bg2);border-left:1px solid var(--border);z-index:2000;display:flex;flex-direction:column;transform:translateX(100%);visibility:hidden;transition:transform .25s cubic-bezier(.4,0,.2,1),visibility .25s;overflow:hidden}
+.op-drawer.open{transform:translateX(0);visibility:visible}
 .op-drawer-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
 .op-drawer-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--t1);text-transform:uppercase}
 .op-close{background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;padding:0 4px;line-height:1}.op-close:hover{color:var(--t1)}
@@ -265,8 +269,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
    Here we let the document SCROLL, stack the panels into one column, wrap the stat
    strip, and give the charts explicit heights (kills both the squish and the loop). */
 @media(max-width:680px){
-  body{height:auto;min-height:100dvh;overflow-y:auto;overflow-x:hidden}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{height:auto;min-height:100dvh;overflow-y:auto}
   .topbar{flex-wrap:wrap;gap:4px 10px}
+  .logo{font-size:12px;letter-spacing:.04em;white-space:nowrap}
+  .topbar-right{flex-wrap:wrap;justify-content:flex-end;row-gap:2px}
   .cmd-strip{grid-template-columns:1fr 1fr}
   .cmd-cell{border-right:none;border-bottom:0.5px solid var(--border)}
   .cmd-cell:nth-child(odd){border-right:0.5px solid var(--border)}
