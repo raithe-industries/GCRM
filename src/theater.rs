@@ -178,25 +178,33 @@ impl TheaterEngine {
             0.0
         };
 
-        // The hottest theater drives both the headline index and the systemic
-        // likelihood. Pull its nuclear signal and great-power count for the brink test.
+        // The hottest theater drives the headline index and the systemic-likelihood
+        // base intensity.
         let top = states.iter().max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
-        let (max_rung, top_label, top_heat, top_nuclear, top_gp) = match top {
-            Some(s) => {
-                let gp = s.top_actors.iter()
-                    .filter_map(|a| great_power_label(a))
-                    .collect::<std::collections::HashSet<_>>().len();
-                (s.rung, s.label.clone(), s.heat,
-                 s.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0), gp)
-            }
-            None => (EscalationRung::Stable, String::new(), 0.0, 0.0, 0),
+        let (max_rung, top_label, top_heat) = match top {
+            Some(s) => (s.rung, s.label.clone(), s.heat),
+            None => (EscalationRung::Stable, String::new(), 0.0),
         };
 
-        // Nuclear brink: a DIRECT nuclear-armed superpower confrontation in the
-        // hottest theater (≥2 great powers + extreme nuclear signaling) is the apex
-        // systemic configuration — Cuba 1962 head-to-head, not three separate
+        // Nuclear brink: a DIRECT nuclear-armed superpower confrontation WITHIN a
+        // single theater (≥2 distinct great powers + extreme nuclear signaling) is the
+        // apex systemic configuration — Cuba 1962 head-to-head, not three separate
         // regional wars. This is what lets single-theater intensity outweigh breadth.
-        let brink = if top_nuclear >= 0.78 && top_gp >= 2 { 1.0 } else { 0.0 };
+        //
+        // It is detected across ALL theaters, not just the hottest by raw heat. A
+        // superpower nuclear standoff is the apex risk even when a concurrent
+        // conventional war elsewhere carries more kinetic volume and would otherwise
+        // win the "hottest" slot — a textbook Cuba-style brink has little kinetic
+        // activity yet maximal nuclear danger, so pinning the test to the hottest
+        // theater silently dropped the amplifier in exactly that configuration. This
+        // now matches the I&W nuclear-brink indicator, which already scans every
+        // theater (indicators.rs). Thresholds are unchanged — only the scope widens.
+        let brink = if states.iter().any(|s| {
+            let gp = s.top_actors.iter()
+                .filter_map(|a| great_power_label(a))
+                .collect::<std::collections::HashSet<_>>().len();
+            s.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0) >= 0.78 && gp >= 2
+        }) { 1.0 } else { 0.0 };
 
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
         // multiple simultaneously-hot theaters (modestly, so breadth does not swamp a
@@ -427,6 +435,79 @@ mod tests {
         assert!(out.theaters.iter().all(|s| s.trend == "stable"),
             "a never-hot world must read stable, not falling");
         assert!(out.theaters.iter().all(|s| s.delta == 0.0));
+    }
+
+    #[test]
+    fn brink_fires_in_a_non_hottest_theater() {
+        // The nuclear-brink amplifier must engage when ANY single theater is a
+        // superpower nuclear standoff (≥2 great powers + nuclear posture ≥0.78) —
+        // even if a different, purely-conventional theater has more raw heat and is
+        // the "hottest". (Cuba 1962 had near-zero kinetic activity yet maximal
+        // nuclear danger.) The old code only inspected the hottest theater, so this
+        // configuration silently lost the ~1.70× brink multiplier.
+        //
+        // Two worlds, identical except for whether the cooler theater is a 2-power
+        // brink, are compared so concurrency / coupling / heat are held constant and
+        // the l_sys ratio isolates brink_mult alone.
+        let conventional_hottest = || {
+            // Multi-modality conventional war, one great power (US; Iran is not a GP
+            // label) and NO nuclear → never a brink itself, but the hottest by heat.
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                v.push(ev("us_iran", "military_escalation", 1.0, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "economic_warfare",    0.9, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "cyber_info_ops",      0.85, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "diplomatic_breakdown",0.85, 0.9, &["united_states", "iran"], true));
+            }
+            v
+        };
+        // Cooler theater whose heat comes only from extreme nuclear posture.
+        let nuclear_theater = |actors: &[&str]| {
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, actors, true);
+                e.escalation_language_score = 0.8; // push the nuclear modality score past 0.78
+                v.push(e);
+            }
+            v
+        };
+
+        // Brink world: the cooler theater is a US–Russia nuclear standoff (2 GP).
+        let mut brink_world = conventional_hottest();
+        brink_world.extend(nuclear_theater(&["united_states", "russia"]));
+        // Control world: identical, but the cooler theater has only ONE great power
+        // (Russia), so it is NOT a brink anywhere. gp_entanglement is unchanged
+        // because the conventional theater already contributes "us".
+        let mut control_world = conventional_hottest();
+        control_world.extend(nuclear_theater(&["russia"]));
+
+        let mut te_b = TheaterEngine::new();
+        let mut te_c = TheaterEngine::new();
+        let o_brink   = te_b.compute(&brink_world);
+        let o_control = te_c.compute(&control_world);
+
+        // Precondition: the brink theater must NOT be the hottest — otherwise the old
+        // hottest-only logic would have caught it and this test wouldn't lock the fix.
+        let hottest = o_brink.theaters.iter()
+            .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap()).unwrap();
+        assert_eq!(hottest.theater_id, "us_iran",
+            "precondition: the conventional theater must be hottest, got {} ({})",
+            hottest.theater_id, hottest.heat);
+        let nuc = o_brink.theaters.iter().find(|t| t.theater_id == "nato_russia").unwrap();
+        assert!(nuc.heat < hottest.heat, "precondition: brink theater must be cooler");
+        assert!(nuc.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0) >= 0.78,
+            "precondition: nuclear posture must clear the 0.78 brink threshold, got {:?}",
+            nuc.modality_scores.get("nuclear_posture"));
+
+        // The two worlds differ ONLY by the brink, so the l_sys ratio is brink_mult
+        // (1 + 0.70 = 1.70). Under the old hottest-only logic both would read brink=0
+        // and the ratio would be 1.0 — so this assertion fails on the bug and passes
+        // on the fix.
+        assert!(o_control.l_sys > 0.0 && o_brink.l_sys > 0.0);
+        let ratio = o_brink.l_sys / o_control.l_sys;
+        assert!((1.6..=1.8).contains(&ratio),
+            "brink in a non-hottest theater should raise l_sys by ~1.70×, got ratio {ratio} \
+             (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
     }
 
     #[test]
