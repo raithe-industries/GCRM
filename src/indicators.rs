@@ -30,21 +30,6 @@ fn modality(snap_theater: &crate::models::TheaterState, m: &str) -> f64 {
     snap_theater.modality_scores.get(m).copied().unwrap_or(0.0)
 }
 
-fn great_power_count(actor_ids: &[String]) -> usize {
-    let mut set = std::collections::HashSet::new();
-    for a in actor_ids {
-        let lbl = match a.as_str() {
-            "united_states" | "united_states_military" => Some("us"),
-            "russia" | "russia_military"               => Some("russia"),
-            "china"  | "china_military"                => Some("china"),
-            "nato"                                      => Some("nato"),
-            _ => None,
-        };
-        if let Some(l) = lbl { set.insert(l); }
-    }
-    set.len()
-}
-
 /// Evaluate the full I&W checklist against the current snapshot. Returns every
 /// indicator (tripped or not) so the dashboard can render the whole board.
 pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
@@ -127,8 +112,13 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     };
 
     // 9. Nuclear-brink configuration (direct ≥2-great-power nuclear confrontation).
-    let brink = theaters.iter().find(|t|
-        modality(t, "nuclear_posture") >= 0.70 && great_power_count(&t.top_actors) >= 2);
+    // Uses the SAME `theater_is_nuclear_brink` predicate as the systemic amplifier
+    // (theater.rs), so this board light trips on exactly the state where the headline's
+    // 1.70× apex amplifier engages — the number and the board can never disagree about
+    // whether the apex configuration is live. (Previously this tripped at nuclear ≥0.70
+    // while the amplifier required ≥0.78, so the board over-claimed the apex in the
+    // 0.70–0.78 band.)
+    let brink = theaters.iter().find(|t| crate::theater::theater_is_nuclear_brink(t));
     let ind_brink = Indicator {
         id: "nuclear_brink", label: "Nuclear-brink configuration (apex)",
         tripped: brink.is_some(), theater: brink.map(|t| t.label.clone()),
@@ -170,7 +160,7 @@ mod tests {
                 &[("military_escalation",0.7),("economic_warfare",0.6),("diplomatic_breakdown",0.5)],
                 &["united_states","iran"]),
             theater("nato_russia", EscalationRung::GreatPowerWar, true,
-                &[("military_escalation",0.6),("nuclear_posture",0.75),("diplomatic_breakdown",0.5)],
+                &[("military_escalation",0.6),("nuclear_posture",0.80),("diplomatic_breakdown",0.5)],
                 &["united_states","russia"]),
         ];
         snap.couplers = SystemicCouplers {
@@ -186,6 +176,45 @@ mod tests {
         assert!(trip("gp_entanglement"));
         assert!(trip("guardrails"));
         assert!(trip("cross_domain"));
-        assert!(trip("nuclear_brink"), "nato_russia has nuclear 0.75 + US & Russia → brink");
+        assert!(trip("nuclear_brink"), "nato_russia has nuclear 0.80 + US & Russia → brink");
+    }
+
+    #[test]
+    fn nuclear_brink_indicator_matches_systemic_amplifier() {
+        use crate::theater::{theater_is_nuclear_brink, BRINK_NUCLEAR_THRESHOLD};
+        // The board's "nuclear-brink (apex)" light must trip on EXACTLY the condition
+        // the systemic amplifier (theater.rs) uses, so the headline number and the
+        // board that explains it can never disagree about whether the apex is live.
+        // (Regression guard: the board once tripped at nuclear ≥0.70 while the
+        // amplifier required ≥0.78, over-claiming the apex in the 0.70–0.78 band.)
+        let two_gp = ["united_states", "russia"];
+
+        // Just below the unified threshold with 2 great powers → NOT a brink.
+        let under = theater("nato_russia", EscalationRung::GreatPowerWar, true,
+            &[("nuclear_posture", BRINK_NUCLEAR_THRESHOLD - 0.02)], &two_gp);
+        // Just above → a brink.
+        let over = theater("nato_russia", EscalationRung::GreatPowerWar, true,
+            &[("nuclear_posture", BRINK_NUCLEAR_THRESHOLD + 0.02)], &two_gp);
+        // Above the nuclear threshold but only ONE great power → NOT a brink.
+        let one_gp = theater("nato_russia", EscalationRung::GreatPowerWar, true,
+            &[("nuclear_posture", BRINK_NUCLEAR_THRESHOLD + 0.02)], &["russia"]);
+
+        // Model predicate.
+        assert!(!theater_is_nuclear_brink(&under), "below threshold is not a brink");
+        assert!(theater_is_nuclear_brink(&over), "above threshold + 2 GP is a brink");
+        assert!(!theater_is_nuclear_brink(&one_gp), "one great power is not a brink");
+
+        // The board must agree with the predicate in every case.
+        let board_trips = |t: &TheaterState| {
+            let mut snap = RiskSnapshot::default();
+            snap.theaters = vec![t.clone()];
+            evaluate(&snap).iter().find(|i| i.id == "nuclear_brink").unwrap().tripped
+        };
+        assert!(!board_trips(&under),
+            "board must NOT show apex brink below the amplifier's threshold");
+        assert!(board_trips(&over),
+            "board must show apex brink exactly when the amplifier engages");
+        assert!(!board_trips(&one_gp),
+            "a single great power is not a brink, on the board or in the model");
     }
 }

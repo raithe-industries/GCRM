@@ -46,6 +46,19 @@ const HOT_RAMP: f64 = 0.06;
 /// modality co-occurrence (mirrors bayesian::ELEVATION_RAMP).
 const ELEV_RAMP: f64 = 0.08;
 
+/// Nuclear-posture modality score at/above which a theater that also entangles
+/// ≥ `BRINK_MIN_GREAT_POWERS` distinct great powers counts as a direct nuclear-brink
+/// (apex) configuration — a Cuba-1962 head-to-head. This is the SINGLE source of
+/// truth for what the apex state IS: it is shared by the systemic amplifier below
+/// (`brink_mult`) AND the I&W "nuclear-brink (apex)" indicator (indicators.rs), so
+/// the headline number and the board that explains it can never disagree about
+/// whether the apex configuration is live. Fitted against the Cuba band in
+/// backtest.rs — do not blind-tweak.
+pub const BRINK_NUCLEAR_THRESHOLD: f64 = 0.78;
+
+/// Distinct great powers that must be directly entangled in ONE theater for a brink.
+pub const BRINK_MIN_GREAT_POWERS: usize = 2;
+
 /// Canonical great-power actor ids → a coarse great-power label, for counting how
 /// many DISTINCT great powers are entangled across hot theaters.
 fn great_power_label(actor_id: &str) -> Option<&'static str> {
@@ -56,6 +69,24 @@ fn great_power_label(actor_id: &str) -> Option<&'static str> {
         "nato"                                      => Some("nato"),
         _ => None,
     }
+}
+
+/// Count of DISTINCT great powers among a theater's dominant actors.
+pub fn distinct_great_powers(top_actors: &[String]) -> usize {
+    top_actors.iter()
+        .filter_map(|a| great_power_label(a))
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+}
+
+/// Whether a theater is a direct nuclear-brink (apex) configuration: extreme nuclear
+/// posture AND ≥ `BRINK_MIN_GREAT_POWERS` distinct great powers entangled in the SAME
+/// theater. This single predicate is used by BOTH the systemic amplifier (`brink_mult`,
+/// theater.rs) and the I&W "nuclear-brink (apex)" indicator (indicators.rs), so the
+/// headline number and the board light trip on exactly the same condition.
+pub fn theater_is_nuclear_brink(t: &TheaterState) -> bool {
+    t.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0) >= BRINK_NUCLEAR_THRESHOLD
+        && distinct_great_powers(&t.top_actors) >= BRINK_MIN_GREAT_POWERS
 }
 
 fn smoothstep(x: f64, lo: f64, hi: f64) -> f64 {
@@ -196,15 +227,14 @@ impl TheaterEngine {
         // conventional war elsewhere carries more kinetic volume and would otherwise
         // win the "hottest" slot — a textbook Cuba-style brink has little kinetic
         // activity yet maximal nuclear danger, so pinning the test to the hottest
-        // theater silently dropped the amplifier in exactly that configuration. This
-        // now matches the I&W nuclear-brink indicator, which already scans every
-        // theater (indicators.rs). Thresholds are unchanged — only the scope widens.
-        let brink = if states.iter().any(|s| {
-            let gp = s.top_actors.iter()
-                .filter_map(|a| great_power_label(a))
-                .collect::<std::collections::HashSet<_>>().len();
-            s.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0) >= 0.78 && gp >= 2
-        }) { 1.0 } else { 0.0 };
+        // theater silently dropped the amplifier in exactly that configuration.
+        //
+        // The condition is the shared `theater_is_nuclear_brink` predicate, which the
+        // I&W "nuclear-brink (apex)" indicator ALSO uses (indicators.rs). They share a
+        // single threshold/great-power definition, so the headline amplifier and the
+        // board light trip on exactly the same state and can never disagree about
+        // whether the apex configuration is live.
+        let brink = if states.iter().any(theater_is_nuclear_brink) { 1.0 } else { 0.0 };
 
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
         // multiple simultaneously-hot theaters with DIMINISHING returns; brink is the
