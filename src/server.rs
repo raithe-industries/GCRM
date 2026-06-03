@@ -614,6 +614,33 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_iw_board() {
+        // The I&W board (indicators::evaluate) is computed and served at
+        // data.indicators, and the methodology page advertises it ("an I&W board
+        // tracks nine deterministic observable warning conditions"). It must
+        // actually be rendered, so the operator can see WHICH danger conditions
+        // have tripped — the "why" behind the headline, not just how high.
+        assert!(DASHBOARD_HTML.contains("id=\"iw-board\""), "I&W board container missing");
+        assert!(DASHBOARD_HTML.contains("renderIndicators"), "I&W render fn missing");
+        assert!(DASHBOARD_HTML.contains("d.indicators"), "dashboard must read the live indicators array");
+        assert!(DASHBOARD_HTML.contains("Indications &amp; Warning"), "I&W board title missing");
+        // The apex set must name the two apex conditions exactly as the engine ids
+        // them, so the red lights track indicators.rs (gp_kinetic + nuclear_brink).
+        assert!(DASHBOARD_HTML.contains("'gp_kinetic'") && DASHBOARD_HTML.contains("'nuclear_brink'"),
+            "I&W apex set must reference the engine's apex indicator ids");
+        // Cross-check the hard-coded apex ids against the live engine output so a
+        // future rename in indicators.rs can't silently break the red lights: every
+        // id the dashboard treats as apex MUST be a real indicator id.
+        let real_ids: Vec<&'static str> = crate::indicators::evaluate(
+            &crate::models::RiskSnapshot::default()
+        ).iter().map(|i| i.id).collect();
+        for apex in ["gp_kinetic", "nuclear_brink"] {
+            assert!(real_ids.contains(&apex),
+                "dashboard apex id `{apex}` is not produced by indicators::evaluate — they drifted");
+        }
+    }
+
+    #[test]
     fn dashboard_html_has_operator_panel() {
         assert!(DASHBOARD_HTML.contains("Operator Panel"));
         assert!(DASHBOARD_HTML.contains("op-drawer"));

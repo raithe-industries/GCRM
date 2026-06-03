@@ -99,6 +99,15 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
 .tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
 .tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
+/* Indications & Warning board — a 3×3 light panel of the nine deterministic
+   warning conditions (indicators::evaluate). Mirrors the ladder strip's idiom. */
+.iw-board{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
+.iw-cell{background:var(--bg);padding:5px 9px;display:flex;align-items:center;gap:7px;min-width:0}
+.iw-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#243040;transition:background .4s,box-shadow .4s}
+.iw-dot.trip{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.iw-dot.apex{background:var(--red);box-shadow:0 0 6px var(--red)}
+.iw-label{font-size:8px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t4)}
+.iw-cell.on .iw-label{color:var(--t2)}
 .charts-area{flex:1;display:grid;grid-template-rows:3fr 2fr;overflow:hidden}
 .chart-card{padding:8px 10px;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .ct{font-size:9px;color:var(--t1);margin-bottom:4px;flex-shrink:0;font-weight:600;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
@@ -226,7 +235,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .main{grid-template-columns:210px 1fr 350px}
   .logo{font-size:18px}
   .sub,.topbar-right,.tick-item{font-size:12px}
-  .cmd-label,.lm-label,.panel-title,.dn,.pe-label{font-size:10px}
+  .cmd-label,.lm-label,.panel-title,.dn,.pe-label,.iw-label{font-size:10px}
   .pe-title{font-size:13px}
   .cmd-val,.lm-val,.dscore{font-size:16px}
   .cmd-sub,.lm-sub,.gauge-pct-label,.conf-row,.ddelta{font-size:11px}
@@ -245,7 +254,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .gauge-val{font-size:31px}
   #gauge-canvas{width:204px;height:113px}
   .art-title,.panel-body,.src-name{font-size:14px}
-  .cmd-label,.lm-label,.panel-title,.dn,.pe-label{font-size:11px}
+  .cmd-label,.lm-label,.panel-title,.dn,.pe-label,.iw-label{font-size:11px}
   .pe-title{font-size:14px}
 }
 </style>
@@ -340,6 +349,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the model-internal rail on the left.) -->
     <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
     <div class="theater-ladder" id="theater-ladder"></div>
+    <!-- v2 Indications & Warning board: the nine deterministic, observable warning
+         conditions the IC I&W method tracks. Each is computed from the live theaters
+         + couplers (never the LLM), so the operator sees WHICH specific danger
+         conditions have tripped — the "why" behind the headline number, not just how
+         high. Mirrors indicators::evaluate() served at data.indicators. -->
+    <div class="tl-head" onclick="openInfo('iw')" style="cursor:pointer" title="Click for a full explanation">Indications &amp; Warning · Board<span class="tl-head-note" id="iw-summary">awaiting data</span></div>
+    <div class="iw-board" id="iw-board"></div>
     <div class="charts-area">
       <div class="chart-card">
         <div class="ct"><span>P(WWIII) — full historical timeline (persists across sessions)</span><span style="font-size:8px;color:var(--t4);font-weight:400" id="spike-label"></span></div>
@@ -525,7 +541,13 @@ const INFO={
     <p>Useful for telling whether a spike is sustaining into a trend rather than a single-day blip.</p>`},
   computed:{title:'Last Computed',html:`
     <p><b>Last Computed</b> is the timestamp of the most recent model snapshot, in your local time. The engine recomputes about once a second as new events arrive, so this should always sit within moments of now.</p>
-    <p>If it goes stale, the feed or model worker has stalled.</p>`}
+    <p>If it goes stale, the feed or model worker has stalled.</p>`},
+  iw:{title:'Indications & Warning',html:`
+    <p>The <b>Indications &amp; Warning (I&amp;W) board</b> is the intelligence-community method for tracking risk: define specific, <b>observable</b> warning conditions in advance, then watch which have <b>tripped</b>. It is the "why" behind the headline number — far more legible and defensible than one opaque value.</p>
+    <span class="ih">How to read it</span>
+    <p>Each light is one warning condition. <span class="pill" style="background:#1f1000;color:#ffaa40">amber</span> = tripped (the condition is observed right now); <span class="pill" style="background:#0d1117;color:#7090a8">dim</span> = clear. The two apex conditions — an active great-power kinetic war and a direct nuclear-brink standoff — light <span class="pill" style="background:#2a0000;color:#ff7070">red</span>. Hover any light for the theater and the live value behind it.</p>
+    <span class="ih">Honesty</span>
+    <p>Every indicator is computed deterministically from the live theaters and couplers — <b>never the language model</b> — so the board can never disagree with the math. The nuclear-brink light trips on the exact same condition that engages the headline's apex amplifier.</p>`}
 };
 function openInfo(k){const i=INFO[k];if(!i)return;document.getElementById('info-title').textContent=i.title;document.getElementById('info-body').innerHTML=i.html;document.getElementById('info-overlay').classList.add('open');}
 function closeInfo(){document.getElementById('info-overlay').classList.remove('open');}
@@ -589,6 +611,26 @@ function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=
 function update6hBuffer(pA){const now=Date.now();history6h.push({t:now,p:pA});history6h=history6h.filter(e=>now-e.t<6*3600*1000);}
 function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0].p;}
 async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude+' depth='+top.depth_km+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
+// The two apex warning conditions (a great-power kinetic war; a direct ≥2-power
+// nuclear-brink standoff) light red; every other tripped condition lights amber.
+const IW_APEX=new Set(['gp_kinetic','nuclear_brink']);
+function renderIndicators(inds){
+  const board=document.getElementById('iw-board');if(!board)return;
+  const summ=document.getElementById('iw-summary');
+  const tripped=inds.filter(i=>i.tripped).length;
+  if(summ){summ.textContent=inds.length?(tripped+' / '+inds.length+' tripped'):'awaiting data';summ.style.color=tripped>0?'var(--amber)':'var(--t4)';}
+  if(!inds.length){board.innerHTML='<div class="iw-cell"><span class="iw-dot"></span><span class="iw-label">awaiting indicator data…</span></div>';return;}
+  board.innerHTML=inds.map(i=>{
+    const apex=i.tripped&&IW_APEX.has(i.id);
+    const dotCls=i.tripped?(apex?'iw-dot apex':'iw-dot trip'):'iw-dot';
+    const where=i.theater?(' — '+i.theater):'';
+    const title=(i.label+(i.tripped?' · TRIPPED':' · clear')+where+'\n'+(i.detail||'')).replace(/"/g,'&quot;');
+    return '<div class="iw-cell'+(i.tripped?' on':'')+'" title="'+title+'">'
+      +'<span class="'+dotCls+'"></span>'
+      +'<span class="iw-label">'+i.label+'</span>'
+      +'</div>';
+  }).join('');
+}
 function applyData(d){
   _firstSnapReceived=true;
   const _evCount=(d.meta?.events_in_window||0);
@@ -633,6 +675,8 @@ function applyData(d){
         +'</div>';
     }).join('');
   }
+  // Indications & Warning board — render the live indicator lights (the "why").
+  renderIndicators(d.indicators||[]);
   const confL=confLabel(conf);document.getElementById('cmd-conf').textContent=confL;document.getElementById('cmd-conf').style.color=conf>=.8?'#1D9E75':conf>=.5?'#EF9F27':'#7070a0';
   document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality';
   const d6=get6hDelta(pA);const trendEl=document.getElementById('cmd-trend');
