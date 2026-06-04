@@ -139,17 +139,51 @@ fn rung_for(heat: f64, gp_involved: bool, wmd_used: bool, nuclear_used: bool) ->
     r
 }
 
-/// Strict detection of actual nuclear *use* (not posture/threats/talks).
+/// Strict detection of actual nuclear *use* — a real detonation in anger, NOT
+/// posture, threats, capability talk, drills, or tests.
+///
+/// This is the single trigger for the apex Systemic rung, which pegs the headline at
+/// the 95 forecast ceiling and floods P(WWIII). So it must be unforgiving: "nuclear
+/// strike" is the dominant phrasing of *threats* ("Russia threatens nuclear strike
+/// if NATO intervenes") and "nuclear detonation" routinely describes *tests* ("North
+/// Korea nuclear detonation in latest weapons test") — neither is use-in-war, yet the
+/// old plain substring match forced the catastrophe rung on both. A confirmed strike
+/// is reported in the indicative ("nuclear detonation confirmed", "a nuclear weapon
+/// was used"), never in the conditional/subjunctive or alongside drill/test framing.
+///
+/// We therefore require a use-phrase AND the absence of any whole-word non-use framing
+/// token. Whole-word matching (split on non-alphanumerics) avoids substring traps such
+/// as "latest"→"test". The `any()` over the whole window keeps recall high for a real
+/// detonation (which spawns many headlines): a single clean confirmation still trips
+/// the rung even if other headlines carry threat/test framing.
 fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
     const USE_PHRASES: &[&str] = &[
-        "nuclear detonation", "nuclear weapon used", "nuclear strike",
-        "atomic bombing", "warhead detonated",
+        "nuclear detonation", "nuclear weapon used", "nuclear weapon was used",
+        "nuclear strike", "atomic bombing", "warhead detonated", "nuclear bomb detonated",
+    ];
+    // Whole-word tokens that reframe a use-phrase as a NON-use: threats, warnings,
+    // hypotheticals, capability/posture statements, drills/tests, and averted/denied
+    // events. ("may" is deliberately omitted — it collides with the month.)
+    const NON_USE_TOKENS: &[&str] = &[
+        "threat", "threats", "threaten", "threatens", "threatened", "threatening",
+        "warn", "warns", "warning", "warned", "vow", "vows", "vowed",
+        "could", "would", "might", "if", "risk", "risks", "fear", "fears", "feared",
+        "ready", "prepared", "plan", "plans", "planning", "option", "options",
+        "consider", "considers", "considering", "drill", "drills", "exercise",
+        "exercises", "test", "tests", "testing", "capability", "capabilities",
+        "doctrine", "posture", "simulate", "simulated", "simulation", "scenario",
+        "scenarios", "deter", "deterrence", "deterrent", "preempt", "preemptive",
+        "hypothetical", "fictional", "brink", "avert", "averted", "prevent",
+        "prevented", "deny", "denies", "denied",
     ];
     tev.iter().any(|e| {
-        e.nuclear_indicator && {
-            let t = e.title.to_lowercase();
-            USE_PHRASES.iter().any(|p| t.contains(p))
-        }
+        if !e.nuclear_indicator { return false; }
+        let t = e.title.to_lowercase();
+        if !USE_PHRASES.iter().any(|p| t.contains(p)) { return false; }
+        let non_use_framing = t
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| NON_USE_TOKENS.contains(&w));
+        !non_use_framing
     })
 }
 
@@ -571,5 +605,59 @@ mod tests {
         let out = te.compute(&[e]);
         let gulf = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
         assert_eq!(gulf.rung, EscalationRung::Systemic);
+    }
+
+    #[test]
+    fn nuclear_threat_does_not_force_systemic_rung() {
+        // A THREAT to use nuclear weapons is not nuclear USE. The apex Systemic rung
+        // (which pegs the headline at 95 and floods P(WWIII)) must trip only on a real
+        // detonation, never on sabre-rattling — otherwise the single most common
+        // nuclear-headline genre would over-claim catastrophe. The title contains the
+        // "nuclear strike" use-phrase AND nuclear_indicator is set, so the OLD plain
+        // substring match would have forced Systemic here; the strict-use guard must
+        // catch the threat framing ("threatens", "if") and decline.
+        let mut te = TheaterEngine::new();
+        let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        e.title = "Russia threatens nuclear strike if NATO intervenes".into();
+        e.nuclear_indicator = true;
+        let out = te.compute(&[e]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert_ne!(t.rung, EscalationRung::Systemic,
+            "a nuclear THREAT must not force the systemic (nuclear-use) rung");
+    }
+
+    #[test]
+    fn nuclear_test_does_not_force_systemic_rung() {
+        // An underground nuclear TEST detonates a device but is not use-in-war. The
+        // title carries the "nuclear detonation" use-phrase (so the old match would
+        // fire) but is reframed by the whole-word "test" token — and crucially the
+        // "latest" substring must NOT be mistaken for "test".
+        let mut te = TheaterEngine::new();
+        let mut e = ev("us_china_taiwan", "nuclear_posture", 1.0, 1.0, &["china"], false);
+        e.title = "North Korea nuclear detonation in latest weapons test".into();
+        e.nuclear_indicator = true;
+        let out = te.compute(&[e]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "us_china_taiwan").unwrap();
+        assert_ne!(t.rung, EscalationRung::Systemic,
+            "a nuclear TEST detonation must not force the systemic (nuclear-use) rung");
+    }
+
+    #[test]
+    fn real_nuclear_use_still_fires_despite_noisy_window() {
+        // Recall guard: a real detonation spawns many headlines, some of which carry
+        // threat/test framing. `any()` over the window must still trip Systemic as long
+        // as one clean confirmation is present, so the strict guard cannot mute a true
+        // event just because neighbouring coverage is hedged.
+        let mut te = TheaterEngine::new();
+        let mut threat = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        threat.title = "Analysts warn a nuclear strike could follow".into();
+        threat.nuclear_indicator = true;
+        let mut confirmed = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        confirmed.title = "A nuclear weapon was used; nuclear detonation confirmed".into();
+        confirmed.nuclear_indicator = true;
+        let out = te.compute(&[threat, confirmed]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert_eq!(t.rung, EscalationRung::Systemic,
+            "one clean confirmation in the window must still force the systemic rung");
     }
 }
