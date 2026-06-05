@@ -49,15 +49,20 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
                     gp_kinetic.iter().map(|t| t.label.as_str()).collect::<Vec<_>>().join(", ")) },
     };
 
-    // 2. Nuclear signaling elevated.
+    // 2. Nuclear signaling elevated. On a clear reading, surface the hottest near-miss
+    //    value (same idiom as the energy/chokepoint light) so the operator can see how
+    //    close the nuclear axis is to tripping rather than just a bare "Below threshold".
     let nuc = theaters.iter().map(|t| (t, modality(t, "nuclear_posture")))
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let ind_nuclear = match nuc {
         Some((t, v)) if v >= 0.45 => Indicator {
             id: "nuclear_signaling", label: "Nuclear signaling elevated", tripped: true,
             theater: Some(t.label.clone()), detail: format!("{} nuclear posture {:.2}", t.label, v) },
-        _ => Indicator { id: "nuclear_signaling", label: "Nuclear signaling elevated",
-            tripped: false, theater: None, detail: "Below threshold".into() },
+        Some((t, v)) => Indicator {
+            id: "nuclear_signaling", label: "Nuclear signaling elevated", tripped: false,
+            theater: None, detail: format!("Below threshold (max {} {:.2})", t.label, v) },
+        None => Indicator { id: "nuclear_signaling", label: "Nuclear signaling elevated",
+            tripped: false, theater: None, detail: "No theater data".into() },
     };
 
     // 3. Energy / chokepoint weaponized — coercive-economic escalation (blockade,
@@ -234,6 +239,26 @@ mod tests {
         assert!(!energy.tripped, "no theater above 0.45 must read clear");
         assert!(energy.detail.contains("0.30"),
             "clear detail should surface the hottest near-miss value, got {:?}", energy.detail);
+    }
+
+    #[test]
+    fn nuclear_signaling_clear_surfaces_hottest_near_miss() {
+        // Below-threshold nuclear posture everywhere → clear, but the detail must report
+        // the hottest near-miss value so the operator can see how close the nuclear axis
+        // is to tripping (same legibility contract as the energy/chokepoint light), rather
+        // than a bare "Below threshold" that hides whether posture sits at 0.10 or 0.44.
+        let mut snap = RiskSnapshot::default();
+        snap.theaters = vec![
+            theater("us_iran", EscalationRung::Tension, false,
+                &[("nuclear_posture", 0.20)], &["iran"]),
+            theater("nato_russia", EscalationRung::Crisis, true,
+                &[("nuclear_posture", 0.44)], &["russia", "united_states"]),
+        ];
+        let inds = evaluate(&snap);
+        let nuc = inds.iter().find(|i| i.id == "nuclear_signaling").unwrap();
+        assert!(!nuc.tripped, "no theater at/above 0.45 must read clear");
+        assert!(nuc.detail.contains("0.44"),
+            "clear detail should surface the hottest near-miss value, got {:?}", nuc.detail);
     }
 
     #[test]
