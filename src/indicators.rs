@@ -60,12 +60,27 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             tripped: false, theater: None, detail: "Below threshold".into() },
     };
 
-    // 3. Energy / chokepoint weaponized (Gulf economic modality — Hormuz).
-    let gulf_eco = theaters.iter().find(|t| t.theater_id == "us_iran").map(|t| modality(t, "economic_warfare")).unwrap_or(0.0);
-    let ind_energy = Indicator {
-        id: "energy_chokepoint", label: "Energy / chokepoint weaponized",
-        tripped: gulf_eco >= 0.45, theater: Some("US/Israel–Iran".into()),
-        detail: format!("Gulf coercive-economic {:.2}", gulf_eco),
+    // 3. Energy / chokepoint weaponized — coercive-economic escalation (blockade,
+    //    energy/grain/chip weaponization) in ANY theater, not just the Gulf. A
+    //    Taiwan-Strait quarantine or a Black-Sea grain blockade is as much a
+    //    weaponized chokepoint as Hormuz, and both are top great-power-war triggers,
+    //    so this scans every theater (the same global-max idiom as the nuclear
+    //    signaling and cross-domain lights) and names the hottest — rather than going
+    //    dark on a non-Gulf chokepoint, the one blind spot this board used to have.
+    let chokepoint = theaters.iter().map(|t| (t, modality(t, "economic_warfare")))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let ind_energy = match chokepoint {
+        Some((t, v)) if v >= 0.45 => Indicator {
+            id: "energy_chokepoint", label: "Energy / chokepoint weaponized", tripped: true,
+            theater: Some(t.label.clone()),
+            detail: format!("{} coercive-economic {:.2}", t.label, v) },
+        Some((t, v)) => Indicator {
+            id: "energy_chokepoint", label: "Energy / chokepoint weaponized", tripped: false,
+            theater: None,
+            detail: format!("Below threshold (max {} {:.2})", t.label, v) },
+        None => Indicator {
+            id: "energy_chokepoint", label: "Energy / chokepoint weaponized", tripped: false,
+            theater: None, detail: "No theater data".into() },
     };
 
     // 4. Multiple theaters concurrently hot.
@@ -177,6 +192,48 @@ mod tests {
         assert!(trip("guardrails"));
         assert!(trip("cross_domain"));
         assert!(trip("nuclear_brink"), "nato_russia has nuclear 0.80 + US & Russia → brink");
+    }
+
+    #[test]
+    fn chokepoint_light_trips_outside_the_gulf() {
+        // Regression guard: the "Energy / chokepoint weaponized" light must scan ALL
+        // theaters, not just the Gulf. A Taiwan-Strait quarantine (coercive-economic
+        // escalation in us_china_taiwan) with a cold Gulf is a real weaponized
+        // chokepoint — the old Gulf-only code went dark on exactly this, leaving the
+        // board misleadingly "clear". It must now trip AND name the responsible theater.
+        let mut snap = RiskSnapshot::default();
+        snap.theaters = vec![
+            // Gulf cold on the coercive-economic axis (would not trip under old code).
+            theater("us_iran", EscalationRung::Tension, false,
+                &[("economic_warfare", 0.05)], &["iran"]),
+            // Taiwan Strait blockaded: coercive-economic well above the 0.45 threshold.
+            theater("us_china_taiwan", EscalationRung::Crisis, true,
+                &[("economic_warfare", 0.71)], &["china", "united_states", "taiwan"]),
+        ];
+        let inds = evaluate(&snap);
+        let energy = inds.iter().find(|i| i.id == "energy_chokepoint").unwrap();
+        assert!(energy.tripped,
+            "a non-Gulf chokepoint (Taiwan Strait) must trip the energy/chokepoint light");
+        assert_eq!(energy.theater.as_deref(), Some("us_china_taiwan"),
+            "the tripped light must name the theater that actually weaponized the chokepoint");
+    }
+
+    #[test]
+    fn chokepoint_light_clear_when_no_theater_weaponizes() {
+        // Below-threshold coercive-economic everywhere → clear, and the detail reports
+        // the hottest near-miss so the operator can see how close it is to tripping.
+        let mut snap = RiskSnapshot::default();
+        snap.theaters = vec![
+            theater("us_iran", EscalationRung::Tension, false,
+                &[("economic_warfare", 0.20)], &["iran"]),
+            theater("nato_russia", EscalationRung::Tension, false,
+                &[("economic_warfare", 0.30)], &["russia"]),
+        ];
+        let inds = evaluate(&snap);
+        let energy = inds.iter().find(|i| i.id == "energy_chokepoint").unwrap();
+        assert!(!energy.tripped, "no theater above 0.45 must read clear");
+        assert!(energy.detail.contains("0.30"),
+            "clear detail should surface the hottest near-miss value, got {:?}", energy.detail);
     }
 
     #[test]
