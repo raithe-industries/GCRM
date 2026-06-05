@@ -397,7 +397,7 @@ pub async fn get_domains(_: State<OperatorState>) -> impl IntoResponse {
         "domains":        domains,
         "total_weight":   total_weight,
         "scaling_factor": 20.0,
-        "note": "Weights encode relative contribution to P(WWIII). Nuclear posture and WMD have highest weights.",
+        "note": "Weights encode relative contribution to P(WWIII). Nuclear posture and military escalation have the highest weights.",
     }))
 }
 
@@ -408,9 +408,8 @@ fn domain_description(id: &str) -> &'static str {
         "diplomatic_breakdown" => "Diplomatic crises, expulsions, treaty failures",
         "economic_warfare"     => "Sanctions, embargoes, financial weapons, resource denial",
         "cyber_info_ops"       => "State-sponsored cyber attacks, information warfare",
-        "alliance_activation"  => "NATO Article 5, mutual defense treaty invocations",
-        "great_power_conflict" => "Direct US/Russia/China confrontation or proxy escalation",
-        "wmd_mass_casualty"    => "Chemical, biological, or nuclear weapon use or credible threat",
+        // v2 removed great-power / alliance / WMD as domains (they are couplers and a
+        // rung override now), so the only ids reaching this fn are the five in DOMAIN_IDS.
         _                      => "Unknown domain",
     }
 }
