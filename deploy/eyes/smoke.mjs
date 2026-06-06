@@ -62,7 +62,7 @@ else ok(`domain chart rendered ${Math.round(dm.width)}×${Math.round(dm.height)}
 
 // 4) Core situational-awareness panels exist and occupy real space (no layout
 //    opinion — just "is it there and visible").
-for (const sel of ['#theater-ladder', '#gauge-canvas', '.charts-area']) {
+for (const sel of ['#theater-ladder', '#gauge-canvas', '#index-canvas', '.charts-area']) {
   const b = await box(sel);
   if (!b || b.width < 2 || b.height < 2) fail.push(`${sel} missing or collapsed`);
   else ok(`${sel} present ${Math.round(b.width)}×${Math.round(b.height)}px`);

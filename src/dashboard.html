@@ -58,7 +58,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .left-panel{border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)}
 .panel-title{font-size:9px;font-weight:600;color:var(--t1);padding:7px 12px;border-bottom:0.5px solid var(--border);letter-spacing:.06em;flex-shrink:0}
 .gauge-wrap{padding:10px;display:flex;flex-direction:column;align-items:center;border-bottom:0.5px solid var(--border);flex-shrink:0}
-#gauge-canvas{width:148px;height:82px}
+#gauge-canvas{width:148px;height:82px;display:block}
+#index-canvas{width:108px;height:60px;display:block}
+.subgauge{display:flex;flex-direction:column;align-items:center;width:100%;margin-top:7px;padding-top:8px;border-top:0.5px solid var(--border)}
+.subgauge-head{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.subgauge-val{font-size:18px;font-weight:700;font-family:monospace;line-height:1;transition:color .4s}
+.subgauge-rung{font-size:10px;font-weight:600}
+.subgauge-lbl{font-size:8px;color:var(--t3);text-align:center;margin-top:1px}
 .gauge-val{font-size:22px;font-weight:700;font-family:monospace;color:var(--t1);margin-top:2px;text-align:center;transition:color .4s}
 .gauge-pct-label{font-size:9px;color:var(--t3);text-align:center;margin-top:1px}
 .gauge-context{margin-top:5px;width:100%;font-size:8px;color:var(--t4);line-height:1.8}
@@ -245,6 +251,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .cmd-sub,.lm-sub,.gauge-pct-label,.conf-row,.ddelta{font-size:11px}
   .gauge-val{font-size:27px}
   #gauge-canvas{width:188px;height:104px}
+  #index-canvas{width:140px;height:78px}
+  .subgauge-val{font-size:22px}
   .gauge-context{font-size:10px}
   .dlabel,.dconf,.art-tag,.src-tier,.art-meta{font-size:9px}
   .tf-btn,.ct,.tab,.context-strip,.formula,.ca,.pe-text,.pe-val,.pe-desc,.pe-btn,.src-count,
@@ -257,6 +265,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .cmd-val,.lm-val,.dscore{font-size:18px}
   .gauge-val{font-size:31px}
   #gauge-canvas{width:204px;height:113px}
+  #index-canvas{width:152px;height:84px}
+  .subgauge-val{font-size:24px}
   .art-title,.panel-body,.src-name{font-size:14px}
   .cmd-label,.lm-label,.panel-title,.dn,.pe-label,.iw-label{font-size:11px}
   .pe-title{font-size:14px}
@@ -325,16 +335,22 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   <div class="left-panel">
     <div class="panel-title">THREAT LEVEL</div>
     <div class="gauge-wrap">
-      <canvas id="gauge-canvas" width="148" height="82"></canvas>
+      <!-- HERO dial — forward-looking outlook: annual P(WWIII) -->
+      <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
-      <div class="gauge-pct-label" id="gauge-ratio">— annual P(WWIII)</div>
-      <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:1px">systemic index 0–100 · escalation-ladder severity · <a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
-      <div class="gauge-context">
-        <div class="gauge-context-row"><span>This reading:</span><span id="gauge-ratio-ctx" style="color:var(--amber)">—</span></div>
-        <div class="gauge-context-row"><span>Normal:</span><span style="color:#40c070">0–16</span></div>
-        <div class="gauge-context-row"><span>Moderate:</span><span style="color:#9090ff">17–33</span></div>
-        <div class="gauge-context-row"><span>Elevated:</span><span style="color:var(--amber)">34–66</span></div>
-        <div class="gauge-context-row"><span>Critical:</span><span style="color:var(--red)">≥67</span></div>
+      <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
+      <!-- SECONDARY dial — present escalation severity: systemic index + hottest rung -->
+      <div class="subgauge">
+        <canvas id="index-canvas"></canvas>
+        <div class="subgauge-head"><span class="subgauge-val" id="idx-val">—</span><span class="subgauge-rung" id="idx-rung">—</span></div>
+        <div class="subgauge-lbl">systemic index 0–100 · escalation now</div>
+        <div class="gauge-context">
+          <div class="gauge-context-row"><span>Normal:</span><span style="color:#40c070">0–16</span></div>
+          <div class="gauge-context-row"><span>Moderate:</span><span style="color:#9090ff">17–33</span></div>
+          <div class="gauge-context-row"><span>Elevated:</span><span style="color:var(--amber)">34–66</span></div>
+          <div class="gauge-context-row"><span>Critical:</span><span style="color:var(--red)">≥67</span></div>
+        </div>
+        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:4px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       </div>
       <div class="conf-row">
         <span style="color:var(--t4);font-size:8px">CONF</span>
@@ -487,32 +503,50 @@ const DSHORT=['Kinetic','Nuclear','Economic','Cyber','Diplomatic'];
 const DCOLORS=['--mil','--nuc','--eco','--cyb','--dip'];
 const DTAGS={military_escalation:'KIN',nuclear_posture:'NUC',economic_warfare:'ECO',cyber_info_ops:'CYB',diplomatic_breakdown:'DIP'};
 const TAG_COLORS={KIN:'#E24B4A',NUC:'#FF6B35',ECO:'#1D9E75',CYB:'#00CED1',DIP:'#7F77DD'};
-const GC=document.getElementById('gauge-canvas').getContext('2d');
-let lastGaugePct=0;
-// ── Systemic-index gauge mapping ─────────────────────────────────────────────
-// The hero dial reads the 0–100 systemic index (the documented headline metric);
-// annual P(WWIII) is the secondary line. Linear scale; coloured zones at the band
-// thresholds — moderate 17, elevated 34, critical 67.
+// ── Two dials ────────────────────────────────────────────────────────────────
+// Hero = forward-looking outlook (annual P(WWIII)); secondary = present escalation
+// severity (systemic index 0–100). They are DIFFERENT metrics — a probability vs an
+// escalation-ladder position — so each gets its own dial instead of one number that
+// looks like the other.
+const GC=document.getElementById('gauge-canvas').getContext('2d');   // hero: P(WWIII)
+const GI=document.getElementById('index-canvas').getContext('2d');   // secondary: index
+// Probability severity bands (fraction of 1.0): normal <2.5%, elevated <8%, then critical.
+const P_ZONES=[{e:0.025,c:'#1D9E75'},{e:0.08,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
+const P_TICKS=[{f:0,l:'0'},{f:0.25,l:'25'},{f:0.5,l:'50'},{f:0.75,l:'75'},{f:1,l:'100'}];
+// Systemic-index bands (0–100): moderate 17, elevated 34, critical 67.
 const IDX_ZONES=[{e:0.17,c:'#1D9E75'},{e:0.34,c:'#7F77DD'},{e:0.67,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
-// Tick reference points (dial fraction → label).
-const G_TICKS=[{f:0,l:'0'},{f:0.25,l:'25'},{f:0.5,l:'50'},{f:0.75,l:'75'},{f:1,l:'100'}];
-function drawGauge(pct){
-  pct=Math.min(1,pct);const W=148,H=82,cx=W/2,cy=H-10,r=58;
-  GC.clearRect(0,0,W,H);
-  GC.beginPath();GC.arc(cx,cy,r,Math.PI,0);GC.strokeStyle='#1e1e38';GC.lineWidth=9;GC.stroke();
-  const zones=IDX_ZONES;let s=Math.PI;
-  for(const z of zones){const e=Math.PI+z.e*Math.PI;GC.beginPath();GC.arc(cx,cy,r,s,Math.min(e,Math.PI+pct*Math.PI));GC.strokeStyle=z.c;GC.lineWidth=9;GC.stroke();if(pct<=z.e)break;s=e;}
-  // Tick marks + labels at log reference points
-  GC.font='6px monospace';GC.fillStyle='#6878a0';GC.textAlign='center';
-  for(const t of G_TICKS){const f=t.f,a=Math.PI+f*Math.PI;
-    const x1=cx+(r-5)*Math.cos(a),y1=cy+(r-5)*Math.sin(a),x2=cx+(r+5)*Math.cos(a),y2=cy+(r+5)*Math.sin(a);
-    GC.beginPath();GC.moveTo(x1,y1);GC.lineTo(x2,y2);GC.strokeStyle='#3a4560';GC.lineWidth=1;GC.stroke();
-    const lx=cx+(r+10)*Math.cos(a),ly=cy+(r+10)*Math.sin(a)+2;GC.fillText(t.l,lx,ly);}
-  const a=Math.PI+pct*Math.PI;GC.beginPath();GC.moveTo(cx,cy);GC.lineTo(cx+(r-13)*Math.cos(a),cy+(r-13)*Math.sin(a));GC.strokeStyle='#ffffff';GC.lineWidth=2;GC.stroke();
-  GC.beginPath();GC.arc(cx,cy,4,0,2*Math.PI);GC.fillStyle='#ffffff';GC.fill();
+const I_TICKS=[{f:0,l:'0'},{f:0.5,l:'50'},{f:1,l:'100'}];
+// One dial renderer. Sizes the backing buffer to display×devicePixelRatio so it stays
+// crisp on HiDPI (the old fixed 148×82 buffer was CSS-upscaled → blurry on desktop) and
+// scales every dimension from the original 148-wide design so proportions hold at any size.
+function drawDial(g,pct,zones,ticks){
+  pct=Math.max(0,Math.min(1,pct));
+  const c=g.canvas,dpr=window.devicePixelRatio||1;
+  const W=c.clientWidth||148,H=c.clientHeight||82;
+  const bw=Math.round(W*dpr),bh=Math.round(H*dpr);
+  if(c.width!==bw||c.height!==bh){c.width=bw;c.height=bh;}
+  g.setTransform(bw/W,0,0,bh/H,0,0);
+  const s=W/148,cx=W/2,cy=H-10*s,r=58*s,LW=9*s;
+  g.clearRect(0,0,W,H);
+  g.beginPath();g.arc(cx,cy,r,Math.PI,0);g.strokeStyle='#1e1e38';g.lineWidth=LW;g.stroke();
+  let st=Math.PI;
+  for(const z of zones){const e=Math.PI+z.e*Math.PI;g.beginPath();g.arc(cx,cy,r,st,Math.min(e,Math.PI+pct*Math.PI));g.strokeStyle=z.c;g.lineWidth=LW;g.stroke();if(pct<=z.e)break;st=e;}
+  g.font=Math.max(6,Math.round(6*s))+'px monospace';g.fillStyle='#6878a0';
+  for(const t of ticks){const a=Math.PI+t.f*Math.PI;
+    const x1=cx+(r-5*s)*Math.cos(a),y1=cy+(r-5*s)*Math.sin(a),x2=cx+(r+5*s)*Math.cos(a),y2=cy+(r+5*s)*Math.sin(a);
+    g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.strokeStyle='#3a4560';g.lineWidth=1;g.stroke();
+    // End labels (0 / 100) hug the rim — align them inward so they never clip the canvas edge.
+    g.textAlign=t.f<=0.001?'left':t.f>=0.999?'right':'center';
+    const lx=cx+(r+8*s)*Math.cos(a),ly=cy+(r+8*s)*Math.sin(a)+2;g.fillText(t.l,lx,ly);}
+  const a=Math.PI+pct*Math.PI;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+(r-13*s)*Math.cos(a),cy+(r-13*s)*Math.sin(a));g.strokeStyle='#fff';g.lineWidth=2*s;g.stroke();
+  g.beginPath();g.arc(cx,cy,4*s,0,2*Math.PI);g.fillStyle='#fff';g.fill();
 }
-drawGauge(0);
-function animateGauge(target){const diff=target-lastGaugePct;const step=diff*0.12;lastGaugePct+=step;drawGauge(lastGaugePct);if(Math.abs(diff)>0.0005)requestAnimationFrame(()=>animateGauge(target));}
+let lastHero=0,lastIdx=0;
+function animateHero(t){lastHero+=(t-lastHero)*0.12;drawDial(GC,lastHero,P_ZONES,P_TICKS);if(Math.abs(t-lastHero)>0.0005)requestAnimationFrame(()=>animateHero(t));}
+function animateIdx(t){lastIdx+=(t-lastIdx)*0.12;drawDial(GI,lastIdx,IDX_ZONES,I_TICKS);if(Math.abs(t-lastIdx)>0.0005)requestAnimationFrame(()=>animateIdx(t));}
+drawDial(GC,0,P_ZONES,P_TICKS);drawDial(GI,0,IDX_ZONES,I_TICKS);
+// Redraw on resize so dpr/size changes stay crisp.
+addEventListener('resize',()=>{drawDial(GC,lastHero,P_ZONES,P_TICKS);drawDial(GI,lastIdx,IDX_ZONES,I_TICKS);});
 const GRID='rgba(255,255,255,0.04)',TICK='#9090c0';
 let spikeAnnotations={};
 const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}}});
@@ -673,13 +707,20 @@ function applyData(d){
   document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
   const delta6h=get6hDelta(pA);if(delta6h!==null){const d6el=document.getElementById('ca-6h');d6el.textContent=(delta6h>=0?'+':'')+(delta6h*100).toFixed(3)+'%';d6el.style.color=delta6h>0.0005?'#E24B4A':delta6h<-0.0005?'#1D9E75':'var(--t2)';}
-  // Hero gauge = systemic index (0–100, the documented headline); P(WWIII) secondary.
+  // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
+  // secondary = present escalation severity (systemic index 0–100 + hottest rung).
   const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
   const idxCol=sysIdx>=67?'#E24B4A':sysIdx>=34?'#EF9F27':sysIdx>=17?'#7F77DD':'#1D9E75';
-  checkSpike(pA);animateGauge(sysIdx/100);
-  const gv=document.getElementById('gauge-val');gv.textContent=sysIdx;gv.style.color=idxCol;
-  document.getElementById('gauge-ratio').textContent='≈ '+(pA*100).toFixed(2)+'% annual P(WWIII)';
-  const ctxEl=document.getElementById('gauge-ratio-ctx');if(ctxEl){ctxEl.textContent=sysIdx+' / 100';ctxEl.style.color=idxCol;}
+  const _ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const _top=_ths[0]||{};
+  checkSpike(pA);
+  // Hero dial: P(WWIII) as a fraction of 1.0, coloured by probability severity.
+  const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
+  animateHero(Math.min(1,pA));
+  const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(1)+'%';gv.style.color=pCol;
+  // Secondary dial: systemic index + hottest-theater rung label.
+  animateIdx(sysIdx/100);
+  const iv=document.getElementById('idx-val');if(iv){iv.textContent=sysIdx;iv.style.color=idxCol;}
+  const ir=document.getElementById('idx-rung');if(ir){ir.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');ir.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
   const _cd=new Date(d.computed_at);const _et=toET(_cd);
   document.getElementById('ts').textContent='Live · '+_et;
