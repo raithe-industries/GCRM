@@ -162,8 +162,10 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         "nuclear strike", "atomic bombing", "warhead detonated", "nuclear bomb detonated",
     ];
     // Whole-word tokens that reframe a use-phrase as a NON-use: threats, warnings,
-    // hypotheticals, capability/posture statements, drills/tests, and averted/denied
-    // events. ("may" is deliberately omitted — it collides with the month.)
+    // hypotheticals, capability/posture statements, drills/tests, averted/denied
+    // events, and UNVERIFIED allegations/rumours. ("may" is deliberately omitted — it
+    // collides with the month; "claim*" is omitted — it collides with the casualty
+    // idiom "the strike claimed N lives", which describes a real use.)
     const NON_USE_TOKENS: &[&str] = &[
         "threat", "threats", "threaten", "threatens", "threatened", "threatening",
         "warn", "warns", "warning", "warned", "vow", "vows", "vowed",
@@ -175,6 +177,13 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         "scenarios", "deter", "deterrence", "deterrent", "preempt", "preemptive",
         "hypothetical", "fictional", "brink", "avert", "averted", "prevent",
         "prevented", "deny", "denies", "denied",
+        // Unverified-allegation / uncertainty framing — a clean confirmation reads in
+        // the definitive ("confirmed", "was used"), never hedged as merely alleged or
+        // rumoured. (Recall is preserved: `any()` over the window still trips on a
+        // single definitive headline even when other coverage is hedged.)
+        "alleged", "allegedly", "allege", "alleges", "allegation", "allegations",
+        "reportedly", "unconfirmed", "unverified", "purported", "purportedly",
+        "rumored", "rumoured", "rumor", "rumour", "rumors", "rumours",
     ];
     tev.iter().any(|e| {
         if !e.nuclear_indicator { return false; }
@@ -640,6 +649,25 @@ mod tests {
         let t = out.theaters.iter().find(|s| s.theater_id == "us_china_taiwan").unwrap();
         assert_ne!(t.rung, EscalationRung::Systemic,
             "a nuclear TEST detonation must not force the systemic (nuclear-use) rung");
+    }
+
+    #[test]
+    fn unverified_nuclear_claim_does_not_force_systemic_rung() {
+        // An UNVERIFIED allegation of a nuclear strike is not a confirmed use. The apex
+        // Systemic rung (which pegs the headline at 95 and floods P(WWIII)) must trip
+        // only on a clean confirmation, never on hedged "allegedly / reportedly /
+        // unconfirmed" framing — exactly the genre that surrounds an unfolding claim
+        // before verification. The title carries the "nuclear strike" use-phrase AND
+        // nuclear_indicator is set, so the plain match would fire; the uncertainty
+        // tokens must catch the allegation framing and decline.
+        let mut te = TheaterEngine::new();
+        let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        e.title = "Russia allegedly carried out nuclear strike, reports unconfirmed".into();
+        e.nuclear_indicator = true;
+        let out = te.compute(&[e]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert_ne!(t.rung, EscalationRung::Systemic,
+            "an unverified nuclear claim must not force the systemic (nuclear-use) rung");
     }
 
     #[test]
