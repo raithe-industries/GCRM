@@ -61,7 +61,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 #gauge-canvas{width:148px;height:82px;display:block}
 #index-canvas{width:108px;height:60px;display:block}
 .subgauge{display:flex;flex-direction:column;align-items:center;width:100%;margin-top:7px;padding-top:8px;border-top:0.5px solid var(--border)}
-.subgauge-head{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.subgauge-head{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px}
 .subgauge-val{font-size:18px;font-weight:700;font-family:monospace;line-height:1;transition:color .4s}
 .subgauge-rung{font-size:10px;font-weight:600}
 .subgauge-lbl{font-size:8px;color:var(--t3);text-align:center;margin-top:1px}
@@ -369,16 +369,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="plain-eng">
       <div class="pe-title">WHAT THIS MEANS</div>
       <div class="pe-item">
-        <div class="pe-label">THE NUMBER</div>
-        <div class="pe-text">Estimated chance a world-war-scale conflict starts within 12 months, read from live news. For scale: ~1.5% baseline · ≥8% critical · ~80% ≈ Cuba 1962.</div>
-      </div>
-      <div class="pe-item">
-        <div class="pe-label">THE 5 BARS</div>
-        <div class="pe-text">The real signal isn't one tall bar — it's several elevated at once, which couple and compound the systemic risk. Click any bar (or its card) to audit the live articles behind its score.</div>
-      </div>
-      <div class="pe-item">
-        <div class="pe-label">THEATERS &amp; INDEX</div>
-        <div class="pe-text">The live flashpoints (Ukraine, the Gulf, Taiwan…) and the 0–100 systemic index they roll up into — the model's headline severity.</div>
+        <div class="pe-text">A live estimate of how close the world is to a major war, read continuously from the news. If you'd like to learn how it works and what each figure means, click the button below.</div>
       </div>
       <a href="{{BASE_PATH}}/methodology" class="pe-btn" style="margin-top:6px">Full methodology &amp; math ↗</a>
     </div>
