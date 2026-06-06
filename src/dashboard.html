@@ -747,6 +747,14 @@ function applyTimeline(entries){
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);tlChart.update('none');
   if(entries.length>0){let mx=-Infinity,mn=Infinity;for(let i=0;i<entries.length;i++){const v=entries[i].p_annual;if(v>mx)mx=v;if(v<mn)mn=v;}sessionPeak=mx;sessionLow=mn;}
+  // Seed the trailing-6h buffer from durable backend history so the 6h Trend is
+  // populated immediately on load. Without this the buffer starts empty every
+  // page load and only fills as the tab stays open — so it reads "—" until the
+  // session has run a full 6 hours (i.e. effectively never). Entries here are
+  // oldest→newest, so walk from the newest end back to the 6h cutoff.
+  const cutoff=Date.now()-6*3600*1000,seed=[];
+  for(let i=entries.length-1;i>=0;i--){const tms=new Date(entries[i].t).getTime();if(isNaN(tms))continue;if(tms<cutoff)break;seed.unshift({t:tms,p:entries[i].p_annual});}
+  if(seed.length>=2)history6h=seed;
 }
 function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.classList.toggle('connected',on);}}
 function connect(){
