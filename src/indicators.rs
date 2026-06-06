@@ -118,6 +118,10 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     };
 
     // 8. Cross-domain escalation within a single theater (≥3 modalities elevated).
+    //    On a clear reading, surface the hottest near-miss (how many modalities the
+    //    leading theater has elevated, against the 3 needed) — same legibility idiom as
+    //    the nuclear/energy lights — so a theater sitting at 2/3 (one axis from tripping)
+    //    is distinguishable from a quiet board, rather than a bare "No theater with 3+".
     let cross = theaters.iter().map(|t| {
         let n = ["military_escalation","nuclear_posture","economic_warfare","cyber_info_ops","diplomatic_breakdown"]
             .iter().filter(|m| modality(t, m) >= 0.32).count();
@@ -127,8 +131,11 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         Some((t, n)) if n >= 3 => Indicator {
             id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: true,
             theater: Some(t.label.clone()), detail: format!("{} modalities elevated in {}", n, t.label) },
-        _ => Indicator { id: "cross_domain", label: "Cross-domain escalation in one theater",
-            tripped: false, theater: None, detail: "No theater with 3+ elevated modalities".into() },
+        Some((t, n)) => Indicator {
+            id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: false,
+            theater: None, detail: format!("Below threshold (max {} {}/3 modalities)", t.label, n) },
+        None => Indicator { id: "cross_domain", label: "Cross-domain escalation in one theater",
+            tripped: false, theater: None, detail: "No theater data".into() },
     };
 
     // 9. Nuclear-brink configuration (direct ≥2-great-power nuclear confrontation).
@@ -259,6 +266,28 @@ mod tests {
         assert!(!nuc.tripped, "no theater at/above 0.45 must read clear");
         assert!(nuc.detail.contains("0.44"),
             "clear detail should surface the hottest near-miss value, got {:?}", nuc.detail);
+    }
+
+    #[test]
+    fn cross_domain_clear_surfaces_hottest_near_miss() {
+        // Fewer than 3 elevated modalities anywhere → clear, but the detail must report
+        // the hottest theater's count against the 3 needed (same legibility contract as
+        // the nuclear/energy lights), so a theater one axis from tripping is visible
+        // rather than hidden behind a bare "No theater with 3+ elevated modalities".
+        let mut snap = RiskSnapshot::default();
+        snap.theaters = vec![
+            theater("us_iran", EscalationRung::Tension, false,
+                &[("military_escalation", 0.40)], &["iran"]),
+            // Two modalities elevated — one axis short of tripping the cross-domain light.
+            theater("nato_russia", EscalationRung::Crisis, true,
+                &[("military_escalation", 0.50), ("diplomatic_breakdown", 0.40)],
+                &["russia", "united_states"]),
+        ];
+        let inds = evaluate(&snap);
+        let cross = inds.iter().find(|i| i.id == "cross_domain").unwrap();
+        assert!(!cross.tripped, "no theater with 3+ elevated modalities must read clear");
+        assert!(cross.detail.contains("nato_russia") && cross.detail.contains("2/3"),
+            "clear detail should surface the hottest near-miss count, got {:?}", cross.detail);
     }
 
     #[test]
