@@ -102,12 +102,21 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         detail: format!("entanglement {:.2}", c.gp_entanglement),
     };
 
-    // 6. Mutual-defense alliance invoked.
+    // 6. Mutual-defense alliance invoked. Name the theater carrying the
+    //    collective-defense signal (same theater-attribution idiom as the kinetic /
+    //    nuclear / chokepoint / cross-domain lights), so the operator can see WHERE
+    //    Article 5 tripped rather than a bare global "Article 5 / collective-defense
+    //    signal". The coupler `alliance_activation` is derived from these theaters'
+    //    `alliance_invoked` flags, so it is > 0.0 exactly when some theater is found.
+    let alliance_theater = theaters.iter().find(|t| t.alliance_invoked);
     let ind_alliance = Indicator {
         id: "alliance_invoked", label: "Mutual-defense alliance invoked",
-        tripped: c.alliance_activation > 0.0, theater: None,
-        detail: if c.alliance_activation > 0.0 { "Article 5 / collective-defense signal".into() }
-                else { "None".into() },
+        tripped: c.alliance_activation > 0.0,
+        theater: alliance_theater.map(|t| t.label.clone()),
+        detail: match alliance_theater {
+            Some(t) => format!("Article 5 / collective-defense signal: {}", t.label),
+            None => "None".into(),
+        },
     };
 
     // 7. Arms-control guardrails collapsed.
@@ -288,6 +297,44 @@ mod tests {
         assert!(!cross.tripped, "no theater with 3+ elevated modalities must read clear");
         assert!(cross.detail.contains("nato_russia") && cross.detail.contains("2/3"),
             "clear detail should surface the hottest near-miss count, got {:?}", cross.detail);
+    }
+
+    #[test]
+    fn alliance_light_names_the_invoking_theater() {
+        // When a mutual-defense alliance is invoked, the light must name the theater
+        // carrying the collective-defense signal (same theater-attribution idiom as the
+        // kinetic / nuclear / chokepoint lights), not just report a bare global signal.
+        let mut snap = RiskSnapshot::default();
+        let mut t = theater("nato_russia", EscalationRung::LimitedWar, true,
+            &[("military_escalation", 0.60)], &["russia", "nato", "united_states"]);
+        t.alliance_invoked = true;
+        snap.theaters = vec![
+            theater("us_iran", EscalationRung::Tension, false, &[], &["iran"]),
+            t,
+        ];
+        // Coupler derived as theater.rs would: an alliance invoked in a hot theater.
+        snap.couplers.alliance_activation = 1.0;
+        let inds = evaluate(&snap);
+        let alliance = inds.iter().find(|i| i.id == "alliance_invoked").unwrap();
+        assert!(alliance.tripped, "an invoked alliance must trip the light");
+        assert_eq!(alliance.theater.as_deref(), Some("nato_russia"),
+            "the tripped light must name the theater that invoked collective defense");
+        assert!(alliance.detail.contains("nato_russia"),
+            "detail should name the invoking theater, got {:?}", alliance.detail);
+    }
+
+    #[test]
+    fn alliance_light_clear_when_none_invoked() {
+        // No theater with an invoked alliance → clear, unnamed, "None".
+        let mut snap = RiskSnapshot::default();
+        snap.theaters = vec![
+            theater("us_iran", EscalationRung::Tension, false, &[], &["iran"]),
+        ];
+        let inds = evaluate(&snap);
+        let alliance = inds.iter().find(|i| i.id == "alliance_invoked").unwrap();
+        assert!(!alliance.tripped, "no invoked alliance must read clear");
+        assert!(alliance.theater.is_none(), "a clear alliance light must name no theater");
+        assert_eq!(alliance.detail, "None");
     }
 
     #[test]
