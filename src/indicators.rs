@@ -108,7 +108,13 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     //    Article 5 tripped rather than a bare global "Article 5 / collective-defense
     //    signal". The coupler `alliance_activation` is derived from these theaters'
     //    `alliance_invoked` flags, so it is > 0.0 exactly when some theater is found.
-    let alliance_theater = theaters.iter().find(|t| t.alliance_invoked);
+    //    Pick the HOTTEST alliance-invoked theater (not merely the first in list
+    //    order): a HOT invocation is what drives `alliance_activation` to its 1.0
+    //    apex, so naming the hottest keeps the label pointed at the theater actually
+    //    carrying the signal rather than a cold invocation that happens to sort first.
+    let alliance_theater = theaters.iter()
+        .filter(|t| t.alliance_invoked)
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
     let ind_alliance = Indicator {
         id: "alliance_invoked", label: "Mutual-defense alliance invoked",
         tripped: c.alliance_activation > 0.0,
@@ -321,6 +327,35 @@ mod tests {
             "the tripped light must name the theater that invoked collective defense");
         assert!(alliance.detail.contains("nato_russia"),
             "detail should name the invoking theater, got {:?}", alliance.detail);
+    }
+
+    #[test]
+    fn alliance_light_names_the_hottest_invoking_theater() {
+        // Regression guard: when more than one theater has invoked collective defense,
+        // the light must name the HOTTEST one — the theater whose hot invocation drives
+        // `alliance_activation` to its 1.0 apex — not merely the first in list order. A
+        // cold invocation that happens to sort first must not steal the attribution from
+        // the hot theater actually carrying the signal.
+        let mut snap = RiskSnapshot::default();
+        // Cold alliance invocation, listed FIRST (would be picked by the old `find`).
+        let mut cold = theater("us_iran", EscalationRung::Tension, true,
+            &[("military_escalation", 0.20)], &["united_states", "iran"]);
+        cold.alliance_invoked = true;
+        cold.heat = 0.15;
+        // Hot alliance invocation, listed SECOND — this is the signal-carrying theater.
+        let mut hot = theater("nato_russia", EscalationRung::LimitedWar, true,
+            &[("military_escalation", 0.70)], &["russia", "nato", "united_states"]);
+        hot.alliance_invoked = true;
+        hot.heat = 0.85;
+        snap.theaters = vec![cold, hot];
+        snap.couplers.alliance_activation = 1.0;
+        let inds = evaluate(&snap);
+        let alliance = inds.iter().find(|i| i.id == "alliance_invoked").unwrap();
+        assert!(alliance.tripped, "an invoked alliance must trip the light");
+        assert_eq!(alliance.theater.as_deref(), Some("nato_russia"),
+            "the light must name the hottest alliance-invoked theater, not the first listed");
+        assert!(alliance.detail.contains("nato_russia"),
+            "detail should name the hottest invoking theater, got {:?}", alliance.detail);
     }
 
     #[test]
