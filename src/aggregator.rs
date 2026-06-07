@@ -379,6 +379,72 @@ impl EpochStore {
 
     /// Total entries held.
     pub fn len(&self) -> usize { self.ring.len() }
+
+    /// Trailing-6h trend of P(WWIII), computed server-side from the durable ring.
+    ///
+    /// Returns the JSON object the dashboard reads as `data.trend_6h`:
+    /// `{available, delta, baseline, samples, span_secs}` — `delta` is
+    /// `current − (p_annual of the oldest entry within the last 6h)`, in
+    /// probability units. This used to be reconstructed in the browser from a
+    /// per-tab session buffer that had to be re-seeded inside `applyTimeline()`
+    /// on every page load; any dashboard refactor that dropped the seed silently
+    /// reset the "6h Trend" readout to "—". Computing it here makes it durable
+    /// and independent of the client, so a UI rewrite can no longer break the
+    /// math. The browser only renders the number. Locked by `epoch_store_trend_*`.
+    pub fn trend_6h(&self, current_p: f64) -> serde_json::Value {
+        self.trend_window(current_p, Utc::now(), 6 * 3600, 2)
+    }
+
+    /// Testable core of [`trend_6h`]: caller injects `now`, the window length and
+    /// the minimum sample count. Walks the ring newest→oldest, taking the oldest
+    /// entry still inside `[now − window_secs, now]` as the baseline. Reports
+    /// `available:false` (and `delta:0`) when there isn't yet `min_samples` of
+    /// in-window history rather than fabricating a trend from too little data.
+    pub fn trend_window(
+        &self,
+        current_p: f64,
+        now: DateTime<Utc>,
+        window_secs: i64,
+        min_samples: usize,
+    ) -> serde_json::Value {
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        let mut baseline: Option<f64> = None;
+        let mut oldest: Option<DateTime<Utc>> = None;
+        let mut samples = 0usize;
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue,
+            };
+            if t < cutoff {
+                break;
+            }
+            if let Some(p) = e.get("p_annual").and_then(|v| v.as_f64()) {
+                baseline = Some(p); // overwrite each step → ends at the oldest in-window
+                oldest = Some(t);
+                samples += 1;
+            }
+        }
+        match (baseline, oldest) {
+            (Some(b), Some(o)) if samples >= min_samples => serde_json::json!({
+                "available": true,
+                "delta":     current_p - b,
+                "baseline":  b,
+                "samples":   samples,
+                "span_secs": (now - o).num_seconds().max(0),
+            }),
+            _ => serde_json::json!({
+                "available": false,
+                "delta":     0.0,
+                "samples":   samples,
+                "span_secs": 0,
+            }),
+        }
+    }
 }
 
 /// Boot loader: reads timeline JSONL files from disk once at startup and
@@ -1394,6 +1460,68 @@ mod tests {
         es.push(v.clone());
         let out = es.query(1);
         assert_eq!(out[0]["p_annual"], v["p_annual"]);
+    }
+
+    // ── EpochStore::trend_6h / trend_window ─────────────────────────────────────
+    // These lock the durable, server-side 6h-trend contract the dashboard relies
+    // on (`data.trend_6h`). The self-improve routine gates on `cargo test`, so if
+    // a future change breaks the trend math or its shape, these go red and the
+    // change can't ship — that is the guard against the recurring "6h Trend = —"
+    // regression that used to come from refactoring the client-side buffer.
+
+    fn epoch_at(secs_ago: i64, now: DateTime<Utc>, p: f64) -> serde_json::Value {
+        serde_json::json!({
+            "t": (now - chrono::Duration::seconds(secs_ago)).to_rfc3339(),
+            "p_annual": p,
+        })
+    }
+
+    #[test]
+    fn epoch_store_trend_delta_is_current_minus_oldest_in_window() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        // oldest→newest within the 6h window: 0.80 (6h ago) … 0.83 (now-ish)
+        es.push(epoch_at(5 * 3600, now, 0.80)); // baseline (oldest in window)
+        es.push(epoch_at(3 * 3600, now, 0.81));
+        es.push(epoch_at(60, now, 0.83));
+        let tr = es.trend_window(0.835, now, 6 * 3600, 2);
+        assert_eq!(tr["available"], true);
+        assert_eq!(tr["samples"], 3);
+        // 0.835 − 0.80 baseline
+        assert!((tr["delta"].as_f64().unwrap() - 0.035).abs() < 1e-9);
+        assert!((tr["baseline"].as_f64().unwrap() - 0.80).abs() < 1e-9);
+    }
+
+    #[test]
+    fn epoch_store_trend_ignores_entries_older_than_window() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(epoch_at(10 * 3600, now, 0.50)); // outside 6h — must NOT be baseline
+        es.push(epoch_at(5 * 3600, now, 0.70)); // oldest IN window → baseline
+        es.push(epoch_at(60, now, 0.72));
+        let tr = es.trend_window(0.75, now, 6 * 3600, 2);
+        assert_eq!(tr["available"], true);
+        assert_eq!(tr["samples"], 2); // the 10h-old one excluded
+        assert!((tr["baseline"].as_f64().unwrap() - 0.70).abs() < 1e-9);
+        assert!((tr["delta"].as_f64().unwrap() - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn epoch_store_trend_unavailable_below_min_samples() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(epoch_at(60, now, 0.83)); // only one in-window sample
+        let tr = es.trend_window(0.835, now, 6 * 3600, 2);
+        assert_eq!(tr["available"], false);
+        assert_eq!(tr["delta"].as_f64().unwrap(), 0.0); // never fabricated
+    }
+
+    #[test]
+    fn epoch_store_trend_empty_ring_is_unavailable() {
+        let es = EpochStore::new();
+        let tr = es.trend_window(0.50, Utc::now(), 6 * 3600, 2);
+        assert_eq!(tr["available"], false);
+        assert_eq!(tr["samples"], 0);
     }
 
     // ── load_epoch ────────────────────────────────────────────────────────────
