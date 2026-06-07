@@ -597,8 +597,8 @@ const INFO={
     <span class="ih">Bands</span>
     <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
   trend:{title:'6h Trend',html:`
-    <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, from this session's rolling sample buffer.</p>
-    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how many samples are in the 6-hour buffer so far.</p>`},
+    <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, computed server-side from the durable timeline history — so a page reload or UI change can't reset it.</p>
+    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison actually reaches and how many samples it spans.</p>`},
   w30:{title:'30-Day Window',html:`
     <p><b>30-Day Window</b> re-expresses the same model over a rolling 30-day horizon — a nearer-term read than the headline annual figure.</p>
     <p>It moves faster than the annual number, so it's the better gauge of short-run escalation. It's a derived view of one model, not a separate forecast.</p>`},
