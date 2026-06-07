@@ -213,14 +213,18 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
-.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:0 0 auto}
+/* flex-grow:1 so the explainer's own (black) background fills the rail down to
+   the foot — no var(--bg2) gap showing through as a blue band. flex-shrink:0 so
+   it never collapses on short monitors (the bug that hid this panel); the rail
+   scrolls instead. */
+.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:1 0 auto}
 /* RAiTHE "A" brand mark — its own pinned strip at the foot of the left rail
    (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
    in 3D so it reads as a turning badge rather than a flat spin. */
-/* margin-top:auto pins the brand to the rail's bottom when there's spare height
-   (tall screens) but contributes nothing when the rail overflows, so on short
-   screens it simply scrolls into view with everything above it. */
-.left-foot{flex-shrink:0;margin-top:auto;background:var(--bg);padding:6px 12px 8px}
+/* Sits directly below the explainer (which grows to fill), so the brand stays at
+   the rail's bottom on tall screens and scrolls into view on short ones — both
+   on the same black background, no blue seam above the logo. */
+.left-foot{flex-shrink:0;background:var(--bg);padding:6px 12px 8px}
 .brand-a{display:flex;justify-content:center;align-items:center;padding:14px 0 4px;perspective:720px;line-height:0;cursor:pointer}
 /* Two-faced "coin": front + a back face pre-rotated 180°, both backface-hidden,
    so whichever side faces the viewer always shows the A upright — the spin reads
