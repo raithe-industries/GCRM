@@ -73,16 +73,34 @@ for (const sel of ['#theater-ladder', '#gauge-canvas', '#index-canvas', '.charts
 //    flatline). This is the honesty/legibility floor in DATA form: it says nothing about
 //    what the number should be, only that a credible read must not be pegged at the cap.
 const CEILING = 0.90, MARGIN = 0.01;
+let latest = null;
 try {
   const apiLatest = URL.replace(/\/+$/, '') + '/api/latest';
-  const j = await (await fetch(apiLatest)).json();
-  const pa = j?.probabilities?.annual;
+  latest = await (await fetch(apiLatest)).json();
+  const pa = latest?.probabilities?.annual;
   if (typeof pa !== 'number') fail.push('api/latest has no probabilities.annual');
   else if (pa >= CEILING - MARGIN) fail.push(`annual P(WWIII) saturated at ceiling: ${pa} — non-credible / no resolution`);
   else ok(`annual P(WWIII) = ${(pa * 100).toFixed(1)}% (not pegged at ceiling)`);
 } catch (e) {
   fail.push(`semantic check could not reach api/latest: ${e.message}`);
 }
+
+// 6) 6h-TREND CONTRACT — the trailing-6h delta is computed server-side (durable)
+//    and shipped in the payload as `trend_6h`; the cockpit's top-right readout
+//    renders it. This guards the recurring "6h Trend = —" regression that used to
+//    appear whenever a client refactor dropped the session-buffer seed. We assert
+//    the payload carries the field (numeric delta when available) AND the readout
+//    element actually renders something — without dictating the value.
+if (latest) {
+  const tr = latest.trend_6h;
+  if (!tr || typeof tr !== 'object') fail.push('api/latest missing trend_6h object — 6h-trend contract broken (server side)');
+  else if (tr.available && !Number.isFinite(tr.delta)) fail.push(`trend_6h.available but delta not finite: ${tr.delta}`);
+  else ok(`trend_6h present (available=${!!tr.available}${tr.available ? `, Δ=${(tr.delta * 100).toFixed(3)}%` : ''})`);
+}
+const trendTxt = await page.$eval('#cmd-trend', el => el.textContent).catch(() => null);
+if (trendTxt === null) fail.push('#cmd-trend readout element missing (6h Trend not rendered)');
+else if (trendTxt.trim() === '') fail.push('#cmd-trend readout is empty');
+else ok(`#cmd-trend renders "${trendTxt.trim()}"`);
 
 await browser.close();
 

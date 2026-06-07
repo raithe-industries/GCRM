@@ -55,7 +55,10 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .sub{font-size:10px;color:var(--t4);font-family:monospace}
 .topbar-right{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--t4);font-family:monospace}
 .main{display:grid;grid-template-columns:176px 1fr 310px;flex:1;overflow:hidden}
-.left-panel{border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)}
+/* The rail scrolls AS A WHOLE when it can't fit (short monitors), instead of
+   only the explainer scrolling while the fixed gauge/metrics/foot crush it off
+   screen — the bug that hid the "WHAT THIS MEANS" button on small displays. */
+.left-panel{border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;background:var(--bg2)}
 .panel-title{font-size:9px;font-weight:600;color:var(--t1);padding:7px 12px;border-bottom:0.5px solid var(--border);letter-spacing:.06em;flex-shrink:0}
 .gauge-wrap{padding:10px;display:flex;flex-direction:column;align-items:center;border-bottom:0.5px solid var(--border);flex-shrink:0}
 #gauge-canvas{width:148px;height:82px;display:block}
@@ -210,11 +213,14 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @keyframes cal-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .cal-fresh{animation:cal-pulse 2s ease-in-out infinite}
-.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:1;min-height:0;overflow-y:auto}
+.plain-eng{border-top:1px solid var(--border);padding:10px 12px;background:var(--bg);flex:0 0 auto}
 /* RAiTHE "A" brand mark — its own pinned strip at the foot of the left rail
    (flex-shrink:0, never scrolled away), slowly rotating on its vertical axis
    in 3D so it reads as a turning badge rather than a flat spin. */
-.left-foot{flex-shrink:0;background:var(--bg);padding:6px 12px 8px}
+/* margin-top:auto pins the brand to the rail's bottom when there's spare height
+   (tall screens) but contributes nothing when the rail overflows, so on short
+   screens it simply scrolls into view with everything above it. */
+.left-foot{flex-shrink:0;margin-top:auto;background:var(--bg);padding:6px 12px 8px}
 .brand-a{display:flex;justify-content:center;align-items:center;padding:14px 0 4px;perspective:720px;line-height:0;cursor:pointer}
 /* Two-faced "coin": front + a back face pre-rotated 180°, both backface-hidden,
    so whichever side faces the viewer always shows the A upright — the spin reads
@@ -666,6 +672,15 @@ let prevAnnual=null,spikeAnnual=null;
 function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;if(Math.abs(delta)>0.0002){const id='spike_'+spikeIdx++;const color=delta>0?'#E24B4A88':'#1D9E7588';spikeAnnotations[id]={type:'line',xMin:tlChart.data.labels.length-1,xMax:tlChart.data.labels.length-1,borderColor:color,borderWidth:1,label:{display:true,content:(delta>0?'▲':'▼')+' '+(Math.abs(delta)*100).toFixed(3)+'%',color:'#c0c0e0',font:{size:7},position:'start',backgroundColor:'rgba(7,7,15,0.8)',padding:2}};const keys=Object.keys(spikeAnnotations);if(keys.length>20)delete spikeAnnotations[keys[0]];tlChart.options.plugins.annotation.annotations=spikeAnnotations;document.getElementById('spike-label').textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}prevAnnual=pA;}
 function update6hBuffer(pA){const now=Date.now();history6h.push({t:now,p:pA});history6h=history6h.filter(e=>now-e.t<6*3600*1000);}
 function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0].p;}
+// Trailing-6h trend. Prefer the durable server value (d.trend_6h, computed from
+// the backend epoch ring) so the readout can't be broken by a dashboard refactor;
+// fall back to this tab's session buffer only if the field is absent (older
+// backend / pre-warmup). Returns {delta, samples, span} (span in s, may be null).
+function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
+function fmtTrend(v){return(v>=0?'+':'')+(v*100).toFixed(3)+'%';}
+function trendColor(v){return v>0.0005?'#E24B4A':v<-0.0005?'#1D9E75':'var(--t2)';}
+// Honest sub-label: state the ACTUAL span when we don't yet hold a full ~6h.
+function trendSub(t){if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';return'vs '+lbl+' ago ('+t.samples+' samples)';}return'vs 6 hrs ago ('+t.samples+' samples)';}
 async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude+' depth='+top.depth_km+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
 // The two apex warning conditions (a great-power kinetic war; a direct ≥2-power
 // nuclear-brink standoff) light red; every other tripped condition lights amber.
@@ -697,7 +712,7 @@ function applyData(d){
   if(pA>sessionPeak)sessionPeak=pA;if(pA<sessionLow)sessionLow=pA;update6hBuffer(pA);
   document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
-  const delta6h=get6hDelta(pA);if(delta6h!==null){const d6el=document.getElementById('ca-6h');d6el.textContent=(delta6h>=0?'+':'')+(delta6h*100).toFixed(3)+'%';d6el.style.color=delta6h>0.0005?'#E24B4A':delta6h<-0.0005?'#1D9E75':'var(--t2)';}
+  const _t6=trend6h(d,pA);const d6el=document.getElementById('ca-6h');if(d6el){if(!_t6){d6el.textContent='—';d6el.style.color='var(--t4)';}else{d6el.textContent=fmtTrend(_t6.delta);d6el.style.color=trendColor(_t6.delta);}}
   // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
   // secondary = present escalation severity (systemic index 0–100 + hottest rung).
   const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
@@ -742,8 +757,8 @@ function applyData(d){
   renderIndicators(d.indicators||[]);
   const confL=confLabel(conf);document.getElementById('cmd-conf').textContent=confL;document.getElementById('cmd-conf').style.color=conf>=.8?'#1D9E75':conf>=.5?'#EF9F27':'#7070a0';
   document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality';
-  const d6=get6hDelta(pA);const trendEl=document.getElementById('cmd-trend');
-  if(d6===null){trendEl.textContent='—';}else{trendEl.textContent=(d6>=0?'+':'')+(d6*100).toFixed(3)+'%';trendEl.style.color=d6>0.0005?'#E24B4A':d6<-0.0005?'#1D9E75':'var(--t2)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago ('+history6h.length+' samples)';}
+  const _ct=trend6h(d,pA);const trendEl=document.getElementById('cmd-trend');
+  if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
   // Rail shows only the 30/90-day windows + last-computed (see HTML note above).
   // The annual reading is the hero gauge; regime ×, P₀, GP count and the elevated

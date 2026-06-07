@@ -104,6 +104,15 @@ pub async fn broadcast_snapshots(
             };
         }
 
+        // Durable, server-computed trailing-6h trend (EpochStore::trend_6h). It
+        // lives in the payload so the dashboard never reconstructs it from a
+        // fragile per-tab session buffer — a UI refactor can no longer silently
+        // reset the "6h Trend" readout to "—". The browser only renders it.
+        {
+            let es = server_state.app_state.epoch_store.lock().await;
+            data["trend_6h"] = es.trend_6h(snap.p_wwiii_annual);
+        }
+
         // Update latest in shared state
         {
             let mut latest = server_state.app_state.latest_snapshot.lock().await;
@@ -509,6 +518,24 @@ mod tests {
         assert!(DASHBOARD_HTML.contains("/api/articles"));
         assert!(DASHBOARD_HTML.contains("/api/sources"));
         assert!(DASHBOARD_HTML.contains("/api/epoch"));
+    }
+
+    #[test]
+    fn dashboard_html_renders_6h_trend_from_server_field() {
+        // Guards the recurring "6h Trend = —" regression: the readout element must
+        // exist AND the page must consume the durable server-computed `trend_6h`
+        // field (not only the fragile client-side session buffer). If a dashboard
+        // refactor drops either, this fails `cargo test` and the self-improve
+        // routine can't ship it. Pairs with EpochStore::trend_6h + its unit tests.
+        assert!(
+            DASHBOARD_HTML.contains("cmd-trend"),
+            "dashboard dropped the #cmd-trend (6h Trend) readout"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("trend_6h"),
+            "dashboard no longer reads the server-computed trend_6h field — \
+             the 6h Trend would silently revert to the broken client-buffer path"
+        );
     }
 
     #[test]
