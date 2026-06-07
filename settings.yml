@@ -73,7 +73,7 @@ llm:
   # Off by default: it adds a 2nd Ollama call per article, which TRADES throughput for
   # dedup quality. Turn on only if your GPU has headroom; requires `ollama pull
   # nomic-embed-text`.
-  semantic_dedup: false
+  semantic_dedup: true     # nomic-embed-text pulled 2026-06-07; both models stay GPU-resident (no thrash)
   timeout_secs: 12
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
