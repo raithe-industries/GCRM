@@ -64,9 +64,10 @@ llm:
   enabled: true            # AI on by default (structured extraction + analyst brief)
   endpoint: "http://localhost:11434"
   model: "qwen2.5:7b"
-  # concurrency — parallel LLM extraction calls. Raise to use more of the GPU; keep it
-  # equal to OLLAMA_NUM_PARALLEL. 8 is a good default for a workstation GPU.
-  concurrency: 8
+  # concurrency — parallel LLM extraction calls; keep EQUAL to OLLAMA_NUM_PARALLEL.
+  # 2 on this 8GB GTX 1080: more spills qwen2.5:7b's KV cache to CPU (with the embed
+  # model also resident) and doubles latency. Raise only if the GPU has VRAM headroom.
+  concurrency: 2
   # embed_model — embeddings model for semantic_dedup (only used when enabled below).
   embed_model: "nomic-embed-text"
   # semantic_dedup — embedding-based same-event dedup of paraphrased headlines.
