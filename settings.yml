@@ -75,7 +75,10 @@ llm:
   # dedup quality. Turn on only if your GPU has headroom; requires `ollama pull
   # nomic-embed-text`.
   semantic_dedup: true     # nomic-embed-text pulled 2026-06-07; both models stay GPU-resident (no thrash)
-  timeout_secs: 12
+  # 20s (raised from 12): under burst, 2 concurrent classifies share the GPU and each
+  # stretches to ~12s; 12s timed a few out (Ollama 500) → silent keyword fallback. 20s
+  # lets them finish. Uncontended calls are ~6s, so this only bites during bursts.
+  timeout_secs: 20
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 # poll_interval_seconds: base tick for the aggregator
