@@ -378,7 +378,6 @@ dependencies = [
 [[package]]
 name = "ee-core"
 version = "0.1.0"
-source = "git+https://github.com/raithe-industries/engineering-effects?branch=main#0b0110b85257b98466b2c7a764c9b681628c995c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -390,31 +389,31 @@ dependencies = [
 [[package]]
 name = "ee-correlate"
 version = "0.1.0"
-source = "git+https://github.com/raithe-industries/engineering-effects?branch=main#0b0110b85257b98466b2c7a764c9b681628c995c"
 dependencies = [
  "chrono",
  "ee-core",
- "serde",
-]
-
-[[package]]
-name = "ee-sources"
-version = "0.1.0"
-source = "git+https://github.com/raithe-industries/engineering-effects?branch=main#0b0110b85257b98466b2c7a764c9b681628c995c"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "ee-core",
- "reqwest",
  "serde",
  "serde_json",
 ]
 
 [[package]]
+name = "ee-sources"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "ee-core",
+ "ee-correlate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "ee-view"
 version = "0.1.0"
-source = "git+https://github.com/raithe-industries/engineering-effects?branch=main#0b0110b85257b98466b2c7a764c9b681628c995c"
 dependencies = [
  "chrono",
  "ee-core",

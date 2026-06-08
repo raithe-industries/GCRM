@@ -1,0 +1,21 @@
+[package]
+name = "ee-sources"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Pluggable data-source connectors (one file per provider) for engineering-effects."
+
+[dependencies]
+ee-core = { path = "../ee-core" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+# Used only by the `finance_radar` example to prove the Yahoo market stream feeds
+# the Finance Radar end-to-end. (No cycle: ee-correlate depends only on ee-core.)
+ee-correlate = { path = "../ee-correlate" }

@@ -17,6 +17,25 @@ description = "Global Conflict Risk Monitor — Rust core (Phase 1)"
 name = "gcrm"
 path = "src/main.rs"
 
+# ── Workspace over the vendored engineering-effects modules ─────────────────────
+# GCRM is a one-package workspace so the vendored ee-* crates' `*.workspace = true`
+# deps resolve here, keeping GCRM fully self-contained (no external/private repo).
+[workspace]
+members = [".", "vendor/ee-core", "vendor/ee-sources", "vendor/ee-correlate", "vendor/ee-view"]
+
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+anyhow      = "1"
+async-trait = "0.1"
+chrono      = { version = "0.4", features = ["serde"] }
+reqwest     = { version = "0.11", features = ["json", "native-tls", "gzip"] }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+tokio       = { version = "1", features = ["full"] }
+
 # ── Async runtime ──────────────────────────────────────────────────────────────
 [dependencies]
 tokio          = { version = "1",  features = ["full"] }          # async runtime
@@ -58,12 +77,13 @@ futures  = "0.3"
 bytes    = "1"
 url      = "2"
 
-# engineering-effects OSINT modules (World Monitor / SitDeck parity).
-# Git deps so the cloud-routine + deploy build GCRM standalone (no sibling checkout).
-ee-core      = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
-ee-sources   = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
-ee-correlate = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
-ee-view      = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
+# engineering-effects OSINT modules (World Monitor / SitDeck parity), VENDORED in
+# vendor/ so the cloud-routine + deploy build GCRM with no access to the private repo.
+# To refresh: re-copy crates/ee-{core,sources,correlate,view} from engineering-effects.
+ee-core      = { path = "vendor/ee-core" }
+ee-sources   = { path = "vendor/ee-sources" }
+ee-correlate = { path = "vendor/ee-correlate" }
+ee-view      = { path = "vendor/ee-view" }
 
 [dev-dependencies]
 approx   = "0.5"                                                   # float equality in tests
