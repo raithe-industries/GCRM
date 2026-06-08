@@ -828,7 +828,7 @@ mod tests {
     fn anchor_is_modest_quiet_year_floor() {
         // v2: the modern quiet-year baseline (~1.5%) sits above the old sub-1% floor
         // but well below the elevated alert threshold (2.5%).
-        assert!(HISTORICAL_ANCHOR > 0.005 && HISTORICAL_ANCHOR < 0.025);
+        const { assert!(HISTORICAL_ANCHOR > 0.005 && HISTORICAL_ANCHOR < 0.025) };
     }
 
     // ── Recency decay ─────────────────────────────────────────────────────────

@@ -116,7 +116,7 @@ pub fn run() {
     if !dist.is_empty() {
         println!("theater distribution of newly-tagged events:");
         let mut d: Vec<(&'static str, usize)> = dist.into_iter().collect();
-        d.sort_by(|a, b| b.1.cmp(&a.1));
+        d.sort_by_key(|b| std::cmp::Reverse(b.1));
         for (t, c) in d {
             println!("  {:<16} {}", t, c);
         }

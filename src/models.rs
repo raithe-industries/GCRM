@@ -38,11 +38,12 @@ pub const HISTORICAL_ANCHOR: f64 = BASELINE_ANNUAL;
 
 // ── Source tier ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceTier {
     Tier1 = 1,
     Tier2 = 2,
+    #[default]
     Tier3 = 3,
 }
 
@@ -53,12 +54,6 @@ impl SourceTier {
             SourceTier::Tier2 => 0.75,
             SourceTier::Tier3 => 0.20,
         }
-    }
-}
-
-impl Default for SourceTier {
-    fn default() -> Self {
-        SourceTier::Tier3
     }
 }
 
@@ -933,7 +928,7 @@ mod tests {
     fn baseline_annual_plausible_range() {
         // A modern quiet-year systemic-war prior: well under 5%, well over the old
         // sub-0.1% floor that pinned the model.
-        assert!(BASELINE_ANNUAL > 0.001 && BASELINE_ANNUAL < 0.05);
+        const { assert!(BASELINE_ANNUAL > 0.001 && BASELINE_ANNUAL < 0.05) };
     }
 
     #[test]
@@ -1198,9 +1193,11 @@ mod tests {
 
     #[test]
     fn timeline_entry_from_snapshot_rounds_correctly() {
-        let mut snap = RiskSnapshot::default();
-        snap.p_wwiii_annual = 0.123456789012;
-        snap.p_wwiii_30day  = 0.010999;
+        let snap = RiskSnapshot {
+            p_wwiii_annual: 0.123456789012,
+            p_wwiii_30day:  0.010999,
+            ..Default::default()
+        };
         let entry = TimelineEntry::from_snapshot(&snap);
         // Should be rounded to 8 decimal places
         assert!((entry.p_annual - 0.12345679).abs() < 1e-7);
