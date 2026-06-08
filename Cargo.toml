@@ -58,6 +58,13 @@ futures  = "0.3"
 bytes    = "1"
 url      = "2"
 
+# engineering-effects OSINT modules (World Monitor / SitDeck parity).
+# Git deps so the cloud-routine + deploy build GCRM standalone (no sibling checkout).
+ee-core      = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
+ee-sources   = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
+ee-correlate = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
+ee-view      = { git = "https://github.com/raithe-industries/engineering-effects", branch = "main" }
+
 [dev-dependencies]
 approx   = "0.5"                                                   # float equality in tests
 tempfile = "3"                                                     # temp files for load_epoch tests

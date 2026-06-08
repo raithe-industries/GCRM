@@ -11,6 +11,9 @@
 <link rel="apple-touch-icon" href="{{BASE_PATH}}/apple-touch-icon.png?v={{LOGO_VER}}">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<!-- MapLibre GL v5 (globe projection → 2D/3D toggle) for the OSINT world map. -->
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -134,6 +137,37 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .chart-card{padding:8px 10px;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .ct{font-size:9px;color:var(--t1);margin-bottom:4px;flex-shrink:0;font-weight:600;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
 .chart-inner{flex:1;position:relative;min-height:0}
+/* ── OSINT world-map: split the P(WWIII) card into timeline | map ──────────── */
+.chart-split{display:grid;grid-template-columns:1.05fr 0.95fr;gap:7px;flex:1;min-height:0}
+.chart-split .chart-inner{flex:none;height:100%}
+.map-half{position:relative;min-width:0;border:0.5px solid var(--border);border-radius:3px;overflow:hidden;background:#05080c}
+#worldmap{position:absolute;inset:0}
+#worldmap canvas{outline:none}
+.maplibregl-ctrl-attrib{font-size:7px!important;background:rgba(0,0,0,.4)!important}
+.maplibregl-ctrl-attrib a{color:var(--t4)!important}
+.map-toolbar{position:absolute;top:5px;right:5px;z-index:6;display:flex;gap:3px}
+.map-btn{font-size:8px;font-weight:600;letter-spacing:.04em;color:var(--t2);background:rgba(8,12,16,.9);border:0.5px solid var(--border);border-radius:3px;padding:3px 6px;cursor:pointer;text-transform:uppercase}
+.map-btn:hover{color:var(--t1);border-color:var(--accent)}
+.map-btn.on{color:#fff;background:var(--accent);border-color:var(--accent)}
+.map-panel{position:absolute;top:5px;left:5px;z-index:6;width:160px;max-height:calc(100% - 12px);overflow-y:auto;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px;display:none}
+.map-panel.open{display:block}
+.map-panel-h{font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t1);margin-bottom:4px}
+.map-grp-h{font-size:7px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t4);margin:6px 0 2px}
+.map-lyr{display:flex;align-items:center;gap:5px;padding:1px 0;font-size:9px;color:var(--t2);cursor:pointer}
+.map-lyr:hover{color:var(--t1)}
+.map-lyr input{accent-color:var(--accent);width:10px;height:10px;cursor:pointer;margin:0}
+.map-lyr .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.map-lyr .ct{margin-left:auto;font-size:8px;color:var(--t4);font-family:monospace}
+.map-radar{position:absolute;bottom:5px;left:5px;z-index:6;width:160px;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px}
+.map-radar.hidden{display:none}
+.radar-h{display:flex;justify-content:space-between;align-items:baseline;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:4px}
+.radar-lvl{font-size:9px;font-weight:700;font-family:monospace}
+.radar-row{display:flex;align-items:center;gap:4px;margin:2px 0;font-size:8px;color:var(--t3)}
+.radar-row .nm{width:40px;flex-shrink:0}
+.radar-track{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.radar-fill{height:100%;border-radius:2px;transition:width .5s}
+.radar-row .vv{width:20px;text-align:right;font-family:monospace;color:var(--t4)}
+@media(max-width:1100px){.chart-split{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
 .context-strip{padding:4px 10px;border-bottom:0.5px solid var(--border);font-size:9px;flex-shrink:0;display:flex;gap:16px;align-items:center;background:var(--bg2)}
 .ca{color:var(--t4)}
 .ca span{color:var(--t2);font-family:monospace}
@@ -419,7 +453,25 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="charts-area">
       <div class="chart-card">
         <div class="ct"><span>P(WWIII) — full historical timeline (persists across sessions)</span><span style="font-size:8px;color:var(--t4);font-weight:400" id="spike-label"></span></div>
-        <div class="chart-inner"><canvas id="timeline-chart"></canvas></div>
+        <div class="chart-split">
+          <div class="chart-inner"><canvas id="timeline-chart"></canvas></div>
+          <div class="map-half">
+            <div id="worldmap"></div>
+            <div class="map-toolbar">
+              <button class="map-btn on" id="map-2d" onclick="setMapMode('2d')" title="Flat map">2D</button>
+              <button class="map-btn" id="map-3d" onclick="setMapMode('3d')" title="3D globe">3D</button>
+              <button class="map-btn" id="map-layers-btn" onclick="toggleLayerPanel()" title="Toggle layers">Layers</button>
+            </div>
+            <div class="map-panel" id="map-panel">
+              <div class="map-panel-h">Map Layers</div>
+              <div id="map-panel-body"></div>
+            </div>
+            <div class="map-radar" id="map-radar">
+              <div class="radar-h"><span>Finance Radar</span><span class="radar-lvl" id="radar-level">—</span></div>
+              <div id="radar-body"></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="chart-card">
         <div class="ct">Domain scores — current snapshot (with Δ trend)</div>
@@ -1023,6 +1075,131 @@ async function fetchOpLog(){
     }).join('');
   }catch(e){}
 }
+
+// ── OSINT world map + Finance Radar (engineering-effects modules) ────────────
+let _map=null,_mapMode='2d',_layerMeta=[],_mapBooted=false;
+function emptyFC(){return {type:'FeatureCollection',features:[]};}
+function esc(s){return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+
+async function bootMap(){
+  if(typeof maplibregl==='undefined'){return;}
+  let d; try{ d=await (await fetch(BASE_PATH+'/api/map')).json(); }catch(e){ return; }
+  _layerMeta=d.layers||[];
+  const tiles=(d.basemap&&d.basemap.tiles&&d.basemap.tiles.length)?d.basemap.tiles:
+    ['a','b','c','d'].map(s=>`https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png`);
+  _map=new maplibregl.Map({container:'worldmap',
+    style:{version:8,glyphs:'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+      sources:{base:{type:'raster',tiles,tileSize:256,
+      attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
+      layers:[{id:'base',type:'raster',source:'base'}]},
+    center:[28,26],zoom:1.1,minZoom:0.5,maxZoom:7,renderWorldCopies:true,
+    attributionControl:{compact:true}});
+  _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+  _map.on('load',()=>{
+    _map.addSource('feeds',{type:'geojson',data:d.feeds||emptyFC()});
+    _map.addSource('theaters',{type:'geojson',data:d.theaters||emptyFC()});
+    // One circle layer per feed kind, coloured from the ee-view layer registry.
+    _layerMeta.forEach(l=>{ if(l.id==='theaters')return;
+      _map.addLayer({id:'lyr-'+l.kind,type:'circle',source:'feeds',
+        filter:['==',['get','kind'],l.kind],
+        paint:{'circle-radius':['interpolate',['linear'],['get','severity'],0,2.2,1,6.5],
+          'circle-color':l.color,'circle-opacity':0.82,'circle-stroke-width':0.4,'circle-stroke-color':'#000'},
+        layout:{visibility:l.default_visible?'visible':'none'}});
+    });
+    // GCRM theater flashpoints: soft glow + bright core + label, coloured by heat.
+    _map.addLayer({id:'lyr-theaters-glow',type:'circle',source:'theaters',
+      paint:{'circle-radius':['interpolate',['linear'],['get','heat'],0,8,1,18],
+        'circle-color':['get','color'],'circle-opacity':0.16,'circle-blur':0.7}});
+    _map.addLayer({id:'lyr-theaters',type:'circle',source:'theaters',
+      paint:{'circle-radius':['interpolate',['linear'],['get','heat'],0,4,1,8.5],
+        'circle-color':['get','color'],'circle-stroke-width':1,'circle-stroke-color':'#fff','circle-opacity':0.95}});
+    _map.addLayer({id:'lyr-theaters-label',type:'symbol',source:'theaters',
+      layout:{'text-field':['get','label'],'text-font':['Noto Sans Regular'],'text-size':8,'text-offset':[0,1.2],'text-anchor':'top','text-max-width':9},
+      paint:{'text-color':'#dfe8f0','text-halo-color':'#05080c','text-halo-width':1.1}});
+    wireMapClicks();
+    buildLayerPanel(d);
+    _mapBooted=true;
+  });
+}
+
+async function refreshMap(){ if(!_map||!_mapBooted)return;
+  try{ const d=await (await fetch(BASE_PATH+'/api/map')).json();
+    _map.getSource('feeds').setData(d.feeds||emptyFC());
+    _map.getSource('theaters').setData(d.theaters||emptyFC());
+    buildLayerPanel(d);
+  }catch(e){}
+}
+
+const MAP_GROUPS={security:'Security & Intelligence',environment:'Environment',
+  aviation_maritime:'Aviation & Maritime',infrastructure:'Data & Infrastructure',
+  military:'Military & Defense',humanitarian:'Humanitarian & Crisis',
+  space:'Space & Aerospace',political:'Political'};
+const MAP_GROUP_ORDER=['security','environment','aviation_maritime','infrastructure','military','humanitarian','space','political'];
+
+function buildLayerPanel(d){
+  const feats=(d.feeds&&d.feeds.features)||[]; const kc={};
+  feats.forEach(f=>{const k=f.properties&&f.properties.kind;if(k)kc[k]=(kc[k]||0)+1;});
+  const tcount=((d.theaters&&d.theaters.features)||[]).length;
+  const byGroup={}; _layerMeta.forEach(l=>{(byGroup[l.group]=byGroup[l.group]||[]).push(l);});
+  let html='';
+  MAP_GROUP_ORDER.forEach(g=>{ if(!byGroup[g])return;
+    html+=`<div class="map-grp-h">${MAP_GROUPS[g]||g}</div>`;
+    byGroup[g].forEach(l=>{ const c=l.id==='theaters'?tcount:(kc[l.kind]||0);
+      const vis=isLayerVisible(l);
+      html+=`<label class="map-lyr"><input type="checkbox" ${vis?'checked':''} onchange="toggleLayer('${l.kind}','${l.id}',this.checked)"><span class="dot" style="background:${l.color}"></span>${esc(l.label)}<span class="ct">${c}</span></label>`;
+    });
+  });
+  document.getElementById('map-panel-body').innerHTML=html;
+}
+
+function isLayerVisible(l){ const id=l.id==='theaters'?'lyr-theaters':'lyr-'+l.kind;
+  if(!_map||!_map.getLayer(id))return !!l.default_visible;
+  return _map.getLayoutProperty(id,'visibility')!=='none'; }
+
+function toggleLayer(kind,id,on){ const v=on?'visible':'none';
+  const ids=id==='theaters'?['lyr-theaters','lyr-theaters-glow','lyr-theaters-label']:['lyr-'+kind];
+  ids.forEach(i=>{ if(_map&&_map.getLayer(i))_map.setLayoutProperty(i,'visibility',v); }); }
+
+function toggleLayerPanel(){ const p=document.getElementById('map-panel');
+  const open=p.classList.toggle('open');
+  document.getElementById('map-layers-btn').classList.toggle('on',open); }
+
+function setMapMode(m){ _mapMode=m;
+  document.getElementById('map-2d').classList.toggle('on',m==='2d');
+  document.getElementById('map-3d').classList.toggle('on',m==='3d');
+  if(!_map)return; try{ _map.setProjection({type:m==='3d'?'globe':'mercator'}); }catch(e){} }
+
+function wireMapClicks(){
+  const ids=_layerMeta.filter(l=>l.id!=='theaters').map(l=>'lyr-'+l.kind).concat(['lyr-theaters']);
+  ids.forEach(id=>{ if(!_map.getLayer(id))return;
+    _map.on('mouseenter',id,()=>_map.getCanvas().style.cursor='pointer');
+    _map.on('mouseleave',id,()=>_map.getCanvas().style.cursor='');
+    _map.on('click',id,e=>{ const p=e.features[0].properties||{};
+      const title=p.label||p.title||p.id||'';
+      const sub=p.rung_label?('Escalation: '+p.rung_label+(p.trend?' ('+p.trend+')':'')):
+        (p.kind?('['+p.kind+'] severity '+(parseFloat(p.severity)||0).toFixed(2)):'');
+      new maplibregl.Popup({closeButton:false,maxWidth:'210px'}).setLngLat(e.lngLat)
+        .setHTML(`<div style="font:600 9px system-ui;color:#fff">${esc(title)}</div><div style="font:8px monospace;color:#9bb;margin-top:2px">${esc(sub)}</div>`)
+        .addTo(_map); });
+  });
+}
+
+async function refreshFinance(){
+  let d; try{ d=await (await fetch(BASE_PATH+'/api/finance')).json(); }catch(e){ return; }
+  const lvl=document.getElementById('radar-level');
+  lvl.textContent=(d.level||'—')+(d.composite!=null?' '+(d.composite*100).toFixed(0)+'%':'');
+  lvl.style.color=d.level_color||'var(--t2)';
+  const segs=d.segments||[];
+  document.getElementById('radar-body').innerHTML=segs.map(s=>{
+    const w=Math.round((s.intensity||0)*100);
+    return `<div class="radar-row"><span class="nm">${esc(s.segment)}</span><span class="radar-track"><span class="radar-fill" style="width:${w}%;background:${d.level_color||'#888'}"></span></span><span class="vv">${s.count||0}</span></div>`;
+  }).join('');
+}
+
+// Boot the map + radar, then refresh on a slow cadence (feeds change slowly).
+bootMap(); refreshFinance();
+setInterval(refreshMap,60000);
+setInterval(refreshFinance,60000);
 </script>
 </body>
 </html>
