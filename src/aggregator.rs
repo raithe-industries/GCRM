@@ -35,7 +35,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde_json;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -56,15 +56,25 @@ pub const MAX_WINDOW_EVENTS: usize = 500_000;
 // ── Timeline path helpers ────────────────────────────────────────────────────────
 //
 // Returns the rotated JSONL path for a given date: logs/timeline_YYYY-MM-DD.jsonl
-// All timestamps are UTC. Each calendar day produces one file, accumulating in
-// the logs/ directory. At 1 Hz: ~86,400 lines/day × ~500 bytes ≈ ~43 MB/day.
+// Each calendar day produces one file in logs/. At 1 Hz: ~86,400 lines/day ×
+// ~500 bytes ≈ ~43 MB/day. Files are named by the server's LOCAL (Eastern) day —
+// see log_date() — so an evening log isn't future-dated. (Timestamps INSIDE each
+// line stay RFC3339 with offset, so the data is unambiguous either way.)
+
+/// Calendar day used for rotated-log FILENAMES. Uses the server's local time —
+/// this box runs Eastern — so a file is named for the Eastern day its data belongs
+/// to. Previously `Utc::now().date_naive()` rolled over at 8pm Eastern (UTC
+/// midnight), so evening logs were future-dated (e.g. June 7 8pm → "...06-08").
+fn log_date() -> chrono::NaiveDate {
+    Local::now().date_naive()
+}
 
 fn timeline_path_for_date(date: &chrono::NaiveDate) -> String {
     format!("logs/timeline_{}.jsonl", date.format("%Y-%m-%d"))
 }
 
 fn today_timeline_path() -> String {
-    timeline_path_for_date(&Utc::now().date_naive())
+    timeline_path_for_date(&log_date())
 }
 
 // ── Article archive paths (mirrors the timeline rotation) ──────────────────────
@@ -74,13 +84,13 @@ fn article_path_for_date(date: &chrono::NaiveDate) -> String {
 }
 
 fn today_article_path() -> String {
-    article_path_for_date(&Utc::now().date_naive())
+    article_path_for_date(&log_date())
 }
 
 // ── Event archive paths (mirrors the timeline rotation) ────────────────────────
 
 fn today_event_path() -> String {
-    format!("logs/events_{}.jsonl", Utc::now().date_naive().format("%Y-%m-%d"))
+    format!("logs/events_{}.jsonl", log_date().format("%Y-%m-%d"))
 }
 
 // ── Snapshot serialisation ────────────────────────────────────────────────────
@@ -159,8 +169,8 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
 // ── Timeline persistence ────────────────────────────────────────────────────────
 //
 // Writes to a date-rotated JSONL file: logs/timeline_YYYY-MM-DD.jsonl.
-// No background rotation task is required — the path changes at UTC midnight
-// naturally as today_timeline_path() recomputes the date on each call.
+// No background rotation task is required — the path changes at local (Eastern)
+// midnight naturally as today_timeline_path() recomputes the date on each call.
 
 async fn append_timeline(snap: &RiskSnapshot) {
     let entry = TimelineEntry::from_snapshot(snap);
@@ -454,7 +464,7 @@ impl EpochStore {
 /// the most recent entries at the tail.
 pub async fn load_epoch() -> EpochStore {
     let mut store = EpochStore::new();
-    let today = Utc::now().date_naive();
+    let today = log_date();
     let yesterday = today.pred_opt().unwrap_or(today);
 
     // Chronological order: yesterday first, then today.
@@ -498,7 +508,7 @@ pub async fn load_epoch() -> EpochStore {
 /// and deduped by id (last occurrence wins) so the tagged copy supersedes the
 /// at-ingest copy. The resulting store keeps the newest `max_size` articles.
 pub async fn load_articles(max_size: usize) -> ArticleStore {
-    let today = Utc::now().date_naive();
+    let today = log_date();
     let yesterday = today.pred_opt().unwrap_or(today);
     let paths = [
         article_path_for_date(&yesterday),
