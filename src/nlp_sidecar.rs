@@ -138,6 +138,13 @@ impl NlpSidecar {
             tokio::select! {
                 biased;
 
+                // Periodic dedup-cache persistence FIRST in the biased order, so the
+                // 5-min tick actually wins a poll instead of being starved by a busy
+                // raw_rx. It's Ready only once per interval, so it never starves recv.
+                _ = dedup_save.tick() => {
+                    processor.dedup().save();
+                }
+
                 maybe_article = self.raw_rx.recv() => {
                     let article = match maybe_article {
                         Some(a) => a,
@@ -226,12 +233,6 @@ impl NlpSidecar {
                             info!("NLP processor: {p} processed, {t} tagged");
                         }
                     }
-                }
-
-                _ = dedup_save.tick() => {
-                    // Periodic persistence — keeps the cache (and its readable .txt) on
-                    // disk while running, so a crash/SIGKILL doesn't lose the index.
-                    processor.dedup().save();
                 }
 
                 _ = self.shutdown_rx.changed() => {

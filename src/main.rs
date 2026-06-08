@@ -330,11 +330,15 @@ async fn main() {
     let ctbto_monitor        = CtbtoMonitor::new(Arc::clone(&app_state));
     let nuclear_news_monitor = NuclearNewsMonitor::new(Arc::clone(&app_state));
 
+    // Named handle so shutdown can AWAIT the NLP task's dedup-cache save before the
+    // process exits — a bare select arm dropped it mid-save, so the cache never wrote.
+    let mut nlp_task = tokio::spawn(nlp_sidecar.run());
+
     tokio::select! {
         _ = tokio::spawn(ingestor.run()) => {
             error!("Ingestor task exited unexpectedly");
         }
-        _ = tokio::spawn(nlp_sidecar.run()) => {
+        _ = &mut nlp_task => {
             error!("NLP sidecar task exited unexpectedly");
         }
         _ = tokio::spawn(aggregator.run()) => {
@@ -363,8 +367,14 @@ async fn main() {
             }
         }
         _ = wait_for_shutdown() => {
+            // Signal the NLP task and AWAIT it (bounded) so its dedup-cache save
+            // actually completes before exit — previously main returned immediately
+            // and the runtime killed the task mid-save, so the cache never persisted.
             nlp_handle.shutdown();
-            info!("All tasks stopped. Exiting.");
+            match tokio::time::timeout(std::time::Duration::from_secs(10), &mut nlp_task).await {
+                Ok(_)  => info!("NLP task stopped (dedup cache saved). Exiting."),
+                Err(_) => tracing::warn!("NLP task did not stop within 10s — exiting anyway."),
+            }
         }
     }
 }
