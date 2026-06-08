@@ -1,0 +1,31 @@
+//! `ee-sources` — pluggable data-source connectors. One self-contained file per
+//! provider, each implementing [`ee_core::Source`].
+//!
+//! ## Adding a source
+//! 1. Create `src/<provider>.rs` with a struct that `impl ee_core::Source`.
+//! 2. Keep the wire-format parsing in a pure `fn parse_*(&str) -> Result<Vec<Event>>`
+//!    so it can be unit-tested without the network.
+//! 3. Add the module below and register a default instance in [`registry`].
+
+pub mod cisa_kev;
+pub mod eonet;
+pub mod gdacs;
+pub mod nws;
+pub mod opensky;
+pub mod usgs;
+pub mod yahoo;
+
+use ee_core::Source;
+
+/// All key-free, ready-to-use sources. Extend as connectors land.
+pub fn registry() -> Vec<Box<dyn Source>> {
+    vec![
+        Box::new(usgs::Usgs::default()),
+        Box::new(cisa_kev::CisaKev),
+        Box::new(gdacs::Gdacs),
+        Box::new(nws::Nws),
+        Box::new(opensky::OpenSky::default()),
+        Box::new(yahoo::Yahoo::default()),
+        Box::new(eonet::Eonet::default()),
+    ]
+}
