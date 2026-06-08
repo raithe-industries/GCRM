@@ -52,6 +52,10 @@ use crate::processor::{FuzzyDedup, NlpProcessor};
 /// dampening the volume that the MinHash title dedup lets through.
 const SEMANTIC_THRESHOLD: f32 = 0.95;
 const SEM_RING_CAP: usize = 256;
+/// Persist the FuzzyDedup cache this often (not only on shutdown) so a crash /
+/// SIGKILL / power-loss doesn't lose the whole index and force a cold-start spike,
+/// and so the cache file is present on disk shortly after boot.
+const DEDUP_SAVE_SECS: u64 = 300; // 5 min
 
 /// Shared ring of recent title embeddings for semantic dedup.
 type SemRing = Arc<Mutex<VecDeque<Vec<f32>>>>;
@@ -124,6 +128,11 @@ impl NlpSidecar {
             "NLP processor: online — pure Rust dedup + structured LLM extraction (concurrency {})",
             if enricher.is_enabled() { concurrency } else { 0 }
         );
+
+        // Periodic dedup-cache persistence (see DEDUP_SAVE_SECS). The first tick fires
+        // immediately, so consume it — no point saving an empty cache at boot.
+        let mut dedup_save = tokio::time::interval(std::time::Duration::from_secs(DEDUP_SAVE_SECS));
+        dedup_save.tick().await;
 
         loop {
             tokio::select! {
@@ -217,6 +226,12 @@ impl NlpSidecar {
                             info!("NLP processor: {p} processed, {t} tagged");
                         }
                     }
+                }
+
+                _ = dedup_save.tick() => {
+                    // Periodic persistence — keeps the cache (and its readable .txt) on
+                    // disk while running, so a crash/SIGKILL doesn't lose the index.
+                    processor.dedup().save();
                 }
 
                 _ = self.shutdown_rx.changed() => {
