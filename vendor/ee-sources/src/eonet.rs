@@ -82,10 +82,12 @@ fn last_point(geometry: &serde_json::Value) -> Option<(f64, f64)> {
 /// Pure parser: EONET GeoJSON `FeatureCollection` -> events. Unit-tested offline.
 pub fn parse_eonet(json: &str) -> anyhow::Result<Vec<Event>> {
     let root: serde_json::Value = serde_json::from_str(json)?;
-    let features = root
-        .get("features")
-        .and_then(|f| f.as_array())
-        .ok_or_else(|| anyhow::anyhow!("eonet: missing 'features' array"))?;
+    // EONET occasionally returns a non-FeatureCollection (a rate-limit / hiccup
+    // response with no `features`). Treat that as "no events" rather than an error,
+    // so a transient blip never surfaces as a feed error on the map.
+    let Some(features) = root.get("features").and_then(|f| f.as_array()) else {
+        return Ok(Vec::new());
+    };
 
     let mut out = Vec::with_capacity(features.len());
     for f in features {
@@ -177,7 +179,10 @@ mod tests {
     }
 
     #[test]
-    fn errors_on_missing_array() {
-        assert!(parse_eonet(r#"{"type":"x"}"#).is_err());
+    fn tolerates_missing_array() {
+        // A non-FeatureCollection (EONET hiccup) yields no events, not an error.
+        assert_eq!(parse_eonet(r#"{"type":"x"}"#).unwrap().len(), 0);
+        // Valid but empty collection is also fine.
+        assert_eq!(parse_eonet(r#"{"type":"FeatureCollection","features":[]}"#).unwrap().len(), 0);
     }
 }
