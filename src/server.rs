@@ -212,6 +212,19 @@ async fn get_latest(State(state): State<ServerState>) -> impl IntoResponse {
     Json(latest.unwrap_or_else(|| json!({})))
 }
 
+// /api/map — OSINT world-map payload: live ee-sources feeds (GeoJSON) + GCRM theater
+// flashpoints + the ee-view layer registry & base-map catalogue. Feeds are fetched
+// live and best-effort (per-source timeout), so a slow provider never blanks the map.
+async fn get_map(State(state): State<ServerState>) -> impl IntoResponse {
+    let snapshot = state.app_state.latest_snapshot.lock().await.clone();
+    Json(crate::osint::map_payload(snapshot).await)
+}
+
+// /api/finance — ee-correlate Finance Radar over the live Yahoo market stream.
+async fn get_finance() -> impl IntoResponse {
+    Json(crate::osint::finance_payload().await)
+}
+
 #[derive(Deserialize)]
 struct TimelineParams {
     limit: Option<usize>,
@@ -434,6 +447,8 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
         .route("/api/nuclear",   get(get_nuclear))
         .route("/api/brief",     get(get_brief))
         .route("/api/health",    get(get_health))
+        .route("/api/map",       get(get_map))
+        .route("/api/finance",   get(get_finance))
         .with_state(state)
         .merge(crate::api::operator_routes().with_state(operator_state));
 

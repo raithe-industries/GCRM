@@ -37,6 +37,7 @@ mod ingestor;
 mod llm_enricher;
 mod models;
 mod nlp_sidecar;
+mod osint;
 mod processor;
 mod server;
 mod theater;
