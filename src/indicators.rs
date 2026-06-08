@@ -36,17 +36,32 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     let theaters = &snap.theaters;
     let c = &snap.couplers;
 
-    // 1. Great-power kinetic conflict active.
+    // 1. Great-power kinetic conflict active. On a clear reading, surface the hottest
+    //    great-power theater's rung as a near-miss (same legibility idiom as the
+    //    nuclear/energy/cross-domain lights) so the operator can tell whether a great
+    //    power sits one rung from active war (e.g. at Crisis) or the board is genuinely
+    //    quiet, rather than a bare "No great power in active war".
     let gp_kinetic: Vec<&crate::models::TheaterState> = theaters.iter()
         .filter(|t| t.gp_involved && t.rung.level() >= EscalationRung::LimitedWar.level())
         .collect();
+    let gp_nearest = theaters.iter()
+        .filter(|t| t.gp_involved)
+        .max_by(|a, b| a.rung.level().cmp(&b.rung.level())
+            .then(a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal)));
     let ind_gp_kinetic = Indicator {
         id: "gp_kinetic", label: "Great-power kinetic conflict active",
         tripped: !gp_kinetic.is_empty(),
         theater: gp_kinetic.first().map(|t| t.label.clone()),
-        detail: if gp_kinetic.is_empty() { "No great power in active war".into() }
-                else { format!("{} theater(s): {}", gp_kinetic.len(),
-                    gp_kinetic.iter().map(|t| t.label.as_str()).collect::<Vec<_>>().join(", ")) },
+        detail: if !gp_kinetic.is_empty() {
+            format!("{} theater(s): {}", gp_kinetic.len(),
+                gp_kinetic.iter().map(|t| t.label.as_str()).collect::<Vec<_>>().join(", "))
+        } else {
+            match gp_nearest {
+                Some(t) => format!("No great power in active war (closest {} at {})",
+                    t.label, t.rung_label),
+                None => "No great power in active war".into(),
+            }
+        },
     };
 
     // 2. Nuclear signaling elevated. On a clear reading, surface the hottest near-miss
@@ -221,6 +236,48 @@ mod tests {
         assert!(trip("guardrails"));
         assert!(trip("cross_domain"));
         assert!(trip("nuclear_brink"), "nato_russia has nuclear 0.80 + US & Russia → brink");
+    }
+
+    #[test]
+    fn gp_kinetic_clear_surfaces_hottest_near_miss() {
+        // No great power at Limited War or above → clear, but the detail must name the
+        // hottest great-power theater's rung (same legibility contract as the
+        // nuclear/energy/cross-domain lights), so a great power one rung from active war
+        // is visible rather than hidden behind a bare "No great power in active war".
+        let snap = RiskSnapshot {
+            theaters: vec![
+                // Non-great-power theater, hotter rung — must NOT be picked as the near-miss.
+                theater("regional", EscalationRung::LimitedWar, false,
+                    &[("military_escalation", 0.50)], &["someone"]),
+                // Great-power theater at Crisis — one rung short of tripping the light.
+                theater("nato_russia", EscalationRung::Crisis, true,
+                    &[("military_escalation", 0.30)], &["russia", "united_states"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let gp = inds.iter().find(|i| i.id == "gp_kinetic").unwrap();
+        assert!(!gp.tripped, "no great power at Limited War+ must read clear");
+        assert!(gp.detail.contains("nato_russia"),
+            "clear detail should name the hottest great-power theater, got {:?}", gp.detail);
+        assert!(gp.detail.contains(EscalationRung::Crisis.label()),
+            "clear detail should report the near-miss rung, got {:?}", gp.detail);
+    }
+
+    #[test]
+    fn gp_kinetic_clear_with_no_great_power_theater_is_bare() {
+        // No great-power-involved theater at all → the bare clear message, no near-miss.
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("regional", EscalationRung::Crisis, false,
+                    &[("military_escalation", 0.30)], &["someone"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let gp = inds.iter().find(|i| i.id == "gp_kinetic").unwrap();
+        assert!(!gp.tripped);
+        assert_eq!(gp.detail, "No great power in active war");
     }
 
     #[test]
