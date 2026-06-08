@@ -249,7 +249,7 @@ async fn get_epoch(
             if let Some(ref since) = params.since {
                 e.get("ts")
                     .and_then(|t| t.as_str())
-                    .map_or(true, |ts| ts >= since.as_str())
+                    .is_none_or(|ts| ts >= since.as_str())
             } else {
                 true
             }
@@ -678,8 +678,7 @@ mod tests {
 
     #[test]
     fn broadcast_cap_is_reasonable() {
-        assert!(BROADCAST_CAP >= 16);
-        assert!(BROADCAST_CAP <= 256);
+        const { assert!(BROADCAST_CAP >= 16 && BROADCAST_CAP <= 256) };
     }
 
     #[test]

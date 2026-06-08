@@ -196,18 +196,20 @@ mod tests {
 
     #[test]
     fn hot_world_trips_key_indicators() {
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            theater("us_iran", EscalationRung::GreatPowerWar, true,
-                &[("military_escalation",0.7),("economic_warfare",0.6),("diplomatic_breakdown",0.5)],
-                &["united_states","iran"]),
-            theater("nato_russia", EscalationRung::GreatPowerWar, true,
-                &[("military_escalation",0.6),("nuclear_posture",0.80),("diplomatic_breakdown",0.5)],
-                &["united_states","russia"]),
-        ];
-        snap.couplers = SystemicCouplers {
-            gp_entanglement: 1.0, alliance_activation: 0.0, concurrency: 2.5,
-            guardrail_collapse: 1.0, coupling_multiplier: 2.0,
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::GreatPowerWar, true,
+                    &[("military_escalation",0.7),("economic_warfare",0.6),("diplomatic_breakdown",0.5)],
+                    &["united_states","iran"]),
+                theater("nato_russia", EscalationRung::GreatPowerWar, true,
+                    &[("military_escalation",0.6),("nuclear_posture",0.80),("diplomatic_breakdown",0.5)],
+                    &["united_states","russia"]),
+            ],
+            couplers: SystemicCouplers {
+                gp_entanglement: 1.0, alliance_activation: 0.0, concurrency: 2.5,
+                guardrail_collapse: 1.0, coupling_multiplier: 2.0,
+            },
+            ..Default::default()
         };
         let inds = evaluate(&snap);
         let trip = |id: &str| inds.iter().find(|i| i.id == id).unwrap().tripped;
@@ -228,15 +230,17 @@ mod tests {
         // escalation in us_china_taiwan) with a cold Gulf is a real weaponized
         // chokepoint — the old Gulf-only code went dark on exactly this, leaving the
         // board misleadingly "clear". It must now trip AND name the responsible theater.
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            // Gulf cold on the coercive-economic axis (would not trip under old code).
-            theater("us_iran", EscalationRung::Tension, false,
-                &[("economic_warfare", 0.05)], &["iran"]),
-            // Taiwan Strait blockaded: coercive-economic well above the 0.45 threshold.
-            theater("us_china_taiwan", EscalationRung::Crisis, true,
-                &[("economic_warfare", 0.71)], &["china", "united_states", "taiwan"]),
-        ];
+        let snap = RiskSnapshot {
+            theaters: vec![
+                // Gulf cold on the coercive-economic axis (would not trip under old code).
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("economic_warfare", 0.05)], &["iran"]),
+                // Taiwan Strait blockaded: coercive-economic well above the 0.45 threshold.
+                theater("us_china_taiwan", EscalationRung::Crisis, true,
+                    &[("economic_warfare", 0.71)], &["china", "united_states", "taiwan"]),
+            ],
+            ..Default::default()
+        };
         let inds = evaluate(&snap);
         let energy = inds.iter().find(|i| i.id == "energy_chokepoint").unwrap();
         assert!(energy.tripped,
@@ -249,13 +253,15 @@ mod tests {
     fn chokepoint_light_clear_when_no_theater_weaponizes() {
         // Below-threshold coercive-economic everywhere → clear, and the detail reports
         // the hottest near-miss so the operator can see how close it is to tripping.
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            theater("us_iran", EscalationRung::Tension, false,
-                &[("economic_warfare", 0.20)], &["iran"]),
-            theater("nato_russia", EscalationRung::Tension, false,
-                &[("economic_warfare", 0.30)], &["russia"]),
-        ];
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("economic_warfare", 0.20)], &["iran"]),
+                theater("nato_russia", EscalationRung::Tension, false,
+                    &[("economic_warfare", 0.30)], &["russia"]),
+            ],
+            ..Default::default()
+        };
         let inds = evaluate(&snap);
         let energy = inds.iter().find(|i| i.id == "energy_chokepoint").unwrap();
         assert!(!energy.tripped, "no theater above 0.45 must read clear");
@@ -269,13 +275,15 @@ mod tests {
         // the hottest near-miss value so the operator can see how close the nuclear axis
         // is to tripping (same legibility contract as the energy/chokepoint light), rather
         // than a bare "Below threshold" that hides whether posture sits at 0.10 or 0.44.
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            theater("us_iran", EscalationRung::Tension, false,
-                &[("nuclear_posture", 0.20)], &["iran"]),
-            theater("nato_russia", EscalationRung::Crisis, true,
-                &[("nuclear_posture", 0.44)], &["russia", "united_states"]),
-        ];
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("nuclear_posture", 0.20)], &["iran"]),
+                theater("nato_russia", EscalationRung::Crisis, true,
+                    &[("nuclear_posture", 0.44)], &["russia", "united_states"]),
+            ],
+            ..Default::default()
+        };
         let inds = evaluate(&snap);
         let nuc = inds.iter().find(|i| i.id == "nuclear_signaling").unwrap();
         assert!(!nuc.tripped, "no theater at/above 0.45 must read clear");
@@ -289,15 +297,17 @@ mod tests {
         // the hottest theater's count against the 3 needed (same legibility contract as
         // the nuclear/energy lights), so a theater one axis from tripping is visible
         // rather than hidden behind a bare "No theater with 3+ elevated modalities".
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            theater("us_iran", EscalationRung::Tension, false,
-                &[("military_escalation", 0.40)], &["iran"]),
-            // Two modalities elevated — one axis short of tripping the cross-domain light.
-            theater("nato_russia", EscalationRung::Crisis, true,
-                &[("military_escalation", 0.50), ("diplomatic_breakdown", 0.40)],
-                &["russia", "united_states"]),
-        ];
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("military_escalation", 0.40)], &["iran"]),
+                // Two modalities elevated — one axis short of tripping the cross-domain light.
+                theater("nato_russia", EscalationRung::Crisis, true,
+                    &[("military_escalation", 0.50), ("diplomatic_breakdown", 0.40)],
+                    &["russia", "united_states"]),
+            ],
+            ..Default::default()
+        };
         let inds = evaluate(&snap);
         let cross = inds.iter().find(|i| i.id == "cross_domain").unwrap();
         assert!(!cross.tripped, "no theater with 3+ elevated modalities must read clear");
@@ -361,10 +371,12 @@ mod tests {
     #[test]
     fn alliance_light_clear_when_none_invoked() {
         // No theater with an invoked alliance → clear, unnamed, "None".
-        let mut snap = RiskSnapshot::default();
-        snap.theaters = vec![
-            theater("us_iran", EscalationRung::Tension, false, &[], &["iran"]),
-        ];
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false, &[], &["iran"]),
+            ],
+            ..Default::default()
+        };
         let inds = evaluate(&snap);
         let alliance = inds.iter().find(|i| i.id == "alliance_invoked").unwrap();
         assert!(!alliance.tripped, "no invoked alliance must read clear");
@@ -399,8 +411,10 @@ mod tests {
 
         // The board must agree with the predicate in every case.
         let board_trips = |t: &TheaterState| {
-            let mut snap = RiskSnapshot::default();
-            snap.theaters = vec![t.clone()];
+            let snap = RiskSnapshot {
+                theaters: vec![t.clone()],
+                ..Default::default()
+            };
             evaluate(&snap).iter().find(|i| i.id == "nuclear_brink").unwrap().tripped
         };
         assert!(!board_trips(&under),

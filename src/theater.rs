@@ -392,7 +392,7 @@ impl TheaterEngine {
             for a in &e.actor_ids { *counts.entry(a.as_str()).or_insert(0) += 1; }
         }
         let mut pairs: Vec<(&str, usize)> = counts.into_iter().collect();
-        pairs.sort_by(|a, b| b.1.cmp(&a.1));
+        pairs.sort_by_key(|b| std::cmp::Reverse(b.1));
         let top_actors: Vec<String> = pairs.into_iter().take(4).map(|(a, _)| a.to_string()).collect();
 
         let modality_scores: HashMap<String, f64> = DOMAIN_WEIGHTS.iter()

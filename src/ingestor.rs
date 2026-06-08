@@ -53,7 +53,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use md5;
 use reqwest::Client;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::sleep;
@@ -378,7 +377,7 @@ impl SourceHealth {
         if !self.is_disabled(source) {
             return true;
         }
-        cycle % REPROBE_EVERY_CYCLES == 0
+        cycle.is_multiple_of(REPROBE_EVERY_CYCLES)
     }
 }
 
@@ -484,7 +483,7 @@ impl Ingestor {
             for a in store.articles.iter() {
                 seen.mark_seen(&a.url, &a.title);
             }
-            if store.articles.len() > 0 {
+            if !store.articles.is_empty() {
                 info!("Ingestor: seeded dedup cache with {} restored articles", store.articles.len());
             }
         }
@@ -557,8 +556,8 @@ impl Ingestor {
 
             // Interval with ±20% deterministic jitter (no RNG dependency)
             let base_ms = ingestor.poll_interval_s * 5 * 1000; // 10s base → 100s
-            let jitter  = (jitter_ctr % 5) as u64 * base_ms / 25; // 0–20%
-            let delay   = if jitter_ctr % 2 == 0 { base_ms + jitter } else { base_ms - jitter };
+            let jitter  = (jitter_ctr % 5) * base_ms / 25; // 0–20%
+            let delay   = if jitter_ctr.is_multiple_of(2) { base_ms + jitter } else { base_ms - jitter };
             jitter_ctr  = jitter_ctr.wrapping_add(1);
             sleep(Duration::from_millis(delay)).await;
         }
@@ -992,7 +991,7 @@ mod tests {
 
     #[test]
     fn max_concurrent_rss_is_reasonable() {
-        assert!(MAX_CONCURRENT_RSS >= 10 && MAX_CONCURRENT_RSS <= 500,
-            "MAX_CONCURRENT_RSS must be between 10 and 500");
+        const { assert!(MAX_CONCURRENT_RSS >= 10 && MAX_CONCURRENT_RSS <= 500,
+            "MAX_CONCURRENT_RSS must be between 10 and 500") };
     }
 }

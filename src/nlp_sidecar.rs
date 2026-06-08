@@ -224,7 +224,7 @@ impl NlpSidecar {
                         });
                     }
 
-                    if p % 100 == 0 {
+                    if p.is_multiple_of(100) {
                         let t = tagged.load(Ordering::Relaxed);
                         if enricher.is_enabled() {
                             info!("NLP: {p} processed, {t} tagged | {} LLM extractions (concurrency {concurrency})",
@@ -305,7 +305,7 @@ fn merge_llm_scores(event: &mut GeopoliticalEvent, x: &LlmExtraction) {
     }
     // Keyword theater_of is deterministic from canonical actors; only let the LLM hint
     // fill in when there was no tracked dyad (Other / None).
-    let needs_theater = event.theater.as_deref().map_or(true, |t| t == "other");
+    let needs_theater = event.theater.as_deref().is_none_or(|t| t == "other");
     if needs_theater && is_valid_theater(&x.theater) {
         event.theater = Some(x.theater.clone());
     }
@@ -554,11 +554,4 @@ mod tests {
         assert_eq!(ev.theater.as_deref(), Some("us_china_taiwan"));
         assert!((ev.escalation_step - 0.5).abs() < 1e-9);
     }
-
-    // Sidecar wrapper stubs — retained for historical documentation
-    #[test] fn sidecar_wrapper_is_valid_python_skeleton()   { assert!(true); }
-    #[test] fn sidecar_wrapper_uses_correct_socket_env_var() { assert!(true); }
-    #[test] fn sidecar_wrapper_handles_null_response()       { assert!(true); }
-    #[test] fn sidecar_wrapper_has_signal_handlers()         { assert!(true); }
-    #[test] fn sidecar_wrapper_cleans_up_socket_on_start()   { assert!(true); }
 }

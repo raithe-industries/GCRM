@@ -36,7 +36,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Local, Utc};
-use serde_json;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
@@ -338,8 +337,8 @@ impl ArticleStore {
 
     pub fn query(&self, limit: usize, source_filter: Option<&str>, domain_filter: Option<&str>) -> Vec<&StoredArticle> {
         let mut result: Vec<&StoredArticle> = self.articles.iter()
-            .filter(|a| source_filter.map_or(true, |s| a.source == s))
-            .filter(|a| domain_filter.map_or(true, |d| a.domain_tags.iter().any(|t| t == d)))
+            .filter(|a| source_filter.is_none_or(|s| a.source == s))
+            .filter(|a| domain_filter.is_none_or(|d| a.domain_tags.iter().any(|t| t == d)))
             .collect();
         result.sort_unstable_by_key(|a| std::cmp::Reverse(
             chrono::DateTime::parse_from_rfc3339(&a.published_at)
@@ -922,7 +921,7 @@ impl Aggregator {
         if events.is_empty() { return; }
         let now = Utc::now();
         events.retain(|e| age_hours(&e.published_at, &now) < self.max_age_hours);
-        events.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+        events.sort_by_key(|b| std::cmp::Reverse(b.published_at));
         events.truncate(MAX_WINDOW_EVENTS);
         self.corr_index.rebuild_from_window(&events);
         info!("Aggregator: preloaded {} events into window from archive", events.len());
@@ -979,7 +978,7 @@ impl Aggregator {
             // Volume safeguard cap
             let mut truncated = false;
             if self.event_window.len() > MAX_WINDOW_EVENTS {
-                self.event_window.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+                self.event_window.sort_by_key(|b| std::cmp::Reverse(b.published_at));
                 self.event_window.truncate(MAX_WINDOW_EVENTS);
                 truncated = true;
             }
@@ -1082,7 +1081,7 @@ fn jaccard(a: &std::collections::HashSet<[char; 3]>, b: &std::collections::HashS
 /// event), false if it should be added to the window as a new event.
 fn try_corroborate(
     incoming:   &GeopoliticalEvent,
-    window:     &mut Vec<GeopoliticalEvent>,
+    window:     &mut [GeopoliticalEvent],
     now:        &DateTime<Utc>,
     corr_index: &CorroborationIndex,
 ) -> bool {
@@ -1152,18 +1151,19 @@ mod tests {
     use chrono::Duration;
 
     fn make_snapshot(p_annual: f64, delta: f64, elevated: usize) -> RiskSnapshot {
-        let mut snap = RiskSnapshot::default();
-        snap.p_wwiii_annual    = p_annual;
-        snap.p_wwiii_30day     = 1.0 - (1.0 - p_annual).powf(1.0 / 12.0);
-        snap.delta_annual      = delta;
-        snap.elevated_domains  = elevated;
-        snap.regime_multiplier = 1.568;
-        snap.events_in_window  = 10;
-        snap.sources_active    = 3;
-        snap.alert_level       = if p_annual >= 0.08 { AlertLevel::Critical }
-                                  else if p_annual >= 0.025 { AlertLevel::Elevated }
-                                  else { AlertLevel::Normal };
-        snap
+        RiskSnapshot {
+            p_wwiii_annual:    p_annual,
+            p_wwiii_30day:     1.0 - (1.0 - p_annual).powf(1.0 / 12.0),
+            delta_annual:      delta,
+            elevated_domains:  elevated,
+            regime_multiplier: 1.568,
+            events_in_window:  10,
+            sources_active:    3,
+            alert_level:       if p_annual >= 0.08 { AlertLevel::Critical }
+                               else if p_annual >= 0.025 { AlertLevel::Elevated }
+                               else { AlertLevel::Normal },
+            ..Default::default()
+        }
     }
 
     // ── snapshot_to_json ─────────────────────────────────────────────────────
