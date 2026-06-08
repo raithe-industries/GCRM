@@ -944,6 +944,30 @@ mod tests {
     }
 
     #[test]
+    fn every_domain_id_has_explicit_half_life_and_weight() {
+        // The /api/domains endpoint and the decay/scoring paths look up each domain's
+        // half-life and weight by id, falling back to a generic default (24.0h / 1.0)
+        // when an id is missing. That fallback would silently mis-serve a domain added
+        // to DOMAIN_IDS without a matching table entry. Lock the invariant: every
+        // canonical domain must appear explicitly in BOTH tables, and neither table may
+        // carry a stray id that isn't a canonical domain.
+        for &id in crate::models::DOMAIN_IDS {
+            assert!(DOMAIN_HALF_LIVES.iter().any(|(d, _)| *d == id),
+                "DOMAIN_HALF_LIVES is missing an explicit entry for domain {id}");
+            assert!(DOMAIN_WEIGHTS.iter().any(|(d, _)| *d == id),
+                "DOMAIN_WEIGHTS is missing an explicit entry for domain {id}");
+        }
+        for (d, _) in DOMAIN_HALF_LIVES {
+            assert!(crate::models::DOMAIN_IDS.contains(d),
+                "DOMAIN_HALF_LIVES carries a stray id {d} not in DOMAIN_IDS");
+        }
+        for (d, _) in DOMAIN_WEIGHTS {
+            assert!(crate::models::DOMAIN_IDS.contains(d),
+                "DOMAIN_WEIGHTS carries a stray id {d} not in DOMAIN_IDS");
+        }
+    }
+
+    #[test]
     fn event_max_half_life_returns_longest() {
         use crate::models::EventType;
         let mut event = GeopoliticalEvent::new(
