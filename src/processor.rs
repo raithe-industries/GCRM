@@ -37,6 +37,11 @@ use crate::models::{
 // ── FuzzyDedup cache persistence path ─────────────────────────────────────────
 
 const DEDUP_CACHE_PATH: &str = "logs/dedup_cache.json";
+/// Human-readable companion to the JSON cache — the cached titles, newest first.
+/// The .json is the machine/load format (each title carries a 64-number MinHash
+/// signature, an unreadable wall of numbers); this .txt is for reading WHAT is
+/// currently held for near-duplicate detection.
+const DEDUP_READABLE_PATH: &str = "logs/dedup_cache.readable.txt";
 
 // ── MinHash LSH constants ─────────────────────────────────────────────────────
 //
@@ -268,6 +273,18 @@ impl FuzzyDedup {
                 }
             }
             Err(e) => warn!("FuzzyDedup: serialise failed: {e}"),
+        }
+        // Human-readable companion: the cached titles, newest first. (The .json above
+        // is the machine format — each title carries a 64-number MinHash signature, a
+        // wall of numbers; this .txt is for reading what's currently held for dedup.)
+        let mut txt = format!(
+            "# GCRM FuzzyDedup cache — {} titles held for near-duplicate detection (MinHash LSH).\n\
+             # Newest first. Machine/load format (titles + MinHash signatures): {}\n\n",
+            self.titles.len(), DEDUP_CACHE_PATH,
+        );
+        for t in self.titles.iter().rev() { txt.push_str(t); txt.push('\n'); }
+        if let Err(e) = std::fs::write(DEDUP_READABLE_PATH, &txt) {
+            warn!("FuzzyDedup: readable cache write failed: {e}");
         }
     }
 
