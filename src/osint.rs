@@ -15,11 +15,55 @@
 //! reported in `errors[]` rather than failing the whole response, so one slow
 //! provider can never blank the map.
 
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 
 use ee_core::{Event, Source};
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
+
+/// Server-side TTL cache for one upstream-heavy payload. The dashboard polls
+/// `/api/map` and `/api/finance` every 60s *per client*, and each miss fans out
+/// to several rate-limited upstreams (OpenSky/Yahoo/USGS/GDACS/NWS/EONET).
+/// Coalescing those behind a short TTL keeps concurrent viewers — and
+/// back-to-back polls — from re-hitting (and getting throttled by) the
+/// providers, while staleness stays well under the feeds' own cadence.
+struct PayloadCache {
+    inner: Mutex<Option<(Instant, Value)>>,
+    ttl: StdDuration,
+}
+
+impl PayloadCache {
+    const fn new(ttl: StdDuration) -> Self {
+        Self {
+            inner: Mutex::const_new(None),
+            ttl,
+        }
+    }
+
+    /// Return the cached value if still fresh, else recompute via `build` while
+    /// holding the lock so only one refresh runs at a time — concurrent callers
+    /// wait and reuse that single fresh result instead of each hitting upstream.
+    async fn get_or_refresh<F, Fut>(&self, build: F) -> Value
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Value>,
+    {
+        let mut g = self.inner.lock().await;
+        if let Some((at, v)) = g.as_ref() {
+            if at.elapsed() < self.ttl {
+                return v.clone();
+            }
+        }
+        let fresh = build().await;
+        *g = Some((Instant::now(), fresh.clone()));
+        fresh
+    }
+}
+
+/// Upstream feeds change slowly; coalesce them just under the 60s client poll.
+static MAP_FEEDS_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50));
+static FINANCE_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50));
 
 /// A representative coordinate (lat, lon) for each canonical GCRM theater id, so the
 /// abstract flashpoints can be placed on the map. `other` has no fixed location.
@@ -90,7 +134,26 @@ async fn fetch_one(name: &'static str, src: impl Source, secs: u64) -> (Vec<Even
 
 /// Build the full map payload: live feeds (GeoJSON), GCRM theater flashpoints, the
 /// toggleable layer registry, and the base-map catalogue.
+///
+/// The upstream feeds + layer/basemap catalogue are cached (TTL) and shared
+/// across requests; the snapshot-derived flashpoints are merged in fresh on
+/// every call, so live theater heat is never stale even on a cache hit.
 pub async fn map_payload(snapshot: Option<Value>) -> Value {
+    let mut payload = MAP_FEEDS_CACHE.get_or_refresh(feeds_payload).await;
+
+    // Merge the live GCRM theater flashpoints over the cached feed base.
+    let theater_features = build_theater_features(&snapshot);
+    if let Some(counts) = payload.get_mut("counts").and_then(|c| c.as_object_mut()) {
+        counts.insert("theaters".to_string(), json!(theater_features.len()));
+    }
+    payload["theaters"] = json!({ "type": "FeatureCollection", "features": theater_features });
+    payload
+}
+
+/// The snapshot-independent half of the map payload: the live upstream feeds,
+/// layer registry, and base-map catalogue. This is the expensive, cacheable
+/// part — it performs all upstream I/O and never touches the live snapshot.
+async fn feeds_payload() -> Value {
     use ee_sources::{eonet::Eonet, gdacs::Gdacs, nws::Nws, opensky::OpenSky, usgs::Usgs};
 
     // Pull the geocoded feeds concurrently, each time-boxed.
@@ -125,10 +188,6 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
     }
 
     let feeds = ee_view::geojson::to_feature_collection(&feed_events);
-
-    // GCRM theater flashpoints from the live snapshot → their own feature set.
-    let theater_features = build_theater_features(&snapshot);
-    counts.insert("theaters".to_string(), json!(theater_features.len()));
 
     // Layer registry (ee-view) + a synthetic descriptor for the GCRM flashpoint layer.
     let mut layers: Vec<Value> = ee_view::layers::registry()
@@ -172,15 +231,19 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
         },
         "layers": layers,
         "feeds": feeds,
-        "theaters": { "type": "FeatureCollection", "features": theater_features },
         "counts": counts,
         "errors": errors,
     })
 }
 
 /// Compute the Finance Radar from the live Yahoo market stream, enriched with the
-/// labels/colours the dashboard panel needs.
+/// labels/colours the dashboard panel needs. Cached (TTL) so concurrent clients
+/// share one Yahoo fetch rather than each tripping its rate limit.
 pub async fn finance_payload() -> Value {
+    FINANCE_CACHE.get_or_refresh(finance_payload_uncached).await
+}
+
+async fn finance_payload_uncached() -> Value {
     use ee_correlate::{radar, RadarParams};
     use ee_sources::yahoo::Yahoo;
 
@@ -256,6 +319,27 @@ mod tests {
         assert!((c[1].as_f64().unwrap() - 26.6).abs() < 1e-6);
         // No snapshot -> no features.
         assert!(build_theater_features(&None).is_empty());
+    }
+
+    #[tokio::test]
+    async fn payload_cache_coalesces_until_ttl_expires() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = AtomicUsize::new(0);
+        let bump = || async { json!(calls.fetch_add(1, Ordering::SeqCst)) };
+
+        // Long TTL: first miss builds, the next hit is served from cache.
+        let cache = PayloadCache::new(StdDuration::from_secs(60));
+        assert_eq!(cache.get_or_refresh(bump).await, json!(0));
+        assert_eq!(cache.get_or_refresh(bump).await, json!(0));
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "second call should hit cache");
+
+        // Zero TTL: every call is stale, so it rebuilds each time.
+        let calls2 = AtomicUsize::new(0);
+        let bump2 = || async { json!(calls2.fetch_add(1, Ordering::SeqCst)) };
+        let fresh = PayloadCache::new(StdDuration::from_secs(0));
+        assert_eq!(fresh.get_or_refresh(bump2).await, json!(0));
+        assert_eq!(fresh.get_or_refresh(bump2).await, json!(1));
+        assert_eq!(calls2.load(Ordering::SeqCst), 2, "expired entry must rebuild");
     }
 
     // Live smoke test (network) — run explicitly: `cargo test osint -- --ignored --nocapture`.
