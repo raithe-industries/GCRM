@@ -23,24 +23,6 @@ const MIN_GRAPH_H = Number(process.env.EYES_MIN_GRAPH_H || 48); // legibility fl
 const fail = [];
 const ok = (m) => console.log('  ✓ ' + m);
 
-// Fetch JSON with a few retries. Tolerates the brief restart window where /health
-// has already flipped green but api/latest hasn't started accepting connections
-// yet — that race produced false "fetch failed" rollbacks on otherwise-perfect
-// deploys (every render check green, only the node-side fetch refused). This does
-// NOT weaken the gate: the endpoint must still become reachable and return a
-// credible, non-saturated number within the retry budget, or we still fail.
-const fetchJson = async (url, tries = 5, gapMs = 800) => {
-  let lastErr;
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json();
-    } catch (e) { lastErr = e; if (i < tries - 1) await new Promise((res) => setTimeout(res, gapMs)); }
-  }
-  throw lastErr;
-};
-
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
@@ -92,15 +74,28 @@ for (const sel of ['#theater-ladder', '#gauge-canvas', '.compute', '.charts-area
 //    what the number should be, only that a credible read must not be pegged at the cap.
 const CEILING = 0.90, MARGIN = 0.01;
 let latest = null;
-try {
-  const apiLatest = URL.replace(/\/+$/, '') + '/api/latest';
-  latest = await fetchJson(apiLatest);
-  const pa = latest?.probabilities?.annual;
-  if (typeof pa !== 'number') fail.push('api/latest has no probabilities.annual');
-  else if (pa >= CEILING - MARGIN) fail.push(`annual P(WWIII) saturated at ceiling: ${pa} — non-credible / no resolution`);
+const apiLatest = URL.replace(/\/+$/, '') + '/api/latest';
+// Readiness poll: right after a restart the new process needs one compute cycle
+// before api/latest carries a snapshot (until then it's {} or the socket is briefly
+// refused while the old process finishes draining). Wait for a real snapshot, THEN
+// assert — a warmup window can't false-fail the gate, but a truly unreachable/empty
+// endpoint still does (latest stays null → fail below).
+for (let i = 0; i < 20; i++) {            // ≈ 20 × 800ms ≈ 16s readiness budget
+  try {
+    const r = await fetch(apiLatest);
+    if (r.ok) {
+      const j = await r.json();
+      if (typeof j?.probabilities?.annual === 'number') { latest = j; break; }
+    }
+  } catch { /* connection refused during the restart window — retry */ }
+  await new Promise((res) => setTimeout(res, 800));
+}
+if (!latest) {
+  fail.push('api/latest never returned a snapshot with probabilities.annual within readiness budget');
+} else {
+  const pa = latest.probabilities.annual;
+  if (pa >= CEILING - MARGIN) fail.push(`annual P(WWIII) saturated at ceiling: ${pa} — non-credible / no resolution`);
   else ok(`annual P(WWIII) = ${(pa * 100).toFixed(1)}% (not pegged at ceiling)`);
-} catch (e) {
-  fail.push(`semantic check could not reach api/latest: ${e.message}`);
 }
 
 // 6) 6h-TREND CONTRACT — the trailing-6h delta is computed server-side (durable)
