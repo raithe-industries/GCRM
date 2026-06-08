@@ -23,6 +23,24 @@ const MIN_GRAPH_H = Number(process.env.EYES_MIN_GRAPH_H || 48); // legibility fl
 const fail = [];
 const ok = (m) => console.log('  ✓ ' + m);
 
+// Fetch JSON with a few retries. Tolerates the brief restart window where /health
+// has already flipped green but api/latest hasn't started accepting connections
+// yet — that race produced false "fetch failed" rollbacks on otherwise-perfect
+// deploys (every render check green, only the node-side fetch refused). This does
+// NOT weaken the gate: the endpoint must still become reachable and return a
+// credible, non-saturated number within the retry budget, or we still fail.
+const fetchJson = async (url, tries = 5, gapMs = 800) => {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) { lastErr = e; if (i < tries - 1) await new Promise((res) => setTimeout(res, gapMs)); }
+  }
+  throw lastErr;
+};
+
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
@@ -76,7 +94,7 @@ const CEILING = 0.90, MARGIN = 0.01;
 let latest = null;
 try {
   const apiLatest = URL.replace(/\/+$/, '') + '/api/latest';
-  latest = await (await fetch(apiLatest)).json();
+  latest = await fetchJson(apiLatest);
   const pa = latest?.probabilities?.annual;
   if (typeof pa !== 'number') fail.push('api/latest has no probabilities.annual');
   else if (pa >= CEILING - MARGIN) fail.push(`annual P(WWIII) saturated at ceiling: ${pa} — non-credible / no resolution`);
