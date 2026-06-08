@@ -75,20 +75,16 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 /* LIVE COMPUTE panel — replaces the redundant 2nd gauge; shows the Bayesian chain
    producing P(WWIII), refreshed each snapshot (dot blips on every recompute). */
 .compute{width:100%;margin-top:7px;padding-top:8px;border-top:0.5px solid var(--border)}
-.compute-head{display:flex;align-items:center;gap:6px;font-size:8px;font-weight:700;letter-spacing:.08em;color:var(--t3);text-transform:uppercase;margin-bottom:5px}
 .compute-dot{width:6px;height:6px;border-radius:50%;background:var(--green);opacity:.45;flex-shrink:0}
 .compute-dot.blip{animation:cblip .85s ease-out}
 @keyframes cblip{0%{transform:scale(1.9);opacity:1;box-shadow:0 0 7px var(--green)}100%{transform:scale(1);opacity:.45;box-shadow:none}}
-.compute-rate{margin-left:auto;font-family:monospace;font-size:8px;font-weight:600;color:var(--t4);text-transform:none;letter-spacing:0}
-.cc-row{display:flex;justify-content:space-between;align-items:baseline;font-size:9px;padding:1.5px 0}
-.cc-k{color:var(--t4)}
-.cc-v{font-family:monospace;color:var(--t2)}
-.cc-sub .cc-k,.cc-sub .cc-v{color:var(--t3)}
-.cc-result{display:flex;justify-content:space-between;align-items:baseline;margin-top:4px;padding-top:5px;border-top:0.5px dashed var(--border)}
-.cc-result .cc-k{font-size:10px;color:var(--t3);font-weight:600}
-.cc-result .cc-v{font-size:17px;font-weight:700;transition:color .4s}
-.compute-idx{font-size:8px;color:var(--t4);text-align:center;margin-top:6px}
-.compute-idx b{font-family:monospace;font-weight:700}
+.cmove{display:flex;align-items:center;justify-content:center;gap:6px;font-family:monospace}
+.cmove-arrow{font-size:15px;font-weight:700;line-height:1;transition:color .3s}
+.cmove-val{font-size:11px;font-weight:600;transition:color .3s}
+.sidx{text-align:center;margin-top:10px}
+.sidx-lbl{font-size:9px;color:var(--t3);letter-spacing:.04em}
+.sidx-num{font-size:24px;font-weight:700;font-family:monospace;line-height:1.1;transition:color .4s}
+.sidx-rung{font-size:11px;font-weight:600;transition:color .4s}
 .conf-row{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:9px;color:var(--t2);width:100%}
 .conf-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .conf-fill{height:100%;border-radius:2px;background:var(--purple);transition:width .6s}
@@ -366,19 +362,18 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
-      <!-- LIVE COMPUTE — the Bayesian chain producing P(WWIII), refreshed every
-           snapshot; the dot blips on each recompute so the model reads as live,
-           replacing the old second gauge that just mirrored the hero number. -->
+      <!-- Live movement of P(WWIII): the dot blips on every recompute (heartbeat),
+           the arrow shows direction at all times (▲ rising / ▼ falling / ↔ steady),
+           and the Δ/s shows only when it actually moves. The Bayesian chain itself
+           (base × regime × coupling …) lives in the methodology — it barely moves. -->
       <div class="compute">
-        <div class="compute-head"><span class="compute-dot" id="compute-dot"></span>LIVE COMPUTE<span class="compute-rate" id="compute-rate">—</span></div>
-        <div class="cc-row"><span class="cc-k">base rate</span><span class="cc-v" id="cc-base">—</span></div>
-        <div class="cc-row"><span class="cc-k">× regime</span><span class="cc-v" id="cc-regime">—</span></div>
-        <div class="cc-row cc-sub"><span class="cc-k">= adjusted prior</span><span class="cc-v" id="cc-adj">—</span></div>
-        <div class="cc-row"><span class="cc-k">× coupling</span><span class="cc-v" id="cc-coupling">—</span></div>
-        <div class="cc-row"><span class="cc-k">modalities</span><span class="cc-v" id="cc-mod">—</span></div>
-        <div class="cc-result"><span class="cc-k">P(WWIII)</span><span class="cc-v" id="cc-post">—</span></div>
-        <div class="compute-idx">systemic index <b id="cc-idx">—</b> · <span id="cc-rung">—</span></div>
-        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:5px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
+        <div class="cmove"><span class="compute-dot" id="compute-dot"></span><span class="cmove-arrow" id="cmove-arrow">↔</span><span class="cmove-val" id="cmove-val">steady</span></div>
+        <div class="sidx">
+          <div class="sidx-lbl">systemic index</div>
+          <div class="sidx-num" id="cc-idx">—</div>
+          <div class="sidx-rung" id="cc-rung">—</div>
+        </div>
+        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:7px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       </div>
       <div class="conf-row">
         <span style="color:var(--t4);font-size:8px">CONF</span>
@@ -739,18 +734,16 @@ function applyData(d){
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
   animateHero(Math.min(1,pA));
   const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(1)+'%';gv.style.color=pCol;
-  // LIVE COMPUTE panel: the Bayesian chain feeding P(WWIII), refreshed each snapshot.
-  // The dot blips on every recompute so the model visibly reads as live.
+  // Live movement of P(WWIII): heartbeat dot blips every recompute; the arrow shows
+  // direction at all times; the Δ/s shows only when it actually moves (when the
+  // inputs don't change the output genuinely doesn't either — so we don't fake it).
   const cdot=document.getElementById('compute-dot');if(cdot){cdot.classList.remove('blip');void cdot.offsetWidth;cdot.classList.add('blip');}
-  const _pr=d.prior||{},_cp=d.couplers||{},_co=d.co_occurrence||{};
-  const setC=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  setC('cc-base',((_pr.historical_anchor||0)*100).toFixed(2)+'%');
-  setC('cc-regime','×'+(_pr.regime_multiplier||1).toFixed(2));
-  setC('cc-adj',((_pr.adjusted_prior||0)*100).toFixed(2)+'%');
-  setC('cc-coupling','×'+(_cp.coupling_multiplier||1).toFixed(2));
-  setC('cc-mod',(_co.elevated_count||0)+'/5 elevated');
-  const _ccp=document.getElementById('cc-post');if(_ccp){_ccp.textContent=(pA*100).toFixed(1)+'%';_ccp.style.color=pCol;}
-  setC('compute-rate',dA>0?'▲ +'+(dA*100).toFixed(4)+'%/s':dA<0?'▼ '+(dA*100).toFixed(4)+'%/s':'● stable');
+  const _ar=document.getElementById('cmove-arrow'),_av=document.getElementById('cmove-val');
+  if(_ar&&_av){
+    if(dA>0.000005){_ar.textContent='▲';_av.textContent='+'+(dA*100).toFixed(4)+'%/s';_ar.style.color=_av.style.color='#E24B4A';}
+    else if(dA<-0.000005){_ar.textContent='▼';_av.textContent=(dA*100).toFixed(4)+'%/s';_ar.style.color=_av.style.color='#1D9E75';}
+    else{_ar.textContent='↔';_av.textContent='steady';_ar.style.color=_av.style.color='var(--t4)';}
+  }
   const _ci=document.getElementById('cc-idx');if(_ci){_ci.textContent=sysIdx;_ci.style.color=idxCol;}
   const _cr=document.getElementById('cc-rung');if(_cr){_cr.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');_cr.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
