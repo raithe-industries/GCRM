@@ -53,6 +53,7 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 | **Detector** | `detector.rs` | Seismic anomaly detection, CTBTO monitoring, nuclear news monitoring, test site registry, alert fusion |
 | **API** | `api.rs` | Operator endpoints: regime factor management, manual event assertion, rate limiting, audit logging, calibration timestamping |
 | **Server** | `server.rs` | Axum HTTP server, WebSocket broadcast, dashboard HTML, public API routes, base-path routing |
+| **OSINT Map** | `osint.rs` | World-map situational-awareness overlay: live public feeds (USGS / NASA EONET / GDACS / NWS / OpenSky) → GeoJSON, theater flashpoints, layer registry + base-map catalogue, and the Finance Radar; serves `/api/map` + `/api/finance`. Display-only — **not** an input to the risk index. |
 
 ---
 
@@ -137,10 +138,13 @@ An Axum web server serves a real-time dashboard via WebSocket. The dashboard is 
 - Live P(WWIII) annualized probability with trend delta
 - 8 domain risk scores with elevation indicators
 - Historical timeline chart (Chart.js, starts clean on restart)
+- Situational-awareness **world map** (MapLibre) beside the timeline: theater flashpoints + toggleable OSINT layers (earthquakes, wildfires/storms, disasters, US weather, aircraft over North America + Europe) from free public feeds, plus a 7-segment **Finance Radar**
 - Nuclear alert status
 - Article feed sorted by publication time, newest first
 - Regime factor panel with operator controls (key-protected)
 - Model calibration indicator — shows when an operator has updated model parameters
+
+> The world-map OSINT layers are a situational-awareness overlay drawn from public feeds for geographic context; they are **not inputs to the risk index** (which is computed solely from the coded news pipeline). The flashpoints are the model's live theaters, placed on the map.
 
 All timestamps on the dashboard are displayed in Eastern Time (ET / America/Toronto) with UTC shown as secondary reference.
 
@@ -161,6 +165,8 @@ The following endpoints are publicly accessible (no key required):
 | `GET /risk/api/articles` | Article store, newest first, with `?limit=N&source=X&domain=Y` |
 | `GET /risk/api/sources` | Feed registry and delivery counts |
 | `GET /risk/api/nuclear` | Seismic alert status |
+| `GET /risk/api/map` | OSINT world-map payload: live feeds (GeoJSON), theater flashpoints, layer registry, base-map catalogue. Display overlay — not a model input. |
+| `GET /risk/api/finance` | Finance Radar: 7-segment market-stress composite from a public market basket |
 | `GET /risk/api/health` | Process health check |
 | `WS  /risk/ws` | WebSocket: live snapshots + article updates |
 

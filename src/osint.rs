@@ -61,8 +61,9 @@ impl PayloadCache {
     }
 }
 
-/// Upstream feeds change slowly; coalesce them just under the 60s client poll.
-static MAP_FEEDS_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50));
+/// Upstream feeds change slowly; coalesce them well above the 60s client poll. The
+/// map TTL is longer (3 min) to stay within OpenSky's anonymous daily credit budget.
+static MAP_FEEDS_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(180));
 static FINANCE_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50));
 
 /// A representative coordinate (lat, lon) for each canonical GCRM theater id, so the
@@ -156,31 +157,40 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 async fn feeds_payload() -> Value {
     use ee_sources::{eonet::Eonet, gdacs::Gdacs, nws::Nws, opensky::OpenSky, usgs::Usgs};
 
-    // Pull the geocoded feeds concurrently, each time-boxed.
-    let (quakes, disasters, weather, aircraft, natural) = tokio::join!(
+    // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
+    // North America (incl. Canada) and Europe/Middle-East (the live theaters), for
+    // dense, honest coverage on both sides of the Atlantic.
+    let (quakes, disasters, weather, ac_na, ac_eu, natural) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
-        // Aircraft scoped to the Europe→Middle-East corridor (the live theaters),
-        // so the payload stays bounded and on-theme.
-        fetch_one("opensky", OpenSky { bbox: Some((25.0, -12.0, 60.0, 60.0)) }, 8),
-        // NASA EONET natural events (wildfires / storms / volcanoes), last 30 days.
-        fetch_one("eonet", Eonet { days: 30 }, 10),
+        fetch_one("opensky", OpenSky { bbox: Some((24.0, -140.0, 72.0, -52.0)) }, 9),
+        fetch_one("opensky", OpenSky { bbox: Some((24.0, -11.0, 60.0, 60.0)) }, 9),
+        // NASA EONET natural events (wildfires / storms / volcanoes), last 45 days.
+        fetch_one("eonet", Eonet { days: 45 }, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();
     let mut counts = serde_json::Map::new();
     let mut feed_events: Vec<Event> = Vec::new();
-    for (mut evs, err, key) in [
-        (quakes.0, quakes.1, "usgs"),
-        (disasters.0, disasters.1, "gdacs"),
-        (weather.0, weather.1, "nws"),
-        (aircraft.0, aircraft.1, "opensky"),
-        (natural.0, natural.1, "eonet"),
+    // Cap each feed so the payload can't balloon; the two OpenSky regions sum into
+    // one "opensky" count. (events, optional error, source key, per-feed cap)
+    let mut opensky_total = 0usize;
+    for (mut evs, err, key, cap) in [
+        (quakes.0, quakes.1, "usgs", 600usize),
+        (disasters.0, disasters.1, "gdacs", 400),
+        (weather.0, weather.1, "nws", 400),
+        (ac_na.0, ac_na.1, "opensky", 500),
+        (ac_eu.0, ac_eu.1, "opensky", 300),
+        (natural.0, natural.1, "eonet", 600),
     ] {
-        // Cap any single feed so the map payload can't balloon (aircraft especially).
-        evs.truncate(600);
-        counts.insert(key.to_string(), json!(evs.len()));
+        evs.truncate(cap);
+        if key == "opensky" {
+            opensky_total += evs.len();
+            counts.insert("opensky".to_string(), json!(opensky_total));
+        } else {
+            counts.insert(key.to_string(), json!(evs.len()));
+        }
         if let Some(e) = err {
             errors.push(e);
         }
