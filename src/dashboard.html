@@ -72,6 +72,23 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .gauge-pct-label{font-size:9px;color:var(--t3);text-align:center;margin-top:1px}
 .gauge-context{margin-top:5px;width:100%;font-size:8px;color:var(--t4);line-height:1.8}
 .gauge-context-row{display:flex;justify-content:space-between}
+/* LIVE COMPUTE panel — replaces the redundant 2nd gauge; shows the Bayesian chain
+   producing P(WWIII), refreshed each snapshot (dot blips on every recompute). */
+.compute{width:100%;margin-top:7px;padding-top:8px;border-top:0.5px solid var(--border)}
+.compute-head{display:flex;align-items:center;gap:6px;font-size:8px;font-weight:700;letter-spacing:.08em;color:var(--t3);text-transform:uppercase;margin-bottom:5px}
+.compute-dot{width:6px;height:6px;border-radius:50%;background:var(--green);opacity:.45;flex-shrink:0}
+.compute-dot.blip{animation:cblip .85s ease-out}
+@keyframes cblip{0%{transform:scale(1.9);opacity:1;box-shadow:0 0 7px var(--green)}100%{transform:scale(1);opacity:.45;box-shadow:none}}
+.compute-rate{margin-left:auto;font-family:monospace;font-size:8px;font-weight:600;color:var(--t4);text-transform:none;letter-spacing:0}
+.cc-row{display:flex;justify-content:space-between;align-items:baseline;font-size:9px;padding:1.5px 0}
+.cc-k{color:var(--t4)}
+.cc-v{font-family:monospace;color:var(--t2)}
+.cc-sub .cc-k,.cc-sub .cc-v{color:var(--t3)}
+.cc-result{display:flex;justify-content:space-between;align-items:baseline;margin-top:4px;padding-top:5px;border-top:0.5px dashed var(--border)}
+.cc-result .cc-k{font-size:10px;color:var(--t3);font-weight:600}
+.cc-result .cc-v{font-size:17px;font-weight:700;transition:color .4s}
+.compute-idx{font-size:8px;color:var(--t4);text-align:center;margin-top:6px}
+.compute-idx b{font-family:monospace;font-weight:700}
 .conf-row{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:9px;color:var(--t2);width:100%}
 .conf-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .conf-fill{height:100%;border-radius:2px;background:var(--purple);transition:width .6s}
@@ -349,18 +366,19 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
-      <!-- SECONDARY dial — present escalation severity: systemic index + hottest rung -->
-      <div class="subgauge">
-        <canvas id="index-canvas"></canvas>
-        <div class="subgauge-head"><span class="subgauge-val" id="idx-val">—</span><span class="subgauge-rung" id="idx-rung">—</span></div>
-        <div class="subgauge-lbl">systemic index 0–100 · escalation now</div>
-        <div class="gauge-context">
-          <div class="gauge-context-row"><span>Normal:</span><span style="color:#40c070">0–16</span></div>
-          <div class="gauge-context-row"><span>Moderate:</span><span style="color:#9090ff">17–33</span></div>
-          <div class="gauge-context-row"><span>Elevated:</span><span style="color:var(--amber)">34–66</span></div>
-          <div class="gauge-context-row"><span>Critical:</span><span style="color:var(--red)">≥67</span></div>
-        </div>
-        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:4px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
+      <!-- LIVE COMPUTE — the Bayesian chain producing P(WWIII), refreshed every
+           snapshot; the dot blips on each recompute so the model reads as live,
+           replacing the old second gauge that just mirrored the hero number. -->
+      <div class="compute">
+        <div class="compute-head"><span class="compute-dot" id="compute-dot"></span>LIVE COMPUTE<span class="compute-rate" id="compute-rate">—</span></div>
+        <div class="cc-row"><span class="cc-k">base rate</span><span class="cc-v" id="cc-base">—</span></div>
+        <div class="cc-row"><span class="cc-k">× regime</span><span class="cc-v" id="cc-regime">—</span></div>
+        <div class="cc-row cc-sub"><span class="cc-k">= adjusted prior</span><span class="cc-v" id="cc-adj">—</span></div>
+        <div class="cc-row"><span class="cc-k">× coupling</span><span class="cc-v" id="cc-coupling">—</span></div>
+        <div class="cc-row"><span class="cc-k">modalities</span><span class="cc-v" id="cc-mod">—</span></div>
+        <div class="cc-result"><span class="cc-k">P(WWIII)</span><span class="cc-v" id="cc-post">—</span></div>
+        <div class="compute-idx">systemic index <b id="cc-idx">—</b> · <span id="cc-rung">—</span></div>
+        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:5px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       </div>
       <div class="conf-row">
         <span style="color:var(--t4);font-size:8px">CONF</span>
@@ -374,7 +392,6 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="left-metrics">
       <div class="lm" onclick="openInfo('w30')" style="cursor:pointer"><div class="lm-label">30-DAY WINDOW<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-30d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
       <div class="lm" onclick="openInfo('w90')" style="cursor:pointer"><div class="lm-label">90-DAY WINDOW<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-90d">—</div><div class="lm-sub" style="color:var(--t4)">rolling estimate</div></div>
-      <div class="lm" onclick="openInfo('computed')" style="cursor:pointer"><div class="lm-label">LAST COMPUTED<span class="cmd-info">ⓘ</span></div><div class="lm-val" id="m-computed" style="font-size:11px">—</div><div class="lm-sub" style="color:var(--t4)">model update time</div></div>
     </div>
     <div class="plain-eng">
       <div class="pe-title">WHAT THIS MEANS</div>
@@ -510,13 +527,9 @@ const TAG_COLORS={KIN:'#E24B4A',NUC:'#FF6B35',ECO:'#1D9E75',CYB:'#00CED1',DIP:'#
 // escalation-ladder position — so each gets its own dial instead of one number that
 // looks like the other.
 const GC=document.getElementById('gauge-canvas').getContext('2d');   // hero: P(WWIII)
-const GI=document.getElementById('index-canvas').getContext('2d');   // secondary: index
 // Probability severity bands (fraction of 1.0): normal <2.5%, elevated <8%, then critical.
 const P_ZONES=[{e:0.025,c:'#1D9E75'},{e:0.08,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
 const P_TICKS=[{f:0,l:'0'},{f:0.25,l:'25'},{f:0.5,l:'50'},{f:0.75,l:'75'},{f:1,l:'100'}];
-// Systemic-index bands (0–100): moderate 17, elevated 34, critical 67.
-const IDX_ZONES=[{e:0.17,c:'#1D9E75'},{e:0.34,c:'#7F77DD'},{e:0.67,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
-const I_TICKS=[{f:0,l:'0'},{f:0.5,l:'50'},{f:1,l:'100'}];
 // One dial renderer. Sizes the backing buffer to display×devicePixelRatio so it stays
 // crisp on HiDPI (the old fixed 148×82 buffer was CSS-upscaled → blurry on desktop) and
 // scales every dimension from the original 148-wide design so proportions hold at any size.
@@ -542,12 +555,11 @@ function drawDial(g,pct,zones,ticks){
   const a=Math.PI+pct*Math.PI;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+(r-13*s)*Math.cos(a),cy+(r-13*s)*Math.sin(a));g.strokeStyle='#fff';g.lineWidth=2*s;g.stroke();
   g.beginPath();g.arc(cx,cy,4*s,0,2*Math.PI);g.fillStyle='#fff';g.fill();
 }
-let lastHero=0,lastIdx=0;
+let lastHero=0;
 function animateHero(t){lastHero+=(t-lastHero)*0.12;drawDial(GC,lastHero,P_ZONES,P_TICKS);if(Math.abs(t-lastHero)>0.0005)requestAnimationFrame(()=>animateHero(t));}
-function animateIdx(t){lastIdx+=(t-lastIdx)*0.12;drawDial(GI,lastIdx,IDX_ZONES,I_TICKS);if(Math.abs(t-lastIdx)>0.0005)requestAnimationFrame(()=>animateIdx(t));}
-drawDial(GC,0,P_ZONES,P_TICKS);drawDial(GI,0,IDX_ZONES,I_TICKS);
+drawDial(GC,0,P_ZONES,P_TICKS);
 // Redraw on resize so dpr/size changes stay crisp.
-addEventListener('resize',()=>{drawDial(GC,lastHero,P_ZONES,P_TICKS);drawDial(GI,lastIdx,IDX_ZONES,I_TICKS);});
+addEventListener('resize',()=>{drawDial(GC,lastHero,P_ZONES,P_TICKS);});
 const GRID='rgba(255,255,255,0.04)',TICK='#9090c0';
 let spikeAnnotations={};
 const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}}});
@@ -727,10 +739,20 @@ function applyData(d){
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
   animateHero(Math.min(1,pA));
   const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(1)+'%';gv.style.color=pCol;
-  // Secondary dial: systemic index + hottest-theater rung label.
-  animateIdx(sysIdx/100);
-  const iv=document.getElementById('idx-val');if(iv){iv.textContent=sysIdx;iv.style.color=idxCol;}
-  const ir=document.getElementById('idx-rung');if(ir){ir.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');ir.style.color=idxCol;}
+  // LIVE COMPUTE panel: the Bayesian chain feeding P(WWIII), refreshed each snapshot.
+  // The dot blips on every recompute so the model visibly reads as live.
+  const cdot=document.getElementById('compute-dot');if(cdot){cdot.classList.remove('blip');void cdot.offsetWidth;cdot.classList.add('blip');}
+  const _pr=d.prior||{},_cp=d.couplers||{},_co=d.co_occurrence||{};
+  const setC=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  setC('cc-base',((_pr.historical_anchor||0)*100).toFixed(2)+'%');
+  setC('cc-regime','×'+(_pr.regime_multiplier||1).toFixed(2));
+  setC('cc-adj',((_pr.adjusted_prior||0)*100).toFixed(2)+'%');
+  setC('cc-coupling','×'+(_cp.coupling_multiplier||1).toFixed(2));
+  setC('cc-mod',(_co.elevated_count||0)+'/5 elevated');
+  const _ccp=document.getElementById('cc-post');if(_ccp){_ccp.textContent=(pA*100).toFixed(1)+'%';_ccp.style.color=pCol;}
+  setC('compute-rate',dA>0?'▲ +'+(dA*100).toFixed(4)+'%/s':dA<0?'▼ '+(dA*100).toFixed(4)+'%/s':'● stable');
+  const _ci=document.getElementById('cc-idx');if(_ci){_ci.textContent=sysIdx;_ci.style.color=idxCol;}
+  const _cr=document.getElementById('cc-rung');if(_cr){_cr.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');_cr.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
   const _cd=new Date(d.computed_at);const _et=toET(_cd);
   document.getElementById('ts').textContent='Live · '+_et;
@@ -764,11 +786,9 @@ function applyData(d){
   const _ct=trend6h(d,pA);const trendEl=document.getElementById('cmd-trend');
   if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
-  // Rail shows only the 30/90-day windows + last-computed (see HTML note above).
-  // The annual reading is the hero gauge; regime ×, P₀, GP count and the elevated
-  // tally are surfaced in the methodology and the model-state footer, not the rail.
+  // Rail shows the 30/90-day windows. The annual reading is the hero gauge; the live
+  // Bayesian chain (P₀ × regime × coupling → P(WWIII)) is in the LIVE COMPUTE panel.
   setMv('m-30d',(p30*100).toFixed(2)+'%',pc(p30*4));setMv('m-90d',(p90*100).toFixed(2)+'%',pc(p90*2));
-  setMv('m-computed',toETShort(new Date(d.computed_at)),'var(--t2)');
   const elev=d.co_occurrence.elevated_count; // still feeds the model-state co-occurrence line below
   const ab=document.getElementById('alert-bar');const al=d.alert.level;
   ab.className='alert-bar'+(al==='critical'?' critical':al==='elevated'?' elevated':'');ab.textContent=d.alert.message||'';
