@@ -16,6 +16,32 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — awareness — per-theater "why": dominant weighted-heat driver
+- Item: roadmap 3.3 (now checked). First advance on the Awareness axis (pillar 3, previously
+  the least-developed and least-recently-touched — prior runs all sat on honesty/model).
+- Change: each `TheaterState` now carries `top_driver` — the modality id (e.g.
+  `nuclear_posture`) with the largest WEIGHTED contribution (`score × domain_weight`) to that
+  theater's heat. It is computed in `theater.rs::score_theater` as the single biggest term in
+  the same sum that builds `heat`, so it is honest by construction (the model's own dominant
+  signal, never a fitted/derived value); empty for a Stable theater where no signal is worth
+  naming. Surfaced in the theater-ladder chips: the sub-line reads "X% heat · Nuclear" and the
+  tooltip gains "· driven by …", reusing the existing dashboard `domainLabel` map (no new label
+  table). Previously the chips showed only HOW MUCH (heat %, signal count, rung) — never WHY;
+  the operator had to mentally apply DOMAIN_WEIGHTS to know what kind of force was driving a
+  flashpoint. Now the "where & why" is one glance.
+- Metric moved: test count 355 → 356 (new `top_driver_names_the_dominant_weighted_modality`);
+  new awareness capability (per-theater driver) on the snapshot + dashboard. No model constant
+  touched — `top_driver` is a read-out of existing heat terms, so calibration/backtest bands and
+  the systemic invariants are untouched.
+- Proof: `cargo build --release` clean (0 warnings); `cargo test --release` = 356 passed / 0
+  failed / 1 ignored. The lock test asserts: an only-kinetic theater → `military_escalation`;
+  equal-score kinetic+nuclear → `nuclear_posture` (proves the heavier 3.0 weight wins, i.e. it's
+  the WEIGHTED term not the raw score); a quiet world → every `top_driver` empty.
+- Notes for future runs: `top_driver` is the single largest weighted term — a natural extension
+  is a 2nd contributor or a "what changed this tick" delta-driver. The gate is `rung == Stable`
+  → empty; if a future change forces a rung above Stable with ~0 heat, top_driver may be empty
+  (filter drops zero-contribution terms) — that's intended (nothing to name).
+
 ## 2026-06-09 — honesty/model — locked systemic cross-check invariants (monotonicity, bounds, ceiling)
 - Item: roadmap 1.3 (now checked).
 - Change: added 5 invariant tests to `src/theater.rs` that pin the systemic engine's core

@@ -648,6 +648,9 @@ pub struct TheaterState {
     pub gp_involved:      bool,
     pub alliance_invoked: bool,
     pub top_actors:       Vec<String>,
+    /// The modality id (e.g. "nuclear_posture") contributing the most weighted heat
+    /// to this theater — the "why" behind its level. Empty for a Stable theater.
+    pub top_driver:       String,
 }
 
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────
