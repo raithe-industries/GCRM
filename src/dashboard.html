@@ -10,7 +10,6 @@
 <link rel="icon" type="image/png" sizes="192x192" href="{{BASE_PATH}}/icon-192.png?v={{LOGO_VER}}">
 <link rel="apple-touch-icon" href="{{BASE_PATH}}/apple-touch-icon.png?v={{LOGO_VER}}">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <!-- MapLibre GL v5 (globe projection → 2D/3D toggle) for the OSINT world map. -->
 <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
@@ -614,7 +613,7 @@ drawDial(GC,0,P_TICKS);
 // Redraw on resize so dpr/size changes stay crisp.
 addEventListener('resize',()=>{drawDial(GC,lastHero,P_TICKS);});
 const GRID='rgba(255,255,255,0.04)',TICK='#9090c0';
-let spikeAnnotations={};
+let spikes=[];   // {idx,delta} per detected jump in annual P(WWIII) — drawn by the spikeMarks canvas plugin (below)
 // Calibration-period band — a small inline canvas plugin (more reliable than the
 // annotation plugin, whose object-map options get swallowed by Chart.js v4's resolver).
 // Shades [0 … chart.$calibEnd] behind the data in transparent cyan with a dashed right
@@ -634,13 +633,36 @@ const calibBand={id:'calibBand',beforeDatasetsDraw(chart){
   c.fillText('model calibration',(L+R)/2,a.top+10);
   c.restore();
 }};
-const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand]});
+// Spike markers — a jump in annual P(WWIII) between snapshots is recorded by
+// checkSpike as {idx,delta}; this inline canvas plugin draws a coloured guide on
+// the latest one plus a ▲/▼ triangle at every spike's point (red rise / green
+// fall). Canvas-drawn for the same reason as calibBand: chartjs-plugin-annotation
+// renders nothing under Chart.js v4 (its object-map options get swallowed).
+const spikeMarks={id:'spikeMarks',afterDatasetsDraw(chart){
+  const n=chart.data.labels.length;if(!spikes.length||n<2)return;
+  const a=chart.chartArea;if(!a)return;
+  const data=chart.data.datasets[0].data,y=chart.scales.y,c=chart.ctx,last=spikes.length-1;c.save();
+  spikes.forEach((s,si)=>{
+    if(s.idx<0||s.idx>=n)return;
+    const px=a.left+(a.right-a.left)*(s.idx/(n-1));if(px<a.left-0.5||px>a.right+0.5)return;
+    const up=s.delta>0,col=up?'#E24B4A':'#1D9E75';
+    if(si===last){c.strokeStyle=up?'rgba(226,75,74,0.45)':'rgba(29,158,117,0.45)';c.lineWidth=1;c.beginPath();c.moveTo(px,a.top);c.lineTo(px,a.bottom);c.stroke();}
+    const py=Math.min(a.bottom-7,Math.max(a.top+7,y.getPixelForValue(data[s.idx]||0))),ty=up?py-7:py+7;
+    c.fillStyle=col;c.beginPath();
+    if(up){c.moveTo(px,ty-4);c.lineTo(px-3.5,ty+2);c.lineTo(px+3.5,ty+2);}
+    else  {c.moveTo(px,ty+4);c.lineTo(px-3.5,ty-2);c.lineTo(px+3.5,ty-2);}
+    c.closePath();c.fill();
+    if(si===last){c.fillStyle='#c8c8e8';c.font='600 8px system-ui';const rt=px>a.right-44;c.textAlign=rt?'right':'left';c.fillText((up?'+':'')+(s.delta*100).toFixed(3)+'%',rt?px-5:px+5,up?ty-3:ty+9);}
+  });
+  c.restore();
+}};
+const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks]});
 const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
   // Clicking a bar audits that domain — same filter as clicking its card above.
   onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
   onHover:(e,els)=>{const c=e?.native?.target;if(c)c.style.cursor=(els&&els.length)?'pointer':'default';},
   plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:TICK,font:{size:9}}},y:{min:0,max:1,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>Math.round(v*100)+'%'}}},animation:{duration:300,easing:'easeOutQuart'}}});
-let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[],spikeIdx=0;
+let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[];
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
 function pc(p){return p>=.08?'var(--red)':p>=.025?'var(--amber)':'var(--green)'}
 // Escalation-rung → 0..5 level → severity colour (mirrors EscalationRung::level in
@@ -756,8 +778,12 @@ async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=6000'+
 async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];el.innerHTML='<div style="padding:5px 10px;font-size:9px;color:var(--t3);border-bottom:0.5px solid var(--border);text-align:center;letter-spacing:.04em">'+configured.length+' curated intelligence sources</div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
 const logLines=[];
 function addLog(msg,color='var(--t4)'){logLines.unshift('<span style="color:'+color+'">'+toETShort(new Date())+' '+msg+'</span>');if(logLines.length>500)logLines.pop();if(currentTab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
-let prevAnnual=null,spikeAnnual=null;
-function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;if(Math.abs(delta)>0.0002){const id='spike_'+spikeIdx++;const color=delta>0?'#E24B4A88':'#1D9E7588';spikeAnnotations[id]={type:'line',xMin:tlChart.data.labels.length-1,xMax:tlChart.data.labels.length-1,borderColor:color,borderWidth:1,label:{display:true,content:(delta>0?'▲':'▼')+' '+(Math.abs(delta)*100).toFixed(3)+'%',color:'#c0c0e0',font:{size:7},position:'start',backgroundColor:'rgba(7,7,15,0.8)',padding:2}};const keys=Object.keys(spikeAnnotations).filter(k=>k.startsWith('spike_'));if(keys.length>20)delete spikeAnnotations[keys[0]];tlChart.options.plugins.annotation.annotations=spikeAnnotations;document.getElementById('spike-label').textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}prevAnnual=pA;}
+let prevAnnual=null;
+// A jump in annual P(WWIII) between snapshots records a spike against the point it
+// lands on (idx = current length; the new point is pushed right after this runs).
+// spikeMarks draws the ▲/▼ on canvas — the old chartjs-plugin-annotation markers
+// rendered nothing under Chart.js v4 (object-map annotations get swallowed).
+function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;prevAnnual=pA;if(Math.abs(delta)<=0.0002)return;spikes.push({idx:tlChart.data.labels.length,delta});if(spikes.length>20)spikes.shift();const sl=document.getElementById('spike-label');if(sl)sl.textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}
 // Calibration-period overlay. The early stretch of the durable timeline is the model
 // warming up — few events, a jagged ramp — before the estimate settles onto its plateau.
 // We detect that settle point from the series itself (the last sample sitting well off
@@ -903,6 +929,9 @@ function applyTimeline(entries){
   // rendered reversed: newest block on the left, baseline flat in the middle,
   // live appends on the right (the "spike-flat-spike" look).
   entries=entries.slice().reverse();
+  // Wholesale history reload — drop the session's spike markers and re-seed the
+  // spike baseline so the reload discontinuity itself doesn't register as a spike.
+  spikes.length=0;prevAnnual=null;{const _sl=document.getElementById('spike-label');if(_sl)_sl.textContent='';}
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay();tlChart.update('none');
@@ -920,7 +949,7 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());for(let k=spikes.length-1;k>=0;k--)if(--spikes[k].idx<0)spikes.splice(k,1);}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
     // fetch every ~9s and the age brackets would lose all their history.
