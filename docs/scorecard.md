@@ -37,7 +37,7 @@ treat it as a last resort, not a default. A do-nothing run is a failure of nerve
 | Index ceiling | no saturation theater | `grep FORECAST_INDEX_CEILING src/theater.rs` | 95 | **Hold** |
 | 6h-trend contract | server-computed, not client | `cargo test trend_6h` + `epoch_store_trend_*` | green | **Hold** |
 | Eyes (deploy-time) | renders + headline credible | `deploy/eyes/smoke.mjs` (local deploy only) | green | **Hold** |
-| Feed liveness | every source live or replaced | feed roster / ingestor health | all live | **↑** / never ↓ |
+| Feed liveness | every source live or replaced | `cargo test --release feed_roster_liveness -- --ignored --nocapture` (live network — local only) | **102/103** (2026-06-09 audit; anadolu in a transient upstream 502 — same-day ingest 16:24Z, watch not replace) | **↑** / never ↓ |
 | Enricher latency | classify p50 | live `journalctl` (GPU-bound, cap=2 by VRAM) | ~6s | informational — not a lever (see improvement-log 2026-06-09) |
 
 The cloud routine can verify everything except **Eyes** and **Enricher latency** (no live
