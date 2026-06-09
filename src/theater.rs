@@ -578,6 +578,10 @@ mod tests {
     }
 
     #[test]
+    // The constant assertions are the point: they pin relationships between tuning
+    // constants and fail with a readable message at test time (a `const` block would
+    // turn them into bare compile errors and drop the explanations).
+    #[allow(clippy::assertions_on_constants)]
     fn quiet_theater_never_leaks_into_couplers() {
         // HONESTY INVARIANT: a Stable theater (heat at/below STABLE_HEAT_CEILING) must
         // contribute EXACTLY ZERO to every systemic amplifier — concurrency,
