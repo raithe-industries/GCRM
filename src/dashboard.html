@@ -458,8 +458,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
           <div class="map-half">
             <div id="worldmap"></div>
             <div class="map-toolbar">
-              <button class="map-btn on" id="map-2d" onclick="setMapMode('2d')" title="Flat map">2D</button>
-              <button class="map-btn" id="map-3d" onclick="setMapMode('3d')" title="3D globe">3D</button>
+              <button class="map-btn" id="map-2d" onclick="setMapMode('2d')" title="Flat map">2D</button>
+              <button class="map-btn on" id="map-3d" onclick="setMapMode('3d')" title="3D globe (auto-rotating)">3D</button>
               <button class="map-btn" id="map-layers-btn" onclick="toggleLayerPanel()" title="Toggle layers">Layers</button>
             </div>
             <div class="map-panel" id="map-panel">
@@ -1077,7 +1077,8 @@ async function fetchOpLog(){
 }
 
 // ── OSINT world map + Finance Radar (engineering-effects modules) ────────────
-let _map=null,_mapMode='2d',_layerMeta=[],_mapBooted=false;
+let _map=null,_mapMode='3d',_layerMeta=[],_mapBooted=false,_hovering=false,_spinWired=false;
+const SECONDS_PER_REV=150; // ~2.5 min per rotation — a calm, eternal spin through space
 function emptyFC(){return {type:'FeatureCollection',features:[]};}
 function esc(s){return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
 
@@ -1092,7 +1093,7 @@ async function bootMap(){
       sources:{base:{type:'raster',tiles,tileSize:256,
       attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
       layers:[{id:'base',type:'raster',source:'base'}]},
-    center:[28,26],zoom:1.1,minZoom:0.5,maxZoom:7,renderWorldCopies:true,
+    center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:7,renderWorldCopies:true,
     attributionControl:{compact:true}});
   _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
   _map.on('load',()=>{
@@ -1119,7 +1120,27 @@ async function bootMap(){
     wireMapClicks();
     buildLayerPanel(d);
     _mapBooted=true;
+    wireSpin();          // pause-on-hover + continuous-rotation handlers
+    setMapMode('3d');    // default to the auto-rotating tilted globe
   });
+}
+
+// Auto-rotating 3D globe: one gentle eastward step per second, re-triggered on
+// moveend so it spins forever. Pauses while hovering the map (so it's instantly
+// manipulatable / layer-selectable) and while zoomed in, then resumes on leave.
+function spinStep(){
+  if(!_map||_mapMode!=='3d'||_hovering||_map.getZoom()>3.2)return;
+  const c=_map.getCenter(); c.lng-=360/SECONDS_PER_REV;
+  _map.easeTo({center:c,duration:1000,easing:n=>n});
+}
+function wireSpin(){
+  if(_spinWired)return; _spinWired=true;
+  _map.on('moveend',spinStep);
+  const half=document.querySelector('.map-half');
+  if(half){
+    half.addEventListener('mouseenter',()=>{_hovering=true;_map.stop();});
+    half.addEventListener('mouseleave',()=>{_hovering=false;spinStep();});
+  }
 }
 
 async function refreshMap(){ if(!_map||!_mapBooted)return;
@@ -1167,7 +1188,11 @@ function toggleLayerPanel(){ const p=document.getElementById('map-panel');
 function setMapMode(m){ _mapMode=m;
   document.getElementById('map-2d').classList.toggle('on',m==='2d');
   document.getElementById('map-3d').classList.toggle('on',m==='3d');
-  if(!_map)return; try{ _map.setProjection({type:m==='3d'?'globe':'mercator'}); }catch(e){} }
+  if(!_map)return;
+  try{
+    if(m==='3d'){ _map.setProjection({type:'globe'}); _map.easeTo({bearing:23.4,pitch:0,duration:700}); setTimeout(spinStep,760); }
+    else{ _map.stop(); _map.setProjection({type:'mercator'}); _map.easeTo({bearing:0,pitch:0,duration:700}); }
+  }catch(e){} }
 
 function wireMapClicks(){
   const ids=_layerMeta.filter(l=>l.id!=='theaters').map(l=>'lyr-'+l.kind).concat(['lyr-theaters']);
