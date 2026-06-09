@@ -108,12 +108,8 @@ P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at 0.90</pre>
 <p>The public headline is aligned to the escalation ladder so it reads as a rung, not an opaque number: <code>index = 100 · (max_rung_level + within-band heat) / 6</code>. Great-Power War with deep heat reads ~75–83; a quiet world reads near zero.</p>
 
 <h2 id="calibration">Calibration &amp; backtest</h2>
-<p>The constants are <b>fitted, not guessed</b>. A backtest harness replays synthetic historical analogs through the full engine on every CI run and asserts both the bands and the ordering:</p>
-<table><tr><th>Analog</th><th>P(systemic war), annualized</th></tr>
-<tr><td>Quiet modern year</td><td>~2%</td></tr>
-<tr><td>Ukraine, Feb 2022 (one full-war theater)</td><td>~39%</td></tr>
-<tr><td>Present world (idealized full-intensity)</td><td>~65% (live corpus, a fragile ceasefire, reads lower)</td></tr>
-<tr><td>Cuba, Oct 1962 (direct nuclear brink)</td><td>~80%</td></tr></table>
+<p>The constants are <b>fitted, not guessed</b>. A backtest harness replays synthetic historical analogs through the full engine and asserts both the target bands and the ordering on every CI run. The readout below is <b>computed live from the running model</b> at startup and scored against the expert-anchored centres with proper scoring rules &mdash; so the calibration's fidelity is <i>shown</i>, not asserted:</p>
+{{CALIBRATION_EVIDENCE}}
 <p>Ordering <code>quiet &lt; Ukraine &lt; current &lt; Cuba</code> is enforced. The brink term is what lets one nuclear-superpower standoff outrank three concurrent regional wars.</p>
 
 <h2 id="ai">The AI layer</h2>

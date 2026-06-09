@@ -59,7 +59,10 @@ impl ServerState {
     pub fn new(app_state: SharedState, base_path: &str) -> (Self, broadcast::Sender<Arc<String>>) {
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
         let html = Arc::new(generate_dashboard_html(base_path));
-        let methodology = Arc::new(render_base_path(METHODOLOGY_HTML, base_path));
+        let methodology = Arc::new(
+            render_base_path(METHODOLOGY_HTML, base_path)
+                .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html()),
+        );
         let state = Self {
             app_state,
             broadcast_tx:     tx.clone(),
@@ -594,6 +597,20 @@ mod tests {
             "base path must be substituted into methodology links");
         assert!(!state.methodology_html.contains("{{BASE_PATH}}"),
             "no unrendered template tokens may remain");
+    }
+
+    #[test]
+    fn methodology_renders_live_calibration_evidence() {
+        // 1.1b: the methodology page must surface the model's live calibration fidelity,
+        // computed at startup — not a hand-written table that goes stale. Guards both that
+        // the placeholder is substituted and that the readout (Brier + in-band) is present.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        assert!(!state.methodology_html.contains("{{CALIBRATION_EVIDENCE}}"),
+            "the calibration-evidence placeholder must be substituted at startup");
+        assert!(state.methodology_html.contains("Brier"),
+            "methodology must show the live calibration fidelity (Brier/RMSE)");
+        assert!(state.methodology_html.contains("within band"),
+            "methodology must show the in-band count");
     }
 
     #[test]

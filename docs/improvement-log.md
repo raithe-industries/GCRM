@@ -16,6 +16,23 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — legibility/honesty — surfaced live calibration evidence on the methodology page
+- Item: roadmap 1.1b (now checked).
+- Change: un-gated `mod backtest` (was `#[cfg(test)]`) and added `pub calibration_evidence_html()`,
+  which renders the live per-analog table (model P vs anchor + Δ) and the aggregate Brier/RMSE/
+  in-band. `server.rs` substitutes it into a new `{{CALIBRATION_EVIDENCE}}` placeholder in
+  methodology.html at startup (mirrors `{{BASE_PATH}}`). Removed the hand-written calibration
+  table — which had itself gone stale (it still showed ~65% for current-full) — so the page now
+  shows numbers computed from the running model that cannot drift. Test-only helpers
+  (`live_hot_2026`, `cross_entropy`) kept under `#[cfg(test)]` so the release binary stays clean.
+- Metric moved: the calibration evidence is now ALSO operator-visible (not CI-only); test count
+  349 → 350 (added `methodology_renders_live_calibration_evidence`). RUNTIME change this time
+  (unlike 1.1/1.1a) — methodology page content changes; dashboard untouched.
+- Proof: `cargo build --release` clean (no warnings); `cargo test --release` = 349 passed / 0
+  failed / 1 ignored; the new test asserts the placeholder is substituted and Brier/in-band render.
+- Notes: deploy gate is build+health+eyes (eyes covers the dashboard, which is unchanged); the
+  readout runs at `ServerState::new` (4 deterministic scenario sims, negligible startup cost).
+
 ## 2026-06-09 — honesty/model — re-anchored current_2026 65%→60% (resolves the calibration gap)
 - Item: roadmap 1.1a (now checked).
 - Decision (Robert): the −4.9pp `current_2026` gap surfaced by the evidence harness was a STALE

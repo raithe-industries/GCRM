@@ -32,9 +32,12 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   current_2026's breadth-2 from the live read's breadth-3). So the centre was corrected 65→60
   to match the documented design intent; model untouched, zero peg risk. Brier 0.00060→~2e-6,
   RMSE 2.45pp→0.14pp, all four anchors within 0.2pp. **Do NOT re-raise current_2026 to 65%.**
-- [ ] **1.1b expose calibration evidence at runtime** [candidate] — the harness is test-only
-  (`backtest` is `#[cfg(test)]`). Consider surfacing Brier/RMSE/in-band on the methodology
-  view so calibration fitness is visible to an operator, not just in CI.
+- [x] **1.1b expose calibration evidence at runtime** — **DONE 2026-06-09.** `mod backtest` is
+  no longer `#[cfg(test)]`; `calibration_evidence_html()` renders the live per-analog table +
+  aggregate Brier/RMSE/in-band, substituted into the methodology page's `{{CALIBRATION_EVIDENCE}}`
+  placeholder at startup (same mechanism as `{{BASE_PATH}}`). This also replaced the hand-written
+  `~65%` calibration table that had itself gone stale — the readout is now computed from the
+  running model and can't drift. Locked by `methodology_renders_live_calibration_evidence`.
 - [ ] **1.2 Calibration-constant provenance** [candidate] — for each fitted constant
   (regime ×, P₀, breadth, coupler weights), ensure a one-line written rationale + the test
   that pins it exists near the definition. Where one is missing, add it. Never change a
