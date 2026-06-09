@@ -12,7 +12,8 @@
 // checks that P(WWIII) lands in the target bands Robert set, AND that the ordering
 // quiet < Ukraine-2022 < current-2026 < Cuba-1962 holds. This is the discipline that
 // makes the headline defensible: the constants in theater.rs / bayesian.rs / models.rs
-// are fitted here, not guessed. The whole module is test-only.
+// are fitted here, not guessed. Most of it runs under `cargo test`; `calibration_evidence_html()`
+// is ALSO called at runtime to render the live calibration readout on the methodology page.
 //
 // Target bands (Robert, 2026-05-31; current-full re-anchored 2026-06-09 — see below). The
 // idealised full-intensity analogs are scored against these expert-set CENTRES by the
@@ -103,6 +104,7 @@ fn current_2026() -> (f64, Vec<GeopoliticalEvent>) {
     (5.46, ev)
 }
 
+#[cfg(test)] // watch-only analog (no hard band); used only by the calibration_readout test
 fn live_hot_2026() -> (f64, Vec<GeopoliticalEvent>) {
     // The live 2026-06 corpus: FOUR concurrent hot theaters with one (US–China/Taiwan)
     // escalated to the Great-Power-War rung. Breadth PLUS an active great-power war —
@@ -251,6 +253,7 @@ fn brier_score(pairs: &[(f64, f64)]) -> f64 {
 /// Mean binary cross-entropy of (prediction, target) pairs, treating each expert centre as a
 /// soft label. Predictions are clamped to [EPS, 1-EPS] so a 0/1 prediction cannot blow up to
 /// infinity. Lower = better; note the floor is the targets' own entropy, not zero.
+#[cfg(test)] // auxiliary proper-scoring lens for the test readout; runtime evidence uses Brier/RMSE
 fn cross_entropy(pairs: &[(f64, f64)]) -> f64 {
     const EPS: f64 = 1e-9;
     if pairs.is_empty() { return 0.0; }
@@ -261,7 +264,7 @@ fn cross_entropy(pairs: &[(f64, f64)]) -> f64 {
 }
 
 /// Aggregate calibration evidence for the live model against the anchored analogs.
-struct CalibrationEvidence { brier: f64, rmse: f64, cross_entropy: f64, in_band: usize, n: usize }
+struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize }
 
 fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
     let anchors = calibration_anchors();
@@ -270,11 +273,38 @@ fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
     let ev = CalibrationEvidence {
         brier,
         rmse: brier.sqrt(),
-        cross_entropy: cross_entropy(&pairs),
         in_band: anchors.iter().filter(|a| a.p >= a.lo && a.p <= a.hi).count(),
         n: anchors.len(),
     };
     (ev, anchors)
+}
+
+/// Render the live calibration evidence as an HTML fragment for the methodology page
+/// (substituted into the `{{CALIBRATION_EVIDENCE}}` placeholder at startup). Computed from
+/// the RUNNING model, so the page shows the calibration's real fidelity instead of a
+/// hand-written table that silently goes stale (as the old "~65%" row did). No user input —
+/// every value is a formatted number, so the fragment is injection-safe.
+pub fn calibration_evidence_html() -> String {
+    let (ev, anchors) = calibration_evidence();
+    let label = |n: &str| -> &'static str { match n {
+        "quiet"        => "Quiet modern year",
+        "ukraine_2022" => "Ukraine, Feb 2022 (one full-war theater)",
+        "current_2026" => "Present world (idealized: 3 theaters, no direct brink)",
+        "cuba_1962"    => "Cuba, Oct 1962 (direct nuclear brink)",
+        _              => "Analog",
+    }};
+    let mut rows = String::new();
+    for a in &anchors {
+        rows.push_str(&format!(
+            "<tr><td>{}</td><td>{:.2}%</td><td>~{:.0}%</td><td>{:+.2}pp</td></tr>",
+            label(a.name), a.p * 100.0, a.centre * 100.0, (a.p - a.centre) * 100.0));
+    }
+    format!(
+        "<table><tr><th>Analog</th><th>Model P (annualized)</th><th>Anchor</th><th>&Delta;</th></tr>{rows}</table>\n\
+         <p>Aggregate fidelity vs the anchored centres: <b>Brier {:.6}</b> &middot; <b>RMSE {:.2}pp</b> &middot; \
+         <b>{}/{} within band</b> &mdash; computed live from the running model at startup with proper scoring \
+         rules (0 is a perfect match to the anchors; lower is better).</p>",
+        ev.brier, ev.rmse * 100.0, ev.in_band, ev.n)
 }
 
 #[test]
@@ -309,8 +339,9 @@ fn calibration_evidence_report() {
             a.name, a.p * 100.0, a.centre * 100.0, (a.p - a.centre) * 100.0,
             a.lo * 100.0, a.hi * 100.0, inb);
     }
+    let xe = cross_entropy(&anchors.iter().map(|a| (a.p, a.centre)).collect::<Vec<_>>());
     eprintln!("aggregate: Brier={:.5}  RMSE={:.2}pp  cross-entropy={:.4}  in-band={}/{}\n",
-        ev.brier, ev.rmse * 100.0, ev.cross_entropy, ev.in_band, ev.n);
+        ev.brier, ev.rmse * 100.0, xe, ev.in_band, ev.n);
 
     // Robust invariants only — evidence, not a brittle trip-wire.
     assert_eq!(ev.in_band, ev.n, "all anchored analogs must land in their target band");

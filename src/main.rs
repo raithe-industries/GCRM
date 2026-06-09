@@ -26,7 +26,6 @@
 
 mod aggregator;
 mod api;
-#[cfg(test)]
 mod backtest;
 mod backfill;
 mod bayesian;
