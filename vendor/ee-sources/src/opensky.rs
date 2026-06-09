@@ -45,7 +45,18 @@ impl Source for OpenSky {
         let client = reqwest::Client::builder()
             .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
             .build()?;
-        let body = client.get(self.url()).send().await?.text().await?;
+        let mut req = client.get(self.url());
+        // Optional OpenSky account → HTTP Basic auth, which raises the daily credit
+        // budget ~10× over anonymous. Set OPENSKY_USERNAME / OPENSKY_PASSWORD to enable;
+        // unset, it falls back to anonymous access.
+        if let (Ok(user), Ok(pass)) =
+            (std::env::var("OPENSKY_USERNAME"), std::env::var("OPENSKY_PASSWORD"))
+        {
+            if !user.is_empty() {
+                req = req.basic_auth(user, Some(pass));
+            }
+        }
+        let body = req.send().await?.text().await?;
         parse_opensky(&body)
     }
 }
