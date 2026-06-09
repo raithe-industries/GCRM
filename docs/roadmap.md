@@ -18,10 +18,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 ---
 
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
-- [ ] **1.1 Calibration evidence harness** [candidate] — add a reproducible held-out
-  scoring of P(WWIII) (Brier / log-loss over the backtest windows) so calibration changes
-  are *earned by a number*, not asserted. Lock it with a test; record the baseline in the
-  scorecard. This is the single highest-honesty item: it unlocks principled model work.
+- [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now
+  scores the live model against Robert's anchored band CENTRES with proper scoring rules
+  (Brier + cross-entropy), printed reproducibly via `cargo test calibration_evidence_report
+  -- --nocapture` and locked by 3 tests. Baseline: **Brier 0.00060, RMSE 2.45pp, in-band
+  4/4.** Deliberately evidence, not a tighter-than-band gate (that would fight legit
+  live-targeted recalibration). See improvement-log 2026-06-09.
+- [ ] **1.1a current_2026 calibration gap** [verified] — the evidence harness shows
+  `current_2026` reads 60.1% vs its 65% centre (−4.9pp) — the model's weakest anchor and the
+  sole driver of the RMSE (the other three are within 0.2pp). Known side-effect of the
+  2026-06-03 saturating-breadth fix. Decide principledly whether the idealised current-full
+  analog should sit at 65% or the centre should move; if the model should rise, find the
+  defensible lever (NOT a blind constant tweak) and prove it by LOWERING Brier while keeping
+  all bands + ordering green.
+- [ ] **1.1b expose calibration evidence at runtime** [candidate] — the harness is test-only
+  (`backtest` is `#[cfg(test)]`). Consider surfacing Brier/RMSE/in-band on the methodology
+  view so calibration fitness is visible to an operator, not just in CI.
 - [ ] **1.2 Calibration-constant provenance** [candidate] — for each fitted constant
   (regime ×, P₀, breadth, coupler weights), ensure a one-line written rationale + the test
   that pins it exists near the definition. Where one is missing, add it. Never change a

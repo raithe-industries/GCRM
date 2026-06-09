@@ -31,9 +31,9 @@ treat it as a last resort, not a default. A do-nothing run is a failure of nerve
 |---|---|---|---|---|
 | Build | release builds | `cargo build --release` | green | **Hold** |
 | Tests green | full suite passes | `cargo test` | green | **Hold** |
-| Test count | locked behavior | `grep -rhoE '#\[(tokio::)?test\]' src \| wc -l` | **346** | **↑** (never ↓ without deleting dead code + noting it) |
+| Test count | locked behavior | `grep -rhoE '#\[(tokio::)?test\]' src \| wc -l` | **349** | **↑** (never ↓ without deleting dead code + noting it) |
 | Calibration bands | honesty floor | `cargo test backtest` (quiet/Ukraine/current/Cuba) | green | **Hold** |
-| Calibration evidence | the number is earned | Brier / log-loss on held-out windows (see roadmap #1.1) | *not yet measured* | **↑** (build the harness, then lower error) |
+| Calibration evidence | the number is earned | `cargo test calibration_evidence_report -- --nocapture` (Brier vs Robert's anchored band centres) | **Brier 0.00060 / RMSE 2.45pp / in-band 4/4** (2026-06-09) | **↓ Brier** (lower = better-fit; don't regress upward without a documented live-targeted reason). Soft spot: `current_2026` −4.9pp. |
 | Index ceiling | no saturation theater | `grep FORECAST_INDEX_CEILING src/theater.rs` | 95 | **Hold** |
 | 6h-trend contract | server-computed, not client | `cargo test trend_6h` + `epoch_store_trend_*` | green | **Hold** |
 | Eyes (deploy-time) | renders + headline credible | `deploy/eyes/smoke.mjs` (local deploy only) | green | **Hold** |
