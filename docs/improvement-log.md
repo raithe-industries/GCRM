@@ -16,6 +16,33 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — honesty/model — locked systemic cross-check invariants (monotonicity, bounds, ceiling)
+- Item: roadmap 1.3 (now checked).
+- Change: added 5 invariant tests to `src/theater.rs` that pin the systemic engine's core
+  honesty properties — previously UNGUARDED, so a future calibration tweak could have silently
+  broken monotonicity or let the headline exceed the 95 forecast ceiling (a dishonest number)
+  with nothing to catch it. The tests assert RELATIONSHIPS the model must always satisfy, not
+  fitted magnitudes, so they lock behaviour without freezing the calibration:
+  1. `systemic_outputs_stay_bounded_over_many_worlds` — 400-world deterministic LCG fuzz:
+     systemic_index ∈ [0, FORECAST_INDEX_CEILING], l_sys ≥ 0, every theater heat ∈ [0,1],
+     delta ∈ [-1,1], couplers (gp_entanglement/alliance ∈ [0,1], concurrency ≤ 5,
+     coupling_multiplier ≥ 1).
+  2. `adding_a_hot_theater_never_lowers_systemic_outputs` — systemic-level monotonicity: a
+     second hot theater never lowers the index and strictly raises l_sys.
+  3. `adding_a_modality_never_cools_a_theater_or_the_index` — intra-theater monotonicity over a
+     strict superset of hot modalities (robust because bayesian::score_all is per-domain with a
+     fresh per-call scorer, so added modalities only add positive weighted terms + raise cooc).
+  4. `de_escalation_lowers_the_systemic_index` — hot→quiet drops index (<1.0) and l_sys.
+  5. `systemic_rung_pegs_index_at_forecast_ceiling_not_100` — apex nuclear-use rung (raw ladder
+     100) clamps to exactly 95; locks the ceiling clamp to the actual apex output so the
+     headline can never print certainty (100) on a news-inferred detonation.
+- Metric moved: test count 350 → 355 (5 new locked invariants); new "frontier" rows for the
+  monotonicity/boundedness/ceiling properties. No model constant touched — pure honesty locks.
+- Proof: `cargo build --release` clean (0 warnings); `cargo test --release` = 354 passed / 0
+  failed / 1 ignored. `cargo test theater::` = 16 passed.
+- Notes: these are invariant (relational) tests, deliberately NOT magnitude gates — they survive
+  legitimate live-targeted recalibration but trip on a sign/clamp/monotonicity regression.
+
 ## 2026-06-09 — legibility/honesty — surfaced live calibration evidence on the methodology page
 - Item: roadmap 1.1b (now checked).
 - Change: un-gated `mod backtest` (was `#[cfg(test)]`) and added `pub calibration_evidence_html()`,

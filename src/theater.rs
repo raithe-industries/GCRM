@@ -688,4 +688,156 @@ mod tests {
         assert_eq!(t.rung, EscalationRung::Systemic,
             "one clean confirmation in the window must still force the systemic rung");
     }
+
+    // ── Systemic cross-check invariants (roadmap 1.3) ──────────────────────────
+    // These lock the model's core honesty properties — bounded outputs, escalation
+    // monotonicity ("more escalation never lowers the index"), de-escalation actually
+    // de-escalating, and the apex pegging at the forecast ceiling rather than 100.
+    // None of these were guarded before: a future calibration tweak could silently
+    // break monotonicity or let the headline exceed 95, producing a dishonest number,
+    // with nothing to catch it. They assert relationships the model must always satisfy,
+    // not fitted magnitudes, so they pin behaviour without freezing the calibration.
+
+    /// Multi-modality, clearly-hot theater used as a building block for the invariants.
+    fn strong_theater(theater: &str, actors: &[&str], gp: bool) -> Vec<GeopoliticalEvent> {
+        let mut v = Vec::new();
+        for _ in 0..6 {
+            v.push(ev(theater, "military_escalation", 0.95, 0.9, actors, gp));
+            v.push(ev(theater, "nuclear_posture",     0.90, 0.9, actors, gp));
+            v.push(ev(theater, "economic_warfare",    0.85, 0.7, actors, gp));
+        }
+        v
+    }
+
+    #[test]
+    fn systemic_outputs_stay_bounded_over_many_worlds() {
+        // Honesty invariant: whatever the window looks like, the public index stays in
+        // [0, FORECAST_INDEX_CEILING], l_sys is non-negative, and every per-theater /
+        // coupler field stays in its declared range. A change that lets the headline
+        // exceed the 95 forecast ceiling — or go negative — is a dishonest number; this
+        // fuzz catches it across 400 deterministically-generated worlds.
+        let theaters = ["nato_russia", "us_iran", "us_china_taiwan", "india_pakistan", "korea"];
+        let domains  = ["military_escalation", "nuclear_posture", "economic_warfare",
+                        "cyber_info_ops", "diplomatic_breakdown", "great_power_conflict"];
+        let actors   = ["united_states", "russia", "china", "nato", "iran", "india", "pakistan"];
+        // Deterministic LCG so the fuzz is reproducible (no external rng dependency).
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = |m: u64| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (state >> 33) % m
+        };
+        for _ in 0..400 {
+            let mut events = Vec::new();
+            let n = next(40) as usize;
+            for _ in 0..n {
+                let t   = theaters[next(theaters.len() as u64) as usize];
+                let d   = domains[next(domains.len() as u64) as usize];
+                let sig = next(101) as f64 / 100.0;
+                let sev = next(101) as f64 / 100.0;
+                let a1  = actors[next(actors.len() as u64) as usize];
+                let a2  = actors[next(actors.len() as u64) as usize];
+                let gp  = next(2) == 1;
+                let mut e = ev(t, d, sig, sev, &[a1, a2], gp);
+                e.escalation_language_score = next(101) as f64 / 100.0;
+                events.push(e);
+            }
+            let mut te = TheaterEngine::new();
+            let out = te.compute(&events);
+            assert!((0.0..=FORECAST_INDEX_CEILING).contains(&out.systemic_index),
+                "systemic_index out of bounds: {}", out.systemic_index);
+            assert!(out.l_sys >= 0.0, "l_sys negative: {}", out.l_sys);
+            assert!((0.0..=1.0).contains(&out.couplers.gp_entanglement));
+            assert!((0.0..=1.0).contains(&out.couplers.alliance_activation));
+            assert!((0.0..=5.0).contains(&out.couplers.concurrency));
+            assert!(out.couplers.coupling_multiplier >= 1.0);
+            for st in &out.theaters {
+                assert!((0.0..=1.0).contains(&st.heat), "heat out of range: {}", st.heat);
+                assert!((-1.0..=1.0).contains(&st.delta), "delta out of range: {}", st.delta);
+                assert!(st.rung.level() <= EscalationRung::Systemic.level());
+            }
+        }
+    }
+
+    #[test]
+    fn adding_a_hot_theater_never_lowers_systemic_outputs() {
+        // Monotonicity at the systemic level: adding a second hot theater (all else
+        // equal) must never LOWER the headline index, and must RAISE the systemic
+        // likelihood (more concurrent fronts = more systemic danger). This is the
+        // "more escalation never lowers the index" invariant the wide bands could hide.
+        let one = strong_theater("us_iran", &["united_states", "iran"], true);
+        let mut two = one.clone();
+        two.extend(strong_theater("nato_russia", &["russia", "nato"], true));
+        let o1 = TheaterEngine::new().compute(&one);
+        let o2 = TheaterEngine::new().compute(&two);
+        assert!(o2.systemic_index >= o1.systemic_index,
+            "a second hot theater must not lower the index: {} -> {}",
+            o1.systemic_index, o2.systemic_index);
+        assert!(o2.l_sys > o1.l_sys,
+            "a second hot theater must raise systemic likelihood: {} -> {}", o1.l_sys, o2.l_sys);
+        assert!(o2.couplers.concurrency > o1.couplers.concurrency);
+    }
+
+    #[test]
+    fn adding_a_modality_never_cools_a_theater_or_the_index() {
+        // Intra-theater monotonicity: a strict SUPERSET of escalation modalities in one
+        // theater must be at least as hot (here, strictly hotter) and never lower the
+        // index. Scoring is per-domain (bayesian::score_all) with a fresh per-call
+        // scorer, so adding distinct hot modalities only adds positive weighted terms
+        // and raises co-occurrence — it can never cool an existing modality.
+        let mut lo = Vec::new();
+        for _ in 0..6 {
+            lo.push(ev("us_iran", "military_escalation", 0.9, 0.8, &["united_states", "iran"], true));
+        }
+        let mut hi = lo.clone();
+        for _ in 0..6 {
+            hi.push(ev("us_iran", "nuclear_posture",  0.9, 0.8, &["united_states", "iran"], true));
+            hi.push(ev("us_iran", "economic_warfare", 0.85, 0.7, &["united_states", "iran"], true));
+        }
+        let o1 = TheaterEngine::new().compute(&lo);
+        let o2 = TheaterEngine::new().compute(&hi);
+        let g1 = o1.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        let g2 = o2.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert!(g2.heat > g1.heat,
+            "adding hot modalities must not cool a theater: {} -> {}", g1.heat, g2.heat);
+        assert!(o2.systemic_index >= o1.systemic_index,
+            "adding hot modalities must not lower the index: {} -> {}",
+            o1.systemic_index, o2.systemic_index);
+    }
+
+    #[test]
+    fn de_escalation_lowers_the_systemic_index() {
+        // De-escalation must actually de-escalate: a theater that goes from clearly hot
+        // to a quiet window must drop the headline and the systemic likelihood, not stay
+        // pinned. (Per-tick state lives in the same engine, so this also exercises the
+        // cool-off path.)
+        let mut te = TheaterEngine::new();
+        let o_hot = te.compute(&strong_theater("us_iran", &["united_states", "iran"], true));
+        assert!(o_hot.systemic_index > 50.0,
+            "precondition: hot world index should be high, got {}", o_hot.systemic_index);
+        let o_calm = te.compute(&[]);
+        assert!(o_calm.systemic_index < o_hot.systemic_index,
+            "de-escalation must lower the index: {} -> {}", o_hot.systemic_index, o_calm.systemic_index);
+        assert!(o_calm.systemic_index < 1.0, "a quiet world must read near zero, got {}", o_calm.systemic_index);
+        assert!(o_calm.l_sys < o_hot.l_sys, "de-escalation must lower l_sys");
+    }
+
+    #[test]
+    fn systemic_rung_pegs_index_at_forecast_ceiling_not_100() {
+        // The apex (nuclear-use) Systemic rung sits at the top of the 0..100 ladder
+        // (level 5, full within-band → raw 100), but a model-INFERRED forecast must read
+        // "very high" (95), never "certain" (100). This locks the FORECAST_INDEX_CEILING
+        // clamp to the actual apex output, so a future change to the index formula can't
+        // silently let the headline print 100 on a news-inferred detonation.
+        let mut te = TheaterEngine::new();
+        let mut e = ev("us_iran", "nuclear_posture", 1.0, 1.0, &["united_states", "russia"], true);
+        e.title = "Nuclear detonation confirmed over military target".into();
+        e.nuclear_indicator = true;
+        let out = te.compute(&[e]);
+        let g = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(g.rung, EscalationRung::Systemic);
+        assert_eq!(out.systemic_index, FORECAST_INDEX_CEILING,
+            "apex Systemic rung must peg the index at the forecast ceiling (95), got {}",
+            out.systemic_index);
+        assert!(out.systemic_index < 100.0, "a forecast must never print certainty (100)");
+    }
 }
