@@ -24,13 +24,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   -- --nocapture` and locked by 3 tests. Baseline: **Brier 0.00060, RMSE 2.45pp, in-band
   4/4.** Deliberately evidence, not a tighter-than-band gate (that would fight legit
   live-targeted recalibration). See improvement-log 2026-06-09.
-- [ ] **1.1a current_2026 calibration gap** [verified] — the evidence harness shows
-  `current_2026` reads 60.1% vs its 65% centre (−4.9pp) — the model's weakest anchor and the
-  sole driver of the RMSE (the other three are within 0.2pp). Known side-effect of the
-  2026-06-03 saturating-breadth fix. Decide principledly whether the idealised current-full
-  analog should sit at 65% or the centre should move; if the model should rise, find the
-  defensible lever (NOT a blind constant tweak) and prove it by LOWERING Brier while keeping
-  all bands + ordering green.
+- [x] **1.1a current_2026 calibration gap** — **RESOLVED 2026-06-09 (Robert's call).** The
+  −4.9pp gap was a STALE ANCHOR, not a model flaw. Mechanism analysis showed raising the model
+  to the old 65% centre means lifting the breadth-saturation asymptote (~0.26→~0.34), which
+  also pushes the *real live read* ~82%→~85-86% — eroding the off-the-0.90-peg headroom the
+  2026-06-03 brink>breadth fix created (the saturation curve is monotonic, so no lever isolates
+  current_2026's breadth-2 from the live read's breadth-3). So the centre was corrected 65→60
+  to match the documented design intent; model untouched, zero peg risk. Brier 0.00060→~2e-6,
+  RMSE 2.45pp→0.14pp, all four anchors within 0.2pp. **Do NOT re-raise current_2026 to 65%.**
 - [ ] **1.1b expose calibration evidence at runtime** [candidate] — the harness is test-only
   (`backtest` is `#[cfg(test)]`). Consider surfacing Brier/RMSE/in-band on the methodology
   view so calibration fitness is visible to an operator, not just in CI.
