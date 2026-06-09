@@ -42,9 +42,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (regime ×, P₀, breadth, coupler weights), ensure a one-line written rationale + the test
   that pins it exists near the definition. Where one is missing, add it. Never change a
   value without evidence + a test; this item is documentation/traceability, not tuning.
-- [ ] **1.3 Coupler / theater cross-checks** [candidate] — sanity invariants as tests:
-  monotonicity (more escalation never lowers the index, all else equal), bounded outputs,
-  de-escalation actually de-escalates. Each invariant you can prove → a new locked test.
+- [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
+  `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
+  before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
+  ∈ [0,1], couplers in range); systemic-level monotonicity (a second hot theater never lowers
+  the index, raises l_sys); intra-theater monotonicity (a superset of hot modalities never cools
+  a theater or the index); de-escalation actually lowers index+l_sys; and the apex (nuclear-use)
+  Systemic rung pegging the index at exactly FORECAST_INDEX_CEILING (95), never 100. These pin
+  RELATIONSHIPS the model must always satisfy, not fitted magnitudes — they don't freeze the
+  calibration. See improvement-log 2026-06-09.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [ ] **2.1 Small/short-viewport pass** [candidate] — the landing left rail must SCROLL
