@@ -260,6 +260,44 @@ async fn finance_payload_uncached() -> Value {
     let (events, err) = fetch_one("yahoo", Yahoo::default(), 12).await;
     let r = radar(&events, &RadarParams::default());
 
+    // Per-instrument movers — the actual market read the panel shows: each tracked
+    // symbol's live price and signed daily move, biggest move first. The radar composite
+    // is a useful one-line stress gauge, but on its own it told the operator nothing
+    // actionable; these rows are the substance. The numbers are already in each Yahoo
+    // event's `raw` meta — we just surface them instead of collapsing to a stress score.
+    let mut instruments: Vec<Value> = events
+        .iter()
+        .filter_map(|e| {
+            let m = &e.raw;
+            let price = m.get("regularMarketPrice").and_then(Value::as_f64)?;
+            let prev = m
+                .get("chartPreviousClose")
+                .or_else(|| m.get("previousClose"))
+                .and_then(Value::as_f64)
+                .unwrap_or(price);
+            let pct = if prev != 0.0 { (price - prev) / prev * 100.0 } else { 0.0 };
+            let symbol = m.get("symbol").and_then(Value::as_str).unwrap_or("");
+            let name = m
+                .get("shortName")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(e.title.as_str());
+            Some(json!({
+                "name": instrument_name(symbol, name),
+                "symbol": symbol,
+                "price": price,
+                "pct": pct,
+                "url": e.url,
+            }))
+        })
+        .collect();
+    // Biggest absolute move first — the panel leads with whatever is actually moving.
+    instruments.sort_by(|a, b| {
+        let pa = a["pct"].as_f64().unwrap_or(0.0).abs();
+        let pb = b["pct"].as_f64().unwrap_or(0.0).abs();
+        pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     let segments: Vec<Value> = r
         .segments
         .iter()
@@ -282,9 +320,26 @@ async fn finance_payload_uncached() -> Value {
         "dominant": r.dominant.map(|s| s.label()),
         "active_segments": r.active_segments(),
         "total_events": r.total_events,
+        "instruments": instruments,
         "segments": segments,
         "errors": err.map(|e| vec![e]).unwrap_or_default(),
     })
+}
+
+/// Short, clean display name for a tracked Yahoo symbol; falls back to Yahoo's own
+/// short name (or event title) for anything outside the default basket.
+fn instrument_name<'a>(symbol: &str, fallback: &'a str) -> &'a str {
+    match symbol {
+        "^GSPC" => "S&P 500",
+        "^IXIC" => "Nasdaq",
+        "BTC-USD" => "Bitcoin",
+        "ETH-USD" => "Ethereum",
+        "CL=F" => "Crude Oil",
+        "GC=F" => "Gold",
+        "^TNX" => "10Y Yield",
+        "EURUSD=X" => "EUR/USD",
+        _ => fallback,
+    }
 }
 
 #[cfg(test)]
@@ -304,6 +359,15 @@ mod tests {
         assert_eq!(heat_color(0.01), "#1D9E75"); // stable
         assert_eq!(heat_color(0.5), "#c0392b"); // limited war
         assert_eq!(heat_color(0.9), "#7a0000"); // great-power war
+    }
+
+    #[test]
+    fn instrument_names_clean_known_symbols_and_fall_back() {
+        assert_eq!(instrument_name("^GSPC", "S&P 500 Index"), "S&P 500");
+        assert_eq!(instrument_name("BTC-USD", "Bitcoin USD"), "Bitcoin");
+        assert_eq!(instrument_name("^TNX", "CBOE Interest Rate 10 Year"), "10Y Yield");
+        // An unknown symbol keeps Yahoo's own short name (the fallback).
+        assert_eq!(instrument_name("ZZZZ", "Some Future"), "Some Future");
     }
 
     #[test]
@@ -366,7 +430,7 @@ mod tests {
             map["counts"],
             map["errors"]
         );
-        assert!(map["basemap"]["tiles"].as_array().unwrap().len() >= 1);
+        assert!(!map["basemap"]["tiles"].as_array().unwrap().is_empty());
         assert!(layers.len() >= 10);
         // The feed collection should carry geocoded points from at least one provider.
         assert!(!feeds.is_empty(), "no feed features returned");
