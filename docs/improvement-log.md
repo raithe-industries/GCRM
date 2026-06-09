@@ -16,6 +16,27 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — honesty/model — re-anchored current_2026 65%→60% (resolves the calibration gap)
+- Item: roadmap 1.1a (now checked).
+- Decision (Robert): the −4.9pp `current_2026` gap surfaced by the evidence harness was a STALE
+  ANCHOR, not a model error. Mechanism analysis (`theater.rs` `concurrency_mult` + per-scenario
+  l_sys): raising the model to the old 65% centre means lifting the breadth-saturation asymptote
+  ~0.26→~0.34, which also pushes the REAL live read ~82%→~85-86% — eroding the off-the-0.90-peg
+  resolution the 2026-06-03 saturating-breadth fix deliberately created. The saturation curve is
+  monotonic, so no lever isolates current_2026 (breadth ~2) from the live read (breadth ~3);
+  raising the model would partially REVERT that deliberate fix. Correct fix = reconcile the stale
+  65% centre to the 60% the model produces by design (brink dominates breadth).
+- Change: `src/backtest.rs` — current_2026 anchor centre 0.65→0.60 + reconciled the stale
+  header/test comments (incl. dropping a pre-fix "live corpus ~45%" note). Band acceptance range
+  left exactly as Robert set it (0.55–0.75). NO model constant touched.
+- Metric moved: Brier 0.00060 → ~0.000002; RMSE 2.45pp → 0.14pp; in-band 4/4 (all anchors now
+  within 0.2pp of centre).
+- Proof: `cargo test --release` = 348 passed / 0 failed / 1 ignored. current_2026 60.10% vs
+  60.0% centre (+0.10pp).
+- Notes future runs MUST respect: current-full's intended centre is **~60% (NOT 65%)**. Do NOT
+  "raise current_2026 to 65%" — it re-erodes the live-peg headroom. The live read itself is a
+  separate question from this synthetic anchor.
+
 ## 2026-06-09 — honesty/model — calibration evidence harness (Brier/cross-entropy vs anchored centres)
 - Item: roadmap 1.1 (now checked); spawned 1.1a + 1.1b.
 - Change: added a proper-scoring calibration harness to `src/backtest.rs`. It scores the live
