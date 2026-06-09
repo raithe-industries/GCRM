@@ -16,6 +16,45 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — awareness — feed-roster liveness guard + first audit (2 dead feeds replaced, 1 URL fixed)
+- Item: roadmap 3.1 (now checked).
+- Change: added two `#[ignore]`d live-network tests to `src/ingestor.rs`.
+  `feed_roster_liveness` probes EVERY `RSS_FEEDS` entry end-to-end (HTTP 200 + feed-rs
+  parse + ≥1 entry — exactly what `fetch_rss_feed` needs to succeed): concurrent first
+  pass over all 103, then a serial retry of failures after a 30s pause so a minute-scale
+  edge incident or probe-induced throttle doesn't read as dead; HTTP 429 counts as ALIVE
+  (the host is answering — prod polls from this same IP and compounds throttling).
+  `search_api_liveness` probes the GNews search-RSS and GDELT doc API the same way (GDELT
+  429 likewise = alive). Run deliberately: `cargo test --release feed_roster_liveness --
+  --ignored --nocapture`. Runtime `SourceHealth` self-heals transient outages but cannot
+  tell an operator "this feed has been dead for a month" — this can, and names them.
+- The first audit immediately found real rot:
+  - **breakingdefense** (T1) + **nationalinterest** (T2): hard-403 both passes — the
+    Cloudflare bot-fight pattern (jamestown/longwarjournal precedent), unfixable by UA.
+    Replaced with **defensescoop** (T1, same daily Pentagon/defense-tech beat) and
+    **lowy_interpreter** (T2, same IR/strategy commentary niche) — both probed 200 + valid
+    RSS with entries. Tier counts unchanged (33/70).
+  - **cbc**: the `cmlink/rss-world` endpoint was retired (301 → webfeed, which served an
+    empty 0-item shell during the audit window) — moved to the canonical
+    `webfeed/rss/rss-world` URL, now consistently 20 items.
+  - **anadolu**: 502 during part of the audit but confirmed live minutes earlier (and 82
+    articles in prod's current window) — a transient edge incident, NOT dead; the
+    30s-delayed retry pass exists exactly for this class. Watch, don't replace.
+- Metric moved: scorecard "Feed liveness" — *unmeasured* → **measured by command**: 102/103
+  at audit close (the one red is anadolu's transient incident above — it ingested 27
+  articles the same day, last 16:24Z; mid-audit runs read 103/103); test count +2 ignored
+  runtime tests (the scorecard grep misses `#[tokio::test(flavor=…)]` forms).
+- Proof: `cargo test --release` green (the two probes are `#[ignore]`d, suite unaffected);
+  `feed_roster_liveness` printed 103/103 on three consecutive mid-audit runs (anadolu's
+  502 window opened during the audit); `search_api_liveness` green (GNews 100 entries,
+  GDELT alive-by-429).
+- Notes future runs must respect: these probes are LIVE-NETWORK and `#[ignore]`d — they are
+  for deliberate local audits, NOT the cloud routine (its sandbox can't reach these hosts;
+  a red there means nothing). Do not un-ignore them or wire them into the deploy gate
+  blindly — a transient upstream outage must not block a deploy. A feed that fails the
+  audit persistently across hours is dead: fix or replace it (same niche, probe before
+  committing), never delete-without-replacement and never leave it silently broken.
+
 ## 2026-06-09 — honesty/model — named + pinned the P(WWIII) forecast ceiling (was a bare literal next to stale 0.85 comments)
 - Item: roadmap 1.2 (progressed — another magic calibration constant named/pinned; regime ×, P₀,
   breadth asymptote, coupler weights still open).

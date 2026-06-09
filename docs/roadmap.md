@@ -80,10 +80,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   last-computed). Keep methodology honest and current with the model as it evolves.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
-- [ ] **3.1 Feed-liveness guard** [candidate] — every news source must be live or replaced,
-  never left silently broken. A test/check that fails when a source stops parsing is high
-  value (ties directly to the "feed roster must work" invariant). Count of live sources is
-  a scorecard ↑ metric.
+- [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
+  tests in `src/ingestor.rs`: `feed_roster_liveness` probes EVERY RSS_FEEDS entry
+  (HTTP 200 + feed-rs parse + ≥1 entry — the exact path `fetch_rss_feed` needs), with a
+  concurrent first pass and a 30s-delayed serial retry so minute-scale edge blips don't
+  read as dead; `search_api_liveness` probes GNews + GDELT (429 = alive: prod shares this
+  IP). Run deliberately: `cargo test --release feed_roster_liveness -- --ignored
+  --nocapture`. First audit immediately paid for itself: breakingdefense + nationalinterest
+  were hard-403 dead (Cloudflare bot-fight) → replaced with defensescoop + lowy_interpreter
+  (probed live, same niche/tier); cbc's cmlink endpoint was retired → moved to the
+  canonical webfeed URL. 103/103 live. See improvement-log 2026-06-09.
 - [ ] **3.2 GDELT** [candidate] — verify it is live, then wire it as an awareness layer.
   Do NOT add geo-less sources to the map (e.g. CISA KEV has no geo). Confirm live before
   committing a connector.

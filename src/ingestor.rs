@@ -96,7 +96,10 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://fas.org/feed/",                                       source: "fas",             tier: SourceTier::Tier1 },
     // Defense Tier 1
     FeedSpec { url: "https://www.defenseone.com/rss/all/",                         source: "defenseone",      tier: SourceTier::Tier1 },
-    FeedSpec { url: "https://breakingdefense.com/feed/",                           source: "breakingdefense", tier: SourceTier::Tier1 },
+    // breakingdefense began hard-403ing this host (Cloudflare bot-fight, unfixable by
+    // UA — the jamestown/longwarjournal pattern); replaced with DefenseScoop — same
+    // daily Pentagon / defense-tech news beat, non-blocking host (probed 200 + valid RSS).
+    FeedSpec { url: "https://defensescoop.com/feed/",                              source: "defensescoop",    tier: SourceTier::Tier1 },
     FeedSpec { url: "https://www.defensenews.com/arc/outboundfeeds/rss/category/pentagon/", source: "defensenews_pentagon", tier: SourceTier::Tier1 },
     // Think-tank / policy Tier 1
     FeedSpec { url: "https://thediplomat.com/feed/",                               source: "thediplomat",     tier: SourceTier::Tier1 },
@@ -114,7 +117,10 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://thehill.com/feed/",                                   source: "thehill",         tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.politico.eu/feed/",                               source: "politico_eu",     tier: SourceTier::Tier2 },
     // Canadian
-    FeedSpec { url: "https://www.cbc.ca/cmlink/rss-world",                         source: "cbc",             tier: SourceTier::Tier2 },
+    // cbc.ca/cmlink/rss-world was retired (301 → webfeed); use the canonical webfeed
+    // URL directly. CBC's origin occasionally serves a cold-cache EMPTY shell (valid
+    // RSS, 0 items) for a minute — the liveness probe's retry pass absorbs that.
+    FeedSpec { url: "https://www.cbc.ca/webfeed/rss/rss-world",                    source: "cbc",             tier: SourceTier::Tier2 },
     FeedSpec { url: "https://globalnews.ca/feed/",                                  source: "globalnews",      tier: SourceTier::Tier2 },
     // Latin America
     FeedSpec { url: "https://www.jornada.com.mx/rss/mundo.xml",                    source: "lajornada_mx",    tier: SourceTier::Tier2 },
@@ -220,7 +226,10 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.intellinews.com/feed",                             source: "intellinews",     tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.rt.com/rss/news/",                                 source: "rt",              tier: SourceTier::Tier2 },
     // Think tanks / specialist — Tier 2
-    FeedSpec { url: "https://nationalinterest.org/feed",                            source: "nationalinterest",tier: SourceTier::Tier2 },
+    // nationalinterest began hard-403ing this host (Cloudflare bot-fight, unfixable by
+    // UA); replaced with the Lowy Institute's The Interpreter — same IR/strategy
+    // commentary niche (Indo-Pacific weighted), probed 200 + valid RSS.
+    FeedSpec { url: "https://www.lowyinstitute.org/the-interpreter/rss.xml",        source: "lowy_interpreter", tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.twz.com/feed",                                     source: "twz",             tier: SourceTier::Tier2 },
     // Global South / humanitarian — Tier 2
     FeedSpec { url: "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf", source: "allafrica",     tier: SourceTier::Tier2 },
@@ -993,5 +1002,123 @@ mod tests {
     fn max_concurrent_rss_is_reasonable() {
         const { assert!(MAX_CONCURRENT_RSS >= 10 && MAX_CONCURRENT_RSS <= 500,
             "MAX_CONCURRENT_RSS must be between 10 and 500") };
+    }
+
+    // ── Feed-roster liveness guard (roadmap 3.1) ──────────────────────────────
+    //
+    // Probes EVERY entry in RSS_FEEDS over the live network: HTTP 200, feed-rs
+    // parse, and at least one entry — i.e. the exact path fetch_rss_feed needs
+    // to succeed. The standing invariant this enforces: every news source is
+    // live or replaced, never left silently broken. SourceHealth self-heals
+    // transient outages at runtime but can't tell an operator "this feed has
+    // been dead for a month" — this check can, and fails loudly with the list.
+    //
+    // Ignored by default (live network, ~30s). Run deliberately:
+    //   cargo test --release feed_roster_liveness -- --ignored --nocapture
+    //
+    // A first concurrent pass probes everything; failures get one serial retry
+    // (with a fresh connection) to absorb transient blips and rate-limit
+    // grumpiness. Only a feed that fails BOTH passes is reported dead.
+
+    async fn probe_feed(client: &Client, url: &str) -> Result<usize, String> {
+        let resp = client.get(url).send().await.map_err(|e| format!("send: {e}"))?;
+        let status = resp.status();
+        // A 429 is the host answering and throttling — alive, just rate-limiting
+        // this prober (prod polls from the same IP; repeated audit runs compound it).
+        if status.as_u16() == 429 {
+            return Ok(0);
+        }
+        if !status.is_success() {
+            return Err(format!("HTTP {status}"));
+        }
+        let bytes = resp.bytes().await.map_err(|e| format!("body: {e}"))?;
+        let feed  = feed_rs::parser::parse(bytes.as_ref()).map_err(|e| format!("parse: {e}"))?;
+        if feed.entries.is_empty() {
+            return Err("parsed but 0 entries".to_string());
+        }
+        Ok(feed.entries.len())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "live-network probe of the full feed roster; run deliberately with --ignored"]
+    async fn feed_roster_liveness() {
+        let client = build_client(15).expect("client build");
+        let sem    = Arc::new(Semaphore::new(MAX_CONCURRENT_RSS));
+
+        // Pass 1 — concurrent probe of the whole roster.
+        let mut handles = Vec::with_capacity(RSS_FEEDS.len());
+        for feed in RSS_FEEDS {
+            let client = client.clone();
+            let sem    = Arc::clone(&sem);
+            handles.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                (feed.url, feed.source, probe_feed(&client, feed.url).await)
+            }));
+        }
+
+        let mut failed: Vec<(&str, &str, String)> = Vec::new();
+        let mut live = 0usize;
+        for h in handles {
+            let (url, source, result) = h.await.unwrap();
+            match result {
+                Ok(_)  => live += 1,
+                Err(e) => failed.push((url, source, e)),
+            }
+        }
+
+        // Pass 2 — serial retry of pass-1 failures only, after a pause so a
+        // minute-scale edge incident or probe-induced throttle doesn't read as
+        // dead. A feed that fails both passes ~30s apart needs operator eyes.
+        if !failed.is_empty() {
+            sleep(Duration::from_secs(30)).await;
+        }
+        let mut dead: Vec<(&str, &str, String)> = Vec::new();
+        for (url, source, first_err) in failed {
+            match probe_feed(&client, url).await {
+                Ok(_)  => live += 1,
+                Err(e) => dead.push((url, source, format!("{first_err} / retry: {e}"))),
+            }
+        }
+
+        println!("feed roster liveness: {live}/{} RSS feeds live", RSS_FEEDS.len());
+        for (url, source, err) in &dead {
+            println!("  DEAD  {source:<22} {url}\n        {err}");
+        }
+        assert!(dead.is_empty(),
+            "{} feed(s) failed both probe passes — fix or replace them (roster must be live \
+             or replaced, never left silently broken)", dead.len());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "live-network probe of the GNews + GDELT search APIs; run with --ignored"]
+    async fn search_api_liveness() {
+        let client = build_client(15).expect("client build");
+
+        // GNews — one representative query through the same URL shape gnews_loop uses.
+        let encoded = GNEWS_QUERIES[0].replace(' ', "+");
+        let url = format!("https://news.google.com/rss/search?q={encoded}&hl=en&gl=US&ceid=US:en");
+        let entries = probe_feed(&client, &url).await
+            .unwrap_or_else(|e| panic!("GNews search RSS is dead: {e}"));
+        println!("GNews live: {entries} entries for '{}'", GNEWS_QUERIES[0]);
+
+        // GDELT — one representative query; a quiet window can legitimately return
+        // zero articles, so liveness here is HTTP 200 + parseable JSON envelope.
+        let encoded = GDELT_QUERIES[0].replace(' ', "%20");
+        let url = format!(
+            "https://api.gdeltproject.org/api/v2/doc/doc\
+             ?query={encoded}&mode=artlist&maxrecords=25&format=json&timespan=1h"
+        );
+        let resp = client.get(&url).send().await.expect("GDELT send");
+        let status = resp.status();
+        if status.as_u16() == 429 {
+            // Prod polls GDELT continuously from this same IP, so the probe can land
+            // inside its rate-limit window. A 429 is the endpoint answering — alive.
+            println!("GDELT live: 429 (rate-limit window; prod shares this IP) — endpoint alive");
+            return;
+        }
+        assert!(status.is_success(), "GDELT HTTP {status}");
+        let data: serde_json::Value = resp.json().await.expect("GDELT returned non-JSON");
+        let n = data["articles"].as_array().map(|a| a.len()).unwrap_or(0);
+        println!("GDELT live: {n} articles for '{}' (1h window)", GDELT_QUERIES[0]);
     }
 }
