@@ -304,7 +304,7 @@ pub fn area_intel(bbox: BBox, events: &[Event]) -> AreaReport {
     }
 
     // Stable: count desc, preserving first-seen order on ties.
-    by_kind.sort_by(|a, b| b.1.cmp(&a.1));
+    by_kind.sort_by_key(|k| std::cmp::Reverse(k.1));
 
     let (mean_severity, centroid) = if total > 0 {
         let n = total as f64;

@@ -86,8 +86,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .cmove-val{font-size:11px;font-weight:600;transition:color .3s}
 .sidx{text-align:center;margin-top:10px}
 .sidx-lbl{font-size:9px;color:var(--t3);letter-spacing:.04em}
-.sidx-num{font-size:24px;font-weight:700;font-family:monospace;line-height:1.1;transition:color .4s}
-.sidx-rung{font-size:11px;font-weight:600;transition:color .4s}
+.sidx-rung{font-size:22px;font-weight:700;line-height:1.06;margin-top:3px;transition:color .4s}
 .conf-row{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:9px;color:var(--t2);width:100%}
 .conf-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .conf-fill{height:100%;border-radius:2px;background:var(--purple);transition:width .6s}
@@ -158,15 +157,16 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .map-lyr input{accent-color:var(--accent);width:10px;height:10px;cursor:pointer;margin:0}
 .map-lyr .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .map-lyr .ct{margin-left:auto;font-size:8px;color:var(--t4);font-family:monospace}
+.map-lyr .ct.z{color:#39414f;font-weight:400}
 .map-radar{position:absolute;bottom:5px;left:5px;z-index:6;width:160px;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px}
 .map-radar.hidden{display:none}
 .radar-h{display:flex;justify-content:space-between;align-items:baseline;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:4px}
 .radar-lvl{font-size:9px;font-weight:700;font-family:monospace}
-.radar-row{display:flex;align-items:center;gap:4px;margin:2px 0;font-size:8px;color:var(--t3)}
-.radar-row .nm{width:40px;flex-shrink:0}
-.radar-track{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
-.radar-fill{height:100%;border-radius:2px;transition:width .5s}
-.radar-row .vv{width:20px;text-align:right;font-family:monospace;color:var(--t4)}
+.radar-row{display:flex;align-items:center;gap:6px;margin:2px 0;font-size:8px;line-height:1.3}
+.radar-row .nm{flex:1;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radar-row .px{font-family:monospace;color:var(--t4)}
+.radar-row .mv{font-family:monospace;font-weight:700;width:48px;text-align:right}
+.radar-empty{font-size:8px;color:var(--t4);text-align:center;padding:8px 0}
 @media(max-width:1100px){.chart-split{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
 .context-strip{padding:4px 10px;border-bottom:0.5px solid var(--border);font-size:9px;flex-shrink:0;display:flex;gap:16px;align-items:center;background:var(--bg2)}
 .ca{color:var(--t4)}
@@ -404,7 +404,6 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
         <div class="cmove"><span class="compute-dot" id="compute-dot"></span><span class="cmove-arrow" id="cmove-arrow">↔</span><span class="cmove-val" id="cmove-val">steady</span></div>
         <div class="sidx">
           <div class="sidx-lbl">systemic index</div>
-          <div class="sidx-num" id="cc-idx">—</div>
           <div class="sidx-rung" id="cc-rung">—</div>
         </div>
         <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:7px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
@@ -467,7 +466,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
               <div id="map-panel-body"></div>
             </div>
             <div class="map-radar" id="map-radar">
-              <div class="radar-h"><span>Finance Radar</span><span class="radar-lvl" id="radar-level">—</span></div>
+              <div class="radar-h"><span>Markets</span><span class="radar-lvl" id="radar-level">—</span></div>
               <div id="radar-body"></div>
             </div>
           </div>
@@ -574,24 +573,31 @@ const TAG_COLORS={KIN:'#E24B4A',NUC:'#FF6B35',ECO:'#1D9E75',CYB:'#00CED1',DIP:'#
 // escalation-ladder position — so each gets its own dial instead of one number that
 // looks like the other.
 const GC=document.getElementById('gauge-canvas').getContext('2d');   // hero: P(WWIII)
-// Probability severity bands (fraction of 1.0): normal <2.5%, elevated <8%, then critical.
-const P_ZONES=[{e:0.025,c:'#1D9E75'},{e:0.08,c:'#EF9F27'},{e:1,c:'#E24B4A'}];
 const P_TICKS=[{f:0,l:'0'},{f:0.25,l:'25'},{f:0.5,l:'50'},{f:0.75,l:'75'},{f:1,l:'100'}];
+// The dial reads as a full RISK SPECTRUM, not a wall of red: the whole arc is painted
+// green→amber→red across its sweep (the GCRM rung palette), vivid up to the current
+// value and dimmed beyond it, so the colour itself carries the 0→100 scale.
+const DIAL_STOPS=[{f:0,c:[29,158,117]},{f:0.5,c:[239,159,39]},{f:1,c:[226,75,74]}];
+function _mix(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+function dialColor(f){const s=DIAL_STOPS;for(let i=0;i<s.length-1;i++){if(f<=s[i+1].f){const t=(f-s[i].f)/((s[i+1].f-s[i].f)||1);return _mix(s[i].c,s[i+1].c,Math.max(0,Math.min(1,t)));}}return s[s.length-1].c.slice();}
 // One dial renderer. Sizes the backing buffer to display×devicePixelRatio so it stays
 // crisp on HiDPI (the old fixed 148×82 buffer was CSS-upscaled → blurry on desktop) and
 // scales every dimension from the original 148-wide design so proportions hold at any size.
-function drawDial(g,pct,zones,ticks){
+function drawDial(g,pct,ticks){
   pct=Math.max(0,Math.min(1,pct));
   const c=g.canvas,dpr=window.devicePixelRatio||1;
   const W=c.clientWidth||148,H=c.clientHeight||82;
   const bw=Math.round(W*dpr),bh=Math.round(H*dpr);
   if(c.width!==bw||c.height!==bh){c.width=bw;c.height=bh;}
   g.setTransform(bw/W,0,0,bh/H,0,0);
-  const s=W/148,cx=W/2,cy=H-10*s,r=58*s,LW=9*s;
+  const s=W/148,cx=W/2,cy=H-10*s,r=58*s,LW=9*s,TRACK=[30,30,56],N=72;
   g.clearRect(0,0,W,H);
-  g.beginPath();g.arc(cx,cy,r,Math.PI,0);g.strokeStyle='#1e1e38';g.lineWidth=LW;g.stroke();
-  let st=Math.PI;
-  for(const z of zones){const e=Math.PI+z.e*Math.PI;g.beginPath();g.arc(cx,cy,r,st,Math.min(e,Math.PI+pct*Math.PI));g.strokeStyle=z.c;g.lineWidth=LW;g.stroke();if(pct<=z.e)break;st=e;}
+  // Spectrum sweep: small wedges hued by position; the active arc (≤ value) is full
+  // strength, the rest a subdued tint of the same hue so the needle's reading still pops.
+  for(let i=0;i<N;i++){const f0=i/N,f1=(i+1)/N,mid=(f0+f1)/2;
+    let col=dialColor(mid);if(mid>pct)col=_mix(TRACK,col,0.30);
+    g.beginPath();g.arc(cx,cy,r,Math.PI+f0*Math.PI,Math.PI+f1*Math.PI+0.004);
+    g.strokeStyle='rgb('+(col[0]|0)+','+(col[1]|0)+','+(col[2]|0)+')';g.lineWidth=LW;g.stroke();}
   g.font=Math.max(6,Math.round(6*s))+'px monospace';g.fillStyle='#6878a0';
   for(const t of ticks){const a=Math.PI+t.f*Math.PI;
     const x1=cx+(r-5*s)*Math.cos(a),y1=cy+(r-5*s)*Math.sin(a),x2=cx+(r+5*s)*Math.cos(a),y2=cy+(r+5*s)*Math.sin(a);
@@ -603,13 +609,32 @@ function drawDial(g,pct,zones,ticks){
   g.beginPath();g.arc(cx,cy,4*s,0,2*Math.PI);g.fillStyle='#fff';g.fill();
 }
 let lastHero=0;
-function animateHero(t){lastHero+=(t-lastHero)*0.12;drawDial(GC,lastHero,P_ZONES,P_TICKS);if(Math.abs(t-lastHero)>0.0005)requestAnimationFrame(()=>animateHero(t));}
-drawDial(GC,0,P_ZONES,P_TICKS);
+function animateHero(t){lastHero+=(t-lastHero)*0.12;drawDial(GC,lastHero,P_TICKS);if(Math.abs(t-lastHero)>0.0005)requestAnimationFrame(()=>animateHero(t));}
+drawDial(GC,0,P_TICKS);
 // Redraw on resize so dpr/size changes stay crisp.
-addEventListener('resize',()=>{drawDial(GC,lastHero,P_ZONES,P_TICKS);});
+addEventListener('resize',()=>{drawDial(GC,lastHero,P_TICKS);});
 const GRID='rgba(255,255,255,0.04)',TICK='#9090c0';
 let spikeAnnotations={};
-const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}}});
+// Calibration-period band — a small inline canvas plugin (more reliable than the
+// annotation plugin, whose object-map options get swallowed by Chart.js v4's resolver).
+// Shades [0 … chart.$calibEnd] behind the data in transparent cyan with a dashed right
+// edge + label, marking the stretch where the model was still warming up. $calibEnd is
+// (re)computed in refreshCalibrationOverlay; the band redraws on every frame for free.
+const calibBand={id:'calibBand',beforeDatasetsDraw(chart){
+  const end=chart.$calibEnd,n=chart.data.labels.length;
+  if(end==null||end<1||n<2)return;
+  const a=chart.chartArea;if(!a)return;
+  const frac=Math.min(1,Math.max(0,end/(n-1)));               // line/category scale: i→x is linear
+  const L=a.left,R=a.left+(a.right-a.left)*frac;if(R<=L)return;
+  const c=chart.ctx;c.save();
+  c.fillStyle='rgba(0,206,209,0.10)';c.fillRect(L,a.top,R-L,a.bottom-a.top);
+  c.strokeStyle='rgba(0,206,209,0.55)';c.lineWidth=1;c.setLineDash([5,4]);
+  c.beginPath();c.moveTo(R,a.top);c.lineTo(R,a.bottom);c.stroke();
+  c.setLineDash([]);c.fillStyle='rgba(150,232,236,0.92)';c.font='600 9px system-ui';c.textAlign='center';
+  c.fillText('model calibration',(L+R)/2,a.top+10);
+  c.restore();
+}};
+const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},annotation:{annotations:spikeAnnotations}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand]});
 const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
   // Clicking a bar audits that domain — same filter as clicking its card above.
   onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
@@ -732,7 +757,25 @@ async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');
 const logLines=[];
 function addLog(msg,color='var(--t4)'){logLines.unshift('<span style="color:'+color+'">'+toETShort(new Date())+' '+msg+'</span>');if(logLines.length>500)logLines.pop();if(currentTab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
 let prevAnnual=null,spikeAnnual=null;
-function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;if(Math.abs(delta)>0.0002){const id='spike_'+spikeIdx++;const color=delta>0?'#E24B4A88':'#1D9E7588';spikeAnnotations[id]={type:'line',xMin:tlChart.data.labels.length-1,xMax:tlChart.data.labels.length-1,borderColor:color,borderWidth:1,label:{display:true,content:(delta>0?'▲':'▼')+' '+(Math.abs(delta)*100).toFixed(3)+'%',color:'#c0c0e0',font:{size:7},position:'start',backgroundColor:'rgba(7,7,15,0.8)',padding:2}};const keys=Object.keys(spikeAnnotations);if(keys.length>20)delete spikeAnnotations[keys[0]];tlChart.options.plugins.annotation.annotations=spikeAnnotations;document.getElementById('spike-label').textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}prevAnnual=pA;}
+function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;if(Math.abs(delta)>0.0002){const id='spike_'+spikeIdx++;const color=delta>0?'#E24B4A88':'#1D9E7588';spikeAnnotations[id]={type:'line',xMin:tlChart.data.labels.length-1,xMax:tlChart.data.labels.length-1,borderColor:color,borderWidth:1,label:{display:true,content:(delta>0?'▲':'▼')+' '+(Math.abs(delta)*100).toFixed(3)+'%',color:'#c0c0e0',font:{size:7},position:'start',backgroundColor:'rgba(7,7,15,0.8)',padding:2}};const keys=Object.keys(spikeAnnotations).filter(k=>k.startsWith('spike_'));if(keys.length>20)delete spikeAnnotations[keys[0]];tlChart.options.plugins.annotation.annotations=spikeAnnotations;document.getElementById('spike-label').textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}prevAnnual=pA;}
+// Calibration-period overlay. The early stretch of the durable timeline is the model
+// warming up — few events, a jagged ramp — before the estimate settles onto its plateau.
+// We detect that settle point from the series itself (the last sample sitting well off
+// the established plateau) and shade [start … settle] a transparent cyan, so the jagged
+// backfill reads honestly as "calibrating", not as signal. Recomputed every refresh so
+// it stays anchored as history scrolls; only drawn when the ramp is genuinely early —
+// a late out-of-band move is a real swing, not warm-up, and is left unshaded.
+function refreshCalibrationOverlay(){
+  const arr=tlChart.data.datasets[0].data,n=arr.length;
+  if(n<24){tlChart.$calibEnd=null;return;}
+  const tail=arr.slice(n-Math.max(8,Math.round(n*0.2))).slice().sort((a,b)=>a-b);
+  const plateau=tail[Math.floor(tail.length/2)];           // median of the recent plateau
+  const band=Math.max(0.04,plateau*0.12);                  // tolerance around it
+  let j=-1;for(let i=0;i<n;i++){if(Math.abs(arr[i]-plateau)>band)j=i;}   // last off-plateau sample
+  // Only shade when the settle point is genuinely early; a late off-plateau move is a
+  // real swing (escalation), not warm-up, and must not be mislabelled as calibration.
+  tlChart.$calibEnd=(j<2||j>n*0.6)?null:j;
+}
 function update6hBuffer(pA){const now=Date.now();history6h.push({t:now,p:pA});history6h=history6h.filter(e=>now-e.t<6*3600*1000);}
 function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0].p;}
 // Trailing-6h trend. Prefer the durable server value (d.trend_6h, computed from
@@ -796,7 +839,8 @@ function applyData(d){
     else if(dA<-0.000005){_ar.textContent='▼';_av.textContent=(dA*100).toFixed(4)+'%/s';_ar.style.color=_av.style.color='#1D9E75';}
     else{_ar.textContent='↔';_av.textContent='steady';_ar.style.color=_av.style.color='var(--t4)';}
   }
-  const _ci=document.getElementById('cc-idx');if(_ci){_ci.textContent=sysIdx;_ci.style.color=idxCol;}
+  // The numeric systemic index lives in the command strip; under the hero gauge we keep
+  // only the label + the escalation-rung word (the human read), enlarged to headline size.
   const _cr=document.getElementById('cc-rung');if(_cr){_cr.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');_cr.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
   const _cd=new Date(d.computed_at);const _et=toET(_cd);
@@ -861,7 +905,7 @@ function applyTimeline(entries){
   entries=entries.slice().reverse();
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
-  const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);tlChart.update('none');
+  const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay();tlChart.update('none');
   if(entries.length>0){let mx=-Infinity,mn=Infinity;for(let i=0;i<entries.length;i++){const v=entries[i].p_annual;if(v>mx)mx=v;if(v<mn)mn=v;}sessionPeak=mx;sessionLow=mn;}
   // Seed the trailing-6h buffer from durable backend history so the 6h Trend is
   // populated immediately on load. Without this the buffer starts empty every
@@ -876,7 +920,7 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
     // fetch every ~9s and the age brackets would lose all their history.
@@ -1094,7 +1138,7 @@ async function bootMap(){
       attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
       layers:[{id:'base',type:'raster',source:'base'}]},
     center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:7,renderWorldCopies:true,
-    attributionControl:{compact:true}});
+    fadeDuration:0,attributionControl:{compact:true}});
   _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
   _map.on('load',()=>{
     _map.addSource('feeds',{type:'geojson',data:d.feeds||emptyFC()});
@@ -1125,21 +1169,31 @@ async function bootMap(){
   });
 }
 
-// Auto-rotating 3D globe: one gentle eastward step per second, re-triggered on
-// moveend so it spins forever. Pauses while hovering the map (so it's instantly
-// manipulatable / layer-selectable) and while zoomed in, then resumes on leave.
-function spinStep(){
-  if(!_map||_mapMode!=='3d'||_hovering||_map.getZoom()>3.2)return;
-  const c=_map.getCenter(); c.lng-=360/SECONDS_PER_REV;
-  _map.easeTo({center:c,duration:1000,easing:n=>n});
+// Auto-rotating 3D globe — continuous and time-based. A single requestAnimationFrame
+// stream advances the centre at a constant angular rate (so it's framerate-independent)
+// with jumpTo. The old version eased a discrete step once a second and re-armed on
+// moveend; that per-step settle is exactly what made it look choppy. Pauses while
+// hovering (so the map is instantly manipulable / layer-selectable) and while zoomed in,
+// then resumes on leave / zoom-out / mode switch.
+let _spinRAF=null,_spinLast=0;
+function spinFrame(ts){
+  _spinRAF=null;
+  if(!_map||_mapMode!=='3d'||_hovering||_map.getZoom()>3.2){_spinLast=0;return;}
+  if(!_spinLast)_spinLast=ts;
+  const dt=Math.min(80,ts-_spinLast);_spinLast=ts;          // clamp after a tab-away gap
+  const c=_map.getCenter();c.lng-=(360/SECONDS_PER_REV)*(dt/1000);
+  _map.jumpTo({center:c});
+  _spinRAF=requestAnimationFrame(spinFrame);
 }
+function spinResume(){ if(_spinRAF==null&&_map&&_mapMode==='3d'&&!_hovering&&_map.getZoom()<=3.2){_spinLast=0;_spinRAF=requestAnimationFrame(spinFrame);} }
+function spinStop(){ if(_spinRAF!=null){cancelAnimationFrame(_spinRAF);_spinRAF=null;} _spinLast=0; }
 function wireSpin(){
   if(_spinWired)return; _spinWired=true;
-  _map.on('moveend',spinStep);
+  _map.on('zoomend',spinResume);          // resume once the user zooms back out
   const half=document.querySelector('.map-half');
   if(half){
-    half.addEventListener('mouseenter',()=>{_hovering=true;_map.stop();});
-    half.addEventListener('mouseleave',()=>{_hovering=false;spinStep();});
+    half.addEventListener('mouseenter',()=>{_hovering=true;spinStop();_map.stop();});
+    half.addEventListener('mouseleave',()=>{_hovering=false;spinResume();});
   }
 }
 
@@ -1156,6 +1210,13 @@ const MAP_GROUPS={security:'Security & Intelligence',environment:'Environment',
   military:'Military & Defense',humanitarian:'Humanitarian & Crisis',
   space:'Space & Aerospace',political:'Political'};
 const MAP_GROUP_ORDER=['security','environment','aviation_maritime','infrastructure','military','humanitarian','space','political'];
+// Layers with no live geocoded feed yet — rendered with a muted "—" + tooltip so the
+// panel reads as intentional (awaiting a key/feed) instead of broken at "0".
+const LAYER_HINTS={aircraft:'Live once an OpenSky account is configured (OPENSKY_USERNAME / OPENSKY_PASSWORD)',
+  vessel:'AIS vessel feed not yet wired',conflict:'Armed-conflict feed not yet wired',
+  cyber:'Cyber signals are non-geographic — tracked, not plotted on the map',
+  market:'Markets are read in the Markets panel, not plotted on the map',
+  news:'Geocoded news feed not yet wired'};
 
 function buildLayerPanel(d){
   const feats=(d.feeds&&d.feeds.features)||[]; const kc={};
@@ -1167,7 +1228,9 @@ function buildLayerPanel(d){
     html+=`<div class="map-grp-h">${MAP_GROUPS[g]||g}</div>`;
     byGroup[g].forEach(l=>{ const c=l.id==='theaters'?tcount:(kc[l.kind]||0);
       const vis=isLayerVisible(l);
-      html+=`<label class="map-lyr"><input type="checkbox" ${vis?'checked':''} onchange="toggleLayer('${l.kind}','${l.id}',this.checked)"><span class="dot" style="background:${l.color}"></span>${esc(l.label)}<span class="ct">${c}</span></label>`;
+      const hint=(c===0&&LAYER_HINTS[l.kind])?LAYER_HINTS[l.kind]:'';
+      const ct=(c===0&&hint)?'<span class="ct z">—</span>':`<span class="ct">${c}</span>`;
+      html+=`<label class="map-lyr"${hint?` title="${esc(hint)}"`:''}><input type="checkbox" ${vis?'checked':''} onchange="toggleLayer('${l.kind}','${l.id}',this.checked)"><span class="dot" style="background:${l.color}"></span>${esc(l.label)}${ct}</label>`;
     });
   });
   document.getElementById('map-panel-body').innerHTML=html;
@@ -1190,8 +1253,8 @@ function setMapMode(m){ _mapMode=m;
   document.getElementById('map-3d').classList.toggle('on',m==='3d');
   if(!_map)return;
   try{
-    if(m==='3d'){ _map.setProjection({type:'globe'}); _map.easeTo({bearing:23.4,pitch:0,duration:700}); setTimeout(spinStep,760); }
-    else{ _map.stop(); _map.setProjection({type:'mercator'}); _map.easeTo({bearing:0,pitch:0,duration:700}); }
+    if(m==='3d'){ _map.setProjection({type:'globe'}); _map.easeTo({bearing:23.4,pitch:0,duration:700}); setTimeout(spinResume,760); }
+    else{ spinStop(); _map.stop(); _map.setProjection({type:'mercator'}); _map.easeTo({bearing:0,pitch:0,duration:700}); }
   }catch(e){} }
 
 function wireMapClicks(){
@@ -1214,12 +1277,15 @@ async function refreshFinance(){
   const lvl=document.getElementById('radar-level');
   lvl.textContent=(d.level||'—')+(d.composite!=null?' '+(d.composite*100).toFixed(0)+'%':'');
   lvl.style.color=d.level_color||'var(--t2)';
-  const segs=d.segments||[];
-  document.getElementById('radar-body').innerHTML=segs.map(s=>{
-    const w=Math.round((s.intensity||0)*100);
-    return `<div class="radar-row"><span class="nm">${esc(s.segment)}</span><span class="radar-track"><span class="radar-fill" style="width:${w}%;background:${d.level_color||'#888'}"></span></span><span class="vv">${s.count||0}</span></div>`;
+  // Real movers — each tracked instrument's price and signed daily move, biggest first.
+  const ins=d.instruments||[],body=document.getElementById('radar-body');
+  if(!ins.length){body.innerHTML='<div class="radar-empty">market feed unavailable</div>';return;}
+  body.innerHTML=ins.map(s=>{
+    const p=+s.pct||0,up=p>=0,col=up?'#2ecc71':'#e2554f',arr=up?'▲':'▼';
+    return `<div class="radar-row"><span class="nm" title="${esc(s.name)}">${esc(s.name)}</span><span class="px">${fmtPx(s.price)}</span><span class="mv" style="color:${col}">${arr}${Math.abs(p).toFixed(2)}%</span></div>`;
   }).join('');
 }
+function fmtPx(v){v=+v;if(!isFinite(v))return '—';return v>=1000?v.toLocaleString('en-US',{maximumFractionDigits:0}):v>=1?v.toFixed(2):v.toFixed(4);}
 
 // Boot the map + radar, then refresh on a slow cadence (feeds change slowly).
 bootMap(); refreshFinance();
