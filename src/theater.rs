@@ -357,6 +357,7 @@ impl TheaterEngine {
                 heat: 0.0, modality_scores: HashMap::new(),
                 trend: trend.into(), delta: (delta * 1e4).round() / 1e4, event_count: 0,
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
+                top_driver: String::new(),
             };
         }
 
@@ -399,6 +400,23 @@ impl TheaterEngine {
             .map(|(m, _)| (m.to_string(), scores.get(*m).map(|d| d.score).unwrap_or(0.0)))
             .collect();
 
+        // Per-theater "why": the modality contributing the most WEIGHTED heat — the
+        // single largest `score × domain_weight` term in the sum that builds `heat`
+        // above. This surfaces what *kind* of force is driving each flashpoint, not
+        // just how hot it is (Awareness). Honest by construction: it names the model's
+        // own dominant term, never a fitted/derived value. Empty for a Stable theater,
+        // where there is no signal worth naming.
+        let top_driver = if rung == EscalationRung::Stable {
+            String::new()
+        } else {
+            DOMAIN_WEIGHTS.iter()
+                .map(|(m, _)| (*m, scores.get(*m).map(|d| d.score).unwrap_or(0.0) * domain_weight(m)))
+                .filter(|(_, contrib)| *contrib > 0.0)
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(m, _)| m.to_string())
+                .unwrap_or_default()
+        };
+
         TheaterState {
             theater_id: id, label: theater.label().to_string(),
             rung, rung_label: rung.label().to_string(),
@@ -407,6 +425,7 @@ impl TheaterEngine {
             trend: trend.to_string(), delta: (delta * 1e4).round() / 1e4,
             event_count: tev.len(),
             gp_involved, alliance_invoked, top_actors,
+            top_driver,
         }
     }
 }
@@ -473,6 +492,46 @@ mod tests {
             "gulf should be at least Limited War, got {:?}", gulf.rung);
         assert!(out.systemic_index > 50.0, "index should be high, got {}", out.systemic_index);
         assert!(out.driver.contains("Iran"));
+    }
+
+    #[test]
+    fn top_driver_names_the_dominant_weighted_modality() {
+        // Awareness "why" per theater: top_driver must name the modality with the
+        // largest weighted heat contribution (score × domain_weight), and be empty for
+        // a Stable theater. These lock the relationship, not a magnitude.
+
+        // (a) A theater fed ONLY kinetic signals names that modality (others score 0).
+        let mut te = TheaterEngine::new();
+        let mut kin = Vec::new();
+        for _ in 0..8 {
+            kin.push(ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true));
+        }
+        let out = te.compute(&kin);
+        let gulf = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_ne!(gulf.rung, EscalationRung::Stable, "8 strong kinetic events should clear Stable");
+        assert_eq!(gulf.top_driver, "military_escalation",
+            "only-kinetic theater should be driven by military_escalation, got {:?}", gulf.top_driver);
+
+        // (b) Equal-strength kinetic AND nuclear: nuclear's higher weight (3.0 vs 1.6)
+        // makes it the dominant contributor even at equal score — locks that the driver
+        // is the WEIGHTED term, not the raw score.
+        let mut te2 = TheaterEngine::new();
+        let mut mixed = Vec::new();
+        for _ in 0..6 {
+            mixed.push(ev("us_iran", "military_escalation", 0.9, 0.9, &["united_states", "iran"], true));
+            mixed.push(ev("us_iran", "nuclear_posture",     0.9, 0.9, &["iran"], false));
+        }
+        let out2 = te2.compute(&mixed);
+        let gulf2 = out2.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(gulf2.top_driver, "nuclear_posture",
+            "equal-score kinetic+nuclear should be driven by the heavier-weighted nuclear_posture, got {:?}",
+            gulf2.top_driver);
+
+        // (c) A quiet world names no driver.
+        let mut te3 = TheaterEngine::new();
+        let quiet = te3.compute(&[]);
+        assert!(quiet.theaters.iter().all(|s| s.top_driver.is_empty()),
+            "Stable theaters must not name a driver");
     }
 
     #[test]

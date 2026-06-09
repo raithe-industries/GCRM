@@ -198,6 +198,7 @@ mod tests {
             heat: 0.5, modality_scores: scores.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
             trend: "stable".into(), delta: 0.0, event_count: 5, gp_involved: gp,
             alliance_invoked: false, top_actors: actors.iter().map(|s| s.to_string()).collect(),
+            top_driver: String::new(),
         }
     }
 

@@ -73,9 +73,13 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 - [ ] **3.2 GDELT** [candidate] — verify it is live, then wire it as an awareness layer.
   Do NOT add geo-less sources to the map (e.g. CISA KEV has no geo). Confirm live before
   committing a connector.
-- [ ] **3.3 Per-theater "why"** [candidate] — strengthen the where/why surfacing: the
-  drivers behind each theater's contribution, legibly. Awareness is the third pillar and is
-  the least-developed.
+- [x] **3.3 Per-theater "why"** — **DONE 2026-06-09.** Each `TheaterState` now carries
+  `top_driver`: the modality id with the largest WEIGHTED heat contribution (score ×
+  domain_weight) — the model's own dominant term, empty for a Stable theater. Computed in
+  `theater.rs::score_theater`, serialized in the snapshot, and surfaced in the theater-ladder
+  chips (sub-line "X% heat · Nuclear" + tooltip "driven by …", reusing the dashboard
+  `domainLabel`). Locked by `theater::top_driver_names_the_dominant_weighted_modality`.
+  Future runs could extend this to a 2nd contributor or a delta-driver ("what changed"). 
 
 ## 4. Robustness / performance  (enablers)
 - [x] **4.1 LLM enricher: serial → bounded-concurrent worker pool** — **DONE (pre-2026-06-09).**
