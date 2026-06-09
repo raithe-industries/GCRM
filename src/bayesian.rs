@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use crate::models::{
     AlertLevel, DomainScore, GeopoliticalEvent, RegimeFactor,
-    RiskSnapshot, SourceTier, ELEVATION_THRESHOLD, HISTORICAL_ANCHOR,
+    RiskSnapshot, SourceTier, ELEVATION_THRESHOLD, FORECAST_PROB_CEILING, HISTORICAL_ANCHOR,
 };
 use crate::theater::{TheaterEngine, EVIDENCE_GAIN_SYS};
 
@@ -520,7 +520,7 @@ impl ActorTracker {
 
 /// Calibrated risk index formula (log-odds / logistic form):
 ///
-///   P_risk = sigmoid( logit(P₀_adj) + β × L )   clamped to [0, 0.85]
+///   P_risk = sigmoid( logit(P₀_adj) + β × L )   clamped to [0, FORECAST_PROB_CEILING]
 ///
 /// where:
 ///   P₀_adj = BASELINE_ANNUAL × regime_multiplier
@@ -540,13 +540,15 @@ impl ActorTracker {
 ///   generative model; "posterior" here means the output probability, not a
 ///   formal posterior distribution.
 ///
-/// NOTE — The 0.85 ceiling:
-///   The .min(0.85) clamp is an engineering ceiling, not a probabilistic prior.
-///   Its purpose is to prevent the model from emitting values near certainty,
-///   which would be epistemically unjustifiable regardless of observed signals
-///   (the model has no access to ground truth). The appropriate ceiling for
-///   extreme scenarios — e.g. confirmed nuclear detonation — is a design decision
-///   belonging to Robert Perreault and is not derived from the model itself.
+/// NOTE — The forecast ceiling:
+///   The `.min(FORECAST_PROB_CEILING)` clamp (0.90, defined in models.rs) is an
+///   engineering ceiling, not a probabilistic prior. Its purpose is to prevent the
+///   model from emitting values near certainty, which would be epistemically
+///   unjustifiable regardless of observed signals (the model has no access to
+///   ground truth). The appropriate ceiling for extreme scenarios — e.g. confirmed
+///   nuclear detonation — is a design decision belonging to Robert Perreault and is
+///   not derived from the model itself. See models::FORECAST_PROB_CEILING for the
+///   single source of truth (the value lives there, not as a bare literal here).
 ///
 /// Calibration targets:
 ///   Cuba 1962 equivalent (6 domains, max signals)       → ~30-40% annual
@@ -676,7 +678,7 @@ impl BayesianRiskEngine {
         let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5); // BASELINE_ANNUAL (flat)
         let prior_logodds = (prior / (1.0 - prior)).ln();
         let raw = sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * l_sys)
-            .min(0.90); // Engineering ceiling — epistemic humility, not a prior (raised 0.85→0.90, v2)
+            .min(FORECAST_PROB_CEILING); // Engineering ceiling — epistemic humility, not a prior (see models::FORECAST_PROB_CEILING)
         snap.p_wwiii_annual = (raw * 1e8).round() / 1e8;
 
         snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(1.0 / 12.0)) * 1e8).round() / 1e8;
@@ -1119,6 +1121,46 @@ mod tests {
         let snap = engine.compute(&events);
         assert!(snap.p_wwiii_annual <= 1.0);
         assert!(snap.p_wwiii_30day  <= 1.0);
+    }
+
+    #[test]
+    fn forecast_prob_ceiling_is_the_named_honesty_clamp() {
+        // Honesty invariant: annual P(WWIII) must never reach near-certainty. It is
+        // hard-clamped to the NAMED constant FORECAST_PROB_CEILING (epistemic
+        // humility — the model has no ground truth). This locks three things that
+        // were previously only a bare `.min(0.90)` literal next to stale 0.85
+        // comments: (a) the constant's value + meaning, (b) that the clamp is LIVE
+        // (an apex world actually reaches it, so it isn't vestigial), and (c) that
+        // no world can exceed it.
+        assert!((FORECAST_PROB_CEILING - 0.90).abs() < 1e-12,
+            "FORECAST_PROB_CEILING is the documented 0.90 epistemic ceiling");
+
+        // (b) The clamp is LIVE, not vestigial: drive the exact formula compute()
+        // uses (sigmoid of the same log-odds prior + a saturating systemic
+        // likelihood). Unclamped it would exceed the ceiling; the clamp pulls it
+        // down to EXACTLY FORECAST_PROB_CEILING.
+        let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5);
+        let prior_logodds = (prior / (1.0 - prior)).ln();
+        let unclamped     = sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * 100.0);
+        assert!(unclamped > FORECAST_PROB_CEILING,
+            "a saturating likelihood must push the raw probability above the ceiling \
+             (else the clamp is dead code), got {unclamped}");
+        assert!((unclamped.min(FORECAST_PROB_CEILING) - FORECAST_PROB_CEILING).abs() < 1e-12,
+            "the clamp must pull a saturating probability to exactly the ceiling");
+
+        // (c) No real-engine world can exceed the ceiling: an apex world (every
+        // domain saturated with max-strength Tier-1 signal) stays at or below it.
+        let all_domains = ["nuclear_posture", "military_escalation", "great_power_conflict",
+                           "alliance_activation", "wmd_mass_casualty",
+                           "diplomatic_breakdown", "economic_warfare", "cyber_info_ops"];
+        let events: Vec<_> = all_domains.iter()
+            .flat_map(|d| (0..20).map(|_| make_event(d, 1.0, 1.0, SourceTier::Tier1)))
+            .collect();
+        let mut engine = minimal_engine();
+        let snap = engine.compute(&events);
+        assert!(snap.p_wwiii_annual <= FORECAST_PROB_CEILING,
+            "p_wwiii_annual {} must never exceed the ceiling {}",
+            snap.p_wwiii_annual, FORECAST_PROB_CEILING);
     }
 
     #[test]

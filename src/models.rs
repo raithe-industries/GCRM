@@ -36,6 +36,20 @@ pub const BASELINE_ANNUAL: f64 = 0.015;
 // at the new baseline so there is a single source of truth. Prefer BASELINE_ANNUAL.
 pub const HISTORICAL_ANCHOR: f64 = BASELINE_ANNUAL;
 
+// FORECAST_PROB_CEILING is the hard upper clamp on the model's annual P(WWIII).
+// It is an ENGINEERING ceiling (epistemic humility), NOT a probabilistic prior:
+// the model has no access to ground truth — no classified intelligence, no read on
+// intentions, no view of the future — so it must never emit a value near certainty,
+// however strong the open-source signal. The appropriate ceiling for extreme
+// scenarios (e.g. a confirmed nuclear detonation) is a design decision belonging to
+// Robert Perreault, not something derived from the model. Raised 0.85 → 0.90 in v2.
+// This is the SINGLE source of truth for that clamp: it is applied in
+// `bayesian.rs::compute` and rendered into the methodology page, so the code, the
+// computation, and the operator-facing prose can never silently drift apart.
+// Distinct from FORECAST_INDEX_CEILING (95, theater.rs), which caps the public
+// systemic INDEX (a 0–100 display scale), not this annual probability.
+pub const FORECAST_PROB_CEILING: f64 = 0.90;
+
 // ── Source tier ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

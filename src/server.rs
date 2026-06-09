@@ -61,7 +61,9 @@ impl ServerState {
         let html = Arc::new(generate_dashboard_html(base_path));
         let methodology = Arc::new(
             render_base_path(METHODOLOGY_HTML, base_path)
-                .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html()),
+                .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html())
+                .replace("{{FORECAST_PROB_CEILING}}",
+                         &format!("{:.2}", crate::models::FORECAST_PROB_CEILING)),
         );
         let state = Self {
             app_state,
@@ -584,7 +586,12 @@ mod tests {
         // removed v1 mechanics.
         assert!(METHODOLOGY_HTML.contains("systemic index"),    "missing systemic index");
         assert!(METHODOLOGY_HTML.contains("escalation ladder"), "missing escalation ladder");
-        assert!(METHODOLOGY_HTML.contains("0.90"),  "missing v2 engineering ceiling");
+        // The engineering ceiling is templated from the model's FORECAST_PROB_CEILING
+        // constant (single source of truth, substituted at startup) — so the raw
+        // template carries the placeholder, and the rendered value is checked by
+        // methodology_renders_forecast_ceiling_from_the_model_constant.
+        assert!(METHODOLOGY_HTML.contains("{{FORECAST_PROB_CEILING}}"),
+            "engineering ceiling must be templated from the model constant");
         assert!(METHODOLOGY_HTML.contains("sigmoid"),  "missing logistic model");
         assert!(METHODOLOGY_HTML.contains("backtest"), "missing calibration backtest");
         assert!(!METHODOLOGY_HTML.contains("2 / 2026"), "must not describe the removed 2/2026 anchor");
@@ -611,6 +618,21 @@ mod tests {
             "methodology must show the live calibration fidelity (Brier/RMSE)");
         assert!(state.methodology_html.contains("within band"),
             "methodology must show the in-band count");
+    }
+
+    #[test]
+    fn methodology_renders_forecast_ceiling_from_the_model_constant() {
+        // The operator-facing 0.90 ceiling prose is rendered from the model's own
+        // FORECAST_PROB_CEILING constant (single source of truth), so it can never
+        // silently drift from the running model the way the old hand-written 0.85
+        // doc comments did. Guards that the placeholder is substituted and that the
+        // rendered value matches the constant.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        assert!(!state.methodology_html.contains("{{FORECAST_PROB_CEILING}}"),
+            "the forecast-ceiling placeholder must be substituted at startup");
+        let rendered = format!("{:.2}", crate::models::FORECAST_PROB_CEILING);
+        assert!(state.methodology_html.contains(&format!("{rendered} ceiling")),
+            "methodology must render the ceiling value ({rendered}) from the model constant");
     }
 
     #[test]

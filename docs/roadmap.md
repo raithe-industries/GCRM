@@ -48,6 +48,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     Stable theater contributes ZERO to the concurrency / gp-entanglement / alliance amplifiers
     (ramp lower edge `HOT_HEAT−HOT_RAMP` and the `heat≥HOT_HEAT` gate both stay above the
     ceiling). Remaining un-pinned: regime ×, P₀, breadth asymptote, coupler weights — still open.
+  - PROGRESS 2026-06-09: named the P(WWIII) forecast ceiling — previously a bare `.min(0.90)`
+    literal in `bayesian.rs::compute` sitting next to STALE doc comments that still claimed 0.85 —
+    as `models::FORECAST_PROB_CEILING = 0.90` with a rationale (epistemic humility, no ground
+    truth). It is now the single source of truth: applied in the computation, fixed the stale 0.85
+    comments to reference it, and rendered into the methodology page via a `{{FORECAST_PROB_CEILING}}`
+    placeholder so the operator-facing prose can't drift (same anti-drift pattern as 1.1b). Locked by
+    `forecast_prob_ceiling_is_the_named_honesty_clamp` (constant value + the clamp is LIVE, not
+    vestigial + no real-engine world exceeds it) and `methodology_renders_forecast_ceiling_from_the_model_constant`.
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
