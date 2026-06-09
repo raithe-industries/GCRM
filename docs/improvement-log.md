@@ -16,6 +16,25 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — honesty/model — calibration evidence harness (Brier/cross-entropy vs anchored centres)
+- Item: roadmap 1.1 (now checked); spawned 1.1a + 1.1b.
+- Change: added a proper-scoring calibration harness to `src/backtest.rs`. It scores the live
+  model's P(WWIII) for the four hard-band analogs against Robert's expert-anchored band
+  CENTRES (2 / 39 / 65 / 80 %) using Brier + cross-entropy, printed via `cargo test
+  calibration_evidence_report -- --nocapture` and locked by 3 new tests (Brier math,
+  cross-entropy math + clamping, and the in-band invariant). Deliberately NOT a
+  tighter-than-band gate — that would fight legitimate live-targeted recalibration; it is
+  evidence that the number is earned. No model behavior changed (no calibration constant touched).
+- Metric moved: scorecard "Calibration evidence" *not measured* → **Brier 0.00060 / RMSE
+  2.45pp / in-band 4/4**; test count **346 → 349**.
+- Proof: `cargo test --release` = **348 passed / 0 failed / 1 ignored**. Evidence table:
+  quiet 2.03% (+0.03pp), ukraine 38.84% (−0.16pp), current_2026 60.10% (−4.90pp),
+  cuba 79.80% (−0.20pp).
+- FINDING for future runs: **current_2026 is the calibration soft spot** (−4.9pp; it alone
+  drives the RMSE — the other three anchors are within 0.2pp of centre). Captured as roadmap
+  1.1a. This is the kind of thing the wide bands hid and the evidence number surfaces.
+- Notes: harness is test-only (`backtest` is `#[cfg(test)]`); to surface it at runtime see 1.1b.
+
 ## 2026-06-09 — meta — installed the compounding self-improvement infrastructure
 - Item: ad-hoc (program upgrade)
 - Change: added `docs/roadmap.md` (prioritized, axis-organized backlog), `docs/scorecard.md`

@@ -205,3 +205,110 @@ fn bands_cuba() {
     let k = p_of(cuba_1962());
     assert!(k > 0.70 && k < 0.90, "cuba (nuclear-brink apex) should be ~80%, got {:.3}%", k * 100.0);
 }
+
+// ── Calibration evidence harness (roadmap 1.1) ─────────────────────────────────────
+//
+// The `bands_*` tests assert each analog lands INSIDE Robert's target band, but the bands
+// are wide (Cuba 70–90%), so a constant can drift halfway to a band edge with every test
+// still green and no number to show for it. This harness turns the expert-anchored band
+// CENTRES (quiet ~2%, Ukraine ~39%, current-full ~65%, Cuba ~80%) into proper scoring
+// numbers — Brier and cross-entropy — so a calibration change is EARNED BY A NUMBER, not
+// just "still in band". It is EVIDENCE, not a trip-wire: the locking test pins only the
+// scoring MATH and the robust in-band invariant, and the Brier/RMSE baseline is recorded in
+// docs/scorecard.md as the figure future calibration work should lower (or justify moving).
+// Adding a tighter-than-band gate here would fight legitimate live-targeted recalibration
+// (which can move a synthetic analog within its band while improving the live read), so we
+// deliberately do not.
+
+/// One expert-anchored calibration point: the analog's name, the centre probability Robert
+/// set, the [lo, hi] acceptance band (kept in sync with the `bands_*` tests), and the live
+/// model's output for that analog.
+struct Anchor { name: &'static str, centre: f64, lo: f64, hi: f64, p: f64 }
+
+/// The four hard-band analogs scored against the live model. `live_hot_2026` is excluded —
+/// it is a watch scenario with no hard band (see the note above `bands_cuba`).
+fn calibration_anchors() -> Vec<Anchor> {
+    vec![
+        Anchor { name: "quiet",        centre: 0.02, lo: 0.005, hi: 0.05, p: p_of(quiet()) },
+        Anchor { name: "ukraine_2022", centre: 0.39, lo: 0.30,  hi: 0.50, p: p_of(ukraine_2022()) },
+        Anchor { name: "current_2026", centre: 0.65, lo: 0.55,  hi: 0.75, p: p_of(current_2026()) },
+        Anchor { name: "cuba_1962",    centre: 0.80, lo: 0.70,  hi: 0.90, p: p_of(cuba_1962()) },
+    ]
+}
+
+/// Brier score (mean squared error) of (prediction, target) pairs. 0.0 = every prediction
+/// exactly on its target; higher = worse. A strictly proper scoring rule.
+fn brier_score(pairs: &[(f64, f64)]) -> f64 {
+    if pairs.is_empty() { return 0.0; }
+    pairs.iter().map(|(p, t)| (p - t) * (p - t)).sum::<f64>() / pairs.len() as f64
+}
+
+/// Mean binary cross-entropy of (prediction, target) pairs, treating each expert centre as a
+/// soft label. Predictions are clamped to [EPS, 1-EPS] so a 0/1 prediction cannot blow up to
+/// infinity. Lower = better; note the floor is the targets' own entropy, not zero.
+fn cross_entropy(pairs: &[(f64, f64)]) -> f64 {
+    const EPS: f64 = 1e-9;
+    if pairs.is_empty() { return 0.0; }
+    pairs.iter().map(|(p, t)| {
+        let p = p.clamp(EPS, 1.0 - EPS);
+        -(t * p.ln() + (1.0 - t) * (1.0 - p).ln())
+    }).sum::<f64>() / pairs.len() as f64
+}
+
+/// Aggregate calibration evidence for the live model against the anchored analogs.
+struct CalibrationEvidence { brier: f64, rmse: f64, cross_entropy: f64, in_band: usize, n: usize }
+
+fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
+    let anchors = calibration_anchors();
+    let pairs: Vec<(f64, f64)> = anchors.iter().map(|a| (a.p, a.centre)).collect();
+    let brier = brier_score(&pairs);
+    let ev = CalibrationEvidence {
+        brier,
+        rmse: brier.sqrt(),
+        cross_entropy: cross_entropy(&pairs),
+        in_band: anchors.iter().filter(|a| a.p >= a.lo && a.p <= a.hi).count(),
+        n: anchors.len(),
+    };
+    (ev, anchors)
+}
+
+#[test]
+fn brier_score_is_correct() {
+    assert_eq!(brier_score(&[]), 0.0);
+    assert!(brier_score(&[(0.0, 0.0), (1.0, 1.0)]).abs() < 1e-12);          // perfect
+    assert!((brier_score(&[(0.5, 0.0)]) - 0.25).abs() < 1e-12);
+    assert!((brier_score(&[(1.0, 0.0)]) - 1.0).abs() < 1e-12);             // worst case
+    assert!((brier_score(&[(0.5, 0.0), (1.0, 0.0)]) - 0.625).abs() < 1e-12); // mean(0.25, 1.0)
+}
+
+#[test]
+fn cross_entropy_is_correct_and_bounded() {
+    assert!(cross_entropy(&[(1.0, 1.0)]) < 1e-6);                 // perfect confident hit → 0
+    assert!(cross_entropy(&[(0.0, 0.0)]) < 1e-6);
+    assert!((cross_entropy(&[(0.5, 0.5)]) - std::f64::consts::LN_2).abs() < 1e-9); // -ln(0.5)
+    assert!(cross_entropy(&[(0.0, 1.0)]).is_finite());           // extreme miss clamped, not inf
+}
+
+/// Reproducible calibration evidence. Run:
+///   cargo test calibration_evidence_report -- --nocapture
+/// Prints the per-analog table + aggregate Brier / RMSE / cross-entropy, and pins the robust
+/// invariant (all four anchors in band). The Brier/RMSE baseline is recorded in
+/// docs/scorecard.md as the number calibration work should lower.
+#[test]
+fn calibration_evidence_report() {
+    let (ev, anchors) = calibration_evidence();
+    eprintln!("\n── GCRM calibration evidence (model vs expert-anchored centres) ──");
+    for a in &anchors {
+        let inb = if a.p >= a.lo && a.p <= a.hi { "in " } else { "OUT" };
+        eprintln!("{:14} P={:6.2}%  centre={:5.1}%  err={:+5.2}pp  band[{:4.1},{:4.1}]%  {}",
+            a.name, a.p * 100.0, a.centre * 100.0, (a.p - a.centre) * 100.0,
+            a.lo * 100.0, a.hi * 100.0, inb);
+    }
+    eprintln!("aggregate: Brier={:.5}  RMSE={:.2}pp  cross-entropy={:.4}  in-band={}/{}\n",
+        ev.brier, ev.rmse * 100.0, ev.cross_entropy, ev.in_band, ev.n);
+
+    // Robust invariants only — evidence, not a brittle trip-wire.
+    assert_eq!(ev.in_band, ev.n, "all anchored analogs must land in their target band");
+    // Loose sanity ceiling: cannot fail while in-band, documents the metric's scale.
+    assert!(ev.brier < 0.03, "calibration Brier unexpectedly high: {:.5}", ev.brier);
+}
