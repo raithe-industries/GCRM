@@ -101,8 +101,8 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 <h2 id="likelihood">Systemic likelihood &amp; the risk index</h2>
 <p>The hottest theater's heat is amplified by the couplers into a systemic likelihood <code>L_sys</code>, folded into a flat baseline prior on the log-odds scale:</p>
 <pre>L_sys = max_theater_heat × brink × coupling × concurrency × guardrail
-P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at 0.90</pre>
-<p>L = 0 reproduces the baseline; large L saturates toward the ceiling along an S-curve. The <b>0.90 ceiling</b> is an engineering choice (epistemic humility, raised from v1's 0.85), not a probabilistic prior — the model has no ground truth and must never emit near-certainty.</p>
+P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at {{FORECAST_PROB_CEILING}}</pre>
+<p>L = 0 reproduces the baseline; large L saturates toward the ceiling along an S-curve. The <b>{{FORECAST_PROB_CEILING}} ceiling</b> is an engineering choice (epistemic humility, raised from v1's 0.85), not a probabilistic prior — the model has no ground truth and must never emit near-certainty. This value is rendered from the model's own <code>FORECAST_PROB_CEILING</code> constant, so this page cannot drift from the running model.</p>
 
 <h2 id="index">The systemic index (0–100)</h2>
 <p>The public headline is aligned to the escalation ladder so it reads as a rung, not an opaque number: <code>index = 100 · (max_rung_level + within-band heat) / 6</code>. Great-Power War with deep heat reads ~75–83; a quiet world reads near zero.</p>
@@ -126,7 +126,7 @@ P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at 0.90</pre>
 <p>A dedicated subsystem monitors FDSN seismic networks, public CTBTO statements, and nuclear-news spikes, fusing them into a confidence-weighted alert. Alerts are honestly labeled "SEISMIC ANOMALY" until official confirmation — the detector never claims a detonation.</p>
 
 <h2 id="limits">Honest limitations</h2>
-<div class="note warn">The output is a <b>calibrated risk index</b>, not a true probability and not a formal posterior. It cannot see intentions, classified intelligence, or the future. Calibration is anchored to a handful of historical analogs and expert priors; reasonable analysts would set different bands. The 0.90 ceiling means the model deliberately refuses to express near-certainty. Treat it as a defensible, transparent thermometer of open-source signal — not an oracle.</div>
+<div class="note warn">The output is a <b>calibrated risk index</b>, not a true probability and not a formal posterior. It cannot see intentions, classified intelligence, or the future. Calibration is anchored to a handful of historical analogs and expert priors; reasonable analysts would set different bands. The {{FORECAST_PROB_CEILING}} ceiling means the model deliberately refuses to express near-certainty. Treat it as a defensible, transparent thermometer of open-source signal — not an oracle.</div>
 
 <footer>RAiTHE INDUSTRIES INCORPORATED © 2026. All rights reserved. <a href="{{BASE_PATH}}/">Return to the live dashboard →</a></footer>
 </div>

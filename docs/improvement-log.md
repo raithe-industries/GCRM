@@ -16,6 +16,39 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — honesty/model — named + pinned the P(WWIII) forecast ceiling (was a bare literal next to stale 0.85 comments)
+- Item: roadmap 1.2 (progressed — another magic calibration constant named/pinned; regime ×, P₀,
+  breadth asymptote, coupler weights still open).
+- Change: the hard clamp that enforces the model's core honesty property — "never emit
+  near-certainty" — was a bare `.min(0.90)` literal in `bayesian.rs::compute`, and worse, the doc
+  comments directly above it (lines ~523, ~543) STILL said `0.85` / `.min(0.85)`: code and its own
+  documentation actively contradicted each other (the ceiling was raised 0.85→0.90 in v2 but the
+  prose was never updated — the exact stale-doc hazard that produced the stale calibration table
+  1.1b fixed). Fixed in one coherent change: (a) defined `models::FORECAST_PROB_CEILING = 0.90`
+  with a full rationale (engineering ceiling, not a probabilistic prior — the model has no ground
+  truth; the apex-scenario ceiling is Robert's design call) as the SINGLE source of truth, and
+  noted it is distinct from `FORECAST_INDEX_CEILING` (95, the display index); (b) used it in the
+  computation; (c) rewrote the stale 0.85 doc comments to reference the named constant; (d) rendered
+  it into the methodology page via a `{{FORECAST_PROB_CEILING}}` placeholder (server.rs substitution,
+  same mechanism as `{{BASE_PATH}}`/`{{CALIBRATION_EVIDENCE}}`) so the operator-facing prose is
+  computed from the model and can never drift. NO value changed — 0.90 stays 0.90; this names and
+  locks what was already there.
+- Metric moved: test count 357 → 359 (`forecast_prob_ceiling_is_the_named_honesty_clamp` +
+  `methodology_renders_forecast_ceiling_from_the_model_constant`); a previously-unpinned honesty
+  constant + its operator-facing prose now locked, and a live code/doc contradiction removed. No
+  model constant CHANGED — calibration bands and systemic invariants untouched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 358 passed / 0 failed / 1 ignored; `cargo test backtest` = 9 passed (quiet/Ukraine/current/Cuba
+  bands + evidence all green). The new bayesian test proves the clamp is LIVE: a saturating
+  likelihood (l_sys=100) gives unclamped sigmoid > 0.90, and `.min(FORECAST_PROB_CEILING)` pulls it
+  to exactly 0.90 — so the clamp is not vestigial — while an apex real-engine world stays ≤ ceiling.
+- Notes / decisions future runs must respect: `FORECAST_PROB_CEILING` (0.90) is the P(WWIII) clamp;
+  `FORECAST_INDEX_CEILING` (95) is the systemic INDEX clamp — two different ceilings, don't conflate.
+  Do NOT raise either toward certainty/100. The methodology ceiling prose is now templated; edit the
+  CONSTANT, not the HTML. Note discovered: an apex per-domain test world only reaches ~0.149 — the
+  0.90 clamp only binds at extreme systemic l_sys (nuclear brink × multi-theater), which is why the
+  live-clamp proof drives the formula directly rather than relying on a synthetic event pile.
+
 ## 2026-06-09 — honesty/model — locked the "quiet theater never leaks into the systemic amplifiers" invariant
 - Item: roadmap 1.2 (progressed, not fully checked — one constant named/pinned; others remain).
 - Change: the systemic engine amplifies the headline via three couplers — concurrency
