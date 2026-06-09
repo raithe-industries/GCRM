@@ -46,6 +46,17 @@ const HOT_RAMP: f64 = 0.06;
 /// modality co-occurrence (mirrors bayesian::ELEVATION_RAMP).
 const ELEV_RAMP: f64 = 0.08;
 
+/// Heat below which a theater sits on the **Stable** rung — i.e. nothing is
+/// happening there worth amplifying. This is the honesty floor the systemic
+/// couplers must respect: a Stable theater must contribute EXACTLY ZERO to the
+/// concurrency / great-power-entanglement / alliance amplifiers, or a quiet world
+/// would silently inflate the headline. That holds today because the concurrency
+/// ramp's lower edge (HOT_HEAT − HOT_RAMP = 0.12) and the entanglement/alliance
+/// gate (heat ≥ HOT_HEAT = 0.18) both sit strictly above this ceiling — a
+/// relationship LOCKED by `quiet_theater_never_leaks_into_couplers` so a future
+/// recalibration of the ramp can't dishonestly let stable theaters leak.
+const STABLE_HEAT_CEILING: f64 = 0.06;
+
 /// Nuclear-posture modality score at/above which a theater that also entangles
 /// ≥ `BRINK_MIN_GREAT_POWERS` distinct great powers counts as a direct nuclear-brink
 /// (apex) configuration — a Cuba-1962 head-to-head. This is the SINGLE source of
@@ -112,7 +123,7 @@ fn max_weighted_sum() -> f64 {
 
 /// Map a theater's heat (+ overrides) to a discrete escalation rung.
 fn rung_for(heat: f64, gp_involved: bool, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
-    let mut r = if heat < 0.06 {
+    let mut r = if heat < STABLE_HEAT_CEILING {
         EscalationRung::Stable
     } else if heat < 0.18 {
         EscalationRung::Tension
@@ -314,7 +325,7 @@ impl TheaterEngine {
             (100.0 * (max_rung.level() as f64 + within) / 6.0).clamp(0.0, FORECAST_INDEX_CEILING);
 
         let hot_count = states.iter().filter(|s| s.heat >= HOT_HEAT).count();
-        let driver = if top_heat < 0.06 {
+        let driver = if top_heat < STABLE_HEAT_CEILING {
             "No theater above baseline".to_string()
         } else {
             format!("{} at {}; {} theater{} hot",
@@ -556,6 +567,47 @@ mod tests {
         let o2 = te2.compute(&both);
         assert!(o2.l_sys > o1.l_sys, "two hot theaters {} should exceed one {}", o2.l_sys, o1.l_sys);
         assert!(o2.couplers.concurrency > o1.couplers.concurrency);
+
+        // HONESTY: only ONE theater is hot in the `single` world; the other four are
+        // eventless → Stable → they must leak exactly 0 concurrency. A fully-hot
+        // theater saturates its smoothstep at 1.0, so total concurrency is exactly 1.0.
+        // If a quiet theater leaked, this would read > 1.0.
+        assert!((o1.couplers.concurrency - 1.0).abs() < 1e-3,
+            "one hot theater (+ four Stable) must yield concurrency 1.0, got {}",
+            o1.couplers.concurrency);
+    }
+
+    #[test]
+    fn quiet_theater_never_leaks_into_couplers() {
+        // HONESTY INVARIANT: a Stable theater (heat at/below STABLE_HEAT_CEILING) must
+        // contribute EXACTLY ZERO to every systemic amplifier — concurrency,
+        // great-power entanglement and alliance activation. This pins the RELATIONSHIP
+        // between the coupler gates and the rung structure, not any fitted magnitude, so
+        // it survives legitimate recalibration but trips the moment a ramp/threshold tweak
+        // would let a quiet world silently inflate the headline.
+
+        // (1) The concurrency ramp must not have begun by the Stable ceiling: its lower
+        //     edge (HOT_HEAT − HOT_RAMP) sits strictly above STABLE_HEAT_CEILING.
+        assert!(HOT_HEAT - HOT_RAMP > STABLE_HEAT_CEILING,
+            "concurrency ramp lower edge {} must stay above the Stable ceiling {} so a \
+             stable theater contributes 0 concurrency",
+            HOT_HEAT - HOT_RAMP, STABLE_HEAT_CEILING);
+
+        // (2) …and the smoothstep actually returns 0 across the ENTIRE Stable band,
+        //     up to and including the ceiling itself.
+        for i in 0..=60 {
+            let h = i as f64 / 1000.0; // 0.000 .. 0.060 (the Stable band)
+            assert!(h <= STABLE_HEAT_CEILING);
+            let c = smoothstep(h, HOT_HEAT - HOT_RAMP, HOT_HEAT + HOT_RAMP);
+            assert_eq!(c, 0.0, "stable heat {h} leaked {c} concurrency into the amplifier");
+        }
+
+        // (3) Great-power entanglement and alliance activation both gate on
+        //     `heat >= HOT_HEAT`, which is strictly above the Stable ceiling — so a
+        //     stable theater can never enter either set.
+        assert!(HOT_HEAT > STABLE_HEAT_CEILING,
+            "entanglement/alliance gate {} must stay above the Stable ceiling {}",
+            HOT_HEAT, STABLE_HEAT_CEILING);
     }
 
     #[test]

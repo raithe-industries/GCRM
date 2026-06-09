@@ -16,6 +16,38 @@ Format per entry:
 
 ---
 
+## 2026-06-09 — honesty/model — locked the "quiet theater never leaks into the systemic amplifiers" invariant
+- Item: roadmap 1.2 (progressed, not fully checked — one constant named/pinned; others remain).
+- Change: the systemic engine amplifies the headline via three couplers — concurrency
+  (`smoothstep(heat, HOT_HEAT−HOT_RAMP, HOT_HEAT+HOT_RAMP)` summed over theaters),
+  great-power entanglement and alliance activation (both gated on `heat ≥ HOT_HEAT`). The
+  honesty property that a STABLE theater (heat below the Stable-rung floor) contributes
+  EXACTLY ZERO to all three was true but UNGUARDED: the floor was a bare `0.06` literal in
+  `rung_for`, and nothing stopped a future recalibration from widening `HOT_RAMP` or lowering
+  `HOT_HEAT` until the ramp's lower edge (today 0.12) dipped to/below it — at which point a
+  quiet world would silently inflate the systemic index with nothing to catch it. Fixed two
+  ways in one coherent change: (a) named the floor `STABLE_HEAT_CEILING = 0.06` with a
+  rationale and used it in both `rung_for` and the headline driver-text gate (provenance —
+  roadmap 1.2); (b) added `quiet_theater_never_leaks_into_couplers`, which asserts the
+  RELATIONSHIP `HOT_HEAT − HOT_RAMP > STABLE_HEAT_CEILING` and `HOT_HEAT > STABLE_HEAT_CEILING`,
+  and that `smoothstep` returns 0 across the entire Stable band [0, 0.06]. Also strengthened
+  `concurrency_raises_likelihood` with a behavioral lock: a world with one fully-hot theater
+  (the other four eventless → Stable) yields concurrency EXACTLY 1.0 — proving the four quiet
+  theaters leak nothing.
+- Metric moved: test count 356 → 357 (new `quiet_theater_never_leaks_into_couplers` + a
+  hardened assertion in `concurrency_raises_likelihood`); a previously-unguarded honesty
+  invariant now locked. No model constant CHANGED — `STABLE_HEAT_CEILING` is the same 0.06,
+  just named; so the calibration bands and the systemic invariants are untouched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test
+  --release` = 356 passed / 0 failed / 1 ignored; `cargo test backtest` = 9 passed (bands
+  quiet/Ukraine/current/Cuba + evidence all green); `cargo test theater::` = 18 passed.
+- Notes for future runs: this is a RELATIONSHIP lock (like the 1.3 invariants), deliberately
+  NOT a magnitude freeze — it survives legitimate ramp recalibration but trips a regression that
+  would let stable theaters leak amplification. 1.2 is still OPEN for the regime ×, P₀, breadth
+  asymptote and coupler-weight constants. A natural sibling: the same no-leak property for the
+  intra-theater co-occurrence ramp (`ELEV_RAMP` around `ELEVATION_THRESHOLD`) — a sub-threshold
+  modality must contribute 0 co-occurrence; not yet locked.
+
 ## 2026-06-09 — awareness — per-theater "why": dominant weighted-heat driver
 - Item: roadmap 3.3 (now checked). First advance on the Awareness axis (pillar 3, previously
   the least-developed and least-recently-touched — prior runs all sat on honesty/model).
