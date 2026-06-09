@@ -42,6 +42,12 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (regime ×, P₀, breadth, coupler weights), ensure a one-line written rationale + the test
   that pins it exists near the definition. Where one is missing, add it. Never change a
   value without evidence + a test; this item is documentation/traceability, not tuning.
+  - PROGRESS 2026-06-09: named the previously-magic `0.06` Stable-rung floor as
+    `STABLE_HEAT_CEILING` (theater.rs, used in `rung_for` + the driver text) with a rationale,
+    and added `quiet_theater_never_leaks_into_couplers` locking the honesty relationship that a
+    Stable theater contributes ZERO to the concurrency / gp-entanglement / alliance amplifiers
+    (ramp lower edge `HOT_HEAT−HOT_RAMP` and the `heat≥HOT_HEAT` gate both stay above the
+    ceiling). Remaining un-pinned: regime ×, P₀, breadth asymptote, coupler weights — still open.
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
