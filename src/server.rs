@@ -84,6 +84,10 @@ fn render_base_path(template: &str, base_path: &str) -> String {
 
 fn generate_dashboard_html(base_path: &str) -> String {
     render_base_path(DASHBOARD_HTML, base_path)
+        // The domain chart's "elevated" reference line reads its cutoff from the
+        // model constant, so it can never drift from the engine's real threshold.
+        .replace("{{ELEVATION_THRESHOLD}}",
+                 &format!("{}", crate::models::ELEVATION_THRESHOLD))
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -555,6 +559,38 @@ mod tests {
             DASHBOARD_HTML.contains("trend_6h"),
             "dashboard no longer reads the server-computed trend_6h field — \
              the 6h Trend would silently revert to the broken client-buffer path"
+        );
+    }
+
+    #[test]
+    fn dashboard_html_renders_elevation_threshold_from_model() {
+        // The domain bar chart draws a dashed "elevated" reference line so an
+        // operator can see at a glance which force domains have crossed the cutoff
+        // that feeds the co-occurrence amplifier. The line's value MUST come from
+        // the model (templated), not a hand-typed JS literal that could silently
+        // drift from the engine — that would be a dishonest render.
+        assert!(
+            DASHBOARD_HTML.contains("{{ELEVATION_THRESHOLD}}"),
+            "dashboard template lost the elevation-threshold placeholder"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("elevLine"),
+            "dashboard dropped the elevation reference-line canvas plugin"
+        );
+        let rendered = generate_dashboard_html("/risk");
+        assert!(
+            !rendered.contains("{{ELEVATION_THRESHOLD}}"),
+            "elevation-threshold placeholder was not substituted at render time"
+        );
+        // The rendered JS constant must equal the live model threshold, so the line
+        // can never lie about where "elevated" begins.
+        assert!(
+            rendered.contains(&format!(
+                "const ELEV_THRESH={}",
+                crate::models::ELEVATION_THRESHOLD
+            )),
+            "rendered dashboard must embed models::ELEVATION_THRESHOLD ({}) as ELEV_THRESH",
+            crate::models::ELEVATION_THRESHOLD
         );
     }
 

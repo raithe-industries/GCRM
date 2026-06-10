@@ -16,6 +16,42 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — legibility/awareness — domain chart "elevated" threshold reference line (canvas plugin, model-templated)
+- Item: roadmap 2.2 (now checked — annotation render audit). First advance on the Legibility
+  axis (pillar 2): the whole prior log sat on honesty/model + awareness; legibility was the
+  least-recently-touched axis, so this rotates coverage onto it.
+- Audit result: enumerated every Chart.js instance — only two (`tlChart` timeline, `dmChart`
+  domain bar) — plus the methodology page (no charts). No annotation-plugin overlay remained
+  silently invisible; `calibBand` and `spikeMarks` were already canvas plugins (their
+  `chartjs-plugin-annotation`-renders-nothing comments are historical, not live). So 2.2's
+  literal target was exhausted — but the audit surfaced the real gap it points at.
+- Change: the domain bar chart (`dmChart`, 5 force domains scored 0–1) had NO reference for the
+  model's `ELEVATION_THRESHOLD` (0.32) — the score at/above which a domain is "elevated" and
+  feeds the co-occurrence amplifier. An operator had to mentally hold 0.32 to read which bars
+  mattered. Added the `elevLine` canvas plugin (`afterDatasetsDraw`): a dashed amber line at the
+  threshold with an "elevated" label, drawn via `chart.scales.y.getPixelForValue`. Wired into
+  `dmChart`'s `plugins:[elevLine]`. Critically for HONESTY, the value is NOT a hand-typed JS
+  literal that could drift: `const ELEV_THRESH={{ELEVATION_THRESHOLD}}` is substituted in
+  `server.rs::generate_dashboard_html` from `models::ELEVATION_THRESHOLD` (same anti-drift
+  template pattern as `{{FORECAST_PROB_CEILING}}`). Canvas-drawn deliberately — a naive
+  `chartjs-plugin-annotation` line would be silently invisible under Chart.js v4, the exact
+  failure 2.2 exists to prevent.
+- Metric moved: test count 358 → 359 (new `dashboard_html_renders_elevation_threshold_from_model`);
+  new legibility/awareness capability (the operator now sees the elevation cutoff against the live
+  domain bars). No model constant touched — `ELEVATION_THRESHOLD` is unchanged at 0.32, just
+  surfaced; calibration bands and systemic invariants untouched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 359 passed / 0 failed / 3 ignored; `cargo test backtest` = 9 passed (quiet/Ukraine/current/Cuba
+  bands + evidence all green). The lock test proves the rendered JS embeds exactly
+  `const ELEV_THRESH=0.32` (= `models::ELEVATION_THRESHOLD`) and that the placeholder is gone after
+  render — so the line can never lie about where "elevated" begins.
+- Notes / decisions future runs must respect: the elevation line's value is TEMPLATED from the
+  model — edit `models::ELEVATION_THRESHOLD`, never the dashboard literal (the placeholder, not a
+  number, lives in dashboard.html). A natural sibling legibility lever: a threshold marker on the
+  hero/timeline for the critical P(WWIII) band (≥8%), drawn the same canvas-plugin way. The eyes
+  gate will judge this render at deploy — the line is thin/dashed/labeled and only drawn when the
+  threshold pixel falls inside the chart area, so it won't clip or saturate.
+
 ## 2026-06-09 — awareness — feed-roster liveness guard + first audit (2 dead feeds replaced, 1 URL fixed)
 - Item: roadmap 3.1 (now checked).
 - Change: added two `#[ignore]`d live-network tests to `src/ingestor.rs`.
