@@ -717,6 +717,15 @@ pub struct RiskSnapshot {
 
     pub alert_level:   AlertLevel,
     pub alert_message: String,
+    /// The annual-P(WWIII) alert-band thresholds that classified THIS snapshot,
+    /// recorded so the JSON is self-describing and the dashboard can draw/colour
+    /// the critical & elevated bands from the live configured value instead of a
+    /// hardcoded literal that could silently drift from `AlertSettings`. Set by
+    /// the engine from its configured thresholds in `compute` (Step 10).
+    #[serde(default)]
+    pub alert_elevated_threshold: f64,
+    #[serde(default)]
+    pub alert_critical_threshold: f64,
 
     pub events_in_window:  usize,
     pub sources_active:    usize,
@@ -763,6 +772,8 @@ impl Default for RiskSnapshot {
             estimate_confidence: 0.5,
             alert_level: AlertLevel::Normal,
             alert_message: String::new(),
+            alert_elevated_threshold: AlertSettings::default().elevated,
+            alert_critical_threshold: AlertSettings::default().critical,
             events_in_window: 0,
             sources_active: 0,
             great_power_events: 0,
