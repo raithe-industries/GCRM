@@ -16,6 +16,50 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — awareness — per-theater "what is heating up": rising-driver (delta-driver) on the ladder (roadmap 3.3 extension)
+- Item: roadmap 3.3 (extended — the delta-driver the original entry explicitly flagged as a future
+  extension). Awareness axis (pillar 3): it was the LEAST-recently-advanced axis (last advanced
+  2026-06-09; honesty/legibility/robustness all advanced 2026-06-10), so this rotates coverage back
+  onto it. The only other open awareness item (3.2 GDELT) needs live-network verification the cloud
+  sandbox can't do — so the honest provable-green awareness lever today is this delta-driver.
+- Verified-open-first: `TheaterState` carried `top_driver` (dominant weighted LEVEL) but nothing
+  about CHANGE — the engine kept only `prev_heat` (aggregate), not per-modality history, so there
+  was no way to say *which force is driving a rise*. The chip showed a ▲ arrow (direction) and the
+  dominant-level driver, which can MISLEAD: a theater hottest on nuclear posture can be rising purely
+  because military escalation just jumped — the ▲ + "Nuclear" reads as "nuclear is escalating" when
+  it isn't. Real awareness gap, directly on the mission's "where risk is concentrating, early enough
+  to act" leg.
+- Change (one coherent change across model + engine + dashboard): (a) added
+  `TheaterEngine.prev_scores: HashMap<theater_id, HashMap<modality_id, score>>` — previous-tick raw
+  modality scores, kept separate from `prev_heat` because the rising driver is about *which modality
+  moved*; (b) in `score_theater`, compute `rising_driver` = the modality with the largest POSITIVE
+  `(now−was) × domain_weight` change, populated ONLY when the theater's overall `trend == "rising"`
+  (a flat/cooling theater names nothing); record this tick's scores into `prev_scores`; the
+  de-escalation (empty-events) branch resets `prev_scores` to a clean baseline and names nothing;
+  (c) new `TheaterState.rising_driver` field (serialized → snapshot JSON automatically); (d)
+  dashboard ladder chip surfaces it as "↑ X" beside the rising arrow (reusing `domainLabel`) + a
+  "rising on X" tooltip clause, keeping the signal count visible. Honest by construction — it names
+  the model's own largest positive weighted delta term, never a fitted value. NO calibration constant
+  touched.
+- Metric moved: test count 365 → 366 (new
+  `rising_driver_names_the_modality_that_moved_not_the_dominant_level`); new awareness capability
+  (per-theater delta-driver). Calibration evidence UNCHANGED (backtest 9/9 green, no model constant
+  touched).
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 365 passed / 0 failed / 3 ignored (366th is the scorecard grep count incl. the new test);
+  `cargo test backtest` = 9 passed (quiet/Ukraine/current/Cuba bands + evidence). The lock drives
+  TWO ticks on one engine: tick 1 (nuclear-only, rising from zero) → top_driver == rising_driver ==
+  nuclear; tick 2 (hold nuclear, spike military) → top_driver stays nuclear (dominant level) but
+  rising_driver == military_escalation (the mover) — the exact honesty distinction; tick 3 (identical
+  → flat) → no rising_driver; quiet world → none. A revert to naming the level instead of the delta
+  would flip tick 2 and fail.
+- Notes / decisions future runs must respect: `rising_driver` is gated on `trend == "rising"` and is
+  the largest positive weighted DELTA — do not conflate it with `top_driver` (the dominant level);
+  both are honest read-outs of existing scores, not new model levers. The chip reuses `domainLabel`
+  (no new label table). Natural remaining awareness extension (still open under 3.3): a 2nd LEVEL
+  contributor on the chip. 3.2 (GDELT) remains gated on live-network verification — not for the cloud
+  routine.
+
 ## 2026-06-10 — honesty/model — named the systemic coupler weights + breadth asymptote and locked "breadth never swamps the brink" (roadmap 1.2)
 - Item: roadmap 1.2 (progressed — the systemic coupler weights + breadth asymptote, the bulk of the
   remaining un-pinned fitted constants, are now named + rationale'd + relationship-locked). Honesty

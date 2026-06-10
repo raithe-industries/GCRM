@@ -260,6 +260,10 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
 pub struct TheaterEngine {
     /// Previous-tick heat per theater id, for trend/delta.
     prev_heat: HashMap<String, f64>,
+    /// Previous-tick raw modality scores per theater id (modality_id → 0..1), for the
+    /// per-theater "what is rising" delta-driver. Kept separate from `prev_heat` because
+    /// the rising driver is about *which modality moved*, not the aggregate heat.
+    prev_scores: HashMap<String, HashMap<String, f64>>,
 }
 
 /// Output bundle returned to the Bayesian engine each tick.
@@ -275,7 +279,7 @@ pub struct TheaterOutput {
 
 impl TheaterEngine {
     pub fn new() -> Self {
-        Self { prev_heat: HashMap::new() }
+        Self { prev_heat: HashMap::new(), prev_scores: HashMap::new() }
     }
 
     pub fn compute(&mut self, events: &[GeopoliticalEvent]) -> TheaterOutput {
@@ -412,13 +416,17 @@ impl TheaterEngine {
             let delta = 0.0 - prev;
             let trend = if delta < -0.005 { "falling" } else { "stable" };
             self.prev_heat.insert(id.clone(), 0.0);
+            // No qualifying events → every modality is at zero. Nothing can be rising, so
+            // there is no rising-driver to name; reset the per-modality history to zero so
+            // a later re-escalation is measured from a clean baseline.
+            self.prev_scores.insert(id.clone(), HashMap::new());
             return TheaterState {
                 theater_id: id, label: theater.label().to_string(),
                 rung: EscalationRung::Stable, rung_label: EscalationRung::Stable.label().to_string(),
                 heat: 0.0, modality_scores: HashMap::new(),
                 trend: trend.into(), delta: (delta * 1e4).round() / 1e4, event_count: 0,
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
-                top_driver: String::new(),
+                top_driver: String::new(), rising_driver: String::new(),
             };
         }
 
@@ -478,6 +486,33 @@ impl TheaterEngine {
                 .unwrap_or_default()
         };
 
+        // Per-theater "what is rising": the modality whose WEIGHTED score climbed the most
+        // since the previous tick — the model's own answer to *why this flashpoint is heating
+        // up*, which `top_driver` (the dominant LEVEL) cannot give: a theater can be hottest on
+        // nuclear posture yet be rising because military escalation just jumped. Honest by
+        // construction (the largest positive `Δscore × domain_weight` term), and only surfaced
+        // when the theater is actually rising — a flat/cooling theater names nothing.
+        let prev_scores = self.prev_scores.get(&id);
+        let rising_driver = if trend == "rising" {
+            DOMAIN_WEIGHTS.iter()
+                .map(|(m, _)| {
+                    let now  = scores.get(*m).map(|d| d.score).unwrap_or(0.0);
+                    let was  = prev_scores.and_then(|p| p.get(*m)).copied().unwrap_or(0.0);
+                    (*m, (now - was) * domain_weight(m))
+                })
+                .filter(|(_, gain)| *gain > 0.0)
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(m, _)| m.to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        // Record this tick's raw modality scores for the next tick's delta-driver.
+        let now_scores: HashMap<String, f64> = DOMAIN_WEIGHTS.iter()
+            .map(|(m, _)| (m.to_string(), scores.get(*m).map(|d| d.score).unwrap_or(0.0)))
+            .collect();
+        self.prev_scores.insert(id.clone(), now_scores);
+
         TheaterState {
             theater_id: id, label: theater.label().to_string(),
             rung, rung_label: rung.label().to_string(),
@@ -486,7 +521,7 @@ impl TheaterEngine {
             trend: trend.to_string(), delta: (delta * 1e4).round() / 1e4,
             event_count: tev.len(),
             gp_involved, alliance_invoked, top_actors,
-            top_driver,
+            top_driver, rising_driver,
         }
     }
 }
@@ -593,6 +628,63 @@ mod tests {
         let quiet = te3.compute(&[]);
         assert!(quiet.theaters.iter().all(|s| s.top_driver.is_empty()),
             "Stable theaters must not name a driver");
+    }
+
+    #[test]
+    fn rising_driver_names_the_modality_that_moved_not_the_dominant_level() {
+        // Awareness "what's heating up" per theater: rising_driver must name the modality
+        // with the largest POSITIVE weighted change since the previous tick — which can
+        // differ from top_driver (the dominant LEVEL). Lock the relationship, not magnitudes,
+        // and drive two ticks on ONE engine so the cross-tick delta is exercised.
+        let nuclear = |n: usize| -> Vec<GeopoliticalEvent> {
+            let mut v = Vec::new();
+            for _ in 0..n { v.push(ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false)); }
+            v
+        };
+        let military = |n: usize| -> Vec<GeopoliticalEvent> {
+            let mut v = Vec::new();
+            for _ in 0..n { v.push(ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states","iran"], true)); }
+            v
+        };
+
+        let mut te = TheaterEngine::new();
+
+        // Tick 1: a theater hot ONLY on nuclear posture. It is rising from zero, so the
+        // single positive mover is nuclear — rising_driver and top_driver agree here.
+        let t1 = te.compute(&nuclear(8));
+        let g1 = t1.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(g1.trend, "rising", "a theater hot from zero must read rising");
+        assert_eq!(g1.top_driver, "nuclear_posture");
+        assert_eq!(g1.rising_driver, "nuclear_posture",
+            "rising-from-zero on nuclear should name nuclear, got {:?}", g1.rising_driver);
+
+        // Tick 2: hold nuclear identical, SPIKE military escalation. Heat rises, so the
+        // delta-driver is military_escalation — even though nuclear (weight 3.0) is still
+        // the dominant LEVEL (top_driver). This is the honesty point top_driver can't make.
+        let mut t2ev = nuclear(8);
+        t2ev.extend(military(8));
+        let t2 = te.compute(&t2ev);
+        let g2 = t2.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(g2.trend, "rising", "adding a hot modality must raise heat → rising");
+        assert_eq!(g2.top_driver, "nuclear_posture",
+            "nuclear still dominates the LEVEL (weight 3.0), got {:?}", g2.top_driver);
+        assert_eq!(g2.rising_driver, "military_escalation",
+            "the modality that CLIMBED is military_escalation, got {:?}", g2.rising_driver);
+
+        // Tick 3: identical to tick 2 → heat flat → not rising → no rising_driver named.
+        let mut t3ev = nuclear(8);
+        t3ev.extend(military(8));
+        let t3 = te.compute(&t3ev);
+        let g3 = t3.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_ne!(g3.trend, "rising", "an unchanged theater must not read rising");
+        assert!(g3.rising_driver.is_empty(),
+            "a non-rising theater must name no rising-driver, got {:?}", g3.rising_driver);
+
+        // A quiet world names nothing rising.
+        let mut teq = TheaterEngine::new();
+        let q = teq.compute(&[]);
+        assert!(q.theaters.iter().all(|s| s.rising_driver.is_empty()),
+            "Stable theaters must not name a rising-driver");
     }
 
     #[test]
