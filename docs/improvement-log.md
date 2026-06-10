@@ -16,6 +16,47 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — robustness — shutdown made cancellation-aware under worker-pool saturation (roadmap 4.3)
+- Item: roadmap 4.3 (now checked). First real advance on the Robustness axis (pillar 4): prior
+  4.x activity was only the 4.1 *correction* (no code), so robustness was the least-recently-
+  advanced axis — this rotates coverage onto it. Serves the mission's "real-time" leg: a service
+  that can't shut down promptly can't be redeployed promptly, and the deploy wrapper rolls back on
+  a stuck health gate.
+- Verified the claim first (the roadmap demands it): in `nlp_sidecar.rs::run` the LLM-dispatch
+  permit was a bare `sem.clone().acquire_owned().await` sitting *inside* the `select!` recv arm.
+  Once `select!` picks the recv branch and runs its body, its `.await`s do NOT re-poll the other
+  branches — so while the pool is saturated (all `concurrency` permits held by in-flight ~6s LLM
+  classifications) that await blocks and the shutdown branch is never polled. A SIGTERM during
+  sustained load therefore stalled until a permit freed: bounded to one classify in the normal
+  case, but unbounded if Ollama hangs. Real, not theoretical.
+- Change (one coherent change, `nlp_sidecar.rs` only): extracted `acquire_permit_or_shutdown`,
+  which races `sem.acquire_owned()` against a clone of the shutdown `watch::Receiver`
+  (`biased` toward shutdown, plus an already-signalled fast-path) and returns
+  `PermitWait::{Acquired,Shutdown,Closed}`. The recv arm now matches that: `Acquired` →
+  dispatch as before (real backpressure preserved — the permit still gates the pool),
+  `Shutdown` → flush + exit immediately instead of blocking, `Closed` → break. A clone of the
+  receiver is used because the main `select!` already holds `&mut self.shutdown_rx` for its own
+  shutdown branch (the clone shares the value, has an independent seen-version). Both
+  graceful-exit paths (idle shutdown arm + saturated-dispatch shutdown) now call one
+  `save_and_log_shutdown` helper so the save/log can't drift. NO change to `llm.concurrency` or
+  the pool size — only the *wait* is now cancellation-aware (respects 4.1).
+- Metric moved: test count 359 → 363 (4 new `permit_wait_*` tests); new robustness capability
+  (cancellation-aware shutdown under backpressure). No model constant touched — calibration
+  bands and systemic invariants untouched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 363 passed / 0 failed / 3 ignored; `cargo test backtest` = 9 passed (quiet/Ukraine/current/
+  Cuba bands + evidence green). The regression lock `permit_wait_cancels_on_shutdown_while_pool_
+  saturated` holds the only permit forever and asserts the wait still returns `Shutdown` within a
+  2s timeout — a revert to a bare `acquire_owned().await` would hang and fail it.
+- Notes / decisions future runs must respect: do NOT move the permit acquire back to a bare
+  `acquire_owned().await` in the recv arm (re-introduces the stall), and do NOT raise
+  `llm.concurrency` (4.1 — hardware-calibrated to 2). Sibling open robustness item still 4.2
+  (`unwrap()/expect()` audit) — note from this run: the production `unwrap()/expect()` sites are
+  largely infallible-by-construction (e.g. `detector::nearest_test_site`'s `partial_cmp().unwrap()`
+  is safe because NaN distances are filtered out before `min_by`) or startup-time `expect`s;
+  4.2 has no clean must-fix target right now, so verify each candidate's error path is reachable
+  before "fixing" it.
+
 ## 2026-06-10 — legibility/awareness — domain chart "elevated" threshold reference line (canvas plugin, model-templated)
 - Item: roadmap 2.2 (now checked — annotation render audit). First advance on the Legibility
   axis (pillar 2): the whole prior log sat on honesty/model + awareness; legibility was the
