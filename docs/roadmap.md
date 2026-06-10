@@ -56,6 +56,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     placeholder so the operator-facing prose can't drift (same anti-drift pattern as 1.1b). Locked by
     `forecast_prob_ceiling_is_the_named_honesty_clamp` (constant value + the clamp is LIVE, not
     vestigial + no real-engine world exceeds it) and `methodology_renders_forecast_ceiling_from_the_model_constant`.
+  - PROGRESS 2026-06-10: named the **systemic coupler weights and the breadth asymptote** — the
+    bulk of the remaining un-pinned fitted constants. The five bare literals in `theater.rs::compute`
+    (`0.45` GP-entanglement weight, `0.30` alliance weight, `3.0` GP saturation, `0.26`/`1.7` breadth
+    asymptote+e-fold, `0.70` brink amplifier) are now `COUPLING_GP_WEIGHT` / `COUPLING_ALLIANCE_WEIGHT`
+    / `GP_ENTANGLEMENT_SATURATION` / `BREADTH_ASYMPTOTE` / `BREADTH_EFOLD` / `BRINK_AMPLIFIER`, each
+    with a rationale comment. Crucially the 2026-06-03 design intent that prevents the worst
+    dishonesty here — *breadth must never swamp the single-theater nuclear brink* (a regression that
+    once pegged a no-brink four-theater world flat at the 0.90 ceiling) — was PROSE only; now locked by
+    `breadth_never_swamps_the_nuclear_brink` (structural `BRINK_AMPLIFIER > BREADTH_ASYMPTOTE` + a
+    live-engine bound proving the breadth amplifier stays strictly below `1+BREADTH_ASYMPTOTE`, hence
+    below the brink). No value changed — calibration evidence identical (Brier ~2e-6, in-band 4/4).
+    Remaining un-pinned: the guardrail-coupler magic in `bayesian.rs::compute` (the `/4.0`
+    normalization and `0.12` guardrail amplifier) and the operator-tunable regime × factor defaults
+    (already labeled `RegimeFactor`s in settings, not blind literals). P₀ is `BASELINE_ANNUAL`
+    (named + const-asserted in models.rs).
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat

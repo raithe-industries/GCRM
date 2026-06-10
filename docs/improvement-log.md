@@ -16,6 +16,45 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — honesty/model — named the systemic coupler weights + breadth asymptote and locked "breadth never swamps the brink" (roadmap 1.2)
+- Item: roadmap 1.2 (progressed — the systemic coupler weights + breadth asymptote, the bulk of the
+  remaining un-pinned fitted constants, are now named + rationale'd + relationship-locked). Honesty
+  axis (pillar 1): rotates back onto the model's calibration provenance after two days on
+  robustness/legibility.
+- Verified-open-first: the five most calibration-critical amplifier constants in `theater.rs::compute`
+  were still bare literals — `0.45` (GP entanglement weight), `0.30` (alliance weight), `3.0` (GP
+  saturation count), `0.26`/`1.7` (breadth asymptote + e-fold), `0.70` (single-theater brink
+  amplifier). And the single most important honesty property among them — the 2026-06-03 design intent
+  that *saturating breadth must never let a no-brink multi-theater world out-amplify the single-theater
+  nuclear brink* (the regression that once drove a four-theater world above the Cuba apex and pegged
+  P(WWIII) flat at 0.90) — lived ONLY in a code comment, with no test guarding it.
+- Change (one coherent change, `theater.rs` only): (a) named all five literals — `COUPLING_GP_WEIGHT`,
+  `COUPLING_ALLIANCE_WEIGHT`, `GP_ENTANGLEMENT_SATURATION`, `BREADTH_ASYMPTOTE`, `BREADTH_EFOLD`,
+  `BRINK_AMPLIFIER` — each with a rationale comment, and used them in `compute` (gp_entanglement,
+  coupling_multiplier, concurrency_mult, brink_mult); (b) added `breadth_never_swamps_the_nuclear_brink`,
+  which locks the design intent two complementary ways: a STRUCTURAL guarantee `BRINK_AMPLIFIER >
+  BREADTH_ASYMPTOTE` (survives any recalibration), and a BEHAVIOURAL bound driving the live engine with
+  1..=5 identical conventional (no-GP, no-nuclear) hot theaters so max_heat/coupling are held constant
+  and the l_sys ratio IS the breadth amplifier — proving it is 1.0 at one theater (no breadth bonus),
+  monotone in theater count, and strictly below `1+BREADTH_ASYMPTOTE` (hence strictly below the
+  `1+BRINK_AMPLIFIER` apex) no matter how many theaters are hot. NO value changed.
+- Metric moved: test count 364 → 365 by the scorecard grep (new `breadth_never_swamps_the_nuclear_brink`);
+  a previously prose-only honesty relationship + five unpinned fitted constants now named and locked.
+  Calibration evidence UNCHANGED — Brier ~2e-6, RMSE 0.14pp, in-band 4/4, all four anchors bit-identical
+  to baseline (quiet 2.03 / ukraine 38.84 / current_2026 60.10 / cuba 79.80) — proof this was pure
+  naming + a relationship lock, not a tuning.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  364 passed / 0 failed / 3 ignored; `cargo test theater::` = 19 passed; `cargo test backtest` = 9
+  passed (quiet/Ukraine/current/Cuba bands + evidence). The lock uses `#[allow(clippy::assertions_on_constants)]`
+  on the structural inequality (same precedent as the 1.3 invariant locks).
+- Notes / decisions future runs must respect: these six are FITTED constants (backtest bands) — do NOT
+  blind-tweak; move only with evidence + a test, and keep `BRINK_AMPLIFIER > BREADTH_ASYMPTOTE` intact
+  (it is the structural guarantee against breadth swamping the brink). 1.2 still has small remainders:
+  the guardrail-coupler magic in `bayesian.rs::compute` (the `/4.0` regime→guardrail normalization and
+  the `0.12` guardrail amplifier) — a natural next 1.2 sibling. P₀ = `BASELINE_ANNUAL` is already
+  named + const-asserted; the regime × factor defaults are labeled `RegimeFactor`s (config surface, not
+  blind literals).
+
 ## 2026-06-10 — robustness — shutdown made cancellation-aware under worker-pool saturation (roadmap 4.3)
 - Item: roadmap 4.3 (now checked). First real advance on the Robustness axis (pillar 4): prior
   4.x activity was only the 4.1 *correction* (no code), so robustness was the least-recently-
