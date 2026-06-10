@@ -80,6 +80,53 @@ pub const BRINK_MIN_GREAT_POWERS: usize = 2;
 /// certain"). 100 is reserved for an out-of-band, record-verified assertion, never inference.
 pub const FORECAST_INDEX_CEILING: f64 = 95.0;
 
+// ── Systemic amplifier weights (the couplers) ────────────────────────────────────
+// HOW MUCH each systemic coupler may amplify the hottest theater's intensity into the
+// headline likelihood. These are the model's most calibration-critical free parameters,
+// so per roadmap 1.2 each is NAMED (not a bare literal) with its rationale and pinned by
+// a test, and the design-intent RELATIONSHIPS between them are locked. Fitted against the
+// backtest bands (quiet/Ukraine/current/Cuba) — do NOT blind-tweak; move them only with
+// evidence + a test, and keep the relationships below intact.
+
+/// Great-power entanglement weight in the coupling multiplier: a world where
+/// `GP_ENTANGLEMENT_SATURATION` distinct great powers are directly entangled across hot
+/// theaters is amplified by up to +45%. The largest coupler weight, because direct
+/// great-power entanglement is the strongest single escalator from a regional war to a
+/// systemic one.
+const COUPLING_GP_WEIGHT: f64 = 0.45;
+
+/// Alliance-activation weight in the coupling multiplier: a mutual-defense invocation in a
+/// hot theater adds up to +30% (half that for an invocation in a non-hot theater). Below
+/// the GP weight — an alliance call is a strong escalator but a step short of great powers
+/// already directly entangled.
+const COUPLING_ALLIANCE_WEIGHT: f64 = 0.30;
+
+/// Distinct great powers that must be directly entangled across hot theaters to SATURATE
+/// great-power entanglement at 1.0. Three (e.g. US + Russia + China all in it) is the
+/// practical ceiling for a systemic configuration.
+const GP_ENTANGLEMENT_SATURATION: f64 = 3.0;
+
+/// Maximum additional amplification from multi-theater CONCURRENCY (breadth) as the number
+/// of simultaneously-hot theaters grows without bound. Saturating (not linear) by
+/// deliberate design (recalibrated 2026-06-03): each extra hot theater adds less. Kept
+/// strictly BELOW `BRINK_AMPLIFIER` so breadth can never swamp the single-theater
+/// nuclear-brink apex — the "breadth-swamps-brink" regression a previous linear
+/// +0.12/theater term produced (a no-brink four-theater world pegged flat at the 0.90
+/// ceiling). LOCKED by `breadth_never_swamps_the_nuclear_brink`.
+const BREADTH_ASYMPTOTE: f64 = 0.26;
+
+/// e-fold scale of the breadth saturation: at `breadth = BREADTH_EFOLD` extra hot theaters
+/// the concurrency bonus has reached (1 − 1/e) ≈ 63% of its asymptote. Larger = slower
+/// saturation. ~1.7 lands the live four-theater world at ~82% WITH resolution (headroom
+/// below the ceiling) rather than pegged.
+const BREADTH_EFOLD: f64 = 1.7;
+
+/// Single-theater nuclear-brink (apex) amplifier: a direct ≥`BRINK_MIN_GREAT_POWERS`
+/// great-power nuclear standoff within ONE theater (Cuba 1962) multiplies the systemic
+/// likelihood by 1 + 0.70. Strictly greater than `BREADTH_ASYMPTOTE` by design so the apex
+/// head-to-head always outweighs mere breadth at equal intensity.
+const BRINK_AMPLIFIER: f64 = 0.70;
+
 /// Canonical great-power actor ids → a coarse great-power label, for counting how
 /// many DISTINCT great powers are entangled across hot theaters.
 fn great_power_label(actor_id: &str) -> Option<&'static str> {
@@ -262,7 +309,7 @@ impl TheaterEngine {
                 }
             }
         }
-        let gp_entanglement = (gp_set.len() as f64 / 3.0).min(1.0);
+        let gp_entanglement = (gp_set.len() as f64 / GP_ENTANGLEMENT_SATURATION).min(1.0);
 
         // Alliance activation: any mutual-defense invocation in a hot theater.
         let alliance_activation = if states.iter().any(|s| s.alliance_invoked && s.heat >= HOT_HEAT) {
@@ -303,16 +350,19 @@ impl TheaterEngine {
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
         // multiple simultaneously-hot theaters with DIMINISHING returns; brink is the
         // single-theater apex amplifier.
-        let coupling_multiplier = 1.0 + 0.45 * gp_entanglement + 0.30 * alliance_activation;
+        let coupling_multiplier =
+            1.0 + COUPLING_GP_WEIGHT * gp_entanglement + COUPLING_ALLIANCE_WEIGHT * alliance_activation;
         // Saturating breadth (recalibrated 2026-06-03): each extra hot theater adds less,
-        // asymptoting at +26%. Previously linear (+0.12 per theater), which let a no-brink
-        // FOUR-theater world (live 2026) drive l_sys ABOVE the Cuba nuclear-brink apex and
-        // peg P(WWIII) flat at the 0.90 ceiling — breadth swamping the brink, the opposite
-        // of the design intent. Saturating it lands that state at ~82% WITH resolution,
-        // while quiet/ukraine/cuba (concurrency ≤ 1) are mathematically unchanged.
+        // asymptoting at +`BREADTH_ASYMPTOTE`. Previously linear (+0.12 per theater), which let
+        // a no-brink FOUR-theater world (live 2026) drive l_sys ABOVE the Cuba nuclear-brink
+        // apex and peg P(WWIII) flat at the 0.90 ceiling — breadth swamping the brink, the
+        // opposite of the design intent. Saturating it lands that state at ~82% WITH
+        // resolution, while quiet/ukraine/cuba (concurrency ≤ 1) are mathematically unchanged.
+        // See the constants above for rationale; the breadth-vs-brink relationship is locked
+        // by `breadth_never_swamps_the_nuclear_brink`.
         let breadth          = (concurrency - 1.0).max(0.0);
-        let concurrency_mult = 1.0 + 0.26 * (1.0 - (-breadth / 1.7).exp());
-        let brink_mult       = 1.0 + 0.70 * brink;                           // single-theater apex
+        let concurrency_mult = 1.0 + BREADTH_ASYMPTOTE * (1.0 - (-breadth / BREADTH_EFOLD).exp());
+        let brink_mult       = 1.0 + BRINK_AMPLIFIER * brink;                // single-theater apex
 
         let max_heat = top_heat;
         let l_sys = max_heat * brink_mult * coupling_multiplier * concurrency_mult;
@@ -718,6 +768,80 @@ mod tests {
         assert!((1.6..=1.8).contains(&ratio),
             "brink in a non-hottest theater should raise l_sys by ~1.70×, got ratio {ratio} \
              (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
+    }
+
+    #[test]
+    fn breadth_never_swamps_the_nuclear_brink() {
+        // HONESTY INVARIANT (the design intent of the 2026-06-03 saturating-breadth fix,
+        // previously only asserted in prose): a no-brink multi-theater world must NEVER
+        // out-amplify the single-theater nuclear-brink apex at equal intensity. A previous
+        // LINEAR breadth term (+0.12 per hot theater) let a four-theater no-brink world
+        // (live 2026) drive l_sys ABOVE the Cuba head-to-head and peg P(WWIII) flat at the
+        // 0.90 ceiling — breadth swamping the brink, the opposite of intent. The fix is
+        // structural; it is locked here two complementary ways.
+
+        // (1) Structural guarantee that survives any future recalibration: the single-theater
+        // apex amplifier strictly exceeds the MOST breadth can ever add. With equal max_heat
+        // and equal coupling this means the brink head-to-head always wins on amplification.
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(BRINK_AMPLIFIER > BREADTH_ASYMPTOTE,
+                "the single-theater nuclear-brink amplifier (1+{BRINK_AMPLIFIER}) must strictly \
+                 exceed the maximum breadth amplification (1+{BREADTH_ASYMPTOTE}), or breadth \
+                 could swamp the brink");
+        }
+
+        // (2) Behavioural bound through the live engine: drive it with 1..=5 IDENTICAL hot
+        // theaters that are conventional (no great powers → coupling=1, no nuclear → brink=0),
+        // so per-theater max_heat is held constant and the l_sys ratio vs the single-theater
+        // world IS the breadth amplifier. It must (a) be 1.0 at one theater (no breadth bonus),
+        // (b) rise monotonically, and (c) stay strictly below 1+BREADTH_ASYMPTOTE no matter how
+        // many theaters are hot — hence strictly below the 1+BRINK_AMPLIFIER apex.
+        let conventional = |theater: &str| {
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                // Non-great-power actors → no entanglement; no nuclear modality → no brink.
+                v.push(ev(theater, "military_escalation", 0.95, 0.9, &["iran", "israel"], false));
+                v.push(ev(theater, "economic_warfare",    0.85, 0.7, &["iran", "israel"], false));
+            }
+            v
+        };
+        let theaters = ["us_iran", "nato_russia", "us_china_taiwan", "india_pakistan", "korea"];
+
+        let mut te_base = TheaterEngine::new();
+        let base = te_base.compute(&conventional(theaters[0]));
+        assert_eq!(base.couplers.gp_entanglement, 0.0, "control must have no entanglement");
+        assert!(base.l_sys > 0.0, "control world must be hot, got l_sys={}", base.l_sys);
+
+        let mut prev_ratio = 1.0;
+        for n in 1..=theaters.len() {
+            let mut world = Vec::new();
+            for t in &theaters[..n] {
+                world.extend(conventional(t));
+            }
+            let mut te = TheaterEngine::new();
+            let out = te.compute(&world);
+            assert_eq!(out.couplers.gp_entanglement, 0.0,
+                "{n}-theater world must stay free of great-power entanglement");
+            let ratio = out.l_sys / base.l_sys;
+            // (c) bounded strictly below the asymptote, always.
+            assert!(ratio < 1.0 + BREADTH_ASYMPTOTE,
+                "breadth amplification at {n} theaters ({ratio}) must stay below \
+                 1+BREADTH_ASYMPTOTE ({})", 1.0 + BREADTH_ASYMPTOTE);
+            if n == 1 {
+                // (a) a single hot theater earns no breadth bonus at all.
+                assert!((ratio - 1.0).abs() < 1e-6,
+                    "one hot theater must have no breadth bonus, got ratio {ratio}");
+            } else {
+                // (b) adding a hot theater never lowers the breadth amplifier.
+                assert!(ratio > prev_ratio - 1e-9,
+                    "adding a hot theater must not lower breadth amplification: {prev_ratio} -> {ratio}");
+            }
+            prev_ratio = ratio;
+        }
+        // Even all five hot theaters amplify by strictly less than the single-theater brink.
+        assert!(prev_ratio < 1.0 + BRINK_AMPLIFIER,
+            "five hot theaters ({prev_ratio}) must amplify less than the brink (1+{BRINK_AMPLIFIER})");
     }
 
     #[test]
