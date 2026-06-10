@@ -16,6 +16,45 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — honesty/model — named the guardrail-collapse coupler (the last flagged un-pinned constants in bayesian.rs) (roadmap 1.2)
+- Item: roadmap 1.2 (progressed) — the guardrail-coupler magic in `bayesian.rs::compute` that the
+  2026-06-10 coupler-weights entry explicitly flagged as "a natural next 1.2 sibling". Honesty axis
+  (pillar 1, the top mission priority). Verified the two flagged literals were still bare against the
+  current code before acting.
+- Verified-open-first: Step 6b carried structural guardrail erosion (arms-control death, deterrence
+  decay, doctrine shifts) as a soft amplifier of the systemic likelihood via two un-named literals —
+  `((regime_multiplier − 1) / 4.0).clamp(0,1)` and `l_sys × (1 + 0.12·guardrail)`. The relationship
+  they encode (guardrail is BOUNDED, SOFT, SUBORDINATE — and enters only the likelihood, never the
+  flat prior) was prose-only, with no test guarding it; a future recalibration could have let the
+  background structural term swamp acute theater signal or leak into the quiet-year floor.
+- Change (one coherent change, `bayesian.rs` only): (a) named both literals —
+  `GUARDRAIL_REGIME_SPAN = 4.0` (the regime-multiplier excess above neutral 1.0 at which collapse
+  saturates: a regime product of `1+SPAN = 5.0×` → guardrail 1.0; risk-reducing regimes floor at 0)
+  and `GUARDRAIL_AMPLIFIER = 0.12` (the max +12% full collapse adds to `l_sys`), each with a
+  rationale comment; (b) extracted a pure `guardrail_from_regime()` helper used in `compute`; (c)
+  recorded the honesty FINDING in the rationale: the seeded acute factor set already compounds to
+  ~5.46×, so the LIVE coupler currently sits at FULL collapse — a deliberate property of the current
+  factor set, NOT a knob to chase by blind-tweaking. NO value changed.
+- Metric moved: test count 369 → 371 (two new locks); a previously prose-only honesty relationship +
+  the last two flagged un-pinned `compute` constants now named and locked. Calibration evidence
+  UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba bands + evidence), no calibration constant
+  touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  370 passed / 0 failed / 3 ignored (371st is the scorecard grep incl. the new tests);
+  `cargo test backtest` = 9 passed. `guardrail_coupler_is_a_bounded_soft_subordinate_amplifier` pins
+  the regime→guardrail map (0 at/below neutral, linear, saturating at 1.0) and the bounded
+  `[l_sys, l_sys·(1+AMP)]` soft amplifier; `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood`
+  drives two engines on identical events differing only in regime (neutral → guardrail 0, product-3.0
+  → guardrail 0.5) and proves `l_sys` scales by exactly `1+AMP·guardrail` (a revert to a bare
+  literal or moving the term into the prior fails it).
+- Notes / decisions future runs must respect: these are FITTED constants (the bands depend on them) —
+  do NOT blind-tweak; move only with evidence + a test. The guardrail enters ONLY the systemic
+  likelihood, never the flat prior (Step 7) — keep it that way. The live coupler being saturated at
+  full collapse is a recorded finding, not a bug to "fix" by changing the SPAN. Remaining un-pinned
+  for 1.2: the `gp_bonus` `0.12` in `score_all` (a DIFFERENT 0.12 — the great-power scoring bonus,
+  not the guardrail amplifier) and the regime × factor defaults (config surface, labeled
+  `RegimeFactor`s, not blind literals).
+
 ## 2026-06-10 — legibility — critical/elevated alert-band reference lines on the timeline, sourced from live thresholds (roadmap 2.4)
 - Item: roadmap 2.4 (new, now checked) — the "threshold marker on the hero/timeline for the critical
   P(WWIII) band" flagged as a natural sibling in the 2026-06-10 elevation-line entry. Legibility axis

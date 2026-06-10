@@ -71,6 +71,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     normalization and `0.12` guardrail amplifier) and the operator-tunable regime × factor defaults
     (already labeled `RegimeFactor`s in settings, not blind literals). P₀ is `BASELINE_ANNUAL`
     (named + const-asserted in models.rs).
+  - PROGRESS 2026-06-10: named the **guardrail-collapse coupler** in `bayesian.rs::compute` — the
+    two flagged bare literals are now `GUARDRAIL_REGIME_SPAN = 4.0` (the regime-multiplier excess
+    above neutral at which collapse saturates: `1+SPAN = 5.0×` → guardrail 1.0) and
+    `GUARDRAIL_AMPLIFIER = 0.12` (the max +12% lift full collapse adds to `l_sys`), each with a
+    rationale, plus a pure `guardrail_from_regime()` helper. Honesty finding recorded: the seeded
+    acute factor set already compounds to ~5.46×, so the LIVE coupler sits at FULL collapse (a design
+    point of the current factors, NOT a knob to chase). Locked by two tests:
+    `guardrail_coupler_is_a_bounded_soft_subordinate_amplifier` (the regime→guardrail map + the
+    bounded `[1, 1+AMP]` soft amplifier) and `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood`
+    (two engines, same events, differing only in regime → l_sys scales by exactly `1+AMP·guardrail`,
+    proving the coupler is live and touches only the likelihood, never the flat prior). No value
+    changed — backtest 9/9, calibration evidence identical. Remaining un-pinned now: the `gp_bonus`
+    `0.12` great-power scoring bonus (a DIFFERENT 0.12, in `score_all`) and the regime × factor
+    defaults (config surface, labeled `RegimeFactor`s).
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
