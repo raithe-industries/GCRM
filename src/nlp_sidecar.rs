@@ -38,7 +38,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::{mpsc, watch, Mutex, Semaphore};
+use tokio::sync::{mpsc, watch, Mutex, OwnedSemaphorePermit, Semaphore};
 use tracing::{info, warn};
 
 use crate::aggregator::AppState;
@@ -59,6 +59,69 @@ const DEDUP_SAVE_SECS: u64 = 300; // 5 min
 
 /// Shared ring of recent title embeddings for semantic dedup.
 type SemRing = Arc<Mutex<VecDeque<Vec<f32>>>>;
+
+/// Outcome of waiting for a worker-pool permit while staying responsive to shutdown.
+enum PermitWait {
+    /// Got a permit — dispatch the LLM worker.
+    Acquired(OwnedSemaphorePermit),
+    /// Shutdown was signalled (or the sender dropped) while waiting — stop dispatching.
+    Shutdown,
+    /// The semaphore was closed — the pool is gone; exit the loop.
+    Closed,
+}
+
+/// Acquire a worker-pool permit, but cancel the wait the instant shutdown is
+/// signalled. Without this the recv loop would block on a bare
+/// `acquire_owned().await` while the pool is saturated (all permits held by
+/// in-flight LLM classifications); because that await lives *inside* the `select!`
+/// recv arm, it would prevent the shutdown branch from ever being polled — so a
+/// SIGTERM during sustained load would stall until a permit freed (one full LLM
+/// call, or indefinitely if Ollama hangs). Racing the acquire against the shutdown
+/// watch makes the dispatch cancellation-aware (roadmap 4.3).
+///
+/// The caller passes a CLONE of the sidecar's shutdown receiver: the main `select!`
+/// already holds `&mut self.shutdown_rx` for its own shutdown branch, so the clone
+/// (independent "seen" version, shared value) avoids a borrow conflict while still
+/// observing the same signal.
+async fn acquire_permit_or_shutdown(
+    sem: Arc<Semaphore>,
+    shutdown_rx: &mut watch::Receiver<bool>,
+) -> PermitWait {
+    // Fast path: already shutting down — never wait for a permit.
+    if *shutdown_rx.borrow() {
+        return PermitWait::Shutdown;
+    }
+    tokio::select! {
+        biased;
+        // Prefer shutdown: any resolution of changed() (value set to true, or all
+        // senders dropped) means stop dispatching. The channel is only ever set to
+        // true by NlpSidecarHandle::shutdown(), so there is no false transition.
+        _ = shutdown_rx.changed() => PermitWait::Shutdown,
+        pm = sem.acquire_owned() => match pm {
+            Ok(pm) => PermitWait::Acquired(pm),
+            Err(_) => PermitWait::Closed,
+        },
+    }
+}
+
+/// Log final stats and flush the dedup cache. Called from every graceful-exit path
+/// in `run()` (the idle shutdown select arm AND the cancellation-aware permit wait)
+/// so the save + log can't drift between them.
+fn save_and_log_shutdown(
+    processor: &NlpProcessor,
+    processed: &AtomicU64,
+    tagged: &AtomicU64,
+    llm_hits: &AtomicU64,
+) {
+    info!(
+        "NLP processor: shutdown — {} processed, {} tagged, {} LLM. Saving dedup cache...",
+        processed.load(Ordering::Relaxed),
+        tagged.load(Ordering::Relaxed),
+        llm_hits.load(Ordering::Relaxed)
+    );
+    processor.dedup().save();
+    info!("NLP processor: dedup cache saved. Exiting cleanly.");
+}
 
 // ── NlpSidecarHandle ─────────────────────────────────────────────────────────
 //
@@ -134,6 +197,11 @@ impl NlpSidecar {
         let mut dedup_save = tokio::time::interval(std::time::Duration::from_secs(DEDUP_SAVE_SECS));
         dedup_save.tick().await;
 
+        // A clone of the shutdown receiver for the cancellation-aware permit wait: the
+        // main `select!` borrows `self.shutdown_rx` for its own shutdown branch, so the
+        // dispatch path watches the same signal through an independent receiver.
+        let mut dispatch_shutdown_rx = self.shutdown_rx.clone();
+
         loop {
             tokio::select! {
                 biased;
@@ -176,9 +244,17 @@ impl NlpSidecar {
                         // acquire_owned() awaits ONLY when LLM_CONCURRENCY calls are
                         // already in flight — correct backpressure, not the old
                         // per-article serial block.
-                        let permit = match sem.clone().acquire_owned().await {
-                            Ok(pm) => pm,
-                            Err(_) => break, // semaphore closed
+                        let permit = match acquire_permit_or_shutdown(
+                            sem.clone(), &mut dispatch_shutdown_rx).await
+                        {
+                            PermitWait::Acquired(pm) => pm,
+                            // Shutdown fired while the pool was saturated — don't block the
+                            // recv loop waiting for a permit; flush and exit promptly.
+                            PermitWait::Shutdown => {
+                                save_and_log_shutdown(&processor, &processed, &tagged, &llm_hits);
+                                return;
+                            }
+                            PermitWait::Closed => break, // semaphore closed
                         };
                         let enricher  = enricher.clone();
                         let event_tx  = self.event_tx.clone();
@@ -237,11 +313,7 @@ impl NlpSidecar {
 
                 _ = self.shutdown_rx.changed() => {
                     if *self.shutdown_rx.borrow() {
-                        info!("NLP processor: shutdown — {} processed, {} tagged, {} LLM. Saving dedup cache...",
-                              processed.load(Ordering::Relaxed), tagged.load(Ordering::Relaxed),
-                              llm_hits.load(Ordering::Relaxed));
-                        processor.dedup().save();
-                        info!("NLP processor: dedup cache saved. Exiting cleanly.");
+                        save_and_log_shutdown(&processor, &processed, &tagged, &llm_hits);
                         return;
                     }
                 }
@@ -553,5 +625,71 @@ mod tests {
         assert!(ev.domain_tags.contains(&"cyber_info_ops".to_string()));
         assert_eq!(ev.theater.as_deref(), Some("us_china_taiwan"));
         assert!((ev.escalation_step - 0.5).abs() < 1e-9);
+    }
+
+    // ── Cancellation-aware worker-pool permit wait (roadmap 4.3) ──────────────
+    // The dispatch path must never let a saturated pool block shutdown. These lock
+    // acquire_permit_or_shutdown: a bare acquire_owned().await would hang forever
+    // under a held permit, so the cancel test is the real regression guard.
+
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn permit_wait_returns_shutdown_fast_when_already_signalled() {
+        // Pool saturated AND shutdown already true → Shutdown immediately, no waiting.
+        let sem = Arc::new(Semaphore::new(1));
+        let _held = sem.clone().acquire_owned().await.unwrap();
+        let (tx, mut rx) = watch::channel(false);
+        tx.send(true).unwrap();
+        let res = timeout(
+            Duration::from_millis(200),
+            acquire_permit_or_shutdown(sem.clone(), &mut rx),
+        )
+        .await
+        .expect("must not block when shutdown already signalled");
+        assert!(matches!(res, PermitWait::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn permit_wait_cancels_on_shutdown_while_pool_saturated() {
+        // THE regression lock for roadmap 4.3: the only permit is held and never
+        // released, so a bare acquire_owned().await would block forever; the
+        // cancellation-aware wait must return Shutdown promptly when the signal
+        // fires from another task.
+        let sem = Arc::new(Semaphore::new(1));
+        let _held = sem.clone().acquire_owned().await.unwrap(); // saturated, never freed
+        let (tx, mut rx) = watch::channel(false);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = tx.send(true);
+        });
+        let res = timeout(
+            Duration::from_secs(2),
+            acquire_permit_or_shutdown(sem.clone(), &mut rx),
+        )
+        .await
+        .expect("a saturated pool must not prevent shutdown from cancelling the wait");
+        assert!(matches!(res, PermitWait::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn permit_wait_acquires_when_pool_has_capacity() {
+        // Happy path: a free permit and no shutdown → Acquired, and the returned
+        // permit actually consumes pool capacity (real backpressure preserved).
+        let sem = Arc::new(Semaphore::new(1));
+        let (_tx, mut rx) = watch::channel(false);
+        let res = acquire_permit_or_shutdown(sem.clone(), &mut rx).await;
+        assert!(matches!(res, PermitWait::Acquired(_)));
+        assert_eq!(sem.available_permits(), 0, "the returned permit must hold pool capacity");
+    }
+
+    #[tokio::test]
+    async fn permit_wait_reports_closed_semaphore() {
+        // If the pool is torn down, the wait reports Closed so run() can exit its loop.
+        let sem = Arc::new(Semaphore::new(1));
+        sem.close();
+        let (_tx, mut rx) = watch::channel(false);
+        let res = acquire_permit_or_shutdown(sem.clone(), &mut rx).await;
+        assert!(matches!(res, PermitWait::Closed));
     }
 }

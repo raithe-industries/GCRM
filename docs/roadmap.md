@@ -118,11 +118,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   genuinely fallible runtime paths (network, parse, lock-poisoning) that could panic the
   service; convert to graceful handling. Skip the legitimately-infallible ones. Lock each
   fix with a test that exercises the error path.
-- [ ] **4.3 Shutdown responsiveness under backpressure** [candidate] — in
-  `nlp_sidecar.rs::run`, the permit `acquire_owned().await` happens *inside* the recv arm,
-  so while the pool is saturated the `select!` can't poll the shutdown branch. Investigate
-  whether shutdown latency under sustained load is acceptable; if not, make the dispatch
-  cancellation-aware. Verify the claim before acting.
+- [x] **4.3 Shutdown responsiveness under backpressure** — **DONE 2026-06-10.** Confirmed the
+  claim: the bare `sem.acquire_owned().await` lived *inside* the `select!` recv arm, so a
+  saturated pool (all permits held by in-flight LLM calls) blocked that await and the `select!`
+  could not poll the shutdown branch — a SIGTERM under sustained load stalled until a permit
+  freed (one full classify, or indefinitely if Ollama hangs). Fixed by extracting
+  `acquire_permit_or_shutdown` (races `acquire_owned()` against a clone of the shutdown watch,
+  `biased` toward shutdown) so the dispatch wait is cancellation-aware; both graceful-exit paths
+  now share `save_and_log_shutdown` (no drift). Locked by 4 tests, the key one
+  (`permit_wait_cancels_on_shutdown_while_pool_saturated`) holding the only permit forever so a
+  regression to a bare await would hang. See improvement-log 2026-06-10. **Do NOT** revert to a
+  bare `acquire_owned().await` in the recv arm, and do not change `llm.concurrency` (see 4.1).
 
 ## 5. Toward v2  (the approved factored rebuild)
 - [ ] **5.1** Sensible standalone steps toward theaters × orthogonal modalities × couplers,
