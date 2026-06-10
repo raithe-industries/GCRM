@@ -908,10 +908,15 @@ function applyData(d){
       const heatPct=Math.round((t.heat||0)*100);const ec=t.event_count||0;
       const tr=t.trend==='rising'?'<span class="tl-trend" style="color:#E24B4A">▲</span>':t.trend==='falling'?'<span class="tl-trend" style="color:#1D9E75">▼</span>':'<span class="tl-trend" style="color:var(--t4)">─</span>';
       const why=t.top_driver?domainLabel(t.top_driver):'';
-      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(why?' · driven by '+why:'')+(t.gp_involved?' · great power engaged':'')+'">'
+      // "What is heating up": when the theater is rising, name the modality that moved
+      // (rising_driver) — distinct from `why` (the dominant LEVEL). Shown as "↑ X" next to
+      // the rising arrow so the operator sees WHERE risk is concentrating, early.
+      const rise=(t.trend==='rising'&&t.rising_driver)?domainLabel(t.rising_driver):'';
+      const riseTag=rise?'<span class="tl-rise" style="color:#E24B4A" title="heating up on '+rise+'">↑ '+rise+'</span>':'';
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(why?' · driven by '+why:'')+(rise?' · rising on '+rise:'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
         +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
-        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(why?' · '+why:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
+        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(why?' · '+why:'')+(riseTag?' '+riseTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
         +'</div>';
     }).join('');
   }

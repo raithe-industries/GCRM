@@ -665,6 +665,11 @@ pub struct TheaterState {
     /// The modality id (e.g. "nuclear_posture") contributing the most weighted heat
     /// to this theater — the "why" behind its level. Empty for a Stable theater.
     pub top_driver:       String,
+    /// The modality id with the largest POSITIVE weighted change since the previous
+    /// tick — the "why" behind this theater HEATING UP, as opposed to `top_driver`'s
+    /// "why" behind its level. Populated only when the theater is rising; empty
+    /// otherwise. Surfaces *where risk is concentrating, early enough to act*.
+    pub rising_driver:    String,
 }
 
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────

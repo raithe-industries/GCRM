@@ -121,7 +121,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `theater.rs::score_theater`, serialized in the snapshot, and surfaced in the theater-ladder
   chips (sub-line "X% heat · Nuclear" + tooltip "driven by …", reusing the dashboard
   `domainLabel`). Locked by `theater::top_driver_names_the_dominant_weighted_modality`.
-  Future runs could extend this to a 2nd contributor or a delta-driver ("what changed"). 
+  - PROGRESS 2026-06-10: added the **delta-driver** the original entry flagged. Each
+    `TheaterState` now also carries `rising_driver`: the modality with the largest POSITIVE
+    weighted change since the previous tick (computed from a new `TheaterEngine.prev_scores`
+    history), populated only when the theater is rising. This answers *why a flashpoint is
+    HEATING UP*, which `top_driver` (the dominant LEVEL) cannot — a theater can be hottest on
+    nuclear posture yet rising because military escalation just jumped. Surfaced in the ladder
+    chips as "↑ X" beside the rising arrow + in the tooltip ("rising on X"). Honest by
+    construction (largest `Δscore × weight` term), no model constant touched. Locked by
+    `theater::rising_driver_names_the_modality_that_moved_not_the_dominant_level`. Remaining
+    awareness extension: a 2nd LEVEL contributor on the chip. See improvement-log 2026-06-10.
 
 ## 4. Robustness / performance  (enablers)
 - [x] **4.1 LLM enricher: serial → bounded-concurrent worker pool** — **DONE (pre-2026-06-09).**
