@@ -148,6 +148,44 @@ pub fn co_occurrence_boost(soft_elevated: f64) -> f64 {
 #[allow(dead_code)] // superseded by theater::EVIDENCE_GAIN_SYS in v2 (Phase 2); kept for reference
 const EVIDENCE_GAIN: f64 = 2.0;
 
+// ── Guardrail-collapse coupler (Step 6b) ────────────────────────────────────────
+//
+// The v2 soft amplifier for structural guardrail erosion — arms-control death,
+// deterrence decay, doctrine shifts toward compellence. Until those migrate to
+// explicit couplers they are carried by the operator-tunable regime multiplier, so
+// the guardrail term is DERIVED from it. Two honesty properties shape it:
+//   • It enters the SYSTEMIC LIKELIHOOD, never the prior (Step 7 keeps the prior the
+//     flat quiet-year baseline). A structurally degraded but quiet world must not
+//     silently inflate the floor — it raises the stakes of acute signal, nothing more.
+//   • It is deliberately SOFT and SUBORDINATE: background guardrail erosion must never
+//     out-amplify the hottest theater + great-power/concurrency couplers that signal an
+//     actual regional war going systemic (those live in theater.rs).
+
+/// Regime-multiplier EXCESS above the neutral 1.0 at which guardrail collapse is
+/// treated as COMPLETE: `guardrail = clamp((regime_multiplier − 1) / SPAN, 0, 1)`, so a
+/// regime product of `1 + SPAN = 5.0×` saturates the coupler at 1.0 and larger products
+/// add nothing further; a risk-REDUCING regime (< 1.0) floors at 0, never negative.
+/// 4.0 places saturation at the high end of the plausible regime range — but note the
+/// seeded acute factor set already compounds to ~5.46×, so the LIVE coupler currently
+/// sits at full collapse. That is a deliberate design point of the current factor set,
+/// not a knob to chase by blind-tweaking (see improvement-log 2026-06-10).
+const GUARDRAIL_REGIME_SPAN: f64 = 4.0;
+
+/// MAXIMUM fractional boost full guardrail collapse adds to the systemic likelihood:
+/// `l_sys_amplified = l_sys × (1 + GUARDRAIL_AMPLIFIER × guardrail)`, so `guardrail = 1.0`
+/// lifts l_sys by at most +12% and `guardrail = 0` leaves it untouched. Small by design —
+/// a background multiplier kept well below the acute theater couplers (the single-theater
+/// brink amplifier is +70%, breadth +26%, both in theater.rs), so structural decay can
+/// never swamp an actual flashpoint.
+const GUARDRAIL_AMPLIFIER: f64 = 0.12;
+
+/// Clamped 0..1 guardrail-collapse coupler derived from the regime multiplier.
+/// Monotone non-decreasing in `regime_multiplier`; 0 at/below neutral (1.0), 1.0 at/above
+/// `1 + GUARDRAIL_REGIME_SPAN`. Pure function so the mapping is locked by test.
+fn guardrail_from_regime(regime_multiplier: f64) -> f64 {
+    ((regime_multiplier - 1.0) / GUARDRAIL_REGIME_SPAN).clamp(0.0, 1.0)
+}
+
 /// Logistic function. Maps log-odds → probability in (0, 1).
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
@@ -659,10 +697,11 @@ impl BayesianRiskEngine {
         let mut tout = self.theater_engine.compute(events);
         // Guardrail collapse is carried by the operator-tunable regime multiplier
         // (arms-control death, deterrence erosion, …) until settings migrate to
-        // explicit couplers. Normalise it to 0..1 for display and as a soft amplifier.
-        let guardrail = ((snap.regime_multiplier - 1.0) / 4.0).clamp(0.0, 1.0);
+        // explicit couplers. Normalise it to 0..1 for display and as a soft amplifier
+        // of the systemic likelihood (never the prior). See GUARDRAIL_* above.
+        let guardrail = guardrail_from_regime(snap.regime_multiplier);
         tout.couplers.guardrail_collapse = (guardrail * 1e3).round() / 1e3;
-        let l_sys = tout.l_sys * (1.0 + 0.12 * guardrail);
+        let l_sys = tout.l_sys * (1.0 + GUARDRAIL_AMPLIFIER * guardrail);
         snap.theaters         = tout.theaters;
         snap.couplers         = tout.couplers;
         snap.systemic_index   = tout.systemic_index;
@@ -1103,6 +1142,78 @@ mod tests {
         let mut engine = minimal_engine();
         let snap = engine.compute(&[]);
         assert!((snap.regime_multiplier - 1.568).abs() < 0.01);
+    }
+
+    #[test]
+    fn guardrail_coupler_is_a_bounded_soft_subordinate_amplifier() {
+        // Honesty (roadmap 1.2): the guardrail-collapse coupler is now named, bounded,
+        // and SOFT. Lock the RELATIONSHIPS, not the fitted magnitudes.
+
+        // (a) magnitude sanity — a soft background term, not an acute driver.
+        assert!(GUARDRAIL_AMPLIFIER > 0.0 && GUARDRAIL_AMPLIFIER < 0.20,
+            "guardrail amplifier must be a small soft background multiplier");
+        assert!(GUARDRAIL_REGIME_SPAN > 0.0);
+
+        // (b) the regime→guardrail map: 0 at/below neutral, linear, saturating at 1.0.
+        assert_eq!(guardrail_from_regime(1.0), 0.0, "neutral regime leaks nothing");
+        assert_eq!(guardrail_from_regime(0.7), 0.0, "a risk-reducing regime cannot go negative");
+        assert_eq!(guardrail_from_regime(1.0 + GUARDRAIL_REGIME_SPAN), 1.0, "saturates at full collapse");
+        assert_eq!(guardrail_from_regime(100.0), 1.0, "clamped at 1.0 above saturation");
+        let mid = guardrail_from_regime(1.0 + GUARDRAIL_REGIME_SPAN / 2.0);
+        assert!((mid - 0.5).abs() < 1e-12, "linear between neutral and saturation");
+        assert!(guardrail_from_regime(2.5) > guardrail_from_regime(1.5), "monotone increasing");
+
+        // (c) the amplifier is bounded: l_sys × (1 + AMP·guardrail) ∈ [l_sys, l_sys·(1+AMP)].
+        let l = 10.0_f64;
+        let quiet = l * (1.0 + GUARDRAIL_AMPLIFIER * guardrail_from_regime(1.0));
+        assert_eq!(quiet, l, "no guardrail collapse → l_sys untouched (never inflates the floor)");
+        let full = l * (1.0 + GUARDRAIL_AMPLIFIER * guardrail_from_regime(1.0 + GUARDRAIL_REGIME_SPAN));
+        assert!((full - l * (1.0 + GUARDRAIL_AMPLIFIER)).abs() < 1e-12, "full collapse caps at +AMP");
+        assert!(full < l * 1.20, "soft: even full guardrail collapse lifts l_sys by < 20%");
+    }
+
+    #[test]
+    fn guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood() {
+        // The coupler must be LIVE (not vestigial) and must enter ONLY the systemic
+        // likelihood, never the flat prior. So with events held fixed, the sole effect
+        // of a more structurally-degraded regime is to scale l_sys by exactly
+        // (1 + GUARDRAIL_AMPLIFIER · guardrail) and nudge p_wwiii up with it.
+        let events = vec![
+            make_event_with_signals("military_escalation", 0.9, 1.0, SourceTier::Tier1),
+            make_event_with_signals("nuclear_posture",     0.9, 2.0, SourceTier::Tier1),
+        ];
+
+        // neutral regime (product 1.0) → guardrail 0
+        let mut neutral = BayesianRiskEngine::new(
+            vec![RegimeFactor { id: "n".into(), label: "neutral".into(), multiplier: 1.0, active: true }],
+            0.025, 0.08,
+        );
+        let s_neutral = neutral.compute(&events);
+
+        // degraded regime (product 3.0) → guardrail 0.5 (squarely in the responsive band)
+        let mut degraded = BayesianRiskEngine::new(
+            vec![RegimeFactor { id: "d".into(), label: "degraded".into(), multiplier: 3.0, active: true }],
+            0.025, 0.08,
+        );
+        let s_degraded = degraded.compute(&events);
+
+        // both must see a real (non-zero) systemic likelihood for the ratio to mean anything
+        assert!(s_neutral.likelihood_ratio > 0.0, "events must produce l_sys > 0");
+        assert_eq!(s_neutral.couplers.guardrail_collapse, 0.0, "neutral regime → no collapse");
+
+        let g = guardrail_from_regime(3.0);
+        assert!((g - 0.5).abs() < 1e-12);
+        assert!((s_degraded.couplers.guardrail_collapse - (g * 1e3).round() / 1e3).abs() < 1e-9);
+
+        // the SAME theater likelihood is scaled by exactly (1 + AMP·guardrail)
+        assert!(s_degraded.likelihood_ratio > s_neutral.likelihood_ratio,
+            "guardrail collapse must raise l_sys — the coupler is live");
+        let ratio = s_degraded.likelihood_ratio / s_neutral.likelihood_ratio;
+        assert!((ratio - (1.0 + GUARDRAIL_AMPLIFIER * g)).abs() < 5e-3,
+            "l_sys must scale by 1 + AMP·guardrail, got ratio = {ratio}");
+
+        // and that lifts the headline, monotone (never lowers it)
+        assert!(s_degraded.p_wwiii_annual >= s_neutral.p_wwiii_annual);
     }
 
     #[test]
