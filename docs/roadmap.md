@@ -70,11 +70,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 - [ ] **2.1 Small/short-viewport pass** [candidate] — the landing left rail must SCROLL
   rather than crush the methodology button off-screen; controls reachable on a laptop and a
   phone. Verify against `src/dashboard.html`; eyes will judge this at deploy.
-- [ ] **2.2 Annotation render audit** [verified-lead] — `chartjs-plugin-annotation` renders
-  nothing under Chart.js v4 (the v4 resolver swallows the annotations map); the calibration
-  band uses an inline `calibBand` canvas plugin and the P(WWIII) spike arrows were recently
-  moved to a canvas plugin for the same reason. Audit for any remaining annotation-based
-  overlay that is silently invisible and port it to a canvas plugin.
+- [x] **2.2 Annotation render audit** — **DONE 2026-06-10.** Audited every Chart.js instance
+  (only two: timeline `tlChart`, domain bar `dmChart`) plus the methodology page (no charts).
+  No annotation-plugin overlay remained — `calibBand` and `spikeMarks` were already the only
+  overlays and both are canvas plugins. The audit's payoff: the domain bar chart had NO
+  elevation reference, so an operator couldn't see at a glance which force domains had crossed
+  the model's `ELEVATION_THRESHOLD` (the cutoff that feeds the co-occurrence amplifier). Added
+  the `elevLine` canvas plugin — a dashed "elevated" line at the threshold, with its value
+  templated from `models::ELEVATION_THRESHOLD` (`{{ELEVATION_THRESHOLD}}` server substitution,
+  same anti-drift pattern as `{{BASE_PATH}}`/`{{FORECAST_PROB_CEILING}}`) so it can never drift
+  from the engine. Canvas-drawn precisely because a naive `chartjs-plugin-annotation` line would
+  be silently invisible under v4 — the exact failure this item guards. Locked by
+  `dashboard_html_renders_elevation_threshold_from_model`. See improvement-log 2026-06-10.
 - [ ] **2.3 Methodology completeness** [candidate] — model internals (regime ×, P₀, GP,
   elevated) belong in the methodology view, NOT the landing rail (rail stays 30d/90d/
   last-computed). Keep methodology honest and current with the model as it evolves.
