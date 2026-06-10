@@ -144,6 +144,11 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         "alert": {
             "level":   snap.alert_level.to_string(),
             "message": snap.alert_message,
+            // The live alert-band thresholds (annual P) that classified this
+            // snapshot — the dashboard sources its critical reference line and
+            // risk colours from these so they can't drift from AlertSettings.
+            "elevated_threshold": snap.alert_elevated_threshold,
+            "critical_threshold": snap.alert_critical_threshold,
         },
         // ── v2 systemic layer (headline index + escalation ladder + couplers) ──
         "systemic": {
@@ -1217,6 +1222,20 @@ mod tests {
         let snap = make_snapshot(0.09, 0.0, 5);
         let v = snapshot_to_json(&snap);
         assert_eq!(v["alert"]["level"], "critical");
+    }
+
+    #[test]
+    fn snapshot_to_json_carries_live_alert_thresholds() {
+        // The dashboard draws its critical timeline reference line + risk colours
+        // from these fields, so the JSON must echo the snapshot's OWN thresholds
+        // verbatim — never a hardcoded literal. Use non-default values to prove the
+        // snapshot's configured thresholds are what flow through.
+        let mut snap = make_snapshot(0.03, 0.0, 2);
+        snap.alert_elevated_threshold = 0.04;
+        snap.alert_critical_threshold = 0.11;
+        let v = snapshot_to_json(&snap);
+        assert_eq!(v["alert"]["elevated_threshold"].as_f64().unwrap(), 0.04);
+        assert_eq!(v["alert"]["critical_threshold"].as_f64().unwrap(), 0.11);
     }
 
     #[test]

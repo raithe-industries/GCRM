@@ -595,6 +595,32 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_html_draws_alert_bands_from_live_thresholds() {
+        // The timeline draws dashed "elevated"/"critical" reference lines so an
+        // operator sees how close the live read is to the alert bands. Their values
+        // MUST come from each snapshot's live thresholds (d.alert.*_threshold),
+        // never a hardcoded JS literal that could silently drift from AlertSettings.
+        assert!(
+            DASHBOARD_HTML.contains("alertBands"),
+            "dashboard dropped the timeline alert-band canvas plugin"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("d.alert.critical_threshold")
+                && DASHBOARD_HTML.contains("d.alert.elevated_threshold"),
+            "dashboard must adopt the alert-band thresholds from the live snapshot"
+        );
+        // Risk colours must read the live vars, not the old hardcoded thresholds.
+        assert!(
+            DASHBOARD_HTML.contains("p>=ALERT_CRIT?'var(--red)':p>=ALERT_ELEV"),
+            "pc() must colour risk from the live ALERT_CRIT/ALERT_ELEV thresholds"
+        );
+        assert!(
+            !DASHBOARD_HTML.contains("p>=.08?'var(--red)':p>=.025"),
+            "the drift-prone hardcoded P(WWIII) alert-band literals must be gone"
+        );
+    }
+
+    #[test]
     fn dashboard_html_has_raithe_branding() {
         assert!(DASHBOARD_HTML.contains("RAITHE INDUSTRIES INC."));
         assert!(DASHBOARD_HTML.contains("raithe-footer"));

@@ -676,7 +676,28 @@ const elevLine={id:'elevLine',afterDatasetsDraw(chart){
   c.fillText('elevated',a.right-3,py-3);
   c.restore();
 }};
-const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks]});
+// Alert-band reference lines for the timeline. ALERT_ELEV / ALERT_CRIT are the
+// live annual-P(WWIII) thresholds carried on every snapshot (d.alert.*_threshold,
+// applied in applyData) — NOT hardcoded literals — so the bands can never drift
+// from the configured AlertSettings. Each line is drawn only when its value falls
+// inside the chart's auto-scaled y-range: at a quiet ~1-2% read both sit above the
+// data and stay hidden; as risk climbs they appear, showing the operator how close
+// the live read is to the elevated/critical alert bands. Canvas-drawn for the same
+// reason as calibBand/spikeMarks (chartjs-plugin-annotation renders nothing v4).
+let ALERT_ELEV=0.025,ALERT_CRIT=0.08;   // model defaults; overwritten by every live snapshot
+const alertBands={id:'alertBands',afterDatasetsDraw(chart){
+  const a=chart.chartArea;if(!a)return;const c=chart.ctx,y=chart.scales.y;
+  [[ALERT_ELEV,'rgba(239,159,39,0.45)','rgba(239,159,39,0.9)','elevated'],
+   [ALERT_CRIT,'rgba(226,75,74,0.5)','rgba(226,75,74,0.92)','critical']].forEach(b=>{
+    const v=b[0];if(!(v>0))return;const py=y.getPixelForValue(v);
+    if(py<a.top-0.5||py>a.bottom+0.5)return;
+    c.save();c.strokeStyle=b[1];c.lineWidth=1;c.setLineDash([4,3]);
+    c.beginPath();c.moveTo(a.left,py);c.lineTo(a.right,py);c.stroke();
+    c.setLineDash([]);c.fillStyle=b[2];c.font='600 8px system-ui';c.textAlign='right';
+    c.fillText(b[3],a.right-3,py-3);c.restore();
+  });
+}};
+const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks,alertBands]});
 const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
   // Clicking a bar audits that domain — same filter as clicking its card above.
   onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
@@ -684,7 +705,7 @@ const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data
   plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:TICK,font:{size:9}}},y:{min:0,max:1,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>Math.round(v*100)+'%'}}},animation:{duration:300,easing:'easeOutQuart'}},plugins:[elevLine]});
 let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[];
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
-function pc(p){return p>=.08?'var(--red)':p>=.025?'var(--amber)':'var(--green)'}
+function pc(p){return p>=ALERT_CRIT?'var(--red)':p>=ALERT_ELEV?'var(--amber)':'var(--green)'}
 // Escalation-rung → 0..5 level → severity colour (mirrors EscalationRung::level in
 // the engine; keep in sync if a rung is ever added/removed).
 const RUNG_LVL={stable:0,tension:1,crisis:2,limited_war:3,great_power_war:4,systemic:5};
@@ -932,6 +953,10 @@ function applyData(d){
   setMv('m-30d',(p30*100).toFixed(2)+'%',pc(p30*4));setMv('m-90d',(p90*100).toFixed(2)+'%',pc(p90*2));
   const elev=d.co_occurrence.elevated_count; // still feeds the model-state co-occurrence line below
   const ab=document.getElementById('alert-bar');const al=d.alert.level;
+  // Adopt the live alert-band thresholds so the timeline reference lines and risk
+  // colours track the configured AlertSettings (never a hardcoded literal).
+  if(d.alert.critical_threshold>0)ALERT_CRIT=d.alert.critical_threshold;
+  if(d.alert.elevated_threshold>0)ALERT_ELEV=d.alert.elevated_threshold;
   ab.className='alert-bar'+(al==='critical'?' critical':al==='elevated'?' elevated':'');ab.textContent=d.alert.message||'';
   const grid=document.getElementById('domain-grid');grid.innerHTML='';
   // Keep the card grid balanced to however many domains exist — one full row of
@@ -946,7 +971,7 @@ function applyData(d){
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];
   document.getElementById('meta-row').innerHTML=pills.map((p,i)=>'<span class="mpill'+(i>3?' hi':'')+'">'+p+'</span>').join('');
-  addLog('P(WWIII)='+(pA*100).toFixed(2)+'% Δ'+(dA>=0?'+':'')+(dA*100).toFixed(4)+'% · '+elev+' elevated · '+(meta.events_in_window||0)+' events',pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'#6060a0');
+  addLog('P(WWIII)='+(pA*100).toFixed(2)+'% Δ'+(dA>=0?'+':'')+(dA*100).toFixed(4)+'% · '+elev+' elevated · '+(meta.events_in_window||0)+' events',pA>=ALERT_CRIT?'#E24B4A':pA>=ALERT_ELEV?'#EF9F27':'#6060a0');
 }
 function applyTimeline(entries){
   // The /ws + /api/epoch feeds send entries newest-first, but this chart is

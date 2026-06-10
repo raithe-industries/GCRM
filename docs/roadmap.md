@@ -97,6 +97,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   from the engine. Canvas-drawn precisely because a naive `chartjs-plugin-annotation` line would
   be silently invisible under v4 — the exact failure this item guards. Locked by
   `dashboard_html_renders_elevation_threshold_from_model`. See improvement-log 2026-06-10.
+- [x] **2.4 Critical-band reference lines on the timeline** — **DONE 2026-06-10.** The timeline
+  (`tlChart`, annual P(WWIII) over time) had NO reference for the alert bands, so an operator
+  couldn't see at a glance how close the live read was to "elevated"/"critical" — only the hero
+  colour and the alert bar said so, after the fact. Added the `alertBands` canvas plugin: dashed
+  amber "elevated" + red "critical" horizontal lines, each drawn only when its value falls inside
+  the chart's auto-scaled y-range (hidden at a quiet ~1-2% read; they surface as risk climbs). The
+  values are NOT hardcoded — each snapshot now carries `alert.elevated_threshold` /
+  `alert.critical_threshold` (the engine's configured `AlertSettings`, recorded in
+  `bayesian::compute` Step 10, serialized in `aggregator::snapshot_to_json`), and the dashboard
+  adopts them live in `applyData`. This also killed the drift-prone hardcoded `.08`/`.025` literals
+  in `pc()` (hero/rail risk colour) and the activity-log colour — they now read the live
+  `ALERT_CRIT`/`ALERT_ELEV`. Canvas-drawn for the same reason as `elevLine`/`calibBand`/`spikeMarks`
+  (chartjs-plugin-annotation renders nothing under v4). Locked by 3 tests. See improvement-log
+  2026-06-10.
 - [ ] **2.3 Methodology completeness** [candidate] — model internals (regime ×, P₀, GP,
   elevated) belong in the methodology view, NOT the landing rail (rail stays 30d/90d/
   last-computed). Keep methodology honest and current with the model as it evolves.

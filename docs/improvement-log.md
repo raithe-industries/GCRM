@@ -16,6 +16,55 @@ Format per entry:
 
 ---
 
+## 2026-06-10 — legibility — critical/elevated alert-band reference lines on the timeline, sourced from live thresholds (roadmap 2.4)
+- Item: roadmap 2.4 (new, now checked) — the "threshold marker on the hero/timeline for the critical
+  P(WWIII) band" flagged as a natural sibling in the 2026-06-10 elevation-line entry. Legibility axis
+  (pillar 2): reading the 2026-06-10 batch newest→oldest (awareness, honesty, robustness, legibility),
+  legibility was advanced earliest of the four, i.e. least-recently — so this rotates coverage back
+  onto it. The other open legibility items are 2.1 (small-viewport, eyes-judged — not provable in the
+  cloud sandbox) and 2.3 (methodology completeness); this reference-line lever is the one provable green
+  today.
+- Verified-open-first: the domain bar chart got its `elevLine` "elevated" reference on 2026-06-10, but
+  the TIMELINE (`tlChart`, annual P(WWIII) over time — the hero trend) still had no alert-band reference
+  at all. An operator watching the trend climb had nothing on the chart telling them where "elevated"
+  (2.5%) or "critical" (8%) begins; that only showed up after the fact in the hero colour + alert bar.
+  Worse, the dashboard HARDCODED those thresholds: `pc()` (hero/rail risk colour) and the activity-log
+  colour both used bare `p>=.08`/`p>=.025` literals that could silently drift from the operator-tunable
+  `AlertSettings` — a latent dishonesty (the chart/colour could disagree with the engine's actual alert
+  classification).
+- Change (one coherent change, model→engine→serializer→dashboard): (a) `RiskSnapshot` gains
+  `alert_elevated_threshold` / `alert_critical_threshold`; (b) `bayesian::compute` Step 10 records the
+  engine's configured `alert_elevated`/`alert_critical` onto the snapshot (so the JSON is
+  self-describing about the band that classified it); (c) `aggregator::snapshot_to_json` serializes them
+  under `alert.{elevated,critical}_threshold`; (d) the dashboard's new `alertBands` canvas plugin draws a
+  dashed amber "elevated" + red "critical" line on `tlChart`, each only when its value falls inside the
+  auto-scaled y-range (hidden at a quiet ~1-2% read — no clutter; surfaces as risk climbs toward the
+  band — exactly when it matters); the thresholds come from live JS vars `ALERT_ELEV`/`ALERT_CRIT` that
+  `applyData` adopts from `d.alert.*_threshold` each snapshot; (e) the drift-prone `.08`/`.025` literals
+  in `pc()` and the activity-log colour now read those same live vars. Canvas-drawn for the same reason
+  as `elevLine`/`calibBand`/`spikeMarks` (chartjs-plugin-annotation renders nothing under Chart.js v4 —
+  the exact silent-invisible failure these plugins exist to avoid). NO model constant touched.
+- Metric moved: test count 366 → 369 (3 new locks: `compute_records_the_configured_alert_thresholds_on_the_snapshot`,
+  `snapshot_to_json_carries_live_alert_thresholds`, `dashboard_html_draws_alert_bands_from_live_thresholds`);
+  new legibility capability (alert bands visible on the hero trend) + a latent drift hazard (hardcoded
+  alert thresholds in the dashboard) removed. Calibration evidence UNCHANGED — backtest 9/9 green
+  (quiet/Ukraine/current/Cuba bands + evidence), no calibration constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  368 passed / 0 failed / 3 ignored (369th is the scorecard grep count incl. the new tests);
+  `cargo test backtest` = 9 passed. The engine lock builds an engine with NON-default thresholds
+  (0.03/0.11) and proves the snapshot carries exactly those (not a constant); the JSON lock proves the
+  serializer echoes the snapshot's own thresholds verbatim; the dashboard lock proves `pc()` reads the
+  live `ALERT_CRIT`/`ALERT_ELEV` and that the bare `p>=.08?...:p>=.025` literal is GONE — a revert to the
+  hardcoded threshold fails it.
+- Notes / decisions future runs must respect: the alert-band thresholds are now LIVE on the snapshot —
+  the dashboard must keep sourcing them from `d.alert.*_threshold` (never re-hardcode `.08`/`.025`). The
+  timeline lines intentionally hide when the threshold is off the auto-scaled y-range (don't force the
+  y-axis to include 8% — that would crush the live ~1-2% signal into the chart floor and HURT
+  legibility). Eyes will judge this render at deploy: the lines are thin/dashed/labeled and only drawn
+  when their pixel falls inside the chart area, so they won't clip or saturate. Natural sibling still
+  open: surfacing these same band thresholds in the methodology prose (2.3) so the `≥8% critical` text
+  there is templated from `AlertSettings` rather than a hand-typed `<code>≥8%</code>`.
+
 ## 2026-06-10 — awareness — per-theater "what is heating up": rising-driver (delta-driver) on the ladder (roadmap 3.3 extension)
 - Item: roadmap 3.3 (extended — the delta-driver the original entry explicitly flagged as a future
   extension). Awareness axis (pillar 3): it was the LEAST-recently-advanced axis (last advanced

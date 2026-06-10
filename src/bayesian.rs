@@ -712,6 +712,11 @@ impl BayesianRiskEngine {
         }
 
         // ── Step 10: Alert ──
+        // Record the configured thresholds onto the snapshot so the JSON is
+        // self-describing — the dashboard draws the critical band + colours risk
+        // from these live values, never a hardcoded literal that could drift.
+        snap.alert_elevated_threshold = self.alert_elevated;
+        snap.alert_critical_threshold = self.alert_critical;
         if raw >= self.alert_critical {
             snap.alert_level   = AlertLevel::Critical;
             snap.alert_message = format!(
@@ -1065,6 +1070,22 @@ mod tests {
     }
 
     // ── Bayesian engine ───────────────────────────────────────────────────────
+
+    #[test]
+    fn compute_records_the_configured_alert_thresholds_on_the_snapshot() {
+        // The snapshot must carry the SAME alert-band thresholds the engine used to
+        // classify it, so the dashboard's critical reference line + risk colours
+        // track the live AlertSettings instead of a hardcoded literal. Construct an
+        // engine with non-default thresholds to prove it's the engine's configured
+        // values that flow through, not a constant.
+        let mut engine = BayesianRiskEngine::new(vec![], 0.03, 0.11);
+        let snap = engine.compute(&[]);
+        assert_eq!(snap.alert_elevated_threshold, 0.03);
+        assert_eq!(snap.alert_critical_threshold, 0.11);
+        // And they must agree with the band that actually classified the snapshot.
+        assert!(snap.p_wwiii_annual < snap.alert_elevated_threshold);
+        assert_eq!(snap.alert_level, AlertLevel::Normal);
+    }
 
     #[test]
     fn baseline_probability_below_alert() {
