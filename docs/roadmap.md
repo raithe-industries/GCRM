@@ -85,6 +85,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     changed — backtest 9/9, calibration evidence identical. Remaining un-pinned now: the `gp_bonus`
     `0.12` great-power scoring bonus (a DIFFERENT 0.12, in `score_all`) and the regime × factor
     defaults (config surface, labeled `RegimeFactor`s).
+  - PROGRESS 2026-06-11: the flagged `gp_bonus` `0.12` in `score_all` turned out to be **DEAD CODE**,
+    not merely un-named — a v1 vestige. It keyed on `domain == "great_power_conflict"`, but v2 removed
+    that domain from `DOMAIN_WEIGHTS` (it became the `gp_entanglement` systemic coupler), and `score_all`
+    `continue`s past any domain not in `DOMAIN_WEIGHTS`, so the branch could never fire — `gp_bonus` was
+    provably always `0.0`. Worse, its comment actively claimed a per-domain great-power lift that the v2
+    design deliberately abolished (the "one strike counted ~4×" collinearity). Removed the dead branch +
+    stale comment (and fixed the adjacent stale "all 8 domains" → five-modalities comment), behavior-
+    preserving (backtest 9/9, calibration evidence bit-identical). Locked the v2 honesty property by
+    `great_power_involvement_does_not_add_a_per_domain_score_bonus`: identical events scored with
+    `great_power_involved` true vs false produce byte-identical modality scores (GP enters ONLY via the
+    coupler), while the display-only `great_power_event_count` still tracks the flag — so a future run
+    can't "re-add" a per-domain GP bonus. The last flagged `compute`/`score_all` literal is now resolved;
+    remaining un-pinned for 1.2: only the regime × factor defaults (config surface, labeled
+    `RegimeFactor`s, not blind literals).
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
