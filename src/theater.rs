@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use crate::bayesian::{co_occurrence_boost, domain_weight, DomainScorer, DOMAIN_WEIGHTS};
+use crate::bayesian::{co_occurrence_boost, domain_weight, soft_elevation_weight, DomainScorer, DOMAIN_WEIGHTS};
 use crate::models::{
     EscalationRung, GeopoliticalEvent, SystemicCouplers, Theater, TheaterState,
     ELEVATION_THRESHOLD,
@@ -41,10 +41,6 @@ const HOT_HEAT: f64 = 0.18;
 
 /// Half-width of the smooth ramp around HOT_HEAT for fractional concurrency.
 const HOT_RAMP: f64 = 0.06;
-
-/// Half-width of the smooth ramp around ELEVATION_THRESHOLD for intra-theater
-/// modality co-occurrence (mirrors bayesian::ELEVATION_RAMP).
-const ELEV_RAMP: f64 = 0.08;
 
 /// Heat below which a theater sits on the **Stable** rung — i.e. nothing is
 /// happening there worth amplifying. This is the honesty floor the systemic
@@ -441,8 +437,11 @@ impl TheaterEngine {
             .sum();
         // Intra-theater co-occurrence: simultaneous modalities within ONE theater
         // are far more dangerous than the same breadth spread across the globe.
+        // Uses the shared `soft_elevation_weight` — the SAME smooth ramp the systemic
+        // co-occurrence uses — so "elevated" means one thing model-wide and a faint
+        // sub-threshold modality contributes exactly 0 (no drift, no phantom boost).
         let soft_elev: f64 = scores.values()
-            .map(|d| smoothstep(d.score, ELEVATION_THRESHOLD - ELEV_RAMP, ELEVATION_THRESHOLD + ELEV_RAMP))
+            .map(|d| soft_elevation_weight(d.score))
             .sum();
         let cooc = co_occurrence_boost(soft_elev);
         let heat = ((weighted / max_weighted_sum()) * cooc).min(1.0);
@@ -771,6 +770,75 @@ mod tests {
         let quiet = te4.compute(&[]);
         assert!(quiet.theaters.iter().all(|s| s.secondary_driver.is_empty()),
             "Stable theaters must not name a secondary driver");
+    }
+
+    #[test]
+    fn intra_theater_co_occurrence_uses_the_shared_ramp_and_ignores_sub_threshold_modalities() {
+        // HONESTY INVARIANT (flagged open since 2026-06-09): the intra-theater
+        // co-occurrence boost is driven by the SAME `soft_elevation_weight` ramp the
+        // systemic co-occurrence uses — so "elevated" means one thing model-wide — and a
+        // modality scoring below the elevation ramp contributes EXACTLY ZERO co-occurrence
+        // amplification. Before this lock the theater path duplicated the ramp with its own
+        // ELEV_RAMP constant + inline smoothstep, free to silently drift from the systemic one.
+
+        // The ramp's zero band: a clearly sub-threshold score adds 0 elevation weight.
+        for s in [0.0, 0.10, 0.20] {
+            assert_eq!(soft_elevation_weight(s), 0.0,
+                "a sub-threshold score {s:.2} must add 0 elevation weight");
+        }
+
+        // Reconstruct the co-occurrence multiplier the engine actually applied:
+        // heat = (weighted_sum / max_weighted_sum) * cooc  (uncapped) ⇒ cooc = heat·max/weighted.
+        let cooc_of = |g: &TheaterState| -> f64 {
+            let weighted: f64 = DOMAIN_WEIGHTS.iter()
+                .map(|(m, _)| g.modality_scores.get(*m).copied().unwrap_or(0.0) * domain_weight(m))
+                .sum();
+            g.heat * max_weighted_sum() / weighted
+        };
+        // (1) One elevated modality (nuclear) + a FAINT sub-threshold second modality.
+        // The faint blip sits in the ramp's zero band, so it must add NO co-occurrence:
+        // only nuclear is elevated, so the boost stays ~neutral (co_occurrence_boost(1.0)=1.0).
+        let mut te = TheaterEngine::new();
+        let mut faint = Vec::new();
+        for _ in 0..8 { faint.push(ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false)); }
+        faint.push(ev("us_iran", "military_escalation", 0.10, 0.1, &["iran"], false));
+        let of = te.compute(&faint);
+        let gf = of.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        let mil = gf.modality_scores["military_escalation"];
+        // CRISP invariant on the shared ramp: the faint blip contributes EXACTLY 0 weight.
+        assert_eq!(soft_elevation_weight(mil), 0.0,
+            "the faint kinetic blip (score {mil:.3}) must sit in the ramp's zero band → 0 weight");
+        assert!(gf.heat < 1.0, "fixture: heat must be uncapped to read cooc, got {}", gf.heat);
+        let cooc_faint = cooc_of(gf);
+        assert!(cooc_faint < 1.01,
+            "a sub-threshold modality must leave the co-occurrence boost essentially neutral, got {cooc_faint}");
+
+        // (2) Promote that second modality ABOVE the ramp → it is now elevated and the
+        // co-occurrence boost jumps to the shared two-elevated anchor. The ONLY change from
+        // (1) is the second modality crossing the shared elevation ramp — proving that ramp
+        // is exactly the boundary and the engine reads the shared `co_occurrence_boost` table.
+        let mut te2 = TheaterEngine::new();
+        let mut both = Vec::new();
+        for _ in 0..8 {
+            both.push(ev("us_iran", "nuclear_posture",     0.9, 0.9, &["iran"], false));
+            both.push(ev("us_iran", "military_escalation", 0.9, 0.9, &["united_states", "iran"], true));
+        }
+        let ob = te2.compute(&both);
+        let gb = ob.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert!(gb.modality_scores["military_escalation"] >= ELEVATION_THRESHOLD,
+            "fixture: the promoted modality must clear elevation, got {:.3}",
+            gb.modality_scores["military_escalation"]);
+        assert!(gb.heat < 1.0, "fixture: heat must be uncapped, got {}", gb.heat);
+        let cooc_both = cooc_of(gb);
+        // Crossing the ramp DOES amplify — far above the neutral faint case…
+        assert!(cooc_both > cooc_faint + 0.1,
+            "two elevated modalities must amplify co-occurrence (got {cooc_both}) well above the \
+             sub-threshold case ({cooc_faint})");
+        // …and the engine's boost matches the SHARED co_occurrence_boost two-elevated anchor (1.25),
+        // i.e. the intra-theater path reads the same elevation/boost machinery as the systemic path.
+        assert!((cooc_both - co_occurrence_boost(2.0)).abs() < 1e-2,
+            "intra-theater cooc with two fully-elevated modalities must match the shared boost \
+             anchor co_occurrence_boost(2.0)={}, got {cooc_both}", co_occurrence_boost(2.0));
     }
 
     #[test]

@@ -102,8 +102,14 @@ const PEAK_K: usize = 5;
 /// the co-occurrence boost discontinuously.
 const ELEVATION_RAMP: f64 = 0.08;
 
-/// Smooth 0..1 elevation weight for a single domain score.
-fn soft_elevation_weight(score: f64) -> f64 {
+/// Smooth 0..1 elevation weight for a single domain score. This is the SINGLE
+/// source of truth for "how elevated, smoothly, is one modality" — used both by
+/// the systemic co-occurrence (Step 5 here) and the intra-theater co-occurrence
+/// (`theater::score_theater`), so "elevated" means exactly the same thing, on the
+/// same ramp, everywhere. A score below `ELEVATION_THRESHOLD − ELEVATION_RAMP`
+/// contributes EXACTLY 0; a faint sub-threshold modality can never inflate either
+/// co-occurrence boost.
+pub fn soft_elevation_weight(score: f64) -> f64 {
     let lo = ELEVATION_THRESHOLD - ELEVATION_RAMP;
     let hi = ELEVATION_THRESHOLD + ELEVATION_RAMP;
     if score <= lo { return 0.0; }
