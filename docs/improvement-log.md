@@ -16,6 +16,46 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — legibility — methodology "Alert bands" section, thresholds templated from AlertSettings (roadmap 2.3)
+- Item: roadmap 2.3 (progressed) — the natural sibling the 2026-06-10 alert-band entry explicitly
+  flagged: "surfacing these same band thresholds in the methodology prose (2.3) so the `≥8% critical`
+  text there is templated from `AlertSettings`". Legibility axis (pillar 2): every axis advanced
+  2026-06-10, so axis-rotation is neutral; picked the highest-value item provable green in the cloud
+  sandbox (2.1 small-viewport is eyes-judged only; 3.2 GDELT needs live network; this one is fully
+  testable here).
+- Verified-open-first: read the current `methodology.html` end-to-end — it documented the baseline
+  prior, modalities, theaters, couplers, likelihood, the systemic index, calibration, AI layer,
+  confidence and the nuclear detector, but had **no mention of the alert bands at all**. An operator
+  reading the whitepaper had no way to learn what P(WWIII) makes the hero go amber vs red, even though
+  the dashboard timeline now draws those exact lines (2.4). And the only place those thresholds lived
+  in prose-readable form was the dashboard's live JS — the methodology was silent, a real completeness
+  gap on the Legibility pillar.
+- Change (one coherent change, methodology.html + server.rs): (a) added an `#alerts` "Alert bands"
+  section (plus its TOC link) explaining that the annual P(WWIII) is elevated at/above
+  `{{ALERT_ELEVATED}}`, critical at/above `{{ALERT_CRITICAL}}`, with a separate 30-day warning at
+  `{{ALERT_30D}}`, and stating explicitly that these are the same bands the hero colour and timeline
+  lines use; (b) `server.rs::ServerState::new` substitutes the three placeholders from
+  `models::AlertSettings::default()` (elevated 2.5%, critical 8.0%, 30-day 1.0%) — the same anti-drift
+  template mechanism as `{{FORECAST_PROB_CEILING}}`/`{{CALIBRATION_EVIDENCE}}`, so the prose can never
+  drift from the engine's configured classification. NO model/calibration constant touched.
+- Metric moved: test count 371 → 372 (new `methodology_renders_alert_bands_from_alert_settings`); new
+  legibility capability (the methodology now documents the alert bands) + a latent completeness gap
+  closed, with the thresholds anti-drift-templated rather than hand-typed. Calibration evidence
+  UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no calibration constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  371 passed / 0 failed / 3 ignored (372nd is the scorecard grep incl. the new test);
+  `cargo test backtest` = 9 passed. The lock proves all three `{{ALERT_*}}` placeholders are
+  substituted at startup, that the rendered values match `AlertSettings::default()`, and that the raw
+  template still carries `{{ALERT_CRITICAL}}` (a revert to a hand-typed number fails it). The
+  completeness test `methodology_html_is_substantial_and_complete` now also requires the `#alerts`
+  anchor.
+- Notes / decisions future runs must respect: the alert-band prose is now templated from
+  `AlertSettings` — edit the SETTINGS, never the HTML numbers (the template carries placeholders, not
+  digits). The methodology renders from `AlertSettings::default()` at startup (matches the seeded
+  config in `main.rs`, also 2.5%/8.0%); the dashboard timeline/hero read the LIVE per-snapshot
+  thresholds — both honest, one is design-default prose, the other is the running classification.
+  Remaining under 2.3: surfacing the model internals (regime ×/P₀/GP) in the methodology view.
+
 ## 2026-06-10 — honesty/model — named the guardrail-collapse coupler (the last flagged un-pinned constants in bayesian.rs) (roadmap 1.2)
 - Item: roadmap 1.2 (progressed) — the guardrail-coupler magic in `bayesian.rs::compute` that the
   2026-06-10 coupler-weights entry explicitly flagged as "a natural next 1.2 sibling". Honesty axis

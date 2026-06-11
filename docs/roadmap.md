@@ -128,6 +128,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 - [ ] **2.3 Methodology completeness** [candidate] — model internals (regime ×, P₀, GP,
   elevated) belong in the methodology view, NOT the landing rail (rail stays 30d/90d/
   last-computed). Keep methodology honest and current with the model as it evolves.
+  - PROGRESS 2026-06-11: added the **Alert bands** section (`#alerts`) — the methodology
+    previously documented the index/likelihood but never told the operator what P(WWIII)
+    triggers the elevated/critical/30-day alert states. The three thresholds are TEMPLATED
+    (`{{ALERT_ELEVATED}}`/`{{ALERT_CRITICAL}}`/`{{ALERT_30D}}`) from the engine's
+    `AlertSettings` in `server.rs` (same anti-drift pattern as `{{FORECAST_PROB_CEILING}}`)
+    — the same source the dashboard hero/timeline read live, so prose/colour/chart can't
+    disagree. This is the 2.4-flagged sibling. Locked by
+    `methodology_renders_alert_bands_from_alert_settings`. Remaining: regime ×/P₀/GP internals
+    in the methodology view.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
