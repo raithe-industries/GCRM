@@ -69,6 +69,11 @@ impl ServerState {
                 .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html())
                 .replace("{{FORECAST_PROB_CEILING}}",
                          &format!("{:.2}", crate::models::FORECAST_PROB_CEILING))
+                // P₀: the flat logistic baseline prior, rendered from the engine's own
+                // BASELINE_ANNUAL so the whitepaper's quiet-year number can never drift
+                // from the running prior (same anti-drift pattern as the forecast ceiling).
+                .replace("{{BASELINE_ANNUAL_PCT}}",
+                         &format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0))
                 .replace("{{ALERT_ELEVATED}}", &format!("{:.1}%", alerts.elevated * 100.0))
                 .replace("{{ALERT_CRITICAL}}", &format!("{:.1}%", alerts.critical * 100.0))
                 .replace("{{ALERT_30D}}", &format!("{:.1}%", alerts.thirty_day_warn * 100.0)),
@@ -729,6 +734,25 @@ mod tests {
         let rendered = format!("{:.2}", crate::models::FORECAST_PROB_CEILING);
         assert!(state.methodology_html.contains(&format!("{rendered} ceiling")),
             "methodology must render the ceiling value ({rendered}) from the model constant");
+    }
+
+    #[test]
+    fn methodology_renders_baseline_prior_from_the_model_constant() {
+        // 2.3 (P₀): the baseline-prior section quotes the model's flat quiet-year prior.
+        // It is rendered from BASELINE_ANNUAL (single source of truth), so a recalibration
+        // of the prior can never leave the whitepaper quoting a stale percentage — the same
+        // anti-drift guarantee as the forecast ceiling and alert bands.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let m = &*state.methodology_html;
+        assert!(!m.contains("{{BASELINE_ANNUAL_PCT}}"),
+            "the baseline-prior placeholder must be substituted at startup");
+        let rendered = format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0);
+        assert!(m.contains(&format!("{rendered}%/yr")),
+            "methodology must render the baseline ({rendered}%/yr) from BASELINE_ANNUAL");
+        // The raw template must carry the placeholder, not a hand-typed number, so the
+        // prose cannot drift from the running prior.
+        assert!(METHODOLOGY_HTML.contains("{{BASELINE_ANNUAL_PCT}}"),
+            "the baseline prior must be templated, not hardcoded");
     }
 
     #[test]
