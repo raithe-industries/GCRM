@@ -670,6 +670,13 @@ pub struct TheaterState {
     /// "why" behind its level. Populated only when the theater is rising; empty
     /// otherwise. Surfaces *where risk is concentrating, early enough to act*.
     pub rising_driver:    String,
+    /// The SECOND-largest weighted contributor among the modalities the model
+    /// considers *elevated* (raw score ≥ `ELEVATION_THRESHOLD`) — the second active
+    /// force dimension, i.e. the co-occurrence story `top_driver` (a single dominant
+    /// level) cannot tell. Empty unless at least two modalities are elevated, so it
+    /// surfaces only when a flashpoint is genuinely multi-dimensional (which is what
+    /// the intra-theater co-occurrence amplifier keys on).
+    pub secondary_driver: String,
 }
 
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────
