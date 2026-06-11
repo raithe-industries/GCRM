@@ -101,6 +101,13 @@ fn generate_dashboard_html(base_path: &str) -> String {
         // model constant, so it can never drift from the engine's real threshold.
         .replace("{{ELEVATION_THRESHOLD}}",
                  &format!("{}", crate::models::ELEVATION_THRESHOLD))
+        // The model-state footer's Bayesian chain and the "what this means" calibration
+        // line both quote the flat quiet-year baseline prior. They render from
+        // BASELINE_ANNUAL (single source of truth) so the operator-facing dashboard can
+        // never quote a stale prior after a recalibration — same anti-drift guarantee the
+        // methodology page already carries for P₀.
+        .replace("{{BASELINE_ANNUAL_PCT}}",
+                 &format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0))
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -753,6 +760,41 @@ mod tests {
         // prose cannot drift from the running prior.
         assert!(METHODOLOGY_HTML.contains("{{BASELINE_ANNUAL_PCT}}"),
             "the baseline prior must be templated, not hardcoded");
+    }
+
+    #[test]
+    fn dashboard_renders_baseline_prior_from_the_model_constant() {
+        // The dashboard's model-state footer (the live Bayesian chain) and its
+        // "what this means" calibration line both quote the flat quiet-year prior P₀.
+        // Those numbers MUST render from BASELINE_ANNUAL, not hand-typed literals that
+        // could silently drift from the engine after a recalibration — the same
+        // anti-drift guarantee the methodology page carries (and the primary operator
+        // surface had been missed). A revert to a hardcoded "1.5%/yr" fails this.
+        assert!(
+            DASHBOARD_HTML.contains("{{BASELINE_ANNUAL_PCT}}"),
+            "dashboard baseline prior must be templated, not hardcoded"
+        );
+        // Both references must be templated (footer chain + info-modal line), so neither
+        // can drift independently.
+        assert_eq!(
+            DASHBOARD_HTML.matches("{{BASELINE_ANNUAL_PCT}}").count(),
+            2,
+            "both dashboard baseline-prior references must carry the placeholder"
+        );
+        let rendered = generate_dashboard_html("/risk");
+        assert!(
+            !rendered.contains("{{BASELINE_ANNUAL_PCT}}"),
+            "baseline-prior placeholder was not substituted at render time"
+        );
+        let pct = format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0);
+        assert!(
+            rendered.contains(&format!("{pct}%/yr")),
+            "rendered dashboard must embed the baseline ({pct}%/yr) from BASELINE_ANNUAL"
+        );
+        assert!(
+            rendered.contains(&format!("~{pct}%</code> modern quiet-year baseline")),
+            "rendered dashboard calibration line must embed the baseline from BASELINE_ANNUAL"
+        );
     }
 
     #[test]
