@@ -484,7 +484,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="ca">Session low: <span id="ca-low">—</span></div>
     </div>
     <div class="formula">
-      Baseline P₀ = <span>1.5%/yr (modern, backtested)</span> · structural-adjusted = <span id="f-adj">—</span> · systemic L = <span id="f-lik">—</span><br>
+      Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, backtested)</span> · structural-adjusted = <span id="f-adj">—</span> · systemic L = <span id="f-lik">—</span><br>
       P(WWIII|E) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span>
     </div>
     <div class="meta-pills" id="meta-row"></div>
@@ -727,7 +727,7 @@ const INFO={
   risk:{title:'WWIII Risk (Annual)',html:`
     <p><b>WWIII Risk (Annual)</b> is the model's estimate of the probability that a <b>world-war-scale conflict begins within the next 12 months</b>, read continuously from live news.</p>
     <span class="ih">For scale</span>
-    <p><code>~1.5%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~39%</code> ≈ Ukraine, Feb 2022 · <code>~80%</code> ≈ Cuba, Oct 1962.</p>
+    <p><code>~{{BASELINE_ANNUAL_PCT}}%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~39%</code> ≈ Ukraine, Feb 2022 · <code>~80%</code> ≈ Cuba, Oct 1962.</p>
     <span class="ih">How it's built</span>
     <p>A regime-adjusted prior (the baseline, scaled by standing factors such as an active great-power war) is multiplied by a <b>coupling likelihood</b> drawn from the five force domains. The more domains elevated and entangled across great powers, the higher the read. The sub-line is the change since the previous snapshot.</p>`},
   driver:{title:'Primary Driver',html:`

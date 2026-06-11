@@ -16,6 +16,45 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — honesty/legibility — templated P₀ on the DASHBOARD (the operator surface the methodology fix missed), anti-drift from BASELINE_ANNUAL (roadmap 2.3)
+- Item: roadmap 2.3 (progressed) — extends the same-day methodology P₀ fix to the DASHBOARD itself.
+  Honesty axis (pillar 1) as much as legibility: a hand-typed model constant on the operator-facing
+  surface is a drift hazard ("the number must mean what it says"). Axis note: robustness (4.2) is
+  least-recent but has no clean must-fix — re-verified `detector::nearest_test_site`'s
+  `partial_cmp().unwrap()` this run: it is genuinely safe because any NaN haversine distance (NaN
+  lat/lon, or near-antipodal float-rounding pushing `a` slightly above 1.0) fails the `dist <= radius`
+  filter and is dropped before `min_by`, so the comparator only ever sees finite values — forcing a
+  "fix" to non-broken code is forbidden. So the highest-value provable-green lever was this anti-drift
+  completeness fix on the primary surface.
+- Verified-open-first: grepped the dashboard for the baseline literal. The 2026-06-11 methodology run
+  templated P₀ on the WHITEPAPER but the DASHBOARD — the surface an operator actually watches — still
+  hand-typed the quiet-year baseline in TWO places: the model-state footer's live Bayesian chain
+  (`Baseline P₀ = 1.5%/yr (modern, backtested)`, dashboard.html:487) and the "what this means"
+  info-modal calibration line (`<code>~1.5%</code> modern quiet-year baseline`, :730). Recalibrating
+  `models::BASELINE_ANNUAL` (0.015) would silently leave both quoting a stale 1.5% — the exact
+  stale-prose class the methodology, ceiling, and alert-band templating fixes exist to kill, left open
+  on the most-seen surface.
+- Change (one coherent change, dashboard.html + server.rs): replaced both hand-typed references with
+  `{{BASELINE_ANNUAL_PCT}}`, and `server.rs::generate_dashboard_html` now substitutes it from
+  `format!("{:.1}", models::BASELINE_ANNUAL * 100.0)` — the same anti-drift template mechanism as the
+  dashboard's existing `{{ELEVATION_THRESHOLD}}` and the methodology's `{{BASELINE_ANNUAL_PCT}}`. NO
+  model/calibration constant touched (BASELINE_ANNUAL unchanged at 0.015).
+- Metric moved: test count 376 → 377 by the scorecard grep (new
+  `dashboard_renders_baseline_prior_from_the_model_constant`); a latent prose-drift hazard on the
+  model's foundational prior closed on the PRIMARY operator surface. Calibration evidence UNCHANGED —
+  backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no calibration constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  376 passed / 0 failed / 3 ignored; `cargo test backtest` = 9 passed. The lock proves BOTH dashboard
+  references carry the placeholder (`.matches(...).count() == 2`), that it is substituted at render
+  time, and that the rendered footer (`1.5%/yr`) and calibration line (`~1.5%`) both equal
+  `BASELINE_ANNUAL * 100` — a revert to a hand-typed number fails it.
+- Notes / decisions future runs must respect: the dashboard baseline-prior digits are now templated
+  from `BASELINE_ANNUAL` — edit the CONSTANT, never the HTML. P₀ is now anti-drift on BOTH operator
+  surfaces (dashboard + methodology); it joins the forecast ceiling, alert bands, and elevation
+  threshold as model values that render anti-drift everywhere they appear. Remaining under 2.3: the
+  regime × factors and GP internals in the methodology view (regime factors are operator-tunable
+  runtime config, not a static constant — needs the live config, a different mechanism).
+
 ## 2026-06-11 — legibility — templated P₀ (the baseline prior) in the methodology, anti-drift from BASELINE_ANNUAL (roadmap 2.3)
 - Item: roadmap 2.3 (progressed) — "model internals (regime ×, P₀, GP, elevated) belong in the
   methodology view … keep methodology honest and current with the model." This run closes the **P₀**

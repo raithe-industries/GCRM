@@ -169,6 +169,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     a note that the value is rendered from the constant. Locked by
     `methodology_renders_baseline_prior_from_the_model_constant`. Remaining: regime ×/GP
     internals in the methodology view.
+  - PROGRESS 2026-06-11: closed the **same P₀ drift hazard on the DASHBOARD** (the primary
+    operator surface, which the methodology fix had missed). `dashboard.html` hand-typed the
+    quiet-year baseline in TWO places — the model-state footer's Bayesian chain
+    (`Baseline P₀ = 1.5%/yr`) and the "what this means" calibration line
+    (`~1.5%` modern quiet-year baseline) — both of which would silently quote a stale prior if
+    `BASELINE_ANNUAL` were recalibrated. Both are now `{{BASELINE_ANNUAL_PCT}}`, substituted in
+    `server.rs::generate_dashboard_html` from `models::BASELINE_ANNUAL * 100` (same anti-drift
+    mechanism as `{{ELEVATION_THRESHOLD}}` on the dashboard and `{{BASELINE_ANNUAL_PCT}}` on the
+    methodology). Locked by `dashboard_renders_baseline_prior_from_the_model_constant` (both refs
+    templated, placeholder substituted, rendered value == constant — a revert to a hardcoded
+    `1.5%/yr` fails it). Remaining: regime ×/GP internals in the methodology view.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
