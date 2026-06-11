@@ -929,15 +929,21 @@ function applyData(d){
       const heatPct=Math.round((t.heat||0)*100);const ec=t.event_count||0;
       const tr=t.trend==='rising'?'<span class="tl-trend" style="color:#E24B4A">▲</span>':t.trend==='falling'?'<span class="tl-trend" style="color:#1D9E75">▼</span>':'<span class="tl-trend" style="color:var(--t4)">─</span>';
       const why=t.top_driver?domainLabel(t.top_driver):'';
+      // Driver readout: the dominant force dimension (top_driver = the LEVEL), plus — when a
+      // second modality is also elevated (secondary_driver) — that second active kind of force,
+      // joined with "+". This tells the operator a flashpoint is multi-dimensional (e.g.
+      // "Nuclear + Military") at a glance, the co-occurrence story a single driver can't tell.
+      const why2=t.secondary_driver?domainLabel(t.secondary_driver):'';
+      const drv=why?(why+(why2?' + '+why2:'')):'';
       // "What is heating up": when the theater is rising, name the modality that moved
       // (rising_driver) — distinct from `why` (the dominant LEVEL). Shown as "↑ X" next to
       // the rising arrow so the operator sees WHERE risk is concentrating, early.
       const rise=(t.trend==='rising'&&t.rising_driver)?domainLabel(t.rising_driver):'';
       const riseTag=rise?'<span class="tl-rise" style="color:#E24B4A" title="heating up on '+rise+'">↑ '+rise+'</span>':'';
-      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(why?' · driven by '+why:'')+(rise?' · rising on '+rise:'')+(t.gp_involved?' · great power engaged':'')+'">'
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
         +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
-        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(why?' · '+why:'')+(riseTag?' '+riseTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
+        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
         +'</div>';
     }).join('');
   }

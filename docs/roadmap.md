@@ -182,6 +182,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     construction (largest `Δscore × weight` term), no model constant touched. Locked by
     `theater::rising_driver_names_the_modality_that_moved_not_the_dominant_level`. Remaining
     awareness extension: a 2nd LEVEL contributor on the chip. See improvement-log 2026-06-10.
+  - PROGRESS 2026-06-11: added the **2nd LEVEL contributor** the prior line flagged.
+    `TheaterState.secondary_driver` = the second-largest WEIGHTED contributor among the
+    modalities the model considers *elevated* (raw score ≥ `ELEVATION_THRESHOLD`) — the
+    second active KIND of force, the co-occurrence story `top_driver` (one dominant level)
+    cannot tell. Gated on elevation (the same cutoff that feeds the intra-theater
+    co-occurrence amplifier), so it surfaces only when a flashpoint is genuinely
+    multi-dimensional; empty otherwise. Surfaced on the ladder chip as "Nuclear + Military"
+    (sub-line + "driven by …" tooltip), reusing `domainLabel`. Honest by construction, no
+    model constant touched. Locked by
+    `theater::secondary_driver_names_the_second_elevated_force_dimension`. See improvement-log
+    2026-06-11.
 
 ## 4. Robustness / performance  (enablers)
 - [x] **4.1 LLM enricher: serial → bounded-concurrent worker pool** — **DONE (pre-2026-06-09).**

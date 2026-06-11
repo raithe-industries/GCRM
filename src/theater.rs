@@ -427,6 +427,7 @@ impl TheaterEngine {
                 trend: trend.into(), delta: (delta * 1e4).round() / 1e4, event_count: 0,
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
                 top_driver: String::new(), rising_driver: String::new(),
+                secondary_driver: String::new(),
             };
         }
 
@@ -507,6 +508,27 @@ impl TheaterEngine {
         } else {
             String::new()
         };
+        // Per-theater "second dimension": the second-largest WEIGHTED contributor among
+        // the modalities the model considers *elevated* (raw score ≥ ELEVATION_THRESHOLD —
+        // the same cutoff that feeds the intra-theater co-occurrence amplifier above). This
+        // names the second active KIND of force, the co-occurrence story `top_driver` (one
+        // dominant level) cannot tell: a theater hottest on nuclear posture that ALSO has
+        // elevated military escalation is a two-dimensional crisis, not a one-dimensional
+        // posture story — exactly what the co-occurrence boost responds to. Honest by
+        // construction (the model's own second-largest elevated weighted term); empty unless
+        // at least two modalities are elevated, so a single-dimension flashpoint names nothing.
+        let secondary_driver = if rung == EscalationRung::Stable {
+            String::new()
+        } else {
+            let mut elevated: Vec<(&str, f64)> = DOMAIN_WEIGHTS.iter()
+                .map(|(m, _)| (*m, scores.get(*m).map(|d| d.score).unwrap_or(0.0)))
+                .filter(|(_, s)| *s >= ELEVATION_THRESHOLD)
+                .map(|(m, s)| (m, s * domain_weight(m)))
+                .collect();
+            elevated.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            elevated.get(1).map(|(m, _)| m.to_string()).unwrap_or_default()
+        };
+
         // Record this tick's raw modality scores for the next tick's delta-driver.
         let now_scores: HashMap<String, f64> = DOMAIN_WEIGHTS.iter()
             .map(|(m, _)| (m.to_string(), scores.get(*m).map(|d| d.score).unwrap_or(0.0)))
@@ -521,7 +543,7 @@ impl TheaterEngine {
             trend: trend.to_string(), delta: (delta * 1e4).round() / 1e4,
             event_count: tev.len(),
             gp_involved, alliance_invoked, top_actors,
-            top_driver, rising_driver,
+            top_driver, rising_driver, secondary_driver,
         }
     }
 }
@@ -685,6 +707,70 @@ mod tests {
         let q = teq.compute(&[]);
         assert!(q.theaters.iter().all(|s| s.rising_driver.is_empty()),
             "Stable theaters must not name a rising-driver");
+    }
+
+    #[test]
+    fn secondary_driver_names_the_second_elevated_force_dimension() {
+        // Awareness "second dimension" per theater: secondary_driver must name the
+        // SECOND-largest WEIGHTED contributor AMONG the modalities the model considers
+        // elevated (score >= ELEVATION_THRESHOLD). It is the co-occurrence story
+        // top_driver (a single dominant level) cannot tell, and it must stay empty when a
+        // flashpoint has only one elevated dimension. Locks the relationship + the gate.
+
+        // (a) Two strongly-elevated modalities: nuclear (weight 3.0) is the dominant
+        // driver, military_escalation is the SECOND elevated dimension.
+        let mut te = TheaterEngine::new();
+        let mut mixed = Vec::new();
+        for _ in 0..6 {
+            mixed.push(ev("us_iran", "military_escalation", 0.9, 0.9, &["united_states", "iran"], true));
+            mixed.push(ev("us_iran", "nuclear_posture",     0.9, 0.9, &["iran"], false));
+        }
+        let out = te.compute(&mixed);
+        let gulf = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_eq!(gulf.top_driver, "nuclear_posture",
+            "dominant level is nuclear, got {:?}", gulf.top_driver);
+        assert_eq!(gulf.secondary_driver, "military_escalation",
+            "second elevated dimension should be military_escalation, got {:?}", gulf.secondary_driver);
+        // The named secondary must itself be elevated (sanity on the fixture + gate).
+        assert!(gulf.modality_scores["nuclear_posture"] >= ELEVATION_THRESHOLD);
+        assert!(gulf.modality_scores["military_escalation"] >= ELEVATION_THRESHOLD);
+
+        // (b) A single elevated dimension names NO secondary — even though the theater is
+        // clearly hot (only-kinetic). This is the distinction from top_driver, which always
+        // names the dominant term.
+        let mut te2 = TheaterEngine::new();
+        let mut kin = Vec::new();
+        for _ in 0..8 {
+            kin.push(ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true));
+        }
+        let out2 = te2.compute(&kin);
+        let gulf2 = out2.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        assert_ne!(gulf2.rung, EscalationRung::Stable, "8 strong kinetic events should clear Stable");
+        assert_eq!(gulf2.top_driver, "military_escalation");
+        assert!(gulf2.secondary_driver.is_empty(),
+            "a single-dimension flashpoint must name no secondary driver, got {:?}", gulf2.secondary_driver);
+
+        // (c) The elevation GATE: a faint second modality whose score stays BELOW
+        // ELEVATION_THRESHOLD is NOT named — even though it is the second-largest weighted
+        // term overall. This is the honesty distinction from "2nd largest weighted period".
+        let mut te3 = TheaterEngine::new();
+        let mut faint = Vec::new();
+        for _ in 0..8 { faint.push(ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false)); }
+        faint.push(ev("us_iran", "military_escalation", 0.12, 0.1, &["iran"], false));
+        let out3 = te3.compute(&faint);
+        let gulf3 = out3.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        let mil = gulf3.modality_scores.get("military_escalation").copied().unwrap_or(0.0);
+        assert!(mil < ELEVATION_THRESHOLD,
+            "fixture sanity: the faint kinetic blip should stay sub-elevated, got {:.3}", mil);
+        assert!(gulf3.secondary_driver.is_empty(),
+            "a sub-elevated second modality (score {:.3} < {}) must not be a secondary driver, got {:?}",
+            mil, ELEVATION_THRESHOLD, gulf3.secondary_driver);
+
+        // (d) A quiet world names no secondary driver.
+        let mut te4 = TheaterEngine::new();
+        let quiet = te4.compute(&[]);
+        assert!(quiet.theaters.iter().all(|s| s.secondary_driver.is_empty()),
+            "Stable theaters must not name a secondary driver");
     }
 
     #[test]

@@ -16,6 +16,50 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — awareness — per-theater "second dimension": secondary_driver (2nd elevated force) on the ladder (roadmap 3.3 extension)
+- Item: roadmap 3.3 (extended — the "2nd LEVEL contributor on the chip" the 2026-06-10 delta-driver
+  entry explicitly flagged as the remaining awareness extension). Awareness axis (pillar 3): reading
+  the recent log, honesty and legibility were each advanced 2026-06-11 (most recent), while awareness
+  and robustness were tied least-recent at 2026-06-10 — this rotates coverage back onto awareness. Of
+  the two open awareness items, 3.2 (GDELT) needs live-network verification the cloud sandbox can't do,
+  so the provable-green awareness lever today was this 2nd contributor.
+- Verified-open-first: `TheaterState` carried `top_driver` (dominant weighted LEVEL) and `rising_driver`
+  (what MOVED this tick) but nothing about the COMPOSITION of a flashpoint's heat. The chip therefore
+  reads a two-dimensional crisis — say a theater hot on nuclear posture that ALSO has elevated military
+  escalation — as a one-dimensional "Nuclear" story. That's exactly the multi-modality co-occurrence the
+  intra-theater amplifier responds to, yet the operator couldn't see it: a real awareness gap on the
+  mission's "where & why" leg.
+- Change (one coherent change across model + engine + dashboard): (a) `TheaterState.secondary_driver` —
+  the SECOND-largest WEIGHTED contributor (`score × domain_weight`) AMONG the modalities the model
+  considers *elevated* (raw score ≥ `ELEVATION_THRESHOLD`, the same cutoff that feeds the co-occurrence
+  amplifier). Computed in `theater.rs::score_theater` by sorting the elevated modalities' weighted terms
+  and taking the 2nd; empty unless ≥2 modalities are elevated (a single-dimension flashpoint names
+  nothing), empty for a Stable theater. The elevation gate is the honesty point: it is NOT merely "the
+  2nd-largest weighted term" — a faint sub-threshold modality is excluded, so the chip only claims a
+  second dimension when the model genuinely sees one. (b) dashboard ladder chip joins the two as
+  "Nuclear + Military" on the sub-line and in the "driven by …" tooltip, reusing `domainLabel` (no new
+  label table). Honest by construction (the model's own second elevated weighted term); NO calibration
+  constant touched.
+- Metric moved: test count 373 → 374 by the scorecard grep (new
+  `secondary_driver_names_the_second_elevated_force_dimension`); new awareness capability (per-theater
+  second/co-occurrence dimension). Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/
+  Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  373 passed / 0 failed / 3 ignored (374th is the scorecard grep incl. the new test); `cargo test
+  backtest` = 9 passed. The lock drives four scenarios on the live engine: (a) equal-strength
+  nuclear+military both elevated → top_driver nuclear (weight 3.0 dominant level), secondary_driver
+  military (2nd elevated dimension), both asserted ≥ ELEVATION_THRESHOLD; (b) only-kinetic (one elevated
+  dimension) → top_driver military but secondary EMPTY (the distinction from top_driver, which always
+  names); (c) the GATE — strong nuclear + a faint kinetic blip whose score stays BELOW
+  ELEVATION_THRESHOLD → secondary EMPTY even though kinetic is the 2nd-largest weighted term overall
+  (a revert to "2nd largest weighted period" fails this); (d) quiet world → all empty.
+- Notes / decisions future runs must respect: `secondary_driver` is the 2nd-largest weighted modality
+  AMONG ELEVATED ones — do not drop the elevation gate (it is what keeps the chip from claiming a second
+  dimension that doesn't exist) and do not conflate it with `top_driver` (dominant level) or
+  `rising_driver` (what moved). All three are honest read-outs of existing scores, never new model
+  levers. The chip reuses `domainLabel`. Remaining awareness item: 3.2 (GDELT) — still gated on
+  live-network verification, not for the cloud routine.
+
 ## 2026-06-11 — honesty/model — removed dead `gp_bonus` (a v1 vestige in score_all) + locked "GP is a coupler, not a per-domain bonus" (roadmap 1.2)
 - Item: roadmap 1.2 (progressed) — the last `score_all`/`compute` literal it flagged as un-pinned, the
   `gp_bonus` `0.12`. Honesty axis (pillar 1, top mission priority). Axis rotation: legibility was advanced
