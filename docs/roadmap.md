@@ -160,6 +160,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     disagree. This is the 2.4-flagged sibling. Locked by
     `methodology_renders_alert_bands_from_alert_settings`. Remaining: regime ×/P₀/GP internals
     in the methodology view.
+  - PROGRESS 2026-06-11: templated **P₀ (the baseline prior)** in the methodology. The
+    baseline-prior section quoted the flat quiet-year prior as a HAND-TYPED `≈ 1.5%/yr` while
+    the forecast ceiling right below it was already `{{FORECAST_PROB_CEILING}}` — a drift
+    hazard (recalibrating `BASELINE_ANNUAL` would leave the whitepaper quoting a stale number).
+    Now `{{BASELINE_ANNUAL_PCT}}`, substituted in `server.rs::ServerState::new` from
+    `models::BASELINE_ANNUAL * 100` (same anti-drift pattern as the ceiling/alert bands), with
+    a note that the value is rendered from the constant. Locked by
+    `methodology_renders_baseline_prior_from_the_model_constant`. Remaining: regime ×/GP
+    internals in the methodology view.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network

@@ -16,6 +16,44 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — legibility — templated P₀ (the baseline prior) in the methodology, anti-drift from BASELINE_ANNUAL (roadmap 2.3)
+- Item: roadmap 2.3 (progressed) — "model internals (regime ×, P₀, GP, elevated) belong in the
+  methodology view … keep methodology honest and current with the model." This run closes the **P₀**
+  leg. Legibility axis (pillar 2). Axis rotation: robustness (4.2) is least-recent but has no clean
+  must-fix — its production unwrap/expect sites are infallible-by-construction (re-verified this run:
+  `models.rs::theater_for_event`'s two `position().unwrap()`s are safe because `Theater::primary()`
+  always contains the theater and `max` is drawn from `counts`; detector/ingestor/nlp_sidecar sites are
+  startup `expect`s or never-closed-semaphore acquires), and forcing a "fix" to non-broken code is
+  forbidden. Awareness's only open item (3.2 GDELT) needs live network the sandbox lacks. So the
+  highest-value provable-green lever was this anti-drift completeness fix on the methodology.
+- Verified-open-first: read the methodology baseline-prior section against the current model. The flat
+  quiet-year prior — the single most foundational number in v2 (the logistic prior the whole forecast is
+  folded onto) — was a HAND-TYPED `<code>BASELINE_ANNUAL ≈ 1.5%/yr</code>`, even though the forecast
+  ceiling literally one paragraph below was already `{{FORECAST_PROB_CEILING}}` and the alert bands were
+  `{{ALERT_*}}`. A real drift hazard: recalibrating `models::BASELINE_ANNUAL` (0.015) would silently
+  leave the operator-facing whitepaper quoting a stale 1.5% — exactly the stale-prose class prior runs
+  fixed for the ceiling (1.2, the old 0.85 comments), the calibration table (1.1b) and the alert bands.
+- Change (one coherent change, methodology.html + server.rs): (a) replaced the hand-typed `1.5%/yr` with
+  `{{BASELINE_ANNUAL_PCT}}%/yr` and added the same "rendered from the model's own constant, so this page
+  cannot drift" note the ceiling carries; (b) `server.rs::ServerState::new` substitutes the placeholder
+  from `format!("{:.1}", models::BASELINE_ANNUAL * 100.0)` — the same anti-drift template mechanism as the
+  ceiling/alert bands. NO model/calibration constant touched (BASELINE_ANNUAL unchanged at 0.015).
+- Metric moved: test count 375 → 376 by the scorecard grep (new
+  `methodology_renders_baseline_prior_from_the_model_constant`); a latent prose-drift hazard on the
+  model's foundational prior closed. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/
+  Cuba + evidence), no calibration constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  375 passed / 0 failed / 3 ignored (376th is the scorecard grep incl. the new test); `cargo test backtest`
+  = 9 passed. The lock proves the `{{BASELINE_ANNUAL_PCT}}` placeholder is substituted at startup, that the
+  rendered `1.5%/yr` matches `BASELINE_ANNUAL * 100`, and that the raw template still carries the
+  placeholder (a revert to a hand-typed number fails it).
+- Notes / decisions future runs must respect: the methodology baseline-prior number is now templated from
+  `BASELINE_ANNUAL` — edit the CONSTANT, never the HTML digits. P₀ joins the forecast ceiling, alert bands,
+  and elevation threshold as model values that render anti-drift into operator-facing surfaces. Remaining
+  under 2.3: the regime × factors and GP internals in the methodology view (the regime factors are
+  operator-tunable runtime config from settings.yml, not a static constant — surfacing them honestly needs
+  the live config, a different mechanism than constant-templating).
+
 ## 2026-06-11 — honesty/model — unified the intra-theater co-occurrence ramp with the systemic one + locked "sub-threshold modality contributes 0 co-occurrence" (roadmap 1.2/1.3)
 - Item: roadmap 1.2/1.3 — the open honesty sibling the 2026-06-09 "quiet theater never leaks" entry
   explicitly flagged: "the same no-leak property for the intra-theater co-occurrence ramp (`ELEV_RAMP`

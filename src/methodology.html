@@ -67,7 +67,7 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 
 <h2 id="baseline">The baseline prior (no more 2000-year anchor)</h2>
 <p>v1 anchored risk to two world wars over ~2026 years (<code>≈ 0.0987%/yr</code>) — a non-stationary frequentist error that treated systemic war as a Poisson process running since antiquity, ignoring that the nuclear-armed multipolar system did not exist before 1945. It pinned the prior sub-0.1% and the model fought to climb out of that hole.</p>
-<p>v2 uses a flat <b>modern quiet-year baseline</b> (<code>BASELINE_ANNUAL ≈ 1.5%/yr</code>) as the logistic prior — the structural regime no longer inflates the prior; it enters the likelihood as a guardrail amplifier (below). A structurally calm world therefore sits near the baseline, and acute signal does the lifting.</p>
+<p>v2 uses a flat <b>modern quiet-year baseline</b> (<code>BASELINE_ANNUAL ≈ {{BASELINE_ANNUAL_PCT}}%/yr</code>) as the logistic prior — the structural regime no longer inflates the prior; it enters the likelihood as a guardrail amplifier (below). A structurally calm world therefore sits near the baseline, and acute signal does the lifting. This value is rendered from the model's own <code>BASELINE_ANNUAL</code> constant, so this page cannot drift from the running prior.</p>
 
 <h2 id="modalities">Five orthogonal modalities</h2>
 <p>Risk is scored on five genuinely independent <i>modalities</i> — the kind of force in play — measured per theater and globally:</p>
