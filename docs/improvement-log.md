@@ -16,6 +16,43 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — honesty/model — removed dead `gp_bonus` (a v1 vestige in score_all) + locked "GP is a coupler, not a per-domain bonus" (roadmap 1.2)
+- Item: roadmap 1.2 (progressed) — the last `score_all`/`compute` literal it flagged as un-pinned, the
+  `gp_bonus` `0.12`. Honesty axis (pillar 1, top mission priority). Axis rotation: legibility was advanced
+  twice running (06-10 2.2/2.4, 06-11 2.3), so it was over-represented; honesty/awareness/robustness were
+  tied least-recent (06-10). Of the cloud-provable honesty levers, this was the highest-value because
+  verifying it surfaced a real defect, not just a missing name.
+- Verified-open-first (the payoff of actually checking the current code): `gp_bonus` was not merely an
+  un-named fitted constant — it was **dead code**. The branch `domain == "great_power_conflict"` can never
+  be true in `score_all`: v2 removed `great_power_conflict` from `DOMAIN_WEIGHTS` (it became the
+  `gp_entanglement` systemic coupler in theater.rs), and `score_all` `continue`s past any domain not in
+  `DOMAIN_WEIGHTS` (bayesian.rs:327). So `gp_bonus` was provably always `0.0`. The comment above it was
+  actively MISLEADING — it described a per-domain great-power scoring lift that the v2 refactor
+  deliberately abolished to kill the v1 collinearity where "one great-power strike lit four buckets and was
+  counted ~4×". A dishonest piece of code: prose claiming a behavior the engine cannot perform.
+- Change (one coherent change, bayesian.rs only): (a) removed the dead `gp_bonus` let-binding and its
+  stale comment; simplified `base_signal` to `nlp_signal * (0.55 + 0.45 * intensity)` (the `+ gp_bonus`
+  was `+ 0.0`); (b) replaced the comment with an accurate v2 note (GP is the `gp_entanglement` coupler,
+  never a per-domain bonus; it only increments the display-only `great_power_event_count`); (c) fixed the
+  adjacent stale "all 8 domains" comment → "all five modalities" (same v1-domain-count vestige in the same
+  function). NO value changed — `great_power_involved` already had zero effect on any modality score.
+- Metric moved: test count 372 → 373 (new `great_power_involvement_does_not_add_a_per_domain_score_bonus`);
+  dead code removed + a v2 design-intent honesty property (GP scores via the coupler, never the domain) now
+  LOCKED where before it was only prose. Calibration evidence UNCHANGED — backtest 9/9
+  (quiet/Ukraine/current/Cuba + evidence), bit-identical (the removed term was always 0).
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  372 passed / 0 failed / 3 ignored (373rd is the scorecard grep incl. the new test); `cargo test backtest`
+  = 9 passed. The lock scores identical events with `great_power_involved` true vs false and asserts
+  byte-identical modality scores across all five `DOMAIN_WEIGHTS` domains, while `great_power_event_count`
+  still reads 0 vs 1 — so re-adding any per-domain GP bonus (the v1 mistake) fails it, but awareness of GP
+  involvement is preserved.
+- Notes / decisions future runs must respect: great-power involvement is a SYSTEMIC COUPLER
+  (`gp_entanglement`), NOT a per-domain scoring bonus — do not re-introduce a `gp_bonus`-style lift in
+  `score_all` (it would resurrect the v1 ~4×-counting collinearity the v2 refactor removed). The five
+  `DOMAIN_WEIGHTS` modalities measure the KIND of force, never WHO. 1.2's `compute`/`score_all` literal
+  sweep is now complete; the only remaining un-pinned 1.2 surface is the regime × factor defaults (already
+  labeled `RegimeFactor`s in config, not blind literals).
+
 ## 2026-06-11 — legibility — methodology "Alert bands" section, thresholds templated from AlertSettings (roadmap 2.3)
 - Item: roadmap 2.3 (progressed) — the natural sibling the 2026-06-10 alert-band entry explicitly
   flagged: "surfacing these same band thresholds in the methodology prose (2.3) so the `≥8% critical`

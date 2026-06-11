@@ -338,17 +338,16 @@ impl DomainScorer {
                     (event.credibility_weight + corroboration_factor).min(1.0);
                 let effective_weight = rw * effective_credibility;
 
-                // Great-power involvement is the great_power_conflict domain's OWN
-                // signal — applied only here, not to every domain a GP event touches.
-                // Previously the bonus leaked into all tagged domains, making e.g.
-                // diplomatic_breakdown track great_power_conflict. Cross-domain GP
-                // amplification is already handled by the regime multiplier and the
-                // co-occurrence boost.
-                let gp_bonus = if domain == "great_power_conflict" && event.great_power_involved {
-                    0.12
-                } else {
-                    0.0
-                };
+                // NOTE (v2): great-power involvement is NOT a per-domain scoring
+                // bonus. v1 added a +0.12 lift to a `great_power_conflict` domain, but
+                // v2 removed that domain entirely (the five DOMAIN_WEIGHTS modalities
+                // measure the KIND of force, never WHO) and folded great-power coupling
+                // into the systemic `gp_entanglement` coupler in theater.rs — exactly to
+                // kill the v1 collinearity where one great-power strike lit four buckets
+                // and was counted ~4×. So great_power_involved must change the systemic
+                // likelihood (via the coupler), never an individual modality's score; it
+                // only increments the display-only great_power_event_count below. Locked
+                // by `great_power_involvement_does_not_add_a_per_domain_score_bonus`.
 
                 // Domain-specific evidence (nlp_signal) is the SPINE. severity and
                 // escalation are event-level — identical for every domain tagged on
@@ -359,12 +358,11 @@ impl DomainScorer {
                 // domain's keyword/LLM evidence is, so two domains on the same severe
                 // story diverge in proportion to their own signal rather than sharing
                 // a common floor. A 0.55 floor keeps a strong-keyword/low-intensity
-                // domain from collapsing; the 0.45 swing lets intensity matter.
-                // gp_bonus stays additive and great-power-domain only. Final clamp
-                // bounds the result to [0,1].
+                // domain from collapsing; the 0.45 swing lets intensity matter. Final
+                // clamp (below) bounds the result to [0,1].
                 let intensity = 0.5 * event.severity
                               + 0.5 * event.escalation_language_score; // [0,1] shared story intensity
-                let base_signal = nlp_signal * (0.55 + 0.45 * intensity) + gp_bonus;
+                let base_signal = nlp_signal * (0.55 + 0.45 * intensity);
 
                 // Sentiment modulator: sentiment_score ∈ [-1, 1] where positive is
                 // conciliatory (de-escalatory) and negative is hostile. Hostile
@@ -457,7 +455,7 @@ impl DomainScorer {
             });
         }
 
-        // Ensure all 8 domains are always present (zeroed if no events)
+        // Ensure all five modalities are always present (zeroed if no events).
         for &(domain, _) in DOMAIN_WEIGHTS {
             scores.entry(domain.to_string()).or_insert_with(|| DomainScore::zero(domain));
         }
@@ -1106,6 +1104,42 @@ mod tests {
         event.great_power_involved = true;
         let scores = scorer.score_all(&[event]);
         assert_eq!(scores["military_escalation"].great_power_event_count, 1);
+    }
+
+    #[test]
+    fn great_power_involvement_does_not_add_a_per_domain_score_bonus() {
+        // Honesty / v2 design intent (roadmap 1.2): great-power involvement is a
+        // SYSTEMIC COUPLER (gp_entanglement in theater.rs), never a per-domain scoring
+        // bonus. v1 carried a `great_power_conflict` domain with a +0.12 lift; v2
+        // dropped that domain (the five DOMAIN_WEIGHTS modalities measure the KIND of
+        // force, not WHO) so the old `gp_bonus` branch was dead code — it keyed on a
+        // domain that score_all can never iterate. Removing it must change NOTHING, and
+        // a future run must not "re-add" a per-domain GP bonus believing GP is unscored.
+        //
+        // Lock: the same events scored with great_power_involved true vs false produce
+        // byte-identical modality SCORES (GP enters only via the coupler), while the
+        // display-only great_power_event_count still reflects the flag.
+        let mut e_plain = make_event_with_signals("military_escalation", 0.9, 1.0, SourceTier::Tier1);
+        e_plain.domain_signals.insert("nuclear_posture".into(), 0.7);
+        e_plain.domain_tags.push("nuclear_posture".into());
+        e_plain.great_power_involved = false;
+
+        let mut e_gp = e_plain.clone();
+        e_gp.great_power_involved = true;
+
+        let plain = DomainScorer::new().score_all(&[e_plain]);
+        let gp    = DomainScorer::new().score_all(&[e_gp]);
+
+        for &(domain, _) in DOMAIN_WEIGHTS {
+            assert_eq!(
+                plain[domain].score, gp[domain].score,
+                "great_power_involved must not change the {domain} score — \
+                 GP is a coupler, not a per-domain bonus"
+            );
+        }
+        // The flag still flows to the display-only count (so awareness isn't lost).
+        assert_eq!(plain["military_escalation"].great_power_event_count, 0);
+        assert_eq!(gp["military_escalation"].great_power_event_count, 1);
     }
 
     // ── Bayesian engine ───────────────────────────────────────────────────────
