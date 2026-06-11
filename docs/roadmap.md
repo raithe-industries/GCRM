@@ -99,6 +99,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     can't "re-add" a per-domain GP bonus. The last flagged `compute`/`score_all` literal is now resolved;
     remaining un-pinned for 1.2: only the regime × factor defaults (config surface, labeled
     `RegimeFactor`s, not blind literals).
+  - PROGRESS 2026-06-11: unified the **intra-theater co-occurrence elevation ramp** with the systemic
+    one and locked the flagged "sub-threshold modality contributes 0 co-occurrence" invariant (the
+    2026-06-09 entry's open sibling). `theater.rs` had its OWN `ELEV_RAMP` constant + inline smoothstep
+    duplicating `bayesian::ELEVATION_RAMP`/`soft_elevation_weight`, with a comment claiming it "mirrors"
+    the systemic ramp but nothing enforcing it — a drift hazard where "elevated" could come to mean two
+    different things model-wide. Made `soft_elevation_weight` pub (the single source of truth for "how
+    elevated, smoothly, is one modality") and used it in `score_theater`; removed the duplicate
+    `ELEV_RAMP`. Behavior-preserving (both ramps were 0.08, identical formula — calibration evidence
+    bit-identical). Locked by `intra_theater_co_occurrence_uses_the_shared_ramp_and_ignores_sub_threshold_modalities`.
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat

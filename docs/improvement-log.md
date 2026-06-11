@@ -16,6 +16,47 @@ Format per entry:
 
 ---
 
+## 2026-06-11 — honesty/model — unified the intra-theater co-occurrence ramp with the systemic one + locked "sub-threshold modality contributes 0 co-occurrence" (roadmap 1.2/1.3)
+- Item: roadmap 1.2/1.3 — the open honesty sibling the 2026-06-09 "quiet theater never leaks" entry
+  explicitly flagged: "the same no-leak property for the intra-theater co-occurrence ramp (`ELEV_RAMP`
+  around `ELEVATION_THRESHOLD`) — a sub-threshold modality must contribute 0 co-occurrence; not yet
+  locked." Honesty axis (pillar 1, top mission priority). Axis rotation: today already advanced
+  awareness/honesty/legibility; robustness (4.2) has no clean must-fix (its production unwrap/expect
+  sites are infallible-by-construction — re-verified detector/ingestor this run, confirming the
+  2026-06-10 finding), and forcing a "fix" to non-broken code is forbidden — so the highest-value
+  provable-green lever was this flagged honesty lock.
+- Verified-open-first: `theater.rs::score_theater` computed its intra-theater co-occurrence soft count
+  with its OWN `const ELEV_RAMP = 0.08` and an inline `smoothstep(d.score, THRESHOLD−ELEV_RAMP,
+  THRESHOLD+ELEV_RAMP)`, duplicating `bayesian::ELEVATION_RAMP` + `soft_elevation_weight` (the systemic
+  co-occurrence path). The comment claimed it "mirrors bayesian::ELEVATION_RAMP" but NOTHING enforced
+  it: a future tweak to either ramp would silently make "elevated" mean two different things in two
+  places — a real dishonesty hazard — and the property the systemic side guards (a sub-threshold
+  modality adds exactly 0) was unguarded on the intra-theater side.
+- Change (one coherent change, bayesian.rs + theater.rs): (a) made `soft_elevation_weight` pub and
+  documented it as the SINGLE source of truth for "how elevated, smoothly, is one modality" — used by
+  BOTH the systemic co-occurrence (`compute` Step 5) and the intra-theater co-occurrence; (b) replaced
+  theater's inline duplicate with `soft_elevation_weight(d.score)` and removed the now-dead `ELEV_RAMP`
+  constant. Behavior-preserving: both ramps were 0.08 with an identical smoothstep formula, so the
+  computation is bit-identical today; this collapses two definitions into one so they can never drift.
+  NO calibration constant touched.
+- Metric moved: test count 374 → 375 by the scorecard grep (new
+  `intra_theater_co_occurrence_uses_the_shared_ramp_and_ignores_sub_threshold_modalities`); a
+  drift-prone duplicated ramp removed and a previously-unguarded honesty invariant now locked.
+  Calibration evidence UNCHANGED — backtest 9/9, no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  375 passed / 0 failed / 3 ignored; `cargo test backtest` = 9 passed. The lock reconstructs the
+  co-occurrence multiplier the engine actually applied (`cooc = heat·max_weighted_sum/weighted`, heat
+  uncapped) and proves: (1) for a theater with ONE elevated modality plus a faint sub-threshold blip
+  (its `soft_elevation_weight` asserted == 0), the applied cooc is exactly neutral (1.0) AND equals
+  `co_occurrence_boost(shared soft-elevation sum)` — a revert to a divergent ramp breaks the equality;
+  (2) promoting that second modality above the ramp lifts cooc above 1.0 — proving the boundary is
+  exactly the shared elevation ramp.
+- Notes / decisions future runs must respect: `soft_elevation_weight` is now the ONE definition of
+  smooth elevation — do NOT re-introduce a separate `ELEV_RAMP`/inline smoothstep in theater.rs (it
+  resurrects the drift hazard). `ELEVATION_RAMP` (0.08) and `ELEVATION_THRESHOLD` (0.32) are FITTED
+  (the bands depend on them) — move only with evidence + a test. A sub-threshold modality contributing
+  0 co-occurrence is an honesty invariant now locked on both the systemic and intra-theater paths.
+
 ## 2026-06-11 — awareness — per-theater "second dimension": secondary_driver (2nd elevated force) on the ladder (roadmap 3.3 extension)
 - Item: roadmap 3.3 (extended — the "2nd LEVEL contributor on the chip" the 2026-06-10 delta-driver
   entry explicitly flagged as the remaining awareness extension). Awareness axis (pillar 3): reading
