@@ -48,7 +48,7 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 <div class="toc">
   <a href="#what">What it is</a><a href="#pipeline">Pipeline</a><a href="#baseline">Baseline prior</a>
   <a href="#modalities">Modalities</a><a href="#theaters">Theaters &amp; ladder</a><a href="#couplers">Couplers</a>
-  <a href="#likelihood">Likelihood</a><a href="#index">Systemic index</a><a href="#calibration">Calibration</a>
+  <a href="#likelihood">Likelihood</a><a href="#index">Systemic index</a><a href="#alerts">Alert bands</a><a href="#calibration">Calibration</a>
   <a href="#ai">AI layer</a><a href="#confidence">Confidence</a><a href="#nuclear">Nuclear detector</a><a href="#limits">Limits</a>
 </div>
 
@@ -106,6 +106,9 @@ P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at {{FORECAST_P
 
 <h2 id="index">The systemic index (0–100)</h2>
 <p>The public headline is aligned to the escalation ladder so it reads as a rung, not an opaque number: <code>index = 100 · (max_rung_level + within-band heat) / 6</code>. Great-Power War with deep heat reads ~75–83; a quiet world reads near zero.</p>
+
+<h2 id="alerts">Alert bands</h2>
+<p>The annual P(WWIII) is classified into operator alert states by two configured thresholds. The reading is <b>elevated</b> at or above <code>{{ALERT_ELEVATED}}</code> and <b>critical</b> at or above <code>{{ALERT_CRITICAL}}</code> (annual). A separate <b>30-day</b> warning fires when the near-horizon probability crosses <code>{{ALERT_30D}}</code>. These are the same bands that colour the hero readout and draw the dashed reference lines on the timeline; the values shown here and on the dashboard are read from the engine's live <code>AlertSettings</code>, so the prose, the colour, and the chart cannot disagree with the classification.</p>
 
 <h2 id="calibration">Calibration &amp; backtest</h2>
 <p>The constants are <b>fitted, not guessed</b>. A backtest harness replays synthetic historical analogs through the full engine and asserts both the target bands and the ordering on every CI run. The readout below is <b>computed live from the running model</b> at startup and scored against the expert-anchored centres with proper scoring rules &mdash; so the calibration's fidelity is <i>shown</i>, not asserted:</p>

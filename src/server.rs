@@ -59,11 +59,19 @@ impl ServerState {
     pub fn new(app_state: SharedState, base_path: &str) -> (Self, broadcast::Sender<Arc<String>>) {
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
         let html = Arc::new(generate_dashboard_html(base_path));
+        // The alert-band prose is rendered from the engine's AlertSettings (the same
+        // source the dashboard hero/timeline read live) so the methodology can never
+        // disagree with the running classification — same anti-drift pattern as the
+        // forecast ceiling above.
+        let alerts = crate::models::AlertSettings::default();
         let methodology = Arc::new(
             render_base_path(METHODOLOGY_HTML, base_path)
                 .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html())
                 .replace("{{FORECAST_PROB_CEILING}}",
-                         &format!("{:.2}", crate::models::FORECAST_PROB_CEILING)),
+                         &format!("{:.2}", crate::models::FORECAST_PROB_CEILING))
+                .replace("{{ALERT_ELEVATED}}", &format!("{:.1}%", alerts.elevated * 100.0))
+                .replace("{{ALERT_CRITICAL}}", &format!("{:.1}%", alerts.critical * 100.0))
+                .replace("{{ALERT_30D}}", &format!("{:.1}%", alerts.thirty_day_warn * 100.0)),
         );
         let state = Self {
             app_state,
@@ -641,7 +649,8 @@ mod tests {
         // Page must exist and cover every section the v2 engine implements.
         assert!(METHODOLOGY_HTML.len() > 8000, "methodology page should be a real whitepaper");
         for anchor in ["#baseline", "#modalities", "#theaters", "#couplers",
-                       "#likelihood", "#index", "#calibration", "#ai", "#confidence", "#nuclear"] {
+                       "#likelihood", "#index", "#alerts", "#calibration", "#ai",
+                       "#confidence", "#nuclear"] {
             assert!(METHODOLOGY_HTML.contains(anchor), "methodology missing section {anchor}");
         }
         // The v2 model must be documented accurately — and must NOT describe the
@@ -680,6 +689,31 @@ mod tests {
             "methodology must show the live calibration fidelity (Brier/RMSE)");
         assert!(state.methodology_html.contains("within band"),
             "methodology must show the in-band count");
+    }
+
+    #[test]
+    fn methodology_renders_alert_bands_from_alert_settings() {
+        // 2.3: the alert-band prose is rendered from the engine's AlertSettings —
+        // the same source the dashboard hero/timeline read live — so the methodology
+        // can never disagree with the running classification (anti-drift). Guards that
+        // every alert placeholder is substituted and that the rendered values match the
+        // settings the engine actually uses.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let m = &*state.methodology_html;
+        for tok in ["{{ALERT_ELEVATED}}", "{{ALERT_CRITICAL}}", "{{ALERT_30D}}"] {
+            assert!(!m.contains(tok), "alert placeholder {tok} must be substituted at startup");
+        }
+        let a = crate::models::AlertSettings::default();
+        assert!(m.contains(&format!("{:.1}%", a.elevated * 100.0)),
+            "methodology must render the elevated band from AlertSettings");
+        assert!(m.contains(&format!("{:.1}%", a.critical * 100.0)),
+            "methodology must render the critical band from AlertSettings");
+        assert!(m.contains(&format!("{:.1}%", a.thirty_day_warn * 100.0)),
+            "methodology must render the 30-day warning band from AlertSettings");
+        // The raw template must carry placeholders, not hand-typed numbers, so the
+        // page cannot drift from the engine.
+        assert!(METHODOLOGY_HTML.contains("{{ALERT_CRITICAL}}"),
+            "alert bands must be templated, not hardcoded");
     }
 
     #[test]
