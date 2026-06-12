@@ -260,6 +260,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   genuinely fallible runtime paths (network, parse, lock-poisoning) that could panic the
   service; convert to graceful handling. Skip the legitimately-infallible ones. Lock each
   fix with a test that exercises the error path.
+- [x] **4.4 LLM output sanitation boundary** — **DONE 2026-06-12.** The clamp that keeps an
+  out-of-range or non-finite model score from reaching the risk engine was an inline loop buried
+  in `LlmEnricher::classify`'s async network path — UNTESTED (no test exercised out-of-range LLM
+  output) and NON-FINITE-UNSAFE (`f64::clamp` returns NaN unchanged, so a NaN/Inf score from an
+  overflowing token would survive). And it is the SINGLE point of defense: `merge_llm_scores` /
+  `make_event_from_llm` copy `modality_pairs()`+`severity` straight into `domain_signals` without
+  re-clamping. Extracted a pure finite-safe `LlmExtraction::sanitize()` (modalities+severity→[0,1],
+  escalation_step→[-1,1], any non-finite→0.0), called it in `classify`, and locked it by
+  `sanitize_clamps_out_of_range_and_neutralizes_non_finite_scores`. Honesty payoff: a buggy/adversarial
+  model can no longer inflate or poison the systemic read with a 1.7 or a NaN. See improvement-log 2026-06-12.
 - [x] **4.3 Shutdown responsiveness under backpressure** — **DONE 2026-06-10.** Confirmed the
   claim: the bare `sem.acquire_owned().await` lived *inside* the `select!` recv arm, so a
   saturated pool (all permits held by in-flight LLM calls) blocked that await and the `select!`
