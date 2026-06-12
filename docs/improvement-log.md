@@ -16,6 +16,55 @@ Format per entry:
 
 ---
 
+## 2026-06-12 — awareness — systemic "why": name the dominant coupling amplifier (what turns a regional crisis into a world-war risk) (roadmap 3.4)
+- Item: roadmap 3.4 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY, not just HOW
+  MUCH"). Axis rotation: reading the log, awareness was the least-recently-advanced axis — its last real
+  advance was 2026-06-11 (secondary_driver), while honesty/legibility/robustness all advanced 2026-06-12.
+  The two open awareness items (3.2 GDELT) need live-network verification the cloud sandbox lacks, so I
+  added a provable-green awareness capability at the SYSTEMIC level instead of the theater level the recent
+  3.3 extensions covered.
+- Verified-open-first (read the running surfaces): the dashboard's `systemic.driver` names the hottest
+  theater + rung + hot-count ("Ukraine-Russia at Limited War; 2 theaters hot"), and the model-state footer
+  shows the coupling multiplier as ONE opaque number ("coupling ×1.45"). Neither answers the systemic "why":
+  is the world close to a great-power war because of a single-theater nuclear BRINK, great powers ENTANGLED
+  across theaters, MANY theaters hot at once, or an ALLIANCE invocation? Each implies a different operator
+  response, and the model already computes all four lifts internally (`l_sys = max_heat · brink_mult ·
+  coupling_multiplier · concurrency_mult`) — they were just never surfaced. A real gap on the mission's
+  "where & why" leg, at the systemic scale the per-theater drivers can't address.
+- Change (one coherent change, models.rs + theater.rs + dashboard.html + indicators.rs test + server.rs
+  test): (a) added the pure `theater::dominant_coupling_amplifier(brink_lift, gp_lift, breadth_lift,
+  alliance_lift)` — picks the channel with the largest multiplicative lift, with a tiny `AMPLIFIER_FLOOR`
+  (1e-6) so float dust on an uncoupled world names nothing, and apex-severity tie-breaking (brink ≻
+  gp-entanglement ≻ concurrency ≻ alliance); (b) `theater::compute` feeds it the SAME excesses it already
+  builds (`brink_mult−1`, `COUPLING_GP_WEIGHT·gp_entanglement`, `concurrency_mult−1`,
+  `COUPLING_ALLIANCE_WEIGHT·alliance_activation`) and stores the label in the new
+  `SystemicCouplers.coupling_driver` (serde-default ""); (c) the dashboard model-state footer appends
+  "· led by X" sourced from the live `d.couplers.coupling_driver` (anti-drift — no hand-typed label). Honest
+  by construction: a read-out of the engine's own terms, can never disagree with the math, NO model/
+  calibration constant touched.
+- Metric moved: test count 380 → 382 by the scorecard grep (two new locks:
+  `coupling_driver_names_the_dominant_systemic_amplifier`, `dashboard_surfaces_the_systemic_coupling_driver`);
+  new awareness capability — the systemic-level "why" (dominant coupling channel) is now legible, where
+  before only the magnitude was. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba +
+  evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` = 381
+  passed / 0 failed / 3 ignored (382 by the grep incl. both new tests); `cargo test --release backtest` = 9
+  passed. The model lock unit-checks the decomposition + the tie (a 4-way tie resolves to the apex brink) +
+  the floor (all-zero → ""), then drives the LIVE engine through four isolated worlds: a US–Russia nuclear
+  standoff → "single-theater nuclear brink" (its 0.70 lift outranks the 0.30 gp lift it also carries); a
+  conventional US–Russia single theater → "great-power entanglement" (no brink, no breadth); three non-GP
+  conventional theaters hot → "multi-theater concurrency" (gp/brink/alliance all 0); a single non-GP theater
+  hot → "" (regional, not yet coupled); quiet → "". The dashboard lock proves the footer reads
+  `d.couplers.coupling_driver` and labels it "led by".
+- Notes / decisions future runs must respect: `coupling_driver` is a pure READ-OUT of the lifts that build
+  `l_sys` (`dominant_coupling_amplifier`), NOT a new model lever — do not give it its own constant or let it
+  feed back into the computation. It deliberately covers only the four theater-coupling channels (brink / GP
+  entanglement / concurrency / alliance), NOT the guardrail-collapse term (that is set by the caller from the
+  regime multiplier in bayesian.rs and is separately surfaced as `f-guard`); keep the label scoped to "what
+  turns a *regional* crisis systemic" so it stays honest. The dashboard must keep sourcing the label from
+  `d.couplers.coupling_driver` (never re-derive or hand-type it). Empty string is the honest
+  "regional, not yet systemically coupled" read — don't paper over it with a default channel name.
+
 ## 2026-06-12 — robustness/honesty — finite-safe LLM output sanitation boundary (the single clamp between untrusted model output and the risk engine) (roadmap 4.4)
 - Item: roadmap 4.4 (new, now checked). Robustness axis (pillar 4): per the log, robustness was the
   least-recently-advanced axis (last real advance 2026-06-10, the 4.3 shutdown fix; awareness 06-11,

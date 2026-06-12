@@ -641,6 +641,21 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_surfaces_the_systemic_coupling_driver() {
+        // Awareness "why" at the systemic level: the model-state footer must name the
+        // dominant coupling amplifier (what is turning a regional crisis into a world-war
+        // risk) from the LIVE engine coupler — never a hand-typed label.
+        assert!(
+            DASHBOARD_HTML.contains("d.couplers.coupling_driver"),
+            "footer must read the live coupling_driver coupler"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("led by "),
+            "footer must label the dominant systemic amplifier when one is present"
+        );
+    }
+
+    #[test]
     fn dashboard_html_has_raithe_branding() {
         assert!(DASHBOARD_HTML.contains("RAITHE INDUSTRIES INC."));
         assert!(DASHBOARD_HTML.contains("raithe-footer"));

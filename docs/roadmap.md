@@ -209,6 +209,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     2.3: regime ×/GP internals in the methodology view.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.4 Systemic "why": dominant coupling amplifier** — **DONE 2026-06-12.** The dashboard
+  named WHICH theater is hottest (`systemic.driver`) and showed the coupling multiplier as one
+  opaque number, but never WHICH coupling channel was turning a regional crisis into a *world*-war
+  risk. Added `SystemicCouplers.coupling_driver` — the channel contributing the largest
+  multiplicative lift to `l_sys`, read directly off the same excesses that build it
+  (`brink_mult`/`coupling_multiplier`/`concurrency_mult`) via the pure
+  `theater::dominant_coupling_amplifier`: "single-theater nuclear brink", "great-power
+  entanglement", "multi-theater concurrency", or "alliance activation"; empty when no channel
+  lifts (an honest "regional, not yet systemically coupled" read). Surfaced on the model-state
+  footer ("coupling ×N · … · led by X") sourced from the live coupler (anti-drift). Honest by
+  construction, no model constant touched. Locked by
+  `coupling_driver_names_the_dominant_systemic_amplifier` (theater.rs) +
+  `dashboard_surfaces_the_systemic_coupling_driver` (server.rs). See improvement-log 2026-06-12.
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
   tests in `src/ingestor.rs`: `feed_roster_liveness` probes EVERY RSS_FEEDS entry
   (HTTP 200 + feed-rs parse + ≥1 entry — the exact path `fetch_rss_feed` needs), with a
