@@ -64,6 +64,29 @@ impl LlmExtraction {
     pub fn max_modality(&self) -> f64 {
         self.modality_pairs().iter().map(|(_, s)| *s).fold(0.0_f64, f64::max)
     }
+
+    /// Clamp every score the model returned into its valid range BEFORE it can reach the
+    /// risk engine. This is the SINGLE point of defense: `merge_llm_scores` /
+    /// `make_event_from_llm` copy `modality_pairs()` and `severity` straight into
+    /// `domain_signals` and the systemic read, trusting they are already in range. A buggy
+    /// or adversarial model can emit out-of-range (a 1.7 nuclear_posture) or non-finite
+    /// values (a NaN/Inf from an overflowing token) — either would dishonestly inflate or
+    /// poison the number. The five modality scores and severity are clamped to [0, 1], the
+    /// signed escalation step to [-1, 1], and ANY non-finite value becomes 0.0 (absent) —
+    /// note `f64::clamp` returns NaN unchanged, so the explicit finiteness check is load-
+    /// bearing, not decorative.
+    pub fn sanitize(&mut self) {
+        fn finite_clamp(v: f64, lo: f64, hi: f64) -> f64 {
+            if v.is_finite() { v.clamp(lo, hi) } else { 0.0 }
+        }
+        self.military_escalation  = finite_clamp(self.military_escalation,  0.0,  1.0);
+        self.nuclear_posture      = finite_clamp(self.nuclear_posture,      0.0,  1.0);
+        self.economic_warfare     = finite_clamp(self.economic_warfare,     0.0,  1.0);
+        self.cyber_info_ops       = finite_clamp(self.cyber_info_ops,       0.0,  1.0);
+        self.diplomatic_breakdown = finite_clamp(self.diplomatic_breakdown, 0.0,  1.0);
+        self.severity             = finite_clamp(self.severity,             0.0,  1.0);
+        self.escalation_step      = finite_clamp(self.escalation_step,     -1.0,  1.0);
+    }
 }
 
 // ── LlmEnricher ───────────────────────────────────────────────────────────────────
@@ -164,11 +187,7 @@ impl LlmEnricher {
 
         match serde_json::from_str::<LlmExtraction>(content) {
             Ok(mut x) => {
-                for v in [
-                    &mut x.military_escalation, &mut x.nuclear_posture, &mut x.economic_warfare,
-                    &mut x.cyber_info_ops, &mut x.diplomatic_breakdown, &mut x.severity,
-                ] { *v = v.clamp(0.0, 1.0); }
-                x.escalation_step = x.escalation_step.clamp(-1.0, 1.0);
+                x.sanitize();
                 Some(x)
             }
             Err(e) => {
@@ -270,5 +289,55 @@ mod tests {
         };
         assert!((x.max_modality() - 0.9).abs() < 1e-9);
         assert_eq!(x.modality_pairs().len(), 5);
+    }
+
+    // HONESTY/ROBUSTNESS lock: sanitize() is the single point of defense between untrusted
+    // model output and the risk engine — merge_llm_scores/make_event_from_llm copy these
+    // scores straight into domain_signals without re-clamping. A buggy or adversarial model
+    // emitting out-of-range OR non-finite scores must never inflate or poison the systemic
+    // read. A regression that drops the clamp (or reverts to a bare f64::clamp, which lets
+    // NaN through) fails this.
+    #[test]
+    fn sanitize_clamps_out_of_range_and_neutralizes_non_finite_scores() {
+        let mut x = LlmExtraction {
+            // Out-of-range finite values (the LLM hallucinating > 1.0 / < 0.0).
+            military_escalation:  1.7,
+            nuclear_posture:     -0.4,
+            economic_warfare:     2.0,
+            // Non-finite values (an overflowing token / divide-by-zero in the model) —
+            // f64::clamp would pass these straight through.
+            cyber_info_ops:       f64::NAN,
+            diplomatic_breakdown: f64::INFINITY,
+            severity:             f64::NEG_INFINITY,
+            escalation_step:      9.9,   // out-of-range on the signed [-1, 1] axis
+            ..Default::default()
+        };
+        x.sanitize();
+
+        // Every modality + severity is now finite and inside [0, 1].
+        for (id, s) in x.modality_pairs() {
+            assert!(s.is_finite() && (0.0..=1.0).contains(&s), "{id} not sanitized: {s}");
+        }
+        assert!(x.severity.is_finite() && (0.0..=1.0).contains(&x.severity), "severity: {}", x.severity);
+        // Escalation step finite and inside the signed [-1, 1] band.
+        assert!(x.escalation_step.is_finite() && (-1.0..=1.0).contains(&x.escalation_step));
+
+        // Spot-check the exact clamped values so a regression to no-op can't pass.
+        assert_eq!(x.military_escalation,  1.0);   // 1.7 -> 1.0
+        assert_eq!(x.nuclear_posture,      0.0);   // -0.4 -> 0.0
+        assert_eq!(x.economic_warfare,     1.0);   // 2.0 -> 1.0
+        assert_eq!(x.cyber_info_ops,       0.0);   // NaN -> 0.0 (absent)
+        assert_eq!(x.diplomatic_breakdown, 0.0);   // +Inf -> 0.0 (NOT 1.0)
+        assert_eq!(x.severity,             0.0);   // -Inf -> 0.0
+        assert_eq!(x.escalation_step,      1.0);   // 9.9 -> 1.0
+
+        // In-range values are preserved untouched.
+        let mut y = LlmExtraction {
+            military_escalation: 0.42, severity: 0.8, escalation_step: -0.6, ..Default::default()
+        };
+        y.sanitize();
+        assert_eq!(y.military_escalation, 0.42);
+        assert_eq!(y.severity, 0.8);
+        assert_eq!(y.escalation_step, -0.6);
     }
 }

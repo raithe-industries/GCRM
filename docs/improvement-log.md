@@ -16,6 +16,55 @@ Format per entry:
 
 ---
 
+## 2026-06-12 — robustness/honesty — finite-safe LLM output sanitation boundary (the single clamp between untrusted model output and the risk engine) (roadmap 4.4)
+- Item: roadmap 4.4 (new, now checked). Robustness axis (pillar 4): per the log, robustness was the
+  least-recently-advanced axis (last real advance 2026-06-10, the 4.3 shutdown fix; awareness 06-11,
+  honesty/legibility 06-12), so this rotates coverage back onto it. The open robustness item 4.2
+  (unwrap/expect audit) has been re-audited clean across several prior runs (all production unwrap/expect
+  sites are infallible-by-construction or startup expects — forcing a "fix" to non-broken code is
+  forbidden), so rather than churn that I looked for a genuinely fallible boundary that was hardened in
+  one place but not locked. Found one that also serves pillar-1 HONESTY directly.
+- Verified-open-first (read the running code end-to-end): `LlmEnricher::classify` parsed the model's JSON
+  into `LlmExtraction` and clamped the five modality scores + severity to [0,1] and escalation_step to
+  [-1,1] via an INLINE loop inside the async network path (llm_enricher.rs:167). Two real defects: (1) that
+  inline clamp is the SINGLE point of defense — confirmed by reading the two consumers, `merge_llm_scores`
+  (nlp_sidecar.rs:360) and `make_event_from_llm` (:400), which copy `x.modality_pairs()` and `x.severity`
+  straight into `event.domain_signals` / `event.severity` and re-clamp ONLY `escalation_step`; so a modality
+  score that escaped the classify clamp would flow unfiltered into the systemic read; (2) `f64::clamp`
+  returns NaN UNCHANGED (for `self=NaN`, both `self<lo` and `self>hi` are false), so a non-finite score (a
+  NaN/Inf from an overflowing model token) would survive the inline loop and poison the engine. And the
+  clamp was UNTESTED for out-of-range input — buried in the network path, it could not be exercised without
+  a live LLM, so a regression dropping it would pass CI silently. Confirmed `classify` (nlp_sidecar.rs:267)
+  is the SOLE production producer of an `LlmExtraction` (other construct sites are tests), so a sanitize at
+  that ingress covers every production extraction.
+- Change (one coherent change, llm_enricher.rs only): (a) extracted a pure `LlmExtraction::sanitize(&mut
+  self)` with a `finite_clamp` helper that maps any non-finite value to 0.0 (absent — the honest default
+  when the model returns garbage) and otherwise clamps; modalities+severity→[0,1], escalation_step→[-1,1];
+  documented as the single point of defense and why the explicit finiteness check is load-bearing (not a
+  decorative refactor — it is strictly stronger than the old bare-clamp loop, which let NaN through);
+  (b) `classify` now calls `x.sanitize()` in place of the inline loop; (c) locked by
+  `sanitize_clamps_out_of_range_and_neutralizes_non_finite_scores`. NO model/calibration constant touched —
+  in-range scores are preserved bit-identically (the test asserts 0.42/0.8/-0.6 pass through untouched), so
+  the live read is unchanged; the only behavior change is that out-of-range/non-finite garbage is now
+  neutralized where before NaN/Inf would have leaked.
+- Metric moved: test count 379 → 380 by the scorecard grep (new
+  `sanitize_clamps_out_of_range_and_neutralizes_non_finite_scores`); a new robustness capability (a finite-
+  safe, lockable sanitation boundary) + a latent honesty hazard (non-finite LLM score reaching the engine)
+  closed. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no model
+  constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` = 379
+  passed / 0 failed / 3 ignored (380th is the scorecard grep incl. the new test); `cargo test --release
+  backtest` = 9 passed. The lock drives sanitize with out-of-range finite values (1.7→1.0, -0.4→0.0,
+  2.0→1.0, 9.9→1.0) AND non-finite ones (NaN→0.0, +Inf→0.0 NOT 1.0, -Inf→0.0), asserts every field is
+  finite and in-band afterward, and asserts in-range values pass through untouched — a revert to the bare
+  `f64::clamp` loop fails it (NaN/Inf would survive).
+- Notes / decisions future runs must respect: `LlmExtraction::sanitize()` is the SINGLE clamp between
+  untrusted model output and the risk engine — keep `classify` calling it, and do NOT re-introduce a bare
+  `f64::clamp` (it lets NaN/Inf through). The consumers (`merge_llm_scores`/`make_event_from_llm`) rely on
+  the extraction already being sanitized; if a future path constructs an `LlmExtraction` from external
+  input OUTSIDE `classify`, it must call `sanitize()` too. Robustness 4.2 (unwrap/expect audit) remains
+  the only open robustness item and is still clean per repeated audits.
+
 ## 2026-06-12 — honesty/legibility — regime INSPECTOR panel now reports structural pressure → guardrail collapse, not a v1 "Adjusted P₀" (roadmap 2.3)
 - Item: roadmap 2.3 — the regime-factor INSPECTOR sibling the SAME-DAY dashboard-footer entry (below)
   explicitly left open: "the regime-factor INSPECTOR panel (dashboard.html:1120, `api.rs::regime_summary`)
