@@ -236,13 +236,13 @@ async fn main() {
         .map(|f| f.multiplier)
         .product();
     let active_count   = settings.regime_factors.iter().filter(|f| f.active).count();
-    let adjusted_prior = models::HISTORICAL_ANCHOR * regime_product;
+    let guardrail      = bayesian::guardrail_from_regime(regime_product);
 
     info!("{}", "=".repeat(60));
     info!("  Global Conflict Risk Monitor (Rust)");
     info!("  P₀ = BASELINE_ANNUAL (modern quiet-year baseline) = {:.6} / yr", models::BASELINE_ANNUAL);
-    info!("  Regime: {active_count} active factors × {regime_product:.4} = adjusted prior {:.4}%/yr",
-          adjusted_prior * 100.0);
+    info!("  Regime: {active_count} active factors × {regime_product:.4} structural pressure → guardrail collapse {guardrail:.2} (+{:.1}% on systemic L; prior unaffected)",
+          bayesian::GUARDRAIL_AMPLIFIER * guardrail * 100.0);
     info!("  Nuclear detector: ENABLED — {} FDSN sources, {} test sites",
           detector::FDSN_SOURCES.len(), detector::KNOWN_TEST_SITES.len());
     if settings.dashboard.operator_key.is_empty() {

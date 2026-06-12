@@ -38,14 +38,21 @@ use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
 use crate::aggregator::AppState;
-use crate::bayesian::{DOMAIN_HALF_LIVES, DOMAIN_WEIGHTS};
-use crate::models::{DOMAIN_IDS, HISTORICAL_ANCHOR, RegimeFactor};
+use crate::bayesian::{
+    guardrail_from_regime, DOMAIN_HALF_LIVES, DOMAIN_WEIGHTS, GUARDRAIL_AMPLIFIER,
+    GUARDRAIL_REGIME_SPAN,
+};
+use crate::models::{DOMAIN_IDS, RegimeFactor};
 
 /// Maximum operator API requests per key per minute.
 const RATE_LIMIT_CAPACITY: u32 = 60;
 
-/// At 20× the adjusted prior = HISTORICAL_ANCHOR × 20 ≈ 1.97% — above the
-/// typical ELEVATION_THRESHOLD of 1.5-2.5% with zero event signal.
+/// A regime product this high is far past the guardrail-collapse saturation point
+/// (`1 + GUARDRAIL_REGIME_SPAN` = 5×, above which the coupler clamps at 1.0 and adds
+/// nothing further), so it signals that an operator has stacked implausibly many
+/// structural multipliers — not that the prior has moved (in v2 the prior is FLAT;
+/// the regime product enters only as the bounded guardrail-collapse amplifier on the
+/// systemic likelihood, never the prior).
 const REGIME_PRODUCT_WARN_THRESHOLD: f64 = 20.0;
 
 // Per-key token bucket. Each key starts with RATE_LIMIT_CAPACITY tokens.
@@ -203,13 +210,19 @@ fn regime_product(factors: &[RegimeFactor]) -> f64 {
 fn regime_summary(factors: &[RegimeFactor]) -> Value {
     let product      = regime_product(factors);
     let active_count = factors.iter().filter(|f| f.active).count();
-    let adjusted_prior = HISTORICAL_ANCHOR * product;
+    // v2 honesty: the regime product is STRUCTURAL PRESSURE, not an "adjusted prior".
+    // The v2 engine holds the prior FLAT (BASELINE_ANNUAL) and feeds the regime product
+    // through the SAME `guardrail_from_regime` coupler it uses internally — so this panel
+    // reports exactly what toggling a factor does to the forecast: it moves guardrail
+    // collapse, a bounded amplifier on the systemic likelihood, never the prior.
+    let guardrail = guardrail_from_regime(product);
+    let likelihood_amplifier_pct = 100.0 * GUARDRAIL_AMPLIFIER * guardrail;
     json!({
         "factors":            factors,
         "active_count":       active_count,
         "product":            product,
-        "adjusted_prior":     (adjusted_prior * 1e8).round() / 1e8,
-        "adjusted_prior_pct": (adjusted_prior * 100.0 * 1e6).round() / 1e6,
+        "guardrail_collapse":       (guardrail * 1e6).round() / 1e6,
+        "likelihood_amplifier_pct": (likelihood_amplifier_pct * 1e6).round() / 1e6,
     })
 }
 
@@ -218,29 +231,32 @@ fn regime_warnings(factors: &[RegimeFactor]) -> Vec<String> {
     let product = regime_product(factors);
     let mut warnings = Vec::new();
     if product > REGIME_PRODUCT_WARN_THRESHOLD {
-        let adjusted = HISTORICAL_ANCHOR * product;
+        let saturation = 1.0 + GUARDRAIL_REGIME_SPAN; // product at which guardrail collapse clamps at 1.0
         warnings.push(format!(
-            "Regime product {:.2}× exceeds warning threshold ({:.0}×). \
-             Adjusted prior = {:.4}%/yr. Stacked multipliers may place the model \
-             above ELEVATION_THRESHOLD with zero event signal.",
+            "Regime product {:.2}× exceeds the warning threshold ({:.0}×) — far past the \
+             guardrail-collapse saturation point ({:.0}×). Structural guardrails are already \
+             modeled as fully collapsed (guardrail = 1.00, the maximum +{:.0}% lift on the \
+             systemic likelihood); stacking more multipliers does nothing further. Re-check \
+             whether this many factors are warranted. The prior is unaffected (v2 prior is flat).",
             product,
             REGIME_PRODUCT_WARN_THRESHOLD,
-            adjusted * 100.0,
+            saturation,
+            GUARDRAIL_AMPLIFIER * 100.0,
         ));
         warn!(
-            "Regime product {:.4}× exceeds {:.0}× warning threshold — \
-             adjusted prior = {:.4}%/yr (ELEVATION_THRESHOLD breach risk)",
+            "Regime product {:.4}× exceeds {:.0}× warning threshold — guardrail collapse \
+             saturated (max +{:.0}% on systemic likelihood); prior unaffected",
             product,
             REGIME_PRODUCT_WARN_THRESHOLD,
-            adjusted * 100.0,
+            GUARDRAIL_AMPLIFIER * 100.0,
         );
     }
     warnings
 }
 
 // ── GET /api/regime ───────────────────────────────────────────────────────────
-// Public read — shows all factors, current product, adjusted prior.
-// No key required: this is display information only.
+// Public read — shows all factors, current product (structural pressure), and the
+// guardrail-collapse coupler it drives. No key required: this is display information only.
 
 pub async fn get_regime(State(state): State<OperatorState>) -> impl IntoResponse {
     let factors  = state.regime.lock().await;
@@ -251,8 +267,8 @@ pub async fn get_regime(State(state): State<OperatorState>) -> impl IntoResponse
         "factors":      summary["factors"],
         "active_count": summary["active_count"],
         "product":      summary["product"],
-        "adjusted_prior":     summary["adjusted_prior"],
-        "adjusted_prior_pct": summary["adjusted_prior_pct"],
+        "guardrail_collapse":       summary["guardrail_collapse"],
+        "likelihood_amplifier_pct": summary["likelihood_amplifier_pct"],
         "warnings":     warnings,
     }))
 }
@@ -604,7 +620,6 @@ pub fn operator_routes() -> axum::Router<OperatorState> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::HISTORICAL_ANCHOR;
 
     fn test_factors() -> Vec<RegimeFactor> {
         vec![
@@ -659,8 +674,8 @@ mod tests {
         assert!(v["factors"].is_array());
         assert!(v["active_count"].is_number());
         assert!(v["product"].is_number());
-        assert!(v["adjusted_prior"].is_number());
-        assert!(v["adjusted_prior_pct"].is_number());
+        assert!(v["guardrail_collapse"].is_number());
+        assert!(v["likelihood_amplifier_pct"].is_number());
     }
 
     #[test]
@@ -670,13 +685,53 @@ mod tests {
         assert_eq!(v["active_count"].as_u64().unwrap(), 3);
     }
 
+    /// HONESTY (roadmap 2.3): the regime inspector reports STRUCTURAL PRESSURE driving the
+    /// v2 guardrail-collapse coupler — NOT a v1 "adjusted prior" (HISTORICAL_ANCHOR × product).
+    /// The v2 engine holds the prior FLAT and the regime product enters only through
+    /// `guardrail_from_regime` as a bounded amplifier on the systemic likelihood. This locks
+    /// that the panel sources that exact engine coupler and that the misleading v1 field is GONE.
     #[test]
-    fn regime_summary_adjusted_prior_uses_historical_anchor() {
-        let mut factors = test_factors();
-        factors.iter_mut().for_each(|f| f.active = false);
+    fn regime_summary_reports_guardrail_collapse_not_an_adjusted_prior() {
+        // The discredited v1 fields must not be served anymore.
+        let neutral = {
+            let mut f = test_factors();
+            f.iter_mut().for_each(|x| x.active = false);
+            f
+        };
+        let v0 = regime_summary(&neutral);
+        assert!(v0["adjusted_prior"].is_null(),
+            "v1 'adjusted_prior' must no longer be served (it implied the regime moves the prior)");
+        assert!(v0["adjusted_prior_pct"].is_null(),
+            "v1 'adjusted_prior_pct' must no longer be served");
+        // Neutral regime (product 1.0) → zero collapse, zero likelihood lift.
+        assert_eq!(v0["product"].as_f64().unwrap(), 1.0);
+        assert_eq!(v0["guardrail_collapse"].as_f64().unwrap(), 0.0);
+        assert_eq!(v0["likelihood_amplifier_pct"].as_f64().unwrap(), 0.0);
+
+        // An elevated regime reports EXACTLY the engine's own coupler + its bounded lift.
+        let factors = vec![
+            RegimeFactor { id: "a".into(), label: "A".into(), multiplier: 2.0, active: true },
+            RegimeFactor { id: "b".into(), label: "B".into(), multiplier: 1.5, active: true },
+        ];
+        let product = regime_product(&factors); // 3.0
         let v = regime_summary(&factors);
-        let ap = v["adjusted_prior"].as_f64().unwrap();
-        assert!((ap - HISTORICAL_ANCHOR).abs() < 1e-7);
+        let g = guardrail_from_regime(product);
+        assert!(g > 0.0 && g < 1.0, "product 3.0× sits mid-ramp, not saturated");
+        assert!((v["guardrail_collapse"].as_f64().unwrap() - g).abs() < 1e-6,
+            "panel must report the engine's own guardrail_from_regime(product)");
+        assert!((v["likelihood_amplifier_pct"].as_f64().unwrap()
+                 - 100.0 * GUARDRAIL_AMPLIFIER * g).abs() < 1e-6,
+            "the lift is exactly the bounded guardrail amplifier on the systemic likelihood");
+
+        // Past the saturation point the coupler clamps at full collapse (+max lift), never higher.
+        let extreme = vec![
+            RegimeFactor { id: "x".into(), label: "X".into(), multiplier: 10.0, active: true },
+        ];
+        let ve = regime_summary(&extreme);
+        assert_eq!(ve["guardrail_collapse"].as_f64().unwrap(), 1.0);
+        assert!((ve["likelihood_amplifier_pct"].as_f64().unwrap()
+                 - 100.0 * GUARDRAIL_AMPLIFIER).abs() < 1e-6,
+            "saturated collapse is capped at the max +{}% lift", GUARDRAIL_AMPLIFIER * 100.0);
     }
 
     // ── regime_warnings ────────────────────────────────────────────────────────

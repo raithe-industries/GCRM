@@ -16,6 +16,62 @@ Format per entry:
 
 ---
 
+## 2026-06-12 — honesty/legibility — regime INSPECTOR panel now reports structural pressure → guardrail collapse, not a v1 "Adjusted P₀" (roadmap 2.3)
+- Item: roadmap 2.3 — the regime-factor INSPECTOR sibling the SAME-DAY dashboard-footer entry (below)
+  explicitly left open: "the regime-factor INSPECTOR panel (dashboard.html:1120, `api.rs::regime_summary`)
+  still labels `baseline × regime_product` as 'Adjusted P₀' — honestly reframe as 'structural pressure'."
+  Honesty axis (pillar 1, top mission priority: "the number must mean what it says"), on the operator
+  surface (pillar 2). Axis rotation: robustness (4.x) was least-recent (2026-06-10), but 4.2 STILL has no
+  clean must-fix — re-audited every production `unwrap()/expect()` this run (the full `src` grep): all are
+  infallible-by-construction (static-regex compile in processor.rs:854; NaN-filtered `partial_cmp` in
+  detector.rs:146; `nearest_site.unwrap()` after a `None`-returning guard at detector.rs:491;
+  never-closed-semaphore acquires in ingestor/nlp_sidecar; `position().unwrap()` over the source collection
+  in models.rs:221/243) or startup `expect`s (signal handlers, HTTP-client builds) — forcing a "fix" to
+  non-broken code is forbidden. So the highest-mission-value provable-green lever was this honesty defect.
+- Verified-open-first: `api.rs::regime_summary` computed `adjusted_prior = HISTORICAL_ANCHOR × product` and
+  served it as `adjusted_prior`/`adjusted_prior_pct`; the dashboard inspector (dashboard.html:1120) rendered
+  it as "Adjusted P₀: X%/yr". This is the SUPERSEDED v1 multiplicative form — it tells an operator that
+  toggling a regime factor moves the forecast PRIOR. The v2 engine holds the prior FLAT (`HISTORICAL_ANCHOR`,
+  bayesian.rs:721) and the regime product enters ONLY through `guardrail_from_regime` as a bounded
+  guardrail-collapse amplifier on the systemic likelihood (`l_sys × (1 + GUARDRAIL_AMPLIFIER·guardrail)`, max
+  +12%, Step 6b — locked by `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood`). Same
+  defect class as the same-day footer fix, on the panel an operator uses to reason about their toggles. Worse,
+  `regime_warnings` told the operator stacked multipliers "may place the model above ELEVATION_THRESHOLD with
+  zero event signal" — FALSE in v2: with zero signal `l_sys ≈ 0`, so even at full guardrail collapse the
+  forecast stays at the flat prior, well below elevation.
+- Change (one coherent change, bayesian.rs + api.rs + dashboard.html + main.rs + tests): (a) made
+  `bayesian::guardrail_from_regime`, `GUARDRAIL_AMPLIFIER`, `GUARDRAIL_REGIME_SPAN` `pub` so the inspector
+  reports EXACTLY the coupler the engine computes (anti-drift, single source of truth — the same discipline
+  as the alert-band thresholds); (b) `regime_summary` drops `adjusted_prior`/`adjusted_prior_pct` and adds
+  `guardrail_collapse` (= `guardrail_from_regime(product)`, 0..1) and `likelihood_amplifier_pct`
+  (= `100·GUARDRAIL_AMPLIFIER·guardrail`, the bounded 0..12% lift on the systemic likelihood); `get_regime`
+  passes the new fields through; (c) dashboard inspector now reads "Structural pressure: N× → guardrail
+  collapse G (+X% on systemic L, prior unaffected)"; (d) reframed `regime_warnings` to the v2 reality (a
+  product past the 5× saturation point means guardrails are modeled as fully collapsed at the max +12% lift,
+  further stacking does nothing, prior unaffected — keeps mentioning the 20× threshold) and the
+  `REGIME_PRODUCT_WARN_THRESHOLD` rationale comment; (e) reframed the startup log line (was "adjusted prior
+  X%/yr"). NO model/calibration constant touched — `adjusted_prior` is no longer fabricated for this panel;
+  the SNAPSHOT's separate `adjusted_prior` field (a different surface) is untouched.
+- Metric moved: test count 378 → 379 by the scorecard grep (net: replaced the v1
+  `regime_summary_adjusted_prior_uses_historical_anchor` test with the v2 honesty lock, +1 new dashboard
+  lock); a pillar-1 honesty defect on an operator surface closed. Calibration evidence UNCHANGED — backtest
+  9/9 (quiet/Ukraine/current/Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` = 378
+  passed / 0 failed / 3 ignored (379th is the scorecard grep incl. the new test); `cargo test --release
+  backtest` = 9 passed. `regime_summary_reports_guardrail_collapse_not_an_adjusted_prior` proves the v1
+  `adjusted_prior`/`adjusted_prior_pct` fields are GONE (null), that a neutral regime reports 0 collapse / 0
+  lift, that an elevated regime (product 3.0×) reports EXACTLY the engine's `guardrail_from_regime` and its
+  bounded lift, and that past saturation the collapse clamps at 1.0 / +12% — a revert to the v1 adjusted
+  prior fails it. `dashboard_regime_inspector_shows_structural_pressure_not_adjusted_prior` proves the panel
+  no longer says "Adjusted P₀"/reads `adjusted_prior_pct` and now sources the live `guardrail_collapse`.
+- Notes / decisions future runs must respect: the regime product is STRUCTURAL PRESSURE driving guardrail
+  collapse, NOT an adjusted prior — do NOT re-introduce an `adjusted_prior`-style "%/yr" figure for the
+  regime panel (it resurrects the v1 lie that a regime toggle moves the prior). `guardrail_from_regime` /
+  `GUARDRAIL_AMPLIFIER` / `GUARDRAIL_REGIME_SPAN` are now `pub` and are the single source of truth the
+  inspector reports from — keep the panel sourcing the engine coupler, never a re-derived number. The
+  SNAPSHOT's `adjusted_prior` field is a separate concern (still computed/serialized) and was NOT touched
+  here. Remaining under 2.3: regime ×/GP internals in the methodology view.
+
 ## 2026-06-12 — honesty/legibility — dashboard now explains the v2 flat-prior + guardrail-collapse mechanism (removed the v1 "regime-adjusted prior × likelihood" story) (roadmap 1.2/2.3)
 - Item: roadmap 1.2/2.3 — a v1 vestige on the PRIMARY operator surface, the same class as the
   2026-06-11 dead-`gp_bonus` finding but in the dashboard's headline explanation rather than the
