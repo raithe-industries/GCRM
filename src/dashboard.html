@@ -1117,7 +1117,7 @@ async function fetchRegime(){
     const d=await r.json();
     if(d.error){document.getElementById('op-product').textContent='⚠ '+d.error;return;}
     document.getElementById('op-product').textContent=
-      'Product: '+d.product.toFixed(4)+'× · Adjusted P₀: '+(d.adjusted_prior_pct||0).toFixed(4)+'%/yr · '+d.active_count+' active';
+      'Structural pressure: '+d.product.toFixed(4)+'× → guardrail collapse '+(d.guardrail_collapse||0).toFixed(2)+' (+'+(d.likelihood_amplifier_pct||0).toFixed(1)+'% on systemic L, prior unaffected) · '+d.active_count+' active';
     const list=document.getElementById('op-regime-list');list.innerHTML='';
     (d.factors||[]).forEach(f=>{
       const row=document.createElement('div');row.className='regime-factor';

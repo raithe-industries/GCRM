@@ -175,7 +175,7 @@ const EVIDENCE_GAIN: f64 = 2.0;
 /// seeded acute factor set already compounds to ~5.46×, so the LIVE coupler currently
 /// sits at full collapse. That is a deliberate design point of the current factor set,
 /// not a knob to chase by blind-tweaking (see improvement-log 2026-06-10).
-const GUARDRAIL_REGIME_SPAN: f64 = 4.0;
+pub const GUARDRAIL_REGIME_SPAN: f64 = 4.0;
 
 /// MAXIMUM fractional boost full guardrail collapse adds to the systemic likelihood:
 /// `l_sys_amplified = l_sys × (1 + GUARDRAIL_AMPLIFIER × guardrail)`, so `guardrail = 1.0`
@@ -183,12 +183,14 @@ const GUARDRAIL_REGIME_SPAN: f64 = 4.0;
 /// a background multiplier kept well below the acute theater couplers (the single-theater
 /// brink amplifier is +70%, breadth +26%, both in theater.rs), so structural decay can
 /// never swamp an actual flashpoint.
-const GUARDRAIL_AMPLIFIER: f64 = 0.12;
+pub const GUARDRAIL_AMPLIFIER: f64 = 0.12;
 
 /// Clamped 0..1 guardrail-collapse coupler derived from the regime multiplier.
 /// Monotone non-decreasing in `regime_multiplier`; 0 at/below neutral (1.0), 1.0 at/above
 /// `1 + GUARDRAIL_REGIME_SPAN`. Pure function so the mapping is locked by test.
-fn guardrail_from_regime(regime_multiplier: f64) -> f64 {
+/// Public so the operator regime inspector (api.rs) reports exactly the coupler the
+/// engine computes — the regime product drives guardrail collapse, NOT the prior.
+pub fn guardrail_from_regime(regime_multiplier: f64) -> f64 {
     ((regime_multiplier - 1.0) / GUARDRAIL_REGIME_SPAN).clamp(0.0, 1.0)
 }
 

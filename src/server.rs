@@ -835,6 +835,27 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_regime_inspector_shows_structural_pressure_not_adjusted_prior() {
+        // HONESTY (roadmap 2.3): the operator regime inspector previously labeled
+        // `HISTORICAL_ANCHOR × regime_product` as "Adjusted P₀ … %/yr" — the SUPERSEDED v1
+        // form that implies toggling a regime factor moves the forecast PRIOR. In v2 the prior
+        // is FLAT; the regime product enters only as the bounded guardrail-collapse amplifier on
+        // the systemic likelihood. The panel must say what toggling a factor actually does.
+        assert!(!DASHBOARD_HTML.contains("Adjusted P₀"),
+            "regime inspector must not call the regime product an 'Adjusted P₀' (v1 form)");
+        assert!(!DASHBOARD_HTML.contains("adjusted_prior_pct"),
+            "regime inspector JS must no longer read the discredited adjusted_prior_pct field");
+        // The honest v2 readout: structural pressure → guardrail collapse → bounded lift on L.
+        assert!(DASHBOARD_HTML.contains("Structural pressure"),
+            "regime inspector must label the regime product as structural pressure");
+        assert!(DASHBOARD_HTML.contains("guardrail_collapse")
+            && DASHBOARD_HTML.contains("likelihood_amplifier_pct"),
+            "regime inspector must read the live guardrail-collapse coupler and its likelihood lift");
+        assert!(DASHBOARD_HTML.contains("prior unaffected"),
+            "the inspector must state plainly that the regime does not move the prior in v2");
+    }
+
+    #[test]
     fn dashboard_links_to_methodology() {
         assert!(DASHBOARD_HTML.contains("{{BASE_PATH}}/methodology"),
             "dashboard must link to the methodology page");

@@ -120,6 +120,7 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `dashboard_explains_the_v2_flat_prior_not_the_v1_adjusted_prior`. No model constant touched. Sibling
     still open (2.3): the regime-factor INSPECTOR panel (dashboard.html:1120, `api.rs::regime_summary`)
     still labels `baseline × regime_product` as "Adjusted P₀" — honestly reframe as "structural pressure".
+    **RESOLVED 2026-06-12 — see the 2.3 PROGRESS line below.**
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
@@ -192,6 +193,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     methodology). Locked by `dashboard_renders_baseline_prior_from_the_model_constant` (both refs
     templated, placeholder substituted, rendered value == constant — a revert to a hardcoded
     `1.5%/yr` fails it). Remaining: regime ×/GP internals in the methodology view.
+  - PROGRESS 2026-06-12: closed the **regime-factor INSPECTOR** sibling (flagged the same day under 1.2).
+    The operator panel labeled `HISTORICAL_ANCHOR × regime_product` as "Adjusted P₀ … %/yr" — the
+    superseded v1 form implying a regime toggle moves the forecast PRIOR. In v2 the prior is FLAT and the
+    regime product enters ONLY as the bounded guardrail-collapse amplifier on the systemic likelihood.
+    `api.rs::regime_summary` now reports v2-honest figures — `guardrail_collapse` (sourced from the
+    engine's own `bayesian::guardrail_from_regime`, made `pub` as the single source of truth, anti-drift)
+    and `likelihood_amplifier_pct` (the bounded +0..12% lift) — and the dropped v1
+    `adjusted_prior`/`adjusted_prior_pct` fields are GONE; the dashboard reads "Structural pressure: N× →
+    guardrail collapse G (+X% on systemic L, prior unaffected)". Also reframed the stale `regime_warnings`
+    text (was "adjusted prior … above ELEVATION_THRESHOLD with zero event signal" — false in v2) and the
+    startup log line. No model/calibration constant touched. Locked by
+    `regime_summary_reports_guardrail_collapse_not_an_adjusted_prior` (api.rs) +
+    `dashboard_regime_inspector_shows_structural_pressure_not_adjusted_prior` (server.rs). Remaining under
+    2.3: regime ×/GP internals in the methodology view.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
