@@ -484,8 +484,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="ca">Session low: <span id="ca-low">—</span></div>
     </div>
     <div class="formula">
-      Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, backtested)</span> · structural-adjusted = <span id="f-adj">—</span> · systemic L = <span id="f-lik">—</span><br>
-      P(WWIII|E) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span>
+      Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, flat)</span> · systemic L = <span id="f-lik">—</span> · guardrail collapse = <span id="f-guard">—</span><br>
+      P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span>
     </div>
     <div class="meta-pills" id="meta-row"></div>
   </div>
@@ -729,7 +729,7 @@ const INFO={
     <span class="ih">For scale</span>
     <p><code>~{{BASELINE_ANNUAL_PCT}}%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~39%</code> ≈ Ukraine, Feb 2022 · <code>~80%</code> ≈ Cuba, Oct 1962.</p>
     <span class="ih">How it's built</span>
-    <p>A regime-adjusted prior (the baseline, scaled by standing factors such as an active great-power war) is multiplied by a <b>coupling likelihood</b> drawn from the five force domains. The more domains elevated and entangled across great powers, the higher the read. The sub-line is the change since the previous snapshot.</p>`},
+    <p>The forecast starts from a <b>flat</b> modern quiet-year baseline and folds in a <b>systemic coupling likelihood</b> on the log-odds scale — drawn from the five force domains across theaters and amplified by great-power entanglement, multi-theater concurrency, and structural <b>guardrail collapse</b> (arms-control death, deterrence erosion). The regime no longer inflates the prior; it enters the likelihood through guardrail collapse. The more domains elevated and entangled across great powers, the higher the read. The sub-line is the change since the previous snapshot.</p>`},
   driver:{title:'Primary Driver',html:`
     <p><b>Primary Driver</b> names the single factor contributing most to the current systemic index — the dominant force-domain or coupling pushing the risk right now.</p>
     <span class="ih">Theaters &amp; the systemic index</span>
@@ -971,7 +971,7 @@ function applyData(d){
   DID.forEach((id,i)=>{const ds=doms[id]||{score:0,label:'low',confidence:0,event_count:0,great_power_events:0};const prev=prevDomainScores[id]||0;const delta=ds.score-prev;const pct=Math.round(ds.score*100);const col=dc(ds.score);let arrow='';if(Math.abs(delta)>0.01){arrow=delta>0?'<span class="ddelta" style="color:#E24B4A">▲</span>':'<span class="ddelta" style="color:#1D9E75">▼</span>';}const tag=DTAGS[id]||'?';const tagCol=TAG_COLORS[tag]||'#6060a0';const div=document.createElement('div');div.className=(_artDomainFilter===id)?'domain active':'domain';div.title='Click to audit '+DSHORT[i]+': filters the article feed to the signals feeding this score. "signals" = articles tagged to this domain; "gt-power" = those involving the US, Russia, China, or NATO.';div.onclick=()=>filterByDomain(id);div.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>'+DSHORT[i].toUpperCase()+'</span><span class="art-tag" style="background:'+tagCol+'22;color:'+tagCol+'">'+tag+'</span></div><div class="dbar"><div class="dfill" style="width:'+pct+'%;background:'+col+'"></div></div><div class="drow"><span class="dscore" style="color:'+col+'">'+pct+'%'+arrow+'</span><span class="dlabel '+(ds.label||'low')+'">'+(ds.label||'low')+'</span></div><div class="dconf">'+(ds.event_count||0)+' signals · '+Math.round((ds.confidence||0)*100)+'% conf'+(ds.great_power_events>0?' · '+ds.great_power_events+' gt-power':'')+'</div>';grid.appendChild(div);});
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
   dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
-  document.getElementById('f-adj').textContent=d.prior.adjusted_prior.toFixed(6);
+  document.getElementById('f-guard').textContent=((d.couplers&&d.couplers.guardrail_collapse)||0).toFixed(2);
   document.getElementById('f-lik').textContent='coupling ×'+((d.couplers&&d.couplers.coupling_multiplier)||1).toFixed(2)+' · '+elev+'/5 modalities';
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
