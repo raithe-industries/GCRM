@@ -382,12 +382,25 @@ impl TheaterEngine {
                 top_label, max_rung.label(), hot_count, if hot_count == 1 { "" } else { "s" })
         };
 
+        // Which coupling channel is lifting the systemic likelihood most — read directly
+        // off the multiplicative excesses that build l_sys (never a new lever). Answers
+        // the systemic "why": is this close to a world war because of a single-theater
+        // nuclear brink, great powers entangled across theaters, many theaters hot at
+        // once, or an alliance invocation?
+        let coupling_driver = dominant_coupling_amplifier(
+            brink_mult - 1.0,
+            COUPLING_GP_WEIGHT * gp_entanglement,
+            concurrency_mult - 1.0,
+            COUPLING_ALLIANCE_WEIGHT * alliance_activation,
+        ).to_string();
+
         let couplers = SystemicCouplers {
             gp_entanglement,
             alliance_activation,
             concurrency: (concurrency * 1e3).round() / 1e3,
             guardrail_collapse: 0.0, // set by the caller from the regime multiplier
             coupling_multiplier: (coupling_multiplier * concurrency_mult * brink_mult * 1e4).round() / 1e4,
+            coupling_driver,
         };
 
         TheaterOutput {
@@ -559,6 +572,37 @@ fn within_band(heat: f64, rung: EscalationRung) -> f64 {
     };
     if hi <= lo { return 1.0; }
     ((heat - lo) / (hi - lo)).clamp(0.0, 1.0)
+}
+
+/// Names the systemic *coupling* amplifier contributing the largest multiplicative lift
+/// to the systemic likelihood — the model's own answer to "what is turning this regional
+/// crisis into a *world*-war risk right now". The candidate channels are exactly the
+/// multiplicative excesses that build `l_sys` (`brink_mult`/`coupling_multiplier`/
+/// `concurrency_mult`): the single-theater nuclear brink, great-power entanglement,
+/// multi-theater concurrency, and alliance activation. Each `*_lift` is that channel's
+/// `(multiplier − 1)` contribution, so this is a pure read-out of the engine's own terms —
+/// it can never disagree with the math and introduces no new lever.
+///
+/// Returns "" when no channel lifts above `AMPLIFIER_FLOOR` (the risk is purely
+/// single-theater heat — an honest "regional, not yet systemically coupled" read).
+/// Ties resolve in apex-severity order (brink ≻ great-power entanglement ≻ concurrency ≻
+/// alliance): the nuclear brink is the most dangerous configuration, so it wins any tie.
+pub fn dominant_coupling_amplifier(brink_lift: f64, gp_lift: f64, breadth_lift: f64, alliance_lift: f64) -> &'static str {
+    // Tiny floor so float dust on an otherwise-uncoupled world doesn't name a phantom
+    // channel; well below the smallest real lift any channel can produce when engaged.
+    const AMPLIFIER_FLOOR: f64 = 1e-6;
+    // Ordered by apex severity; the first strict-max wins, so ties favour the earlier
+    // (more dangerous) channel.
+    let channels = [
+        ("single-theater nuclear brink", brink_lift),
+        ("great-power entanglement",     gp_lift),
+        ("multi-theater concurrency",    breadth_lift),
+        ("alliance activation",          alliance_lift),
+    ];
+    let (label, lift) = channels.iter().fold(("", 0.0_f64), |best, &(l, v)| {
+        if v > best.1 { (l, v) } else { best }
+    });
+    if lift > AMPLIFIER_FLOOR { label } else { "" }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1014,6 +1058,89 @@ mod tests {
         assert!((1.6..=1.8).contains(&ratio),
             "brink in a non-hottest theater should raise l_sys by ~1.70×, got ratio {ratio} \
              (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
+    }
+
+    #[test]
+    fn coupling_driver_names_the_dominant_systemic_amplifier() {
+        // Awareness "why" at the SYSTEMIC level: coupling_driver names the coupling
+        // channel turning a regional crisis into a world-war risk — read off the SAME
+        // lifts that build l_sys, never a new lever. Unit checks pin the decomposition +
+        // the tie/floor rules; four live worlds isolate each channel, and one proves the
+        // honest "regional, not yet systemically coupled" empty read.
+
+        // (a) Pure decomposition + tie/floor.
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.0), "",
+            "no lift anywhere → no systemic coupling named");
+        assert_eq!(dominant_coupling_amplifier(0.70, 0.30, 0.18, 0.0), "single-theater nuclear brink");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.30, 0.18, 0.0), "great-power entanglement");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.18, 0.0), "multi-theater concurrency");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.30), "alliance activation");
+        assert_eq!(dominant_coupling_amplifier(0.3, 0.3, 0.3, 0.3), "single-theater nuclear brink",
+            "a tie must resolve to the most dangerous channel (apex order)");
+
+        // (b) Brink world: a US–Russia nuclear standoff → brink lift 0.70 outranks the
+        //     0.30 great-power-entanglement lift it also carries.
+        let mut te = TheaterEngine::new();
+        let mut brink = Vec::new();
+        for _ in 0..6 {
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["united_states", "russia"], true);
+            e.escalation_language_score = 0.8; // push nuclear posture past the brink threshold
+            brink.push(e);
+        }
+        let ob = te.compute(&brink);
+        assert!(ob.theaters.iter().any(theater_is_nuclear_brink), "precondition: a brink theater exists");
+        assert!(ob.couplers.gp_entanglement > 0.0, "precondition: great powers also entangled");
+        assert_eq!(ob.couplers.coupling_driver, "single-theater nuclear brink",
+            "a nuclear brink must be the named dominant amplifier, got {:?}", ob.couplers.coupling_driver);
+
+        // A multi-modality CONVENTIONAL hot theater (no nuclear → never a brink itself).
+        // Several modalities are needed to clear HOT_HEAT (heat blends across all five).
+        let conventional = |theater: &'static str, actors: &'static [&'static str]| {
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                v.push(ev(theater, "military_escalation",  1.0,  0.9, actors, false));
+                v.push(ev(theater, "economic_warfare",     0.9,  0.9, actors, false));
+                v.push(ev(theater, "cyber_info_ops",       0.85, 0.9, actors, false));
+                v.push(ev(theater, "diplomatic_breakdown", 0.85, 0.9, actors, false));
+            }
+            v
+        };
+
+        // (c) Great-power-entanglement world: US+Russia hot CONVENTIONALLY in one theater
+        //     (no nuclear → not a brink; one hot theater → no breadth) → gp lift 0.30 leads.
+        let mut te = TheaterEngine::new();
+        let og = te.compute(&conventional("nato_russia", &["united_states", "russia"]));
+        let nr = og.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert!(!theater_is_nuclear_brink(nr), "precondition: conventional, NOT a brink");
+        assert!(og.couplers.gp_entanglement > 0.0, "precondition: great powers entangled");
+        assert!(og.couplers.concurrency < 1.5, "precondition: one hot theater → no breadth, got {}", og.couplers.concurrency);
+        assert_eq!(og.couplers.coupling_driver, "great-power entanglement",
+            "got {:?}", og.couplers.coupling_driver);
+
+        // (d) Breadth world: three theaters hot with NON-great-power actors, no nuclear →
+        //     brink/gp/alliance all 0, only concurrency lifts.
+        let mut te = TheaterEngine::new();
+        let mut br = conventional("us_iran", &["iran"]);
+        br.extend(conventional("india_pakistan", &["india", "pakistan"]));
+        br.extend(conventional("korea", &["north_korea", "south_korea"]));
+        let obr = te.compute(&br);
+        assert_eq!(obr.couplers.gp_entanglement, 0.0, "precondition: no great powers entangled");
+        assert!(obr.couplers.concurrency > 2.0, "precondition: ≥3 theaters hot, got {}", obr.couplers.concurrency);
+        assert_eq!(obr.couplers.coupling_driver, "multi-theater concurrency",
+            "got {:?}", obr.couplers.coupling_driver);
+
+        // (e) Regional, not yet systemic: a SINGLE non-GP theater hot → no coupling channel
+        //     lifts (one hot theater = no breadth, no GP, no brink). Honest empty read.
+        let mut te = TheaterEngine::new();
+        let oreg = te.compute(&conventional("us_iran", &["iran"]));
+        assert!(oreg.systemic_index > 0.0, "precondition: the theater is genuinely hot");
+        assert_eq!(oreg.couplers.coupling_driver, "",
+            "a single uncoupled regional crisis must name no systemic amplifier, got {:?}",
+            oreg.couplers.coupling_driver);
+
+        // (f) Quiet world → nothing.
+        let mut te = TheaterEngine::new();
+        assert_eq!(te.compute(&[]).couplers.coupling_driver, "");
     }
 
     #[test]

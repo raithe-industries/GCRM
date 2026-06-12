@@ -225,6 +225,7 @@ mod tests {
             couplers: SystemicCouplers {
                 gp_entanglement: 1.0, alliance_activation: 0.0, concurrency: 2.5,
                 guardrail_collapse: 1.0, coupling_multiplier: 2.0,
+                ..Default::default()
             },
             ..Default::default()
         };

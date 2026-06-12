@@ -695,6 +695,15 @@ pub struct SystemicCouplers {
     pub concurrency:         f64,   // fractional count of simultaneously-hot theaters
     pub guardrail_collapse:  f64,   // 0..1 — arms-control / deterrence guardrails gone
     pub coupling_multiplier: f64,   // combined multiplier applied to the systemic likelihood
+    // The coupling channel contributing the LARGEST multiplicative lift to the systemic
+    // likelihood — the model's own answer to "what is turning this regional crisis into a
+    // *world*-war risk right now": a single-theater nuclear brink, great-power
+    // entanglement, multi-theater concurrency, or alliance activation. Empty when no
+    // channel lifts above the floor (the risk is purely single-theater heat — regional,
+    // not yet systemically coupled). A read-out of the same lifts that build
+    // `coupling_multiplier`, never a new lever.
+    #[serde(default)]
+    pub coupling_driver:     String,
 }
 
 // ── Risk snapshot ─────────────────────────────────────────────────────────────

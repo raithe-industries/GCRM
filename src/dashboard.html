@@ -972,7 +972,8 @@ function applyData(d){
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
   dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
   document.getElementById('f-guard').textContent=((d.couplers&&d.couplers.guardrail_collapse)||0).toFixed(2);
-  document.getElementById('f-lik').textContent='coupling ×'+((d.couplers&&d.couplers.coupling_multiplier)||1).toFixed(2)+' · '+elev+'/5 modalities';
+  const cdrv=(d.couplers&&d.couplers.coupling_driver)||'';
+  document.getElementById('f-lik').textContent='coupling ×'+((d.couplers&&d.couplers.coupling_multiplier)||1).toFixed(2)+' · '+elev+'/5 modalities'+(cdrv?' · led by '+cdrv:'');
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];
