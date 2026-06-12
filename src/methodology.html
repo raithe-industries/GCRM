@@ -94,9 +94,10 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 <li><b>Great-power entanglement</b> — distinct great powers active across hot theaters.</li>
 <li><b>Multi-theater concurrency</b> — the real co-occurrence signal: simultaneous hot theaters (Gulf + Ukraine + Taiwan), applied modestly so breadth does not swamp a single brink.</li>
 <li><b>Alliance-chain activation</b> — Article 5 / mutual-defense invocation.</li>
-<li><b>Guardrail collapse</b> — arms-control / deterrence erosion (carries the operator-tunable regime factors).</li>
+<li><b>Guardrail collapse</b> — arms-control / deterrence erosion. This is the channel that carries the operator-tunable <b>structural regime factors</b>, and it is the <i>only</i> path by which the regime touches the forecast (detailed below).</li>
 <li><b>Nuclear brink</b> — a direct ≥2-great-power nuclear confrontation in the hottest theater is the apex amplifier, so single-theater intensity (Cuba 1962) outranks multi-theater breadth.</li>
 </ul>
+<p>The structural regime factors (arms-control regime, deterrence stability, nuclear doctrine) multiply into a single <b>regime product</b>. v2 deliberately does <b>not</b> let that product move the prior — the v1 form did, which could inflate a structurally degraded but quiet world. Instead the product drives <b>guardrail collapse</b>: its excess above the neutral <code>1.0×</code> maps linearly to a collapse fraction 0–1 that saturates once the regime product reaches <code>{{GUARDRAIL_SATURATION_X}}</code>, and full collapse adds at most <code>+{{GUARDRAIL_AMPLIFIER_PCT}}</code> to the systemic likelihood <code>L_sys</code>. Because it enters only the likelihood, a world with collapsed guardrails but no acute signal (<code>L_sys ≈ 0</code>) still sits at the baseline prior — degraded guardrails make a live crisis more dangerous; they never manufacture risk from calm. These figures are rendered from the engine's own <code>GUARDRAIL_AMPLIFIER</code> / <code>GUARDRAIL_REGIME_SPAN</code> constants, so this page cannot drift from the running coupler.</p>
 
 <h2 id="likelihood">Systemic likelihood &amp; the risk index</h2>
 <p>The hottest theater's heat is amplified by the couplers into a systemic likelihood <code>L_sys</code>, folded into a flat baseline prior on the log-odds scale:</p>

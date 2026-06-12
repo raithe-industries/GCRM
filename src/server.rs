@@ -76,7 +76,16 @@ impl ServerState {
                          &format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0))
                 .replace("{{ALERT_ELEVATED}}", &format!("{:.1}%", alerts.elevated * 100.0))
                 .replace("{{ALERT_CRITICAL}}", &format!("{:.1}%", alerts.critical * 100.0))
-                .replace("{{ALERT_30D}}", &format!("{:.1}%", alerts.thirty_day_warn * 100.0)),
+                .replace("{{ALERT_30D}}", &format!("{:.1}%", alerts.thirty_day_warn * 100.0))
+                // Guardrail-collapse internals: how the operator-tunable regime factors
+                // enter the model. Rendered from the engine's own coupler constants
+                // (single source of truth) so the whitepaper's quantified mechanism can
+                // never drift from bayesian::guardrail_from_regime — same anti-drift
+                // pattern as the alert bands / forecast ceiling above.
+                .replace("{{GUARDRAIL_AMPLIFIER_PCT}}",
+                         &format!("{:.0}%", crate::bayesian::GUARDRAIL_AMPLIFIER * 100.0))
+                .replace("{{GUARDRAIL_SATURATION_X}}",
+                         &format!("{:.1}×", 1.0 + crate::bayesian::GUARDRAIL_REGIME_SPAN)),
         );
         let state = Self {
             app_state,
@@ -741,6 +750,35 @@ mod tests {
         // page cannot drift from the engine.
         assert!(METHODOLOGY_HTML.contains("{{ALERT_CRITICAL}}"),
             "alert bands must be templated, not hardcoded");
+    }
+
+    #[test]
+    fn methodology_renders_guardrail_collapse_from_the_model_constants() {
+        // 2.3 (regime internals): the methodology now quantifies HOW the operator-tunable
+        // regime factors enter the model — the guardrail-collapse mechanism. Its two
+        // figures (the +12% max likelihood lift and the 5.0× regime-product saturation
+        // point) are rendered from the engine's own GUARDRAIL_AMPLIFIER / GUARDRAIL_REGIME_SPAN
+        // (single source of truth), so the whitepaper can never disagree with
+        // bayesian::guardrail_from_regime. Anti-drift, same pattern as the alert bands.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let m = &*state.methodology_html;
+        for tok in ["{{GUARDRAIL_AMPLIFIER_PCT}}", "{{GUARDRAIL_SATURATION_X}}"] {
+            assert!(!m.contains(tok), "guardrail placeholder {tok} must be substituted at startup");
+        }
+        let amp = format!("+{:.0}%", crate::bayesian::GUARDRAIL_AMPLIFIER * 100.0);
+        assert!(m.contains(&amp),
+            "methodology must render the guardrail amplifier ({amp}) from GUARDRAIL_AMPLIFIER");
+        let sat = format!("{:.1}×", 1.0 + crate::bayesian::GUARDRAIL_REGIME_SPAN);
+        assert!(m.contains(&sat),
+            "methodology must render the regime-product saturation point ({sat}) from GUARDRAIL_REGIME_SPAN");
+        // The mechanism's honesty point must be stated: it touches only the likelihood,
+        // never the flat prior (a regime can't manufacture risk from a quiet world).
+        assert!(m.contains("baseline prior"),
+            "methodology must state guardrail collapse leaves a quiet world at the baseline prior");
+        // Raw template carries placeholders, not hand-typed numbers — a revert to a
+        // hardcoded value fails this.
+        assert!(METHODOLOGY_HTML.contains("{{GUARDRAIL_AMPLIFIER_PCT}}"),
+            "guardrail internals must be templated, not hardcoded");
     }
 
     #[test]

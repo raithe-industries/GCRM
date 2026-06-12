@@ -207,6 +207,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `regime_summary_reports_guardrail_collapse_not_an_adjusted_prior` (api.rs) +
     `dashboard_regime_inspector_shows_structural_pressure_not_adjusted_prior` (server.rs). Remaining under
     2.3: regime ×/GP internals in the methodology view.
+  - PROGRESS 2026-06-12: closed the **regime internals in the methodology view** (the standing remaining
+    2.3 leg). The whitepaper's couplers section said guardrail collapse "carries the operator-tunable
+    regime factors" but never explained HOW the regime enters — the bounded saturation mechanism the
+    dashboard footer and the regime inspector now surface was absent from the authoritative document.
+    Added a quantified paragraph: the structural regime factors multiply into a regime product that does
+    NOT move the prior (the v1 form) but drives guardrail collapse — its excess above neutral 1.0× maps
+    linearly to a 0–1 collapse fraction saturating at the regime product `{{GUARDRAIL_SATURATION_X}}`
+    (= 1 + `GUARDRAIL_REGIME_SPAN`), adding at most `+{{GUARDRAIL_AMPLIFIER_PCT}}` to `L_sys`; because it
+    touches only the likelihood, a degraded-but-quiet world (`L_sys ≈ 0`) stays at the baseline prior. Both
+    figures TEMPLATED from `bayesian::GUARDRAIL_AMPLIFIER` / `GUARDRAIL_REGIME_SPAN` in `server.rs`
+    (single source of truth, anti-drift — same pattern as the alert bands / ceiling), so the prose can
+    never disagree with `guardrail_from_regime`. No model constant touched. Locked by
+    `methodology_renders_guardrail_collapse_from_the_model_constants`. Remaining under 2.3: the GP /
+    great-power involvement coupler (documented qualitatively in #couplers) — optional polish.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.4 Systemic "why": dominant coupling amplifier** — **DONE 2026-06-12.** The dashboard

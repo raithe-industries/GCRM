@@ -16,6 +16,52 @@ Format per entry:
 
 ---
 
+## 2026-06-12 — legibility/honesty — methodology now quantifies the guardrail-collapse mechanism (HOW the operator-tunable regime factors enter the model), templated from the engine constants (roadmap 2.3)
+- Item: roadmap 2.3 — the standing remaining leg every recent 2.3 entry flagged: "regime ×/GP internals
+  in the methodology view." Legibility axis (pillar 2) applied to honesty (pillar 1, "the number must mean
+  what it says"). Axis rotation: the 06-12 batch already advanced awareness (3.4), robustness (4.4), and
+  honesty/legibility twice (2.3 inspector, 1.2/2.3 footer); this closes the one operator surface those
+  fixes deliberately left out — the authoritative whitepaper. The other open items are eyes-judged
+  (2.1 small-viewport) or live-network-gated (3.2 GDELT), neither cloud-provable; this one is fully
+  testable here.
+- Verified-open-first (read methodology.html end-to-end against the current engine): the couplers section
+  listed "Guardrail collapse — arms-control / deterrence erosion (carries the operator-tunable regime
+  factors)" and the L_sys formula multiplied in a bare `guardrail` factor, but NOWHERE did the whitepaper
+  explain HOW the regime enters. The v2 mechanism — regime factors multiply into a regime product that does
+  NOT move the prior (the v1 form did) but drives a bounded guardrail collapse on the likelihood
+  (`l_sys × (1 + GUARDRAIL_AMPLIFIER·guardrail)`, saturating at a regime product of `1+GUARDRAIL_REGIME_SPAN`,
+  max +12%) — is now surfaced on the dashboard footer (06-12) and the regime inspector (06-12), but the
+  authoritative document an operator consults to UNDERSTAND the model was silent on it. A real completeness/
+  honesty gap: without it, the whitepaper can't dispel the v1 intuition that a regime toggle inflates the
+  prior.
+- Change (one coherent change, methodology.html + server.rs): (a) expanded the guardrail-collapse coupler
+  bullet to name it as the ONLY path the regime touches the forecast; (b) added a quantified paragraph in
+  #couplers explaining the regime product → guardrail-collapse fraction (0–1) → bounded
+  `+{{GUARDRAIL_AMPLIFIER_PCT}}` lift on `L_sys`, saturating at a regime product of
+  `{{GUARDRAIL_SATURATION_X}}`, and stating the honesty point plainly — it enters only the likelihood, so a
+  degraded-but-quiet world (`L_sys ≈ 0`) stays at the baseline prior (the regime can't manufacture risk
+  from calm); (c) `server.rs::ServerState::new` substitutes both placeholders from
+  `bayesian::GUARDRAIL_AMPLIFIER` (→ "+12%") and `1 + bayesian::GUARDRAIL_REGIME_SPAN` (→ "5.0×") — the same
+  anti-drift template mechanism as the alert bands / forecast ceiling, so the prose can never disagree with
+  `guardrail_from_regime`. NO model/calibration constant touched.
+- Metric moved: test count 382 → 383 by the scorecard grep (new
+  `methodology_renders_guardrail_collapse_from_the_model_constants`); a legibility/completeness gap on the
+  authoritative methodology closed, with the regime internals anti-drift-templated rather than hand-typed
+  or absent. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no
+  model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` = 383
+  passed / 0 failed / 3 ignored (the 383rd is this new test by the grep); `cargo test --release backtest` =
+  9 passed. The lock proves both `{{GUARDRAIL_*}}` placeholders are substituted at startup, that the
+  rendered "+12%" / "5.0×" match `GUARDRAIL_AMPLIFIER` / `1+GUARDRAIL_REGIME_SPAN`, that the honesty point
+  ("baseline prior") is stated, and that the raw template still carries the placeholders — a revert to a
+  hand-typed number (or dropping the section) fails it.
+- Notes / decisions future runs must respect: the methodology's guardrail figures are now templated from
+  `bayesian::GUARDRAIL_AMPLIFIER` / `GUARDRAIL_REGIME_SPAN` — edit the CONSTANTS, never the HTML digits.
+  These are FITTED couplers (the bands depend on them); do not blind-tweak. The guardrail-collapse
+  mechanism is now documented consistently on all three operator surfaces (dashboard footer, regime
+  inspector, methodology). Remaining under 2.3: the GP / great-power involvement coupler is documented
+  qualitatively in #couplers; quantifying it further is optional polish.
+
 ## 2026-06-12 — awareness — systemic "why": name the dominant coupling amplifier (what turns a regional crisis into a world-war risk) (roadmap 3.4)
 - Item: roadmap 3.4 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY, not just HOW
   MUCH"). Axis rotation: reading the log, awareness was the least-recently-advanced axis — its last real
