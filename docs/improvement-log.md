@@ -16,6 +16,66 @@ Format per entry:
 
 ---
 
+## 2026-06-12 — honesty/legibility — dashboard now explains the v2 flat-prior + guardrail-collapse mechanism (removed the v1 "regime-adjusted prior × likelihood" story) (roadmap 1.2/2.3)
+- Item: roadmap 1.2/2.3 — a v1 vestige on the PRIMARY operator surface, the same class as the
+  2026-06-11 dead-`gp_bonus` finding but in the dashboard's headline explanation rather than the
+  engine. Honesty axis (pillar 1, top mission priority: "the number must mean what it says"), applied
+  to legibility (pillar 2, the operator-facing surface). Axis rotation: robustness (4.x) was
+  least-recent (2026-06-10), but 4.2 has no clean must-fix — re-audited this run: the production
+  unwrap/expect sites are infallible-by-construction (`detector::nearest_test_site`'s
+  `partial_cmp().unwrap()` — NaN distances filtered before `min_by`; `detector.rs:491`
+  `nearest_site.unwrap()` — the `None` arm returns, so it is always `Some`; `ingestor.rs:547`/
+  nlp_sidecar `acquire().await.unwrap()` — the semaphore is never closed; `models.rs` position
+  unwraps — drawn from the same collection), and forcing a "fix" to non-broken code is forbidden. So
+  the highest-mission-value provable-green lever was this honesty defect, which the unwrap audit
+  surfaced en route.
+- Verified-open-first (the payoff of reading the running code): the v2 engine computes the forecast
+  from a FLAT prior — `bayesian.rs:721` `let prior = HISTORICAL_ANCHOR` (= `BASELINE_ANNUAL`, 1.5%),
+  with the regime multiplier entering ONLY as a bounded guardrail-collapse amplifier on the systemic
+  likelihood (`l_sys × (1 + GUARDRAIL_AMPLIFIER·guardrail)`, max +12%, Step 6b), combined on the
+  log-odds scale (Step 7). This is LOCKED by the 2026-06-10
+  `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood` test. But `snap.adjusted_prior`
+  = `HISTORICAL_ANCHOR × regime_multiplier` (≈ 0.015×5.46 ≈ 8.2%) is a v1 leftover the engine NO LONGER
+  USES in the forecast — yet the dashboard (a) drew it in the model-state footer as "structural-adjusted"
+  BETWEEN the baseline and the systemic L, presenting it as a chain step toward P(WWIII|E), and (b) the
+  "how it's built" modal told the operator the headline is "a regime-adjusted prior … multiplied by a
+  coupling likelihood" — verbatim the SUPERSEDED v1 multiplicative `P₀_adj × (1 + L·k)` form the v2
+  comment (bayesian.rs:578) explicitly says was replaced. The number did not mean what the dashboard
+  said it meant — a real pillar-1 defect on the surface an operator actually watches.
+- Change (one coherent change, dashboard.html + server.rs test): (a) footer formula now reads
+  `Baseline P₀ = {{BASELINE_ANNUAL_PCT}}%/yr (modern, flat) · systemic L = … · guardrail collapse = …`
+  then `P(WWIII|E) = σ(logit P₀ + β·L) = …` — the honest v2 chain (flat prior, the likelihood, the
+  regime's only forecast channel shown as guardrail collapse, and the log-odds fold); (b) the removed
+  "structural-adjusted = f-adj" readout is replaced by a guardrail-collapse readout that reads the LIVE
+  `d.couplers.guardrail_collapse` coupler (anti-drift, same discipline as the alert bands — no
+  hardcoded number); the now-orphaned `d.prior.adjusted_prior` JS reference is gone; (c) the "how it's
+  built" modal rewritten to describe the flat baseline, the log-odds fold, and the three real systemic
+  amplifiers (great-power entanglement, multi-theater concurrency, guardrail collapse), stating plainly
+  "the regime no longer inflates the prior; it enters the likelihood through guardrail collapse." NO
+  model/calibration constant touched — `adjusted_prior` is still computed/serialized (the regime-factor
+  inspector panel uses `adjusted_prior_pct` as a structural-pressure figure); only the misleading
+  headline explanation changed.
+- Metric moved: test count 377 → 378 by the scorecard grep (new
+  `dashboard_explains_the_v2_flat_prior_not_the_v1_adjusted_prior`); a pillar-1 honesty defect on the
+  primary operator surface closed (the headline explanation now matches the engine). Calibration
+  evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  377 passed / 0 failed / 3 ignored (378th is the scorecard grep incl. the new test); `cargo test
+  --release backtest` = 9 passed. The lock proves the v1 story is GONE from the dashboard
+  (no "structural-adjusted", no "regime-adjusted prior", no `f-adj`, no `d.prior`) and the v2 story is
+  present and honest (the "(modern, flat)" prior, "log-odds" fold, "guardrail collapse" channel) AND
+  the guardrail readout sources `d.couplers.guardrail_collapse` live — a revert to the v1 explanation
+  fails it.
+- Notes / decisions future runs must respect: the dashboard headline explanation now matches the v2
+  engine — the prior is FLAT, the regime enters ONLY via the bounded guardrail-collapse amplifier on
+  `l_sys`. Do NOT re-introduce a "regime-adjusted prior" / "structural-adjusted" chain step or a
+  "prior × likelihood" description (it resurrects the v1 form the engine abandoned). Remaining sibling
+  (still open): the regime-factor INSPECTOR panel (dashboard.html:1120, driven by `api.rs`
+  `regime_summary`) still labels `baseline × regime_product` as "Adjusted P₀" — a legitimately-computed
+  structural-pressure figure, but a future run could honestly reframe it as "structural pressure" so it
+  isn't mistaken for the forecast prior either (would touch api.rs + its tests; left out of this commit
+  for scope discipline).
+
 ## 2026-06-11 — honesty/legibility — templated P₀ on the DASHBOARD (the operator surface the methodology fix missed), anti-drift from BASELINE_ANNUAL (roadmap 2.3)
 - Item: roadmap 2.3 (progressed) — extends the same-day methodology P₀ fix to the DASHBOARD itself.
   Honesty axis (pillar 1) as much as legibility: a hand-typed model constant on the operator-facing

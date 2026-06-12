@@ -798,6 +798,43 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_explains_the_v2_flat_prior_not_the_v1_adjusted_prior() {
+        // HONESTY (pillar 1): the operator-facing explanation of the headline must
+        // describe the v2 computation — a FLAT modern baseline prior with the regime
+        // multiplier entering ONLY as a bounded guardrail-collapse amplifier of the
+        // systemic likelihood, combined on the log-odds scale (bayesian.rs Step 7,
+        // locked by guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood).
+        // It previously told the operator the number was "a regime-adjusted prior
+        // multiplied by a coupling likelihood" — the SUPERSEDED v1 multiplicative form —
+        // and drew `structural-adjusted = baseline × regime` (≈8%) as a chain step toward
+        // the posterior, which the v2 engine never uses. The number must mean what the
+        // dashboard says it means.
+        //
+        // The v1 story must be gone from BOTH the footer chain and the "how it's built" modal:
+        assert!(!DASHBOARD_HTML.contains("structural-adjusted"),
+            "footer must not draw the unused structural-adjusted prior as a chain step");
+        assert!(!DASHBOARD_HTML.contains("regime-adjusted prior"),
+            "modal must not describe the headline as a regime-adjusted prior (v1 form)");
+        assert!(!DASHBOARD_HTML.contains("f-adj"),
+            "the adjusted-prior readout (id=f-adj) must be removed");
+        assert!(!DASHBOARD_HTML.contains("d.prior"),
+            "the footer JS must no longer read the unused snapshot prior (d.prior.adjusted_prior)");
+        // The v2 story must be present and honest: a flat prior, the guardrail-collapse
+        // channel (the regime's only path into the forecast), and the log-odds fold.
+        assert!(DASHBOARD_HTML.contains("(modern, flat)"),
+            "footer must state the prior is flat (not regime-adjusted)");
+        assert!(DASHBOARD_HTML.contains("log-odds"),
+            "modal must describe the log-odds fold (v2 logistic form)");
+        assert!(DASHBOARD_HTML.contains("guardrail collapse"),
+            "the regime's only forecast channel — guardrail collapse — must be shown");
+        // The footer's new guardrail readout must source the live snapshot coupler, not a
+        // hardcoded number — the same anti-drift discipline as the alert bands.
+        assert!(DASHBOARD_HTML.contains("f-guard")
+            && DASHBOARD_HTML.contains("couplers.guardrail_collapse"),
+            "the guardrail readout must read d.couplers.guardrail_collapse live");
+    }
+
+    #[test]
     fn dashboard_links_to_methodology() {
         assert!(DASHBOARD_HTML.contains("{{BASE_PATH}}/methodology"),
             "dashboard must link to the methodology page");

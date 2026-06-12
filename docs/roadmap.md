@@ -108,6 +108,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     elevated, smoothly, is one modality") and used it in `score_theater`; removed the duplicate
     `ELEV_RAMP`. Behavior-preserving (both ramps were 0.08, identical formula — calibration evidence
     bit-identical). Locked by `intra_theater_co_occurrence_uses_the_shared_ramp_and_ignores_sub_threshold_modalities`.
+  - PROGRESS 2026-06-12: fixed a **v1 display vestige on the dashboard** (same class as the dead
+    `gp_bonus`, but on the operator surface). The model-state footer drew `structural-adjusted =
+    baseline × regime` (≈8%) as a chain step toward P(WWIII|E), and the "how it's built" modal called
+    the headline "a regime-adjusted prior … multiplied by a coupling likelihood" — the SUPERSEDED v1
+    multiplicative form. The v2 engine uses a FLAT prior with the regime entering ONLY as the bounded
+    guardrail-collapse amplifier on `l_sys` (locked by
+    `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood`). Rewrote both surfaces to
+    the honest v2 chain (flat P₀ · systemic L · guardrail collapse · log-odds fold), replaced the unused
+    `adjusted_prior` footer readout with a live `couplers.guardrail_collapse` readout, and locked it by
+    `dashboard_explains_the_v2_flat_prior_not_the_v1_adjusted_prior`. No model constant touched. Sibling
+    still open (2.3): the regime-factor INSPECTOR panel (dashboard.html:1120, `api.rs::regime_summary`)
+    still labels `baseline × regime_product` as "Adjusted P₀" — honestly reframe as "structural pressure".
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
