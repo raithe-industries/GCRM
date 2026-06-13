@@ -16,6 +16,51 @@ Format per entry:
 
 ---
 
+## 2026-06-13 — awareness/honesty — analyst brief speaks the model's OWN dominant coupling channel (replaced a canned mechanism claim that contradicted a single-theater nuclear brink) (roadmap 3.5)
+- Item: roadmap 3.5 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY"), serving honesty
+  (pillar 1, "the number must mean what it says") on the `/api/brief` analyst-brief surface. Axis rotation:
+  the 06-12 batch advanced honesty/legibility (2.3 ×3, 1.2/2.3 footer), awareness (3.4), and robustness
+  (4.4); awareness's only OTHER open item (3.2 GDELT) needs live-network verification the cloud sandbox
+  lacks, so I extended the 06-12 systemic-"why" capability (`coupling_driver`) onto the one operator surface
+  that still ignored it — the prose brief — which also closed a real honesty defect there.
+- Verified-open-first (read brief.rs end-to-end against the current engine): `templated_brief` (the
+  deterministic fallback served whenever the LLM is offline/unreachable) appended a HARD-CODED sentence for
+  every hot world — "Multiple concurrently-hot theaters coupled to nuclear-armed great powers are what drive
+  the systemic reading rather than any single regional war." That asserts ONE specific mechanism (concurrency
+  + GP entanglement) regardless of the model's actual state. In a single-theater nuclear brink — exactly the
+  Cuba-style apex the engine's `brink_mult`/`coupling_driver` exist to flag — the clause is flatly WRONG: it
+  says "rather than any single regional war" while the dominant amplifier IS a single theater. And
+  `build_context` (the factual prompt handed to the LLM) listed the couplers numerically but omitted
+  `coupling_driver` entirely, so even the LLM brief wasn't grounded in the model's own answer to "what is
+  turning this regional crisis into a world-war risk." The field has existed since 2026-06-12 (3.4) and is
+  serialized at `/couplers/coupling_driver` — the brief simply never read it.
+- Change (one coherent change, brief.rs only): (a) added the pure `coupling_sentence(coupling_driver)` →
+  one honest per-channel account for each of the four `coupling_driver` labels (single-theater nuclear brink
+  / great-power entanglement / multi-theater concurrency / alliance activation), `None` when no channel
+  lifts; (b) `templated_brief` now appends `coupling_sentence(...)` after the elevated-theaters list, and
+  when there are hot theaters but NO dominant channel prints the honest "regionally contained" read instead
+  of fabricating a coupling story; (c) `build_context` adds a "Dominant coupling channel: …" line so the LLM
+  brief is grounded in the same field. Honest by construction — a restatement of the engine's dominant
+  amplifier, never a new lever; NO model/calibration constant touched.
+- Metric moved: test count 383 → 385 by the scorecard grep (two new locks:
+  `context_includes_the_dominant_coupling_channel`,
+  `templated_brief_accounts_for_systemic_reading_from_the_live_coupling_driver`); an awareness capability
+  extended to the prose-brief surface + a latent honesty defect (a canned mechanism claim that contradicts a
+  single-theater brink) closed. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba +
+  evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` = 384
+  passed / 0 failed / 3 ignored (385 by the grep incl. both new tests); `cargo test --release backtest` = 9
+  passed. The honesty lock drives `templated_brief` through three worlds: a "single-theater nuclear brink"
+  driver → names the single-theater apex AND the false "rather than any single regional war" clause is GONE;
+  the default "great-power entanglement" fixture → names that channel; an empty driver with hot theaters →
+  reads "regionally contained" rather than a fabricated coupling story. The context lock proves the LLM prompt
+  carries "Dominant coupling channel: …".
+- Notes / decisions future runs must respect: the brief's systemic-mechanism sentence is now sourced from
+  `couplers.coupling_driver` (the engine's own dominant amplifier) via `coupling_sentence` — do NOT
+  re-introduce a canned mechanism claim (it resurrects the single-theater-brink contradiction). `coupling_driver`
+  is a read-out, not a lever (per 3.4) — keep the brief reading it, never re-derive it. Empty driver = honest
+  "regionally contained"; don't paper it over with a default channel.
+
 ## 2026-06-12 — legibility/honesty — methodology now quantifies the guardrail-collapse mechanism (HOW the operator-tunable regime factors enter the model), templated from the engine constants (roadmap 2.3)
 - Item: roadmap 2.3 — the standing remaining leg every recent 2.3 entry flagged: "regime ×/GP internals
   in the methodology view." Legibility axis (pillar 2) applied to honesty (pillar 1, "the number must mean

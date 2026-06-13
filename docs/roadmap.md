@@ -223,6 +223,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     great-power involvement coupler (documented qualitatively in #couplers) — optional polish.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.5 Analyst brief speaks the model's dominant coupling channel** — **DONE 2026-06-13.**
+  The `/api/brief` analyst brief (the "why the number is where it is" insight layer) hard-coded its
+  systemic-mechanism sentence ("Multiple concurrently-hot theaters coupled to nuclear-armed great
+  powers … rather than any single regional war") for EVERY hot world — flatly wrong in a single-theater
+  nuclear brink (Cuba-style), where the dominant amplifier IS a single theater. Replaced the canned claim
+  in `templated_brief` with `coupling_sentence(coupling_driver)` — a per-channel account driven by the
+  model's own `couplers.coupling_driver` (3.4) — and added the dominant channel to the LLM `build_context`
+  so the narrative model is grounded in it too. Honest by construction (restates the engine's dominant
+  amplifier, no new lever). Locked by `context_includes_the_dominant_coupling_channel` +
+  `templated_brief_accounts_for_systemic_reading_from_the_live_coupling_driver`. See improvement-log 2026-06-13.
 - [x] **3.4 Systemic "why": dominant coupling amplifier** — **DONE 2026-06-12.** The dashboard
   named WHICH theater is hottest (`systemic.driver`) and showed the coupling multiplier as one
   opaque number, but never WHICH coupling channel was turning a regional crisis into a *world*-war
