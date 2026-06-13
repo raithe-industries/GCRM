@@ -594,6 +594,44 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_warns_when_the_live_read_goes_stale() {
+        // Pillar-1 honesty: the header status must not keep asserting "Live" with a
+        // frozen timestamp when snapshots stop arriving (stalled worker, or a WS that
+        // hangs with TCP still open and no onclose). A real-time read that silently
+        // freezes is a lie. The dashboard must gate the "Live" label on the actual
+        // data age via a freshness watchdog, and surface a STALE warning otherwise.
+        // The watchdog must run on a timer (so it fires WITHOUT a new snapshot — the
+        // exact stall case) and the "Live" text must come from renderFreshness, not an
+        // unconditional set on snapshot receipt.
+        assert!(
+            DASHBOARD_HTML.contains("renderFreshness"),
+            "dashboard dropped the freshness watchdog — a stalled read could keep claiming Live"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("STALE"),
+            "dashboard no longer surfaces a STALE state — a frozen read would masquerade as Live"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("_lastSnapMs"),
+            "dashboard no longer tracks snapshot receipt time — staleness can't be measured"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("setInterval(renderFreshness"),
+            "freshness watchdog is not on a timer — it would never fire during an actual stall \
+             (no new snapshot to trigger it)"
+        );
+        // The only place the header status is set to "Live" must be renderFreshness,
+        // gated on age — never an unconditional set in the snapshot handler. A revert
+        // to a bare `ts.textContent='Live · '...` outside the watchdog resurrects the lie.
+        assert_eq!(
+            DASHBOARD_HTML.matches("'Live · '").count(),
+            1,
+            "the \"Live\" header label must be produced only by the age-gated renderFreshness \
+             watchdog (a second, ungated set would let a stale read claim Live)"
+        );
+    }
+
+    #[test]
     fn dashboard_html_renders_elevation_threshold_from_model() {
         // The domain bar chart draws a dashed "elevated" reference line so an
         // operator can see at a glance which force domains have crossed the cutoff
