@@ -7,12 +7,14 @@
 //!    so it can be unit-tested without the network.
 //! 3. Add the module below and register a default instance in [`registry`].
 
+pub mod acled;
 pub mod cisa_kev;
 pub mod cwfis;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
 pub mod emsc;
 pub mod eonet;
+pub mod firms;
 pub mod eqcanada;
 pub mod gdacs;
 pub mod gvp_volcano;
@@ -43,5 +45,8 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),
         Box::new(healthmap::HealthMap::default()),
+        // Credentialed global feeds (dormant until their key/account env is set).
+        Box::new(firms::Firms::default()),
+        Box::new(acled::Acled::default()),
     ]
 }
