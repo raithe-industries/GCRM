@@ -21,7 +21,13 @@
 #
 #   Current product (active factors only):
 #   1.4 × 1.4 × 1.2 × 0.7 × 1.4 × 1.2 × 1.15 × 1.3 × 1.2 × 1.1 = 5.46×
-#   Adjusted prior: 0.000987 × 5.46 = 0.539% / yr
+#
+#   v2 MECHANISM (the old "Adjusted prior: 0.000987 × 5.46" line was v1 and is wrong):
+#   The v2 engine holds the prior FLAT at BASELINE_ANNUAL = HISTORICAL_ANCHOR = 0.015
+#   (1.5%/yr). The regime product does NOT multiply into the prior. Instead its excess
+#   above the neutral 1.0× drives guardrail collapse on the systemic likelihood L_sys
+#   (guardrail_from_regime, bounded by GUARDRAIL_AMPLIFIER, saturating at the
+#   GUARDRAIL_REGIME_SPAN). See methodology.html and bayesian.rs.
 #
 # CALIBRATION TARGETS:
 #   Quiet period (1-2 domains, low signals)        → ~0.5–1.5% annual
@@ -100,10 +106,13 @@ dashboard:
   # Use "/" or omit for root. Set to "/risk" to serve at raithe.ca/risk.
   base_path: "/risk"
   # Operator key — required for /api/regime/* and /api/operator/* endpoints.
-  # MUST be changed to a strong random string before deploying to raithe.ca or
-  # any network-exposed host. Generate one with: openssl rand -hex 32
-  # If left empty, all operator endpoints return 403 Forbidden.
-  # WARNING: The value below is a placeholder. Do NOT deploy with this value.
+  # NOTE: the value below is a REAL generated secret (openssl rand -hex 32), not a
+  # placeholder — the startup blocklist (INSECURE_KEYS in main.rs) does NOT match it,
+  # so the operator API is LIVE with this key (it is not disabled).
+  # SECURITY: this file is committed to a PUBLIC repo, so this key is publicly readable.
+  # Rotate it and load the real key OUT of version control (env var / gitignored
+  # override) before relying on operator-endpoint auth. Generate one with:
+  # openssl rand -hex 32. If left empty, all operator endpoints return 403 Forbidden.
   operator_key: "25a32691176840ea05d1d2455895569877f5eaba2aa7129873f06b53ef520526"
 
 # ── Regime factors ────────────────────────────────────────────────────────────
