@@ -105,9 +105,10 @@ pub struct LayerDescriptor {
 }
 
 /// Every [`EventKind`], in the order layers are listed.
-const ALL_KINDS: [EventKind; 11] = [
+const ALL_KINDS: [EventKind; 13] = [
     EventKind::Earthquake,
     EventKind::Wildfire,
+    EventKind::Volcano,
     EventKind::Weather,
     EventKind::AirQuality,
     EventKind::Aircraft,
@@ -115,6 +116,7 @@ const ALL_KINDS: [EventKind; 11] = [
     EventKind::Conflict,
     EventKind::Cyber,
     EventKind::Market,
+    EventKind::Health,
     EventKind::News,
     EventKind::Other,
 ];
@@ -126,6 +128,7 @@ pub fn descriptor_for(kind: EventKind) -> LayerDescriptor {
     let (id, label, group, color, icon, default_visible) = match kind {
         Earthquake => ("quakes", "Earthquakes", Environment, "#d7263d", "quake", true),
         Wildfire => ("wildfires", "Wildfires & Thermal", Environment, "#ff6b35", "fire", true),
+        Volcano => ("volcanoes", "Volcanoes", Environment, "#ff5630", "volcano", true),
         Weather => ("weather", "Weather & Storms", Environment, "#3a86ff", "storm", true),
         AirQuality => ("air_quality", "Air Quality", Environment, "#a06cd5", "haze", true),
         Aircraft => ("flights", "Aircraft", AviationMaritime, "#8338ec", "plane", true),
@@ -133,6 +136,7 @@ pub fn descriptor_for(kind: EventKind) -> LayerDescriptor {
         Conflict => ("conflicts", "Armed Conflict", Security, "#6a040f", "conflict", true),
         Cyber => ("cyber", "Cyber Threats", Security, "#b5179e", "shield", true),
         Market => ("markets", "Markets & Finance", Infrastructure, "#2a9d8f", "chart", true),
+        Health => ("health", "Disease & Health", Humanitarian, "#06d6a0", "health", true),
         News => ("news", "News & Media", Infrastructure, "#fca311", "news", true),
         Other => ("other", "Other Signals", Infrastructure, "#6c757d", "dot", false),
     };

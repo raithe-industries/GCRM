@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 pub enum EventKind {
     Earthquake,
     Wildfire,
+    Volcano,
     Aircraft,
     Vessel,
     Conflict,
@@ -19,6 +20,7 @@ pub enum EventKind {
     Market,
     Weather,
     AirQuality,
+    Health,
     News,
     Other,
 }
