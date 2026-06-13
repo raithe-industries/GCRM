@@ -41,9 +41,16 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     //    nuclear/energy/cross-domain lights) so the operator can tell whether a great
     //    power sits one rung from active war (e.g. at Crisis) or the board is genuinely
     //    quiet, rather than a bare "No great power in active war".
-    let gp_kinetic: Vec<&crate::models::TheaterState> = theaters.iter()
+    let mut gp_kinetic: Vec<&crate::models::TheaterState> = theaters.iter()
         .filter(|t| t.gp_involved && t.rung.level() >= EscalationRung::LimitedWar.level())
         .collect();
+    // Most-escalated first (highest rung, then hottest), so both the WHERE attribution
+    // (`theater`) and the detail list LEAD with the theater an operator should look at
+    // first — not whichever happened to sort first in `theaters`. Mirrors the alliance
+    // light (hottest invoker) and the systemic driver; without it, a GreatPowerWar theater
+    // listed after a LimitedWar one would hand the apex attribution to the lesser war.
+    gp_kinetic.sort_by(|a, b| b.rung.level().cmp(&a.rung.level())
+        .then(b.heat.partial_cmp(&a.heat).unwrap_or(std::cmp::Ordering::Equal)));
     let gp_nearest = theaters.iter()
         .filter(|t| t.gp_involved)
         .max_by(|a, b| a.rung.level().cmp(&b.rung.level())
@@ -175,7 +182,11 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     // whether the apex configuration is live. (Previously this tripped at nuclear ≥0.70
     // while the amplifier required ≥0.78, so the board over-claimed the apex in the
     // 0.70–0.78 band.)
-    let brink = theaters.iter().find(|t| crate::theater::theater_is_nuclear_brink(t));
+    // Among ANY theaters in the apex nuclear-brink configuration, name the HOTTEST —
+    // same hottest-qualifying-theater rule as the gp-kinetic and alliance lights — so the
+    // apex WHERE pointer can't land on a cooler brink that merely sorts first in `theaters`.
+    let brink = theaters.iter().filter(|t| crate::theater::theater_is_nuclear_brink(t))
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
     let ind_brink = Indicator {
         id: "nuclear_brink", label: "Nuclear-brink configuration (apex)",
         tripped: brink.is_some(), theater: brink.map(|t| t.label.clone()),
@@ -442,6 +453,56 @@ mod tests {
         assert!(!alliance.tripped, "no invoked alliance must read clear");
         assert!(alliance.theater.is_none(), "a clear alliance light must name no theater");
         assert_eq!(alliance.detail, "None");
+    }
+
+    #[test]
+    fn apex_lights_name_the_hottest_qualifying_theater() {
+        use crate::theater::BRINK_NUCLEAR_THRESHOLD;
+        // The two APEX lights (gp_kinetic, nuclear_brink — the board's red, highest-stakes
+        // great-power-war conditions) must point their WHERE attribution at the HOTTEST
+        // qualifying theater, not whichever sorts first in `theaters` — the same rule the
+        // alliance light already enforces. Regression guard: a cooler/lesser qualifier
+        // listed FIRST must not steal the apex attribution from the hotter one listed second.
+
+        // ── gp_kinetic: a LimitedWar GP theater listed first, a GreatPowerWar one second.
+        let mut lesser = theater("us_iran", EscalationRung::LimitedWar, true,
+            &[("military_escalation", 0.60)], &["united_states", "iran"]);
+        lesser.heat = 0.55;
+        let mut greater = theater("nato_russia", EscalationRung::GreatPowerWar, true,
+            &[("military_escalation", 0.90)], &["russia", "nato", "united_states"]);
+        greater.heat = 0.90;
+        let snap = RiskSnapshot {
+            theaters: vec![lesser, greater],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let gp = inds.iter().find(|i| i.id == "gp_kinetic").unwrap();
+        assert!(gp.tripped, "two great powers at war must trip the kinetic light");
+        assert_eq!(gp.theater.as_deref(), Some("nato_russia"),
+            "the apex attribution must name the most-escalated theater, not the first listed");
+        // Detail must LEAD with the most-escalated theater (hottest-first ordering).
+        let di_greater = gp.detail.find("nato_russia").unwrap();
+        let di_lesser = gp.detail.find("us_iran").unwrap();
+        assert!(di_greater < di_lesser,
+            "detail should list the most-escalated theater first, got {:?}", gp.detail);
+
+        // ── nuclear_brink: two brink theaters, the hotter listed SECOND.
+        let two_gp = ["united_states", "russia"];
+        let mut cool_brink = theater("indo_pacific", EscalationRung::GreatPowerWar, true,
+            &[("nuclear_posture", BRINK_NUCLEAR_THRESHOLD + 0.02)], &two_gp);
+        cool_brink.heat = 0.60;
+        let mut hot_brink = theater("nato_russia", EscalationRung::GreatPowerWar, true,
+            &[("nuclear_posture", BRINK_NUCLEAR_THRESHOLD + 0.10)], &two_gp);
+        hot_brink.heat = 0.95;
+        let snap = RiskSnapshot {
+            theaters: vec![cool_brink, hot_brink],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let brink = inds.iter().find(|i| i.id == "nuclear_brink").unwrap();
+        assert!(brink.tripped, "a direct nuclear-superpower confrontation must trip the apex");
+        assert_eq!(brink.theater.as_deref(), Some("nato_russia"),
+            "the apex brink must name the hottest brink theater, not the first listed");
     }
 
     #[test]

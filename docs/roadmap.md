@@ -234,6 +234,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     great-power involvement coupler (documented qualitatively in #couplers) — optional polish.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.6 Apex I&W lights attribute WHERE to the hottest qualifying theater** — **DONE 2026-06-13.**
+  The two APEX I&W board lights (`gp_kinetic`, `nuclear_brink` — the red, highest-stakes
+  great-power-war conditions, `IW_APEX` on the dashboard) attributed their WHERE pointer to the
+  *first* qualifying theater in `theaters` Vec order, not the hottest: `gp_kinetic` used
+  `gp_kinetic.first()` and `nuclear_brink` used `theaters.iter().find(...)`. When two great-power
+  wars (or two nuclear brinks) are live, this could hand the apex attribution to the *lesser*
+  theater — e.g. a LimitedWar listed before a GreatPowerWar — a pillar-3 "show WHERE" defect on the
+  two conditions that matter most. The alliance light (`indicators.rs`) already enforces
+  hottest-qualifying via `max_by(heat)` (locked by `alliance_light_names_the_hottest_invoking_theater`);
+  this brings the two apex lights to the same rule: `gp_kinetic` now sorts its qualifiers most-escalated
+  first (rung, then heat) so both the `theater` attribution and the detail list lead with the hottest,
+  and `nuclear_brink` picks the hottest brink theater. No model/calibration constant touched. Locked by
+  `apex_lights_name_the_hottest_qualifying_theater`. See improvement-log 2026-06-13.
 - [x] **3.5 Analyst brief speaks the model's dominant coupling channel** — **DONE 2026-06-13.**
   The `/api/brief` analyst brief (the "why the number is where it is" insight layer) hard-coded its
   systemic-mechanism sentence ("Multiple concurrently-hot theaters coupled to nuclear-armed great
