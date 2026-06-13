@@ -480,7 +480,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
             </div>
             <div class="map-radar" id="map-radar">
               <div class="radar-h"><span>Markets</span><span class="radar-lvl" id="radar-level">—</span></div>
-              <div id="radar-body"></div>
+              <div id="radar-body"><div class="radar-empty">loading…</div></div>
             </div>
           </div>
         </div>
@@ -1264,7 +1264,7 @@ async function bootMap(){
       attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
       layers:[{id:'base',type:'raster',source:'base'}]},
     center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:7,renderWorldCopies:true,
-    fadeDuration:0,attributionControl:{compact:true}});
+    fadeDuration:0,attributionControl:{compact:false}});
   _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
   _map.on('load',()=>{
     _map.addSource('feeds',{type:'geojson',data:d.feeds||emptyFC()});
@@ -1337,8 +1337,8 @@ const MAP_GROUPS={security:'Security & Intelligence',environment:'Environment',
   space:'Space & Aerospace',political:'Political'};
 const MAP_GROUP_ORDER=['security','environment','aviation_maritime','infrastructure','military','humanitarian','space','political'];
 // Popup labels: turn the internal kind/source ids into plain language for the signal card.
-const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',weather:'Weather alert',air_quality:'Air quality',aircraft:'Aircraft',vessel:'Vessel',conflict:'Armed conflict',cyber:'Cyber',market:'Market',news:'News',other:'Signal'};
-const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky'};
+const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',volcano:'Volcano',weather:'Weather alert',air_quality:'Air quality',aircraft:'Aircraft',vessel:'Vessel',conflict:'Armed conflict',cyber:'Cyber',market:'Market',health:'Disease / health',news:'News',other:'Signal'};
+const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky',emsc:'EMSC',gvp_volcano:'Smithsonian GVP',healthmap:'HealthMap'};
 function kindColor(kind){const l=_layerMeta.find(x=>x.kind===kind);return (l&&l.color)||'#9bb';}
 function relTime(iso){const t=Date.parse(iso);if(!isFinite(t))return'';let s=(Date.now()-t)/1000;if(s<0)s=0;if(s<60)return'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';}
 function safeUrl(u){return (typeof u==='string'&&/^https?:\/\//i.test(u))?u:'';}
@@ -1416,7 +1416,8 @@ function wireMapClicks(){
 }
 
 async function refreshFinance(){
-  let d; try{ d=await (await fetch(BASE_PATH+'/api/finance')).json(); }catch(e){ return; }
+  let d; try{ d=await (await fetch(BASE_PATH+'/api/finance')).json(); }
+  catch(e){ const eb=document.getElementById('radar-body'); if(eb)eb.innerHTML='<div class="radar-empty">market feed unavailable</div>'; return; }
   const lvl=document.getElementById('radar-level');
   lvl.textContent=(d.level||'—')+(d.composite!=null?' '+(d.composite*100).toFixed(0)+'%':'');
   lvl.style.color=d.level_color||'var(--t2)';

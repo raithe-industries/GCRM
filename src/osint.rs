@@ -152,7 +152,15 @@ fn feed_detail(e: &Event) -> Option<String> {
     match e.source_id.as_str() {
         "usgs" => pf("mag").and_then(Value::as_f64).map(|m| format!("M{m:.1}")),
         "eqcanada" => e.raw.get("mag").and_then(Value::as_f64).map(|m| format!("M{m:.1}")),
+        "emsc" => pf("mag").and_then(Value::as_f64).map(|m| format!("M{m:.1}")),
         "cwfis" => pf("frp").and_then(Value::as_f64).map(|f| format!("{f:.0} MW fire power")),
+        "gvp_volcano" => {
+            let ongoing = pf("ContinuingEruption").map_or(false, |v| {
+                v.as_str() == Some("Yes") || v.as_bool() == Some(true) || v.as_i64() == Some(1)
+            });
+            Some(if ongoing { "Ongoing eruption".into() } else { "Recent eruption".into() })
+        }
+        "healthmap" => e.raw.get("label").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from),
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
@@ -203,16 +211,18 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eonet::Eonet, eqcanada::EqCanada,
-        gdacs::Gdacs, nws::Nws, opensky::OpenSky, usgs::Usgs,
+        cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, emsc::Emsc, eonet::Eonet,
+        eqcanada::EqCanada, gdacs::Gdacs, gvp_volcano::GvpVolcano, healthmap::HealthMap, nws::Nws,
+        opensky::OpenSky, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
     // North America (incl. Canada) and Europe/Middle-East (the live theaters), for
     // dense, honest coverage on both sides of the Atlantic. NWS/USGS leave Canada
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
-    // wildfire hotspots, NRCan earthquakes) fill the North-American signal gap.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air) = tokio::join!(
+    // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
+    // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -228,6 +238,12 @@ async fn feeds_payload() -> Value {
         fetch_one("eqcanada", EqCanada::default(), 9),
         // Environment Canada AQHI — air-quality stations (a live wildfire-smoke proxy).
         fetch_one("eccc_aqhi", EcccAqhi, 9),
+        // EMSC global earthquakes — denser than USGS outside the Americas (last 24h, M2+).
+        fetch_one("emsc", Emsc::default(), 9),
+        // Smithsonian GVP — recent/ongoing volcanic eruptions worldwide.
+        fetch_one("gvp_volcano", GvpVolcano::default(), 10),
+        // HealthMap — global disease-outbreak clusters (fills Africa/Asia/S-America).
+        fetch_one("healthmap", HealthMap::default(), 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -252,6 +268,9 @@ async fn feeds_payload() -> Value {
         (ca_fires.0, ca_fires.1, "cwfis", 700),
         (ca_quakes.0, ca_quakes.1, "eqcanada", 400),
         (ca_air.0, ca_air.1, "eccc_aqhi", 200),
+        (gl_quakes.0, gl_quakes.1, "emsc", 600),
+        (gl_volc.0, gl_volc.1, "gvp_volcano", 200),
+        (gl_health.0, gl_health.1, "healthmap", 300),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {

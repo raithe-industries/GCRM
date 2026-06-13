@@ -78,8 +78,10 @@ impl SignalDomain {
             EventKind::Conflict => SignalDomain::Military,
             EventKind::Earthquake
             | EventKind::Wildfire
+            | EventKind::Volcano
             | EventKind::Weather
-            | EventKind::AirQuality => SignalDomain::Disaster,
+            | EventKind::AirQuality
+            | EventKind::Health => SignalDomain::Disaster,
             EventKind::Cyber => SignalDomain::Cyber,
             EventKind::Market => SignalDomain::Economic,
             EventKind::Aircraft | EventKind::Vessel => SignalDomain::Movement,

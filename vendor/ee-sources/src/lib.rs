@@ -11,9 +11,12 @@ pub mod cisa_kev;
 pub mod cwfis;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
+pub mod emsc;
 pub mod eonet;
 pub mod eqcanada;
 pub mod gdacs;
+pub mod gvp_volcano;
+pub mod healthmap;
 pub mod nws;
 pub mod opensky;
 pub mod usgs;
@@ -36,5 +39,9 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(eccc_aqhi::EcccAqhi),
         Box::new(cwfis::Cwfis::default()),
         Box::new(eqcanada::EqCanada::default()),
+        // Global feeds to densify the whole map (not just North America).
+        Box::new(emsc::Emsc::default()),
+        Box::new(gvp_volcano::GvpVolcano::default()),
+        Box::new(healthmap::HealthMap::default()),
     ]
 }
