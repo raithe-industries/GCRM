@@ -74,11 +74,36 @@ fn theaters_sorted(snap: &Value) -> Vec<&Value> {
     ts
 }
 
+/// The model's own one-line account of WHICH coupling channel is turning a regional
+/// crisis into a *world*-war risk, from the live `coupling_driver` read-out. `None`
+/// when no channel lifts above the floor (the elevation is regionally contained).
+/// Honest by construction — a restatement of the engine's dominant amplifier, never a
+/// canned mechanism claim that could contradict the actual systemic state.
+fn coupling_sentence(coupling_driver: &str) -> Option<&'static str> {
+    match coupling_driver {
+        "single-theater nuclear brink" => Some(
+            "The dominant systemic amplifier is a direct nuclear-armed great-power confrontation \
+             concentrated in a single theater — the apex configuration, not breadth across regions."),
+        "great-power entanglement" => Some(
+            "The dominant systemic amplifier is great powers entangled across multiple theaters, \
+             which is what turns regional crises into a world-war risk rather than any single war."),
+        "multi-theater concurrency" => Some(
+            "The dominant systemic amplifier is multiple theaters hot at once, raising the odds that \
+             one regional war pulls the others in."),
+        "alliance activation" => Some(
+            "The dominant systemic amplifier is a mutual-defense alliance invocation, which can convert \
+             a bilateral clash into a bloc-wide war."),
+        _ => None,
+    }
+}
+
 /// Compact factual context handed to the LLM.
 fn build_context(snap: &Value) -> String {
+    let coupling_driver = s(snap, "/couplers/coupling_driver");
     let mut out = format!(
         "Systemic risk index: {:.0}/100. P(systemic war, annualized): {:.1}%. Alert: {}. Driver: {}.\n\
          Couplers: great-power entanglement {:.2}, theater concurrency {:.1}, alliance {:.2}, guardrail collapse {:.2}.\n\
+         Dominant coupling channel: {}.\n\
          Theaters (hottest first):\n",
         f(snap, "/systemic/index"),
         f(snap, "/probabilities/annual_pct"),
@@ -88,6 +113,7 @@ fn build_context(snap: &Value) -> String {
         f(snap, "/couplers/concurrency"),
         f(snap, "/couplers/alliance_activation"),
         f(snap, "/couplers/guardrail_collapse"),
+        if coupling_driver.is_empty() { "none (regional, not yet systemically coupled)" } else { coupling_driver },
     );
     for t in theaters_sorted(snap) {
         let actors = t.get("top_actors").and_then(|v| v.as_array())
@@ -109,6 +135,7 @@ fn templated_brief(snap: &Value) -> String {
     let pct = f(snap, "/probabilities/annual_pct");
     let alert = s(snap, "/alert/level");
     let driver = s(snap, "/systemic/driver");
+    let coupling_driver = s(snap, "/couplers/coupling_driver");
 
     let hot: Vec<String> = theaters_sorted(snap).into_iter()
         .filter(|t| f(t, "/heat") >= 0.18)
@@ -121,11 +148,16 @@ fn templated_brief(snap: &Value) -> String {
         idx, alert, pct, if driver.is_empty() { "no single theater above baseline" } else { driver },
     );
     if !hot.is_empty() {
-        p.push_str(&format!(
-            " Theaters currently elevated: {}. Multiple concurrently-hot theaters coupled to nuclear-armed \
-             great powers are what drive the systemic reading rather than any single regional war.",
-            hot.join("; "),
-        ));
+        p.push_str(&format!(" Theaters currently elevated: {}.", hot.join("; ")));
+        // Account for the systemic reading from the model's OWN dominant coupling channel,
+        // never a canned mechanism claim. A single-theater nuclear brink, for instance,
+        // must NOT print "multiple concurrently-hot theaters … rather than any single war".
+        match coupling_sentence(coupling_driver) {
+            Some(sentence) => { p.push(' '); p.push_str(sentence); }
+            None => p.push_str(
+                " No coupling channel yet links them into a systemic risk; the elevation \
+                 remains regionally contained."),
+        }
     } else {
         p.push_str(" No theater is currently above the crisis threshold; the reading sits near the structural baseline.");
     }
@@ -142,7 +174,7 @@ mod tests {
             "systemic": { "index": 76.0, "driver": "US/Israel–Iran at Great-Power War; 3 theaters hot" },
             "probabilities": { "annual_pct": 45.0 },
             "alert": { "level": "critical" },
-            "couplers": { "gp_entanglement": 1.0, "concurrency": 3.0, "alliance_activation": 0.0, "guardrail_collapse": 1.0 },
+            "couplers": { "gp_entanglement": 1.0, "concurrency": 3.0, "alliance_activation": 0.0, "guardrail_collapse": 1.0, "coupling_driver": "great-power entanglement" },
             "theaters": [
                 { "label": "US/Israel–Iran", "rung_label": "Great-Power War", "heat": 0.83, "trend": "rising", "top_actors": ["united_states","iran"] },
                 { "label": "NATO–Russia",    "rung_label": "Great-Power War", "heat": 0.77, "trend": "stable", "top_actors": ["russia","ukraine"] },
@@ -167,5 +199,41 @@ mod tests {
         assert!(b.contains("76/100"));
         assert!(b.contains("US/Israel–Iran"));
         assert!(!b.contains("Korean Peninsula"), "stable theater should not be listed as elevated");
+    }
+
+    #[test]
+    fn context_includes_the_dominant_coupling_channel() {
+        let c = build_context(&sample());
+        assert!(c.contains("Dominant coupling channel: great-power entanglement"),
+            "the LLM context must surface the model's own dominant coupling channel, got:\n{c}");
+    }
+
+    #[test]
+    fn templated_brief_accounts_for_systemic_reading_from_the_live_coupling_driver() {
+        // Honesty lock: the systemic-mechanism sentence must come from the model's own
+        // `coupling_driver`, never a canned claim. The pre-fix code printed "Multiple
+        // concurrently-hot theaters … rather than any single regional war" for EVERY hot
+        // world — flatly wrong when the dominant amplifier is a single-theater nuclear brink.
+        let mut snap = sample();
+        snap["couplers"]["coupling_driver"] = json!("single-theater nuclear brink");
+        let b = templated_brief(&snap);
+        assert!(b.contains("single theater"),
+            "a nuclear-brink world must name the single-theater apex, got:\n{b}");
+        assert!(!b.contains("rather than any single regional war"),
+            "the canned 'rather than any single regional war' claim must be GONE — it \
+             contradicts a single-theater brink, got:\n{b}");
+
+        // The great-power-entanglement default fixture names that channel.
+        let b2 = templated_brief(&sample());
+        assert!(b2.contains("great powers entangled across multiple theaters"),
+            "the gp-entanglement world must name that channel, got:\n{b2}");
+
+        // Hot theaters but NO dominant coupling channel → honest "regionally contained",
+        // not a fabricated coupling story.
+        let mut snap3 = sample();
+        snap3["couplers"]["coupling_driver"] = json!("");
+        let b3 = templated_brief(&snap3);
+        assert!(b3.contains("regionally contained"),
+            "an uncoupled-but-hot world must read as regionally contained, got:\n{b3}");
     }
 }
