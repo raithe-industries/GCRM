@@ -562,19 +562,28 @@ impl SeismicMonitor {
             // Upgrade to multi-network if we haven't already
             let mut alerts = self.state.nuclear_alerts.lock().await;
             if let Some(a) = alerts.iter_mut().find(|a| a.id == *event_id) {
-                if a.level == SeismicAlertLevel::Anomaly {
-                    a.level         = SeismicAlertLevel::MultiNetwork;
-                    a.corroboration = networks;
-                    if !a.networks.contains(&source_id.to_string()) {
-                        a.networks.push(source_id.to_string());
-                    }
-                    a.confidence  = a.compute_confidence();
-                    a.description = Self::build_description(a);
-                    info!(
-                        "SEISMIC ANOMALY upgraded: multi-network ({}) M{:.1} near {}",
-                        networks, mag, site.name
-                    );
+                // Track corroboration on EVERY confirming network, not just the first.
+                // Previously this whole block was gated on `level == Anomaly`, so the 2nd
+                // network promoted Anomaly→MultiNetwork and froze corroboration at 2 — the
+                // 3rd/4th/5th networks were silently dropped and confidence under-stated.
+                a.corroboration = networks;
+                if !a.networks.contains(&source_id.to_string()) {
+                    a.networks.push(source_id.to_string());
                 }
+                // One-time level promotion only; never regress AftershockAbsent/CtbtoStatement.
+                if a.level == SeismicAlertLevel::Anomaly {
+                    a.level = SeismicAlertLevel::MultiNetwork;
+                }
+                a.confidence  = a.compute_confidence();
+                a.description = if a.aftershock_checked {
+                    Self::build_description_static(a)
+                } else {
+                    Self::build_description(a)
+                };
+                info!(
+                    "SEISMIC ANOMALY corroboration: {} network(s) M{:.1} near {}",
+                    networks, mag, site.name
+                );
             }
         }
     }
