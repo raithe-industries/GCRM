@@ -298,7 +298,9 @@ async fn get_epoch(
         .into_iter()
         .filter(|e| {
             if let Some(ref since) = params.since {
-                e.get("ts")
+                // TimelineEntry serializes its timestamp as "t" (models.rs), not "ts" —
+                // the old "ts" lookup was always None, so `since` silently never filtered.
+                e.get("t")
                     .and_then(|t| t.as_str())
                     .is_none_or(|ts| ts >= since.as_str())
             } else {

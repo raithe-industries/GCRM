@@ -406,8 +406,13 @@ fn make_event_from_llm(article: &RawArticle, x: &LlmExtraction) -> GeopoliticalE
     );
     event.raw_article_id = article.id.clone();
     for (modality, score) in x.modality_pairs() {
-        if score >= LLM_TAG_THRESHOLD {
-            event.domain_signals.insert(modality.to_string(), score * LLM_SCORE_DISCOUNT);
+        // Gate the tag on the DISCOUNTED value that actually gets stored, mirroring
+        // merge_llm_scores — otherwise a raw score in [0.50, 0.556) was tagged while its
+        // stored signal fell below the tag threshold, desyncing domain_tags from
+        // domain_signals (and surfacing the article under a modality filter it didn't meet).
+        let discounted = score * LLM_SCORE_DISCOUNT;
+        if discounted >= LLM_TAG_THRESHOLD {
+            event.domain_signals.insert(modality.to_string(), discounted);
             event.domain_tags.push(modality.to_string());
         }
     }
