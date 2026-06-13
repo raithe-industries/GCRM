@@ -16,6 +16,48 @@ Format per entry:
 
 ---
 
+## 2026-06-13 — awareness — apex I&W lights attribute WHERE to the hottest qualifying theater, not the first in list order (roadmap 3.6)
+- Item: roadmap 3.6 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY"). Axis rotation:
+  the recent batch advanced legibility/honesty (06-13 2.5, 06-12 ×3), awareness (06-13 3.5, 06-12 3.4),
+  and robustness (06-12 4.4) — fairly even; this stays on awareness because its sibling open item (3.2
+  GDELT) needs live-network verification the cloud sandbox lacks, and this is a fully-cloud-provable
+  correctness fix on the operator surface. Not eyes-gated (pure backend `indicators.rs`).
+- Verified-open-first (read `indicators::evaluate` end-to-end against the current code): the two APEX
+  I&W board lights — the ones the dashboard flags red via `IW_APEX = {gp_kinetic, nuclear_brink}`, i.e.
+  the highest-stakes great-power-war conditions — attributed their `theater` WHERE pointer to whichever
+  qualifying theater sorted FIRST in the `theaters` Vec, not the hottest: `gp_kinetic` took
+  `gp_kinetic.first()` off an order-preserving `filter`, and `nuclear_brink` took
+  `theaters.iter().find(theater_is_nuclear_brink)`. So with two great-power wars live (or two nuclear
+  brinks), the apex attribution could land on the LESSER theater — e.g. a LimitedWar GP theater listed
+  before a GreatPowerWar one would steal the pointer from the bigger war. A real pillar-3 "show WHERE"
+  defect on exactly the two lights that matter most. The alliance light already solved this class on
+  2026-06-11 (`max_by(heat)`, locked by `alliance_light_names_the_hottest_invoking_theater`); the two
+  apex lights were simply never brought to the same rule.
+- Change (one coherent change, `indicators.rs` only): (a) `gp_kinetic` — sort the qualifying-theater Vec
+  most-escalated first (`rung.level()` desc, then `heat` desc) so both the `theater` attribution
+  (`.first()`) AND the detail list lead with the theater an operator should look at first; (b)
+  `nuclear_brink` — replace `.find()` with `.filter(theater_is_nuclear_brink).max_by(heat)` so the apex
+  brink names the hottest brink, not the first listed. Honest by construction — a read-out ordering of
+  the model's own rung/heat, no new lever; NO model/calibration constant touched, and the tripped/clear
+  decisions are byte-identical (only WHICH qualifying theater is named changed).
+- Metric moved: test count 386 → 387 by the scorecard grep (new
+  `apex_lights_name_the_hottest_qualifying_theater`); a pillar-3 awareness defect on the two apex I&W
+  lights closed (the WHERE pointer now follows the most-escalated qualifier, consistent with the
+  alliance light and the systemic driver). Calibration evidence UNCHANGED — backtest 9/9
+  (quiet/Ukraine/current/Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release` =
+  386 passed / 0 failed / 3 ignored (387 by the grep incl. the new test); `cargo test --release backtest`
+  = 9 passed. The lock drives two worlds: (a) a LimitedWar GP theater listed FIRST + a hotter
+  GreatPowerWar one second → `gp_kinetic.theater` names the GreatPowerWar theater and the detail lists
+  it first; (b) a cooler nuclear brink listed FIRST + a hotter brink second → `nuclear_brink.theater`
+  names the hotter one. A revert to `.first()` / `.find()` (the original list-order bug) fails it.
+- Notes / decisions future runs must respect: all theater-attributing I&W lights now name the HOTTEST
+  qualifying theater (alliance/nuclear/energy/cross-domain via `max_by`, gp_kinetic via the new
+  most-escalated sort, brink via `max_by(heat)`) — do NOT revert any apex light to `.first()`/`.find()`
+  over the raw `theaters` order (it resurrects the wrong-theater attribution). The ordering is a pure
+  read-out of the model's own rung/heat, never a new lever. Remaining open awareness item: 3.2 (GDELT) —
+  still gated on live-network verification, not for the cloud routine.
+
 ## 2026-06-13 — legibility/honesty — live-read freshness watchdog: the dashboard stops claiming "Live" when snapshots stop arriving (roadmap 2.5)
 - Item: roadmap 2.5 (new, now checked). Legibility axis (pillar 2) serving HONESTY (pillar 1, top
   mission priority: "the number must mean what it says ... never cosmetically reassure"). Axis rotation:
