@@ -165,6 +165,25 @@ fn default_settings() -> Settings {
 
 // ── Signal handler ────────────────────────────────────────────────────────────
 
+/// Load `secrets.env` (gitignored, `KEY=VALUE` per line) from the working dir into the
+/// process environment. Keeps API credentials out of the source-available repo. Best
+/// effort: a missing file is fine, and a real pre-set env var always wins.
+fn load_secrets_env() {
+    let Ok(text) = std::fs::read_to_string("secrets.env") else { return };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            let (k, v) = (k.trim(), v.trim().trim_matches('"'));
+            if !k.is_empty() && std::env::var_os(k).is_none() {
+                std::env::set_var(k, v);
+            }
+        }
+    }
+}
+
 async fn wait_for_shutdown() {
     use tokio::signal::unix::{signal, SignalKind};
     let mut sigint  = signal(SignalKind::interrupt()).expect("SIGINT handler");
@@ -187,6 +206,10 @@ async fn main() {
         backfill::run();
         return;
     }
+
+    // Load credentials from a gitignored `secrets.env` (FIRMS_MAP_KEY, ACLED_*,
+    // OPENSKY_*) into the process env, so keys stay OUT of the committed repo.
+    load_secrets_env();
 
     // ── Logging ───────────────────────────────────────────────────────────────
     let filter = EnvFilter::try_from_default_env()
