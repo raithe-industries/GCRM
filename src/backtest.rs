@@ -110,9 +110,13 @@ fn live_hot_2026() -> (f64, Vec<GeopoliticalEvent>) {
     // escalated to the Great-Power-War rung. Breadth PLUS an active great-power war —
     // but still no single direct US–Russia nuclear-brink ultimatum à la Cuba. Robert's
     // target: ~82% (near-apex, off the 0.90 ceiling, with resolution — not a flat peg).
+    // NB: "great_power_conflict" is NOT a v2 scored modality (it was folded into the
+    // gp coupler), so listing it added ZERO heat — the great-power rung is conveyed by
+    // gp=true + actor_ids below, which feed the coupler. Use only real scored modalities
+    // here so the analog's modeled heat matches its stated near-apex intent.
     let mut ev = evset("us_china_taiwan",
-        &[("great_power_conflict", 0.95, 0.95), ("military_escalation", 0.95, 0.92),
-          ("nuclear_posture", 0.62, 0.65),      ("diplomatic_breakdown", 0.85, 0.75)],
+        &[("military_escalation", 0.95, 0.92), ("economic_warfare", 0.88, 0.80),
+          ("nuclear_posture", 0.62, 0.65),     ("diplomatic_breakdown", 0.85, 0.75)],
         &["china", "united_states", "taiwan"], true, 9);
     ev.extend(evset("us_iran",
         &[("military_escalation", 0.92, 0.90), ("economic_warfare", 0.85, 0.70),
