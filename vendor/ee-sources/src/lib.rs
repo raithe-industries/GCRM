@@ -10,6 +10,7 @@
 pub mod cisa_kev;
 pub mod cwfis;
 pub mod eccc_alerts;
+pub mod eccc_aqhi;
 pub mod eonet;
 pub mod eqcanada;
 pub mod gdacs;
@@ -32,6 +33,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(eonet::Eonet::default()),
         // Canada-specific geocoded feeds (NWS/USGS leave Canada sparse).
         Box::new(eccc_alerts::EcccAlerts),
+        Box::new(eccc_aqhi::EcccAqhi),
         Box::new(cwfis::Cwfis::default()),
         Box::new(eqcanada::EqCanada::default()),
     ]

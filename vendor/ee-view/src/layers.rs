@@ -105,10 +105,11 @@ pub struct LayerDescriptor {
 }
 
 /// Every [`EventKind`], in the order layers are listed.
-const ALL_KINDS: [EventKind; 10] = [
+const ALL_KINDS: [EventKind; 11] = [
     EventKind::Earthquake,
     EventKind::Wildfire,
     EventKind::Weather,
+    EventKind::AirQuality,
     EventKind::Aircraft,
     EventKind::Vessel,
     EventKind::Conflict,
@@ -126,6 +127,7 @@ pub fn descriptor_for(kind: EventKind) -> LayerDescriptor {
         Earthquake => ("quakes", "Earthquakes", Environment, "#d7263d", "quake", true),
         Wildfire => ("wildfires", "Wildfires & Thermal", Environment, "#ff6b35", "fire", true),
         Weather => ("weather", "Weather & Storms", Environment, "#3a86ff", "storm", true),
+        AirQuality => ("air_quality", "Air Quality", Environment, "#a06cd5", "haze", true),
         Aircraft => ("flights", "Aircraft", AviationMaritime, "#8338ec", "plane", true),
         Vessel => ("vessels", "Vessels (AIS)", AviationMaritime, "#0077b6", "ship", true),
         Conflict => ("conflicts", "Armed Conflict", Security, "#6a040f", "conflict", true),

@@ -157,6 +157,20 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .map-lyr .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .map-lyr .ct{margin-left:auto;font-size:8px;color:var(--t4);font-family:monospace}
 .map-lyr .ct.z{color:#39414f;font-weight:400}
+/* Map signal popup — a meaningful card, not a bare number. Dark-themed (MapLibre's
+   default popup is white, which made the old white-on-white text invisible). */
+.maplibregl-popup.sig-pop .maplibregl-popup-content{background:rgba(8,12,17,.97);border:0.5px solid var(--border);border-radius:5px;padding:7px 9px 8px;box-shadow:0 4px 14px rgba(0,0,0,.55)}
+.maplibregl-popup.sig-pop .maplibregl-popup-tip{border-top-color:rgba(8,12,17,.97);border-bottom-color:rgba(8,12,17,.97)}
+.maplibregl-popup.sig-pop .maplibregl-popup-close-button{color:var(--t4);font-size:14px;line-height:1;padding:1px 5px}
+.pop-h{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.pop-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;border:0.5px solid rgba(255,255,255,.35)}
+.pop-kind{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--t2)}
+.pop-val{margin-left:auto;padding-left:8px;font-family:monospace;font-size:11px;font-weight:700;color:var(--t1);white-space:nowrap}
+.pop-title{font-size:10px;color:#eef3f8;line-height:1.32;margin-bottom:3px}
+.pop-sub{font-size:9px;color:var(--t2);margin-bottom:2px}
+.pop-meta{font-size:8px;color:var(--t4);font-family:monospace}
+.pop-link{display:inline-block;margin-top:5px;font-size:8px;font-weight:600;color:var(--accent);text-decoration:none}
+.pop-link:hover{text-decoration:underline}
 .map-radar{position:absolute;bottom:5px;left:5px;z-index:6;width:160px;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px}
 .map-radar.hidden{display:none}
 .radar-h{display:flex;justify-content:space-between;align-items:baseline;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:4px}
@@ -1322,6 +1336,12 @@ const MAP_GROUPS={security:'Security & Intelligence',environment:'Environment',
   military:'Military & Defense',humanitarian:'Humanitarian & Crisis',
   space:'Space & Aerospace',political:'Political'};
 const MAP_GROUP_ORDER=['security','environment','aviation_maritime','infrastructure','military','humanitarian','space','political'];
+// Popup labels: turn the internal kind/source ids into plain language for the signal card.
+const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',weather:'Weather alert',air_quality:'Air quality',aircraft:'Aircraft',vessel:'Vessel',conflict:'Armed conflict',cyber:'Cyber',market:'Market',news:'News',other:'Signal'};
+const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky'};
+function kindColor(kind){const l=_layerMeta.find(x=>x.kind===kind);return (l&&l.color)||'#9bb';}
+function relTime(iso){const t=Date.parse(iso);if(!isFinite(t))return'';let s=(Date.now()-t)/1000;if(s<0)s=0;if(s<60)return'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';}
+function safeUrl(u){return (typeof u==='string'&&/^https?:\/\//i.test(u))?u:'';}
 // Layers with no live geocoded feed yet — rendered with a muted "—" + tooltip so the
 // panel reads as intentional (awaiting a key/feed) instead of broken at "0".
 const LAYER_HINTS={aircraft:'Live once an OpenSky account is configured (OPENSKY_USERNAME / OPENSKY_PASSWORD)',
@@ -1375,12 +1395,23 @@ function wireMapClicks(){
     _map.on('mouseenter',id,()=>_map.getCanvas().style.cursor='pointer');
     _map.on('mouseleave',id,()=>_map.getCanvas().style.cursor='');
     _map.on('click',id,e=>{ const p=e.features[0].properties||{};
-      const title=p.label||p.title||p.id||'';
-      const sub=p.rung_label?('Escalation: '+p.rung_label+(p.trend?' ('+p.trend+')':'')):
-        (p.kind?('['+p.kind+'] severity '+(parseFloat(p.severity)||0).toFixed(2)):'');
-      new maplibregl.Popup({closeButton:false,maxWidth:'210px'}).setLngLat(e.lngLat)
-        .setHTML(`<div style="font:600 9px system-ui;color:#fff">${esc(title)}</div><div style="font:8px monospace;color:#9bb;margin-top:2px">${esc(sub)}</div>`)
-        .addTo(_map); });
+      let html;
+      if(p.rung_label){ // GCRM theater flashpoint — escalation read
+        const ec=(p.event_count!=null&&p.event_count!=='')?`<div class="pop-meta">${esc(String(p.event_count))} events feeding this read</div>`:'';
+        html=`<div class="pop-h"><span class="pop-dot" style="background:${p.color||'#e74c3c'}"></span><b style="font-size:10px;color:#fff">${esc(p.label||p.id||'Theater')}</b></div>`+
+          `<div class="pop-sub">Escalation: ${esc(p.rung_label)}${p.trend?' ('+esc(p.trend)+')':''}</div>`+ec;
+      } else { // live feed signal — a meaningful card: type · real value, what, when, who, link
+        const kind=p.kind||'other';
+        const detail=p.detail?`<span class="pop-val">${esc(p.detail)}</span>`:'';
+        const title=p.title?`<div class="pop-title">${esc(p.title)}</div>`:'';
+        const meta=[relTime(p.time),esc(SRC_LABEL[p.source_id]||p.source_id||'')].filter(Boolean).join(' · ');
+        const u=safeUrl(p.url);
+        const link=u?`<a class="pop-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">→ source report</a>`:'';
+        html=`<div class="pop-h"><span class="pop-dot" style="background:${kindColor(kind)}"></span><span class="pop-kind">${esc(KIND_LABEL[kind]||kind)}</span>${detail}</div>`+
+          title+(meta?`<div class="pop-meta">${meta}</div>`:'')+link;
+      }
+      new maplibregl.Popup({closeButton:true,maxWidth:'250px',className:'sig-pop'}).setLngLat(e.lngLat)
+        .setHTML(html).addTo(_map); });
   });
 }
 

@@ -18,6 +18,7 @@ pub enum EventKind {
     Cyber,
     Market,
     Weather,
+    AirQuality,
     News,
     Other,
 }

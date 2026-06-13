@@ -76,9 +76,10 @@ impl SignalDomain {
     pub fn of(kind: EventKind) -> Self {
         match kind {
             EventKind::Conflict => SignalDomain::Military,
-            EventKind::Earthquake | EventKind::Wildfire | EventKind::Weather => {
-                SignalDomain::Disaster
-            }
+            EventKind::Earthquake
+            | EventKind::Wildfire
+            | EventKind::Weather
+            | EventKind::AirQuality => SignalDomain::Disaster,
             EventKind::Cyber => SignalDomain::Cyber,
             EventKind::Market => SignalDomain::Economic,
             EventKind::Aircraft | EventKind::Vessel => SignalDomain::Movement,

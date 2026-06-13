@@ -114,10 +114,12 @@ pub fn parse_cwfis(json: &str) -> anyhow::Result<Vec<Event>> {
 
         let frp = props.get("frp").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let agency = props.get("agency").and_then(|v| v.as_str()).unwrap_or("");
+        // FRP rides in the map popup's value chip (see osint::feed_detail); keep the
+        // title to the place so the card doesn't show the wattage twice.
         let title = if agency.is_empty() {
-            format!("Wildfire hotspot — {frp:.0} MW")
+            "Wildfire hotspot".to_string()
         } else {
-            format!("Wildfire hotspot — {agency} · {frp:.0} MW")
+            format!("Wildfire hotspot — {agency}")
         };
 
         let time = props
@@ -171,7 +173,7 @@ mod tests {
         assert_eq!(ev.len(), 2);
 
         assert_eq!(ev[0].kind, EventKind::Wildfire);
-        assert_eq!(ev[0].title, "Wildfire hotspot — BC · 60 MW");
+        assert_eq!(ev[0].title, "Wildfire hotspot — BC");
         let g = ev[0].geo.unwrap();
         assert!((g.lat - 55.2).abs() < 1e-9 && (g.lon + 120.5).abs() < 1e-9);
         // frp 60 -> severity saturates at 1.0.

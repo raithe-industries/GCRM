@@ -15,6 +15,7 @@
 //! reported in `errors[]` rather than failing the whole response, so one slow
 //! provider can never blank the map.
 
+use std::collections::HashMap;
 use std::time::{Duration as StdDuration, Instant};
 
 use ee_core::{Event, Source};
@@ -65,6 +66,14 @@ impl PayloadCache {
 /// map TTL is longer (3 min) to stay within OpenSky's anonymous daily credit budget.
 static MAP_FEEDS_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(180));
 static FINANCE_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50));
+
+/// Per-feed last-good event batches. `None` until first use (so it can be a `const`
+/// static); filled lazily under the lock in `feeds_payload`. Lets a transient empty
+/// upstream fall back to its most recent good data instead of a deceptive zero.
+static FEED_LAST_GOOD: Mutex<Option<HashMap<String, (Instant, Vec<Event>)>>> =
+    Mutex::const_new(None);
+/// How long a feed's last-good batch may stand in for an empty live pull (30 min).
+const LAST_GOOD_MAX_AGE: StdDuration = StdDuration::from_secs(1800);
 
 /// A representative coordinate (lat, lon) for each canonical GCRM theater id, so the
 /// abstract flashpoints can be placed on the map. `other` has no fixed location.
@@ -133,6 +142,44 @@ async fn fetch_one(name: &'static str, src: impl Source, secs: u64) -> (Vec<Even
     }
 }
 
+/// A short, human-readable value behind a feed dot — the real-world quantity
+/// (magnitude, fire power, alert class, air-quality index) lifted from the provider's
+/// raw payload. `None` when the source has no obvious scalar worth surfacing; the
+/// popup then just shows the signal type and time.
+fn feed_detail(e: &Event) -> Option<String> {
+    let props = e.raw.get("properties");
+    let pf = |k: &str| props.and_then(|p| p.get(k));
+    match e.source_id.as_str() {
+        "usgs" => pf("mag").and_then(Value::as_f64).map(|m| format!("M{m:.1}")),
+        "eqcanada" => e.raw.get("mag").and_then(Value::as_f64).map(|m| format!("M{m:.1}")),
+        "cwfis" => pf("frp").and_then(Value::as_f64).map(|f| format!("{f:.0} MW fire power")),
+        "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
+        "nws" => pf("severity")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty() && *s != "Unknown")
+            .map(str::to_string),
+        "eccc_aqhi" => pf("aqhi")
+            .and_then(Value::as_f64)
+            .map(|a| format!("AQHI {a:.0} · {}", ee_sources::eccc_aqhi::aqhi_risk(a))),
+        "eonet" => pf("categories")
+            .and_then(|c| c.as_array())
+            .and_then(|c| c.first())
+            .and_then(|c| c.get("title"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+/// Capitalize the first character (provider labels often arrive all-lowercase).
+fn capitalize_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
 /// Build the full map payload: live feeds (GeoJSON), GCRM theater flashpoints, the
 /// toggleable layer registry, and the base-map catalogue.
 ///
@@ -156,16 +203,16 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        cwfis::Cwfis, eccc_alerts::EcccAlerts, eonet::Eonet, eqcanada::EqCanada, gdacs::Gdacs,
-        nws::Nws, opensky::OpenSky, usgs::Usgs,
+        cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eonet::Eonet, eqcanada::EqCanada,
+        gdacs::Gdacs, nws::Nws, opensky::OpenSky, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
     // North America (incl. Canada) and Europe/Middle-East (the live theaters), for
     // dense, honest coverage on both sides of the Atlantic. NWS/USGS leave Canada
-    // nearly blank, so three Canada-native feeds (ECCC alerts, CWFIS wildfire
-    // hotspots, NRCan earthquakes) fill the North-American signal gap.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes) = tokio::join!(
+    // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
+    // wildfire hotspots, NRCan earthquakes) fill the North-American signal gap.
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -179,11 +226,18 @@ async fn feeds_payload() -> Value {
         fetch_one("cwfis", Cwfis::default(), 12),
         // Earthquakes Canada (NRCan) — dense Canadian seismicity USGS drops, last 7d.
         fetch_one("eqcanada", EqCanada::default(), 9),
+        // Environment Canada AQHI — air-quality stations (a live wildfire-smoke proxy).
+        fetch_one("eccc_aqhi", EcccAqhi, 9),
     );
 
     let mut errors: Vec<String> = Vec::new();
     let mut counts = serde_json::Map::new();
     let mut feed_events: Vec<Event> = Vec::new();
+    // Last-good store, so a transient empty/failed upstream doesn't silently blank a
+    // whole layer (a CWFIS GeoServer hiccup used to zero out all of Canada's wildfires).
+    let mut lg_guard = FEED_LAST_GOOD.lock().await;
+    let last_good = lg_guard.get_or_insert_with(HashMap::new);
+    let now = Instant::now();
     // Cap each feed so the payload can't balloon; the two OpenSky regions sum into
     // one "opensky" count. (events, optional error, source key, per-feed cap)
     let mut opensky_total = 0usize;
@@ -197,21 +251,56 @@ async fn feeds_payload() -> Value {
         (ca_alerts.0, ca_alerts.1, "eccc_alerts", 300),
         (ca_fires.0, ca_fires.1, "cwfis", 700),
         (ca_quakes.0, ca_quakes.1, "eqcanada", 400),
+        (ca_air.0, ca_air.1, "eccc_aqhi", 200),
     ] {
         evs.truncate(cap);
+        if let Some(e) = err {
+            errors.push(e);
+        }
+        // Resilience: refresh last-good on a non-empty pull; on an empty one, reuse the
+        // recent last-good (flagged stale) instead of caching a deceptive zero. Skipped
+        // for the double-keyed "opensky" so its two regions don't fight over one slot.
+        if key != "opensky" {
+            if !evs.is_empty() {
+                last_good.insert(key.to_string(), (now, evs.clone()));
+            } else if let Some((at, prev)) = last_good.get(key) {
+                if now.duration_since(*at) < LAST_GOOD_MAX_AGE {
+                    let age = now.duration_since(*at).as_secs();
+                    evs = prev.clone();
+                    errors.push(format!(
+                        "{key}: live feed empty — showing last-good {} ({age}s old)",
+                        evs.len()
+                    ));
+                }
+            }
+        }
         if key == "opensky" {
             opensky_total += evs.len();
             counts.insert("opensky".to_string(), json!(opensky_total));
         } else {
             counts.insert(key.to_string(), json!(evs.len()));
         }
-        if let Some(e) = err {
-            errors.push(e);
-        }
         feed_events.extend(evs);
     }
+    drop(lg_guard);
 
-    let feeds = ee_view::geojson::to_feature_collection(&feed_events);
+    let mut feeds = ee_view::geojson::to_feature_collection(&feed_events);
+    // Enrich each plotted feature with a human-readable value chip ("M2.7", "24 MW
+    // fire power", "Warning", "AQHI 7 · High risk") pulled from the provider's raw
+    // payload and matched back by event id — so the map popup conveys real meaning,
+    // not an opaque normalized 0–1 severity.
+    let details: HashMap<&str, String> = feed_events
+        .iter()
+        .filter_map(|e| feed_detail(e).map(|d| (e.id.as_str(), d)))
+        .collect();
+    if let Some(arr) = feeds.get_mut("features").and_then(|f| f.as_array_mut()) {
+        for feat in arr {
+            let id = feat.get("properties").and_then(|p| p.get("id")).and_then(|i| i.as_str());
+            if let Some(d) = id.and_then(|id| details.get(id)) {
+                feat["properties"]["detail"] = json!(d);
+            }
+        }
+    }
 
     // Layer registry (ee-view) + a synthetic descriptor for the GCRM flashpoint layer.
     let mut layers: Vec<Value> = ee_view::layers::registry()
