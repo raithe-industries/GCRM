@@ -233,7 +233,7 @@ async fn feeds_payload() -> Value {
         // Environment Canada weather warnings/watches — the Canadian NWS equivalent.
         fetch_one("eccc_alerts", EcccAlerts, 9),
         // CWFIS satellite wildfire hotspots over Canada (last 24h).
-        fetch_one("cwfis", Cwfis::default(), 12),
+        fetch_one("cwfis", Cwfis::default(), 10),
         // Earthquakes Canada (NRCan) — dense Canadian seismicity USGS drops, last 7d.
         fetch_one("eqcanada", EqCanada::default(), 9),
         // Environment Canada AQHI — air-quality stations (a live wildfire-smoke proxy).
@@ -243,7 +243,8 @@ async fn feeds_payload() -> Value {
         // Smithsonian GVP — recent/ongoing volcanic eruptions worldwide.
         fetch_one("gvp_volcano", GvpVolcano::default(), 10),
         // HealthMap — global disease-outbreak clusters (fills Africa/Asia/S-America).
-        fetch_one("healthmap", HealthMap::default(), 12),
+        // 2-day window keeps the response small/fast (the full window is several MB).
+        fetch_one("healthmap", HealthMap { days: 2 }, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();

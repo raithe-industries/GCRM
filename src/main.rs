@@ -334,6 +334,16 @@ async fn main() {
     // process exits — a bare select arm dropped it mid-save, so the cache never wrote.
     let mut nlp_task = tokio::spawn(nlp_sidecar.run());
 
+    // Pre-warm the OSINT map + Finance TTL caches in the background so the FIRST
+    // dashboard load — real users and the deploy "eyes" gate alike — hits a warm cache
+    // instead of a ~10s cold multi-feed fan-out that can blow the page-load budget
+    // (this is what rolled back the globe-population deploy). Best-effort; the caches
+    // refresh themselves on their own TTL thereafter.
+    tokio::spawn(async {
+        let _ = osint::map_payload(None).await;
+        let _ = osint::finance_payload().await;
+    });
+
     tokio::select! {
         _ = tokio::spawn(ingestor.run()) => {
             error!("Ingestor task exited unexpectedly");
