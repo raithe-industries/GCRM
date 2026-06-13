@@ -8,7 +8,10 @@
 //! 3. Add the module below and register a default instance in [`registry`].
 
 pub mod cisa_kev;
+pub mod cwfis;
+pub mod eccc_alerts;
 pub mod eonet;
+pub mod eqcanada;
 pub mod gdacs;
 pub mod nws;
 pub mod opensky;
@@ -27,5 +30,9 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(opensky::OpenSky::default()),
         Box::new(yahoo::Yahoo::default()),
         Box::new(eonet::Eonet::default()),
+        // Canada-specific geocoded feeds (NWS/USGS leave Canada sparse).
+        Box::new(eccc_alerts::EcccAlerts),
+        Box::new(cwfis::Cwfis::default()),
+        Box::new(eqcanada::EqCanada::default()),
     ]
 }

@@ -155,12 +155,17 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// layer registry, and base-map catalogue. This is the expensive, cacheable
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
-    use ee_sources::{eonet::Eonet, gdacs::Gdacs, nws::Nws, opensky::OpenSky, usgs::Usgs};
+    use ee_sources::{
+        cwfis::Cwfis, eccc_alerts::EcccAlerts, eonet::Eonet, eqcanada::EqCanada, gdacs::Gdacs,
+        nws::Nws, opensky::OpenSky, usgs::Usgs,
+    };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
     // North America (incl. Canada) and Europe/Middle-East (the live theaters), for
-    // dense, honest coverage on both sides of the Atlantic.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural) = tokio::join!(
+    // dense, honest coverage on both sides of the Atlantic. NWS/USGS leave Canada
+    // nearly blank, so three Canada-native feeds (ECCC alerts, CWFIS wildfire
+    // hotspots, NRCan earthquakes) fill the North-American signal gap.
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -168,6 +173,12 @@ async fn feeds_payload() -> Value {
         fetch_one("opensky", OpenSky { bbox: Some((24.0, -11.0, 60.0, 60.0)) }, 9),
         // NASA EONET natural events (wildfires / storms / volcanoes), last 45 days.
         fetch_one("eonet", Eonet { days: 45 }, 10),
+        // Environment Canada weather warnings/watches — the Canadian NWS equivalent.
+        fetch_one("eccc_alerts", EcccAlerts, 9),
+        // CWFIS satellite wildfire hotspots over Canada (last 24h).
+        fetch_one("cwfis", Cwfis::default(), 12),
+        // Earthquakes Canada (NRCan) — dense Canadian seismicity USGS drops, last 7d.
+        fetch_one("eqcanada", EqCanada::default(), 9),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -183,6 +194,9 @@ async fn feeds_payload() -> Value {
         (ac_na.0, ac_na.1, "opensky", 500),
         (ac_eu.0, ac_eu.1, "opensky", 300),
         (natural.0, natural.1, "eonet", 600),
+        (ca_alerts.0, ca_alerts.1, "eccc_alerts", 300),
+        (ca_fires.0, ca_fires.1, "cwfis", 700),
+        (ca_quakes.0, ca_quakes.1, "eqcanada", 400),
     ] {
         evs.truncate(cap);
         if key == "opensky" {
