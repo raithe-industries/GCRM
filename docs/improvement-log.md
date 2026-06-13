@@ -16,6 +16,52 @@ Format per entry:
 
 ---
 
+## 2026-06-13 — legibility/honesty — live-read freshness watchdog: the dashboard stops claiming "Live" when snapshots stop arriving (roadmap 2.5)
+- Item: roadmap 2.5 (new, now checked). Legibility axis (pillar 2) serving HONESTY (pillar 1, top
+  mission priority: "the number must mean what it says ... never cosmetically reassure"). Axis rotation:
+  the recent runs advanced awareness (06-13 3.5, 06-12 3.4), honesty/legibility (06-12 ×3), robustness
+  (06-12 4.4); this targets the operator surface directly on the honesty pillar. The other open items are
+  live-network-gated (3.2 GDELT — cloud can't verify) or eyes-only (2.1 small-viewport); this is fully
+  testable in the cloud sandbox.
+- Verified-open-first (read the running dashboard end-to-end against the data flow): `applyData` set the
+  header status to `'Live · '+toET(d.computed_at)` (dashboard.html:914) — set ONLY when a snapshot frame
+  arrives over the WebSocket. Snapshots are broadcast every aggregator tick (`poll_interval_ms` = 1000ms,
+  aggregator.rs:941/1037 — one per second, unconditionally). So the readout depends entirely on a steady
+  1Hz stream. Two real stall modes leave it lying: (1) the model worker hangs (no new `compute`), or
+  (2) the WebSocket silently wedges with TCP still open — no `onclose` fires (onclose only triggers on an
+  actual socket close), the `live-dot` stays "connected", and the header keeps showing `Live · <frozen
+  time>`. The dashboard presents a stale number as current with no warning. The methodology even promised
+  "If it goes stale, the feed or model worker has stalled" (dashboard.html info modal) — but nothing
+  actually surfaced staleness. A direct pillar-1 defect on the primary operator surface: a real-time read
+  that freezes silently is a prettier lie than an honest "STALE".
+- Change (one coherent change, dashboard.html + server.rs test): (a) added a `renderFreshness()` watchdog
+  driven by `_lastSnapMs` (wall-clock receipt time of the last snapshot, recorded in `applyData`) on a 5s
+  `setInterval` — it re-renders the header from the ACTUAL data age every tick, independent of whether a
+  new snapshot arrived (so it fires during the exact stall it guards); while fresh it renders the identical
+  `Live · <computed_at ET>` label, and past `STALE_AFTER_MS` (45s ≈ 45 missed 1s ticks — a real stall, not
+  network jitter) it rewrites the header to `⚠ STALE · no update for Nm` in amber; (b) `applyData` no
+  longer sets the header directly — it records `_lastComputedAt`/`_lastSnapMs` and calls `renderFreshness()`,
+  so the "Live" label has exactly ONE age-gated producer. Staleness is measured from receipt time (not
+  `computed_at`), so server/client clock skew can't false-trigger or mask it. NO model/calibration constant
+  touched — purely a render-honesty fix.
+- Metric moved: test count 385 → 386 by the scorecard grep (new
+  `dashboard_warns_when_the_live_read_goes_stale`); a pillar-1 honesty defect on the primary operator
+  surface closed (a frozen read now announces itself instead of masquerading as Live). Calibration evidence
+  UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo test --release` = 385 passed / 0 failed / 3 ignored (386
+  by the grep incl. the new test); `cargo test --release backtest` = 9 passed. The lock proves the
+  dashboard carries the watchdog (`renderFreshness`), surfaces a `STALE` state, tracks `_lastSnapMs`, runs
+  the watchdog on a timer (`setInterval(renderFreshness`), and that the "Live" header label has exactly ONE
+  occurrence — so a revert to a bare unconditional `ts.textContent='Live · '...` in the snapshot handler
+  (the original bug) fails it.
+- Notes / decisions future runs must respect: the header "Live" label is produced ONLY by the age-gated
+  `renderFreshness()` watchdog — do NOT re-introduce an unconditional `'Live · '` set in the snapshot
+  handler (it resurrects the silent-stall lie). Staleness is measured from `_lastSnapMs` (receipt wall
+  clock), `computed_at` is only the display time. `STALE_AFTER_MS` (45s) is tuned to the 1Hz aggregator
+  cadence — if the broadcast cadence changes, retune it. The `live-dot` (WS-connection state) is a separate,
+  complementary signal — it can't catch a silently-wedged-but-open socket, which is exactly what this
+  data-age watchdog does.
+
 ## 2026-06-13 — awareness/honesty — analyst brief speaks the model's OWN dominant coupling channel (replaced a canned mechanism claim that contradicted a single-theater nuclear brink) (roadmap 3.5)
 - Item: roadmap 3.5 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY"), serving honesty
   (pillar 1, "the number must mean what it says") on the `/api/brief` analyst-brief surface. Axis rotation:

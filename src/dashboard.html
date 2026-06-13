@@ -518,6 +518,27 @@ const BASE_PATH='{{BASE_PATH}}';
 function toET(date){return date.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true})+' ET';}
 function toETShort(date){return date.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true})+' ET';}
 let _lastCalTs=null,_firstSnapReceived=false;
+// ── Live-read freshness watchdog ────────────────────────────────────────────
+// Snapshots are broadcast ~1×/s (aggregator tick), so a gap of tens of seconds
+// means the model worker stalled or the WebSocket is silently hung (TCP alive,
+// no frames). _lastSnapMs is the wall-clock receipt time of the last snapshot;
+// renderFreshness() rewrites the header status from it on a timer so a stale read
+// announces itself instead of masquerading as "Live" with a frozen timestamp.
+let _lastSnapMs=0,_lastComputedAt=null;
+const STALE_AFTER_MS=45000; // ~45 missed 1s ticks — a real stall, not network jitter
+function renderFreshness(){
+  const ts=document.getElementById('ts');if(!ts)return;
+  if(!_lastSnapMs||!_lastComputedAt)return; // pre-first-snapshot: keep "Connecting..."
+  const age=Date.now()-_lastSnapMs;
+  if(age<=STALE_AFTER_MS){
+    ts.textContent='Live · '+toET(_lastComputedAt);ts.style.color='';
+  }else{
+    const s=Math.floor(age/1000);
+    const rel=s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
+    ts.textContent='⚠ STALE · no update for '+rel;ts.style.color='var(--amber)';
+  }
+}
+setInterval(renderFreshness,5000);
 // Show warmup state immediately on page load
 (function(){const pill=document.getElementById('model-cal-pill');if(!pill)return;pill.style.display='inline-block';pill.textContent='⏳ COLLECTING DATA...';pill.classList.add('cal-fresh');})();
 function updateModelCalIndicator(calAt,conf,evCount){
@@ -910,8 +931,12 @@ function applyData(d){
   // only the label + the escalation-rung word (the human read), enlarged to headline size.
   const _cr=document.getElementById('cc-rung');if(_cr){_cr.textContent=_top.rung_label||(sysIdx>0?'—':'awaiting data');_cr.style.color=idxCol;}
   document.getElementById('conf-fill').style.width=(conf*100).toFixed(0)+'%';document.getElementById('conf-pct').textContent=(conf*100).toFixed(0)+'%';
-  const _cd=new Date(d.computed_at);const _et=toET(_cd);
-  document.getElementById('ts').textContent='Live · '+_et;
+  // Record this snapshot's age for the freshness watchdog, then render. The header
+  // status is NEVER set to a bare "Live" — renderFreshness() gates it on the actual
+  // data age, so a stalled worker or a silently-hung WebSocket can't keep claiming
+  // the read is current with a frozen timestamp (pillar-1 honesty: the number must
+  // mean what it says).
+  _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();renderFreshness();
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';

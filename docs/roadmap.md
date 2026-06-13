@@ -132,6 +132,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   calibration. See improvement-log 2026-06-09.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted
+  `Live · <time>` from each snapshot's `computed_at`, set ONLY on snapshot arrival (dashboard.html
+  `applyData`). If the model worker stalled or the WebSocket hung silently (TCP alive, no `onclose`,
+  no frames), the readout froze — the dashboard kept claiming the read was **Live** with a stale
+  timestamp, a pillar-1 honesty violation (a real-time read that silently freezes is a lie; the
+  methodology even promised "if it goes stale, the feed or model worker has stalled" but nothing
+  surfaced it). Added a `renderFreshness()` watchdog on a 5s timer: it gates the "Live" label on the
+  actual data age (wall-clock receipt time `_lastSnapMs`) and, past `STALE_AFTER_MS` (45s ≈ 45 missed
+  1s ticks), rewrites the header to `⚠ STALE · no update for Nm` in amber. Fires WITHOUT a new
+  snapshot (the exact stall case). Locked by `dashboard_warns_when_the_live_read_goes_stale`. See
+  improvement-log 2026-06-13.
 - [ ] **2.1 Small/short-viewport pass** [candidate] — the landing left rail must SCROLL
   rather than crush the methodology button off-screen; controls reachable on a laptop and a
   phone. Verify against `src/dashboard.html`; eyes will judge this at deploy.
