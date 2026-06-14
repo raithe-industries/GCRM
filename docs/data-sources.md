@@ -60,7 +60,9 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `alberta511` | Transport | Gov of Alberta | provincial road events |
 | `quebec511` | Transport | Transports Québec | provincial road events (MTMD WFS) |
 | `cbsa_bwt` | Transport | CBSA | 29 land border-crossing wait times |
-| `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data (by country/admin, with fatalities) is public → a **Path-B snapshot** candidate (admin-centroid conflict dots), NOT the live point-event feed. |
+| `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
+| `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
+| `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
 `cisa_kev` (US CISA known-exploited CVEs, Cyber), `cccs` (Canadian Centre for Cyber
@@ -110,14 +112,12 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
 
 Bias each run toward the least-covered axis below.
 
-- **Vessel / AIS (EMPTY layer)** — the map's biggest hole, and fully scaffolded
-  (`EventKind::Vessel` + a "Vessels (AIS)" layer descriptor already exist). HIGHEST-VALUE
-  next target. Look for an authoritative, auth-free AIS or vessel feed (NOAA marine,
-  Canadian Coast Guard, port authorities, StatCan/DFO) — or a GitHub-mirrored snapshot
-  (Path B). Most AIS needs a key — find a public one, note it as keyed, or mirror it.
-- **Conflict** — `acled` is permanently dormant as a live feed (Open access has no API).
-  Options: a GDELT-with-real-geo live feed (Path A), or an ACLED *aggregated-weekly*
-  snapshot (Path B, admin-centroid dots). Also UN/OCHA, ReliefWeb if it geocodes.
+- **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic). Gap
+  now: extend coverage beyond the Baltic — other authoritative auth-free AIS regions
+  (Danish Maritime Authority, NOAA, port authorities) or a GitHub-mirrored snapshot.
+- **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV). `acled` stays
+  dormant (no Open API). Remaining: a higher-frequency conflict signal if one exists
+  auth-free, or the ACLED aggregated-weekly Path-B snapshot.
 - **Geography** — feeds are Canada/US-dense. Hunt authoritative regional feeds for
   Europe (Copernicus EMS, MeteoAlarm if it geocodes), Asia/Pacific (JMA quakes/tsunami,
   Australia BoM/GA), Latin America, Africa.
@@ -134,6 +134,12 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-14** — filled the two biggest gaps with verified live feeds (Path A):
+  `digitraffic_ais` (Fintraffic Baltic AIS → the empty Vessel layer; abnormal-nav-state
+  loud, moving commercial faint, routine dropped; join locations+vessels by MMSI) and
+  `ucdp_ged` (UCDP candidate-GED CSV → the Conflict layer ACLED can't fill; fatalities→
+  severity, version-discovered URL, quote-aware CSV parser). Both live `errors=[]`
+  (digitraffic_ais 800 / ucdp_ged 800); 64 ee-sources + 389 workspace tests green; clippy clean.
 - **2026-06-14** (prompt optimization, not a hunt) — recorded two facts that reshape the
   hunt: (1) the cloud sandbox is GitHub-only, so live-verify via web fetch + added the
   Path-A/Path-B ingestion model above; (2) ACLED Open access has no API (paid license only)
