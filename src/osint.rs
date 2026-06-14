@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::time::{Duration as StdDuration, Instant};
 
+use crate::models::EscalationRung;
 use ee_core::{Event, Source};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -89,14 +90,22 @@ fn theater_coord(theater_id: &str) -> Option<(f64, f64)> {
     Some(p)
 }
 
-/// Escalation-heat → marker colour, matching the dashboard's rung palette.
-fn heat_color(heat: f64) -> &'static str {
-    match heat {
-        h if h >= 0.62 => "#7a0000", // Great-Power War
-        h if h >= 0.38 => "#c0392b", // Limited War
-        h if h >= 0.18 => "#e67e22", // Crisis
-        h if h >= 0.06 => "#d4962a", // Tension
-        _ => "#1D9E75",              // Stable
+/// Authoritative escalation rung → marker colour. Keyed off the engine's OWN rung,
+/// NOT a re-derivation from raw heat: `theater::rung_for` can raise a theater's rung
+/// ABOVE its heat-implied band (great-power involvement, WMD use, nuclear use all
+/// force a higher rung), so colouring by heat would understate exactly those apex
+/// cases and could disagree with the marker's own `rung_label`. Deriving from `rung`
+/// keeps the colour consistent with the label, gives the apex Systemic rung its own
+/// distinct colour, and removes a third hard-coded copy of the rung heat thresholds
+/// (the boundaries now live only in `theater.rs`).
+fn rung_color(rung: EscalationRung) -> &'static str {
+    match rung {
+        EscalationRung::Stable        => "#1D9E75",
+        EscalationRung::Tension       => "#d4962a",
+        EscalationRung::Crisis        => "#e67e22",
+        EscalationRung::LimitedWar    => "#c0392b",
+        EscalationRung::GreatPowerWar => "#7a0000",
+        EscalationRung::Systemic      => "#b5179e", // apex (nuclear use) — distinct from the red ramp
     }
 }
 
@@ -115,6 +124,12 @@ fn build_theater_features(snapshot: &Option<Value>) -> Vec<Value> {
         let id = t.get("theater_id").and_then(|v| v.as_str()).unwrap_or("");
         let Some((lat, lon)) = theater_coord(id) else { continue };
         let heat = t.get("heat").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        // Colour by the engine's authoritative rung (carried in the snapshot), not by
+        // heat — so the marker can't understate a great-power / nuclear rung override.
+        let rung: EscalationRung = t
+            .get("rung")
+            .and_then(|r| serde_json::from_value(r.clone()).ok())
+            .unwrap_or(EscalationRung::Stable);
         out.push(json!({
             "type": "Feature",
             "geometry": { "type": "Point", "coordinates": [lon, lat] },
@@ -125,7 +140,7 @@ fn build_theater_features(snapshot: &Option<Value>) -> Vec<Value> {
                 "heat": heat,
                 "trend": t.get("trend").and_then(|v| v.as_str()).unwrap_or(""),
                 "event_count": t.get("event_count").and_then(|v| v.as_u64()).unwrap_or(0),
-                "color": heat_color(heat),
+                "color": rung_color(rung),
                 "layer": "theaters",
             }
         }));
@@ -503,10 +518,18 @@ mod tests {
     }
 
     #[test]
-    fn heat_colors_ramp_by_rung() {
-        assert_eq!(heat_color(0.01), "#1D9E75"); // stable
-        assert_eq!(heat_color(0.5), "#c0392b"); // limited war
-        assert_eq!(heat_color(0.9), "#7a0000"); // great-power war
+    fn rung_colors_cover_every_rung_distinctly() {
+        use EscalationRung::*;
+        let cols = [Stable, Tension, Crisis, LimitedWar, GreatPowerWar, Systemic].map(rung_color);
+        // Every rung must map to a distinct colour — including the apex Systemic rung,
+        // which the old heat-keyed palette collapsed into Great-Power-War red.
+        for i in 0..cols.len() {
+            for j in (i + 1)..cols.len() {
+                assert_ne!(cols[i], cols[j], "rung colours must be distinct ({i} vs {j})");
+            }
+        }
+        assert_eq!(rung_color(Stable), "#1D9E75");
+        assert_eq!(rung_color(GreatPowerWar), "#7a0000");
     }
 
     #[test]
@@ -522,10 +545,10 @@ mod tests {
     fn theater_features_placed_from_snapshot() {
         let snap = json!({
             "theaters": [
-                {"theater_id": "us_iran", "label": "US/Iran", "rung_label": "Crisis",
-                 "heat": 0.45, "trend": "rising", "event_count": 12},
-                {"theater_id": "korea", "label": "Korea", "rung_label": "Tension",
-                 "heat": 0.10, "trend": "stable", "event_count": 3},
+                {"theater_id": "us_iran", "label": "US/Iran", "rung": "limited_war",
+                 "rung_label": "Limited War", "heat": 0.45, "trend": "rising", "event_count": 12},
+                {"theater_id": "korea", "label": "Korea", "rung": "tension",
+                 "rung_label": "Tension", "heat": 0.10, "trend": "stable", "event_count": 3},
                 {"theater_id": "other", "label": "Other", "heat": 0.2}
             ]
         });
@@ -534,13 +557,35 @@ mod tests {
         assert_eq!(feats.len(), 2);
         let iran = &feats[0];
         assert_eq!(iran["properties"]["id"], "us_iran");
-        assert_eq!(iran["properties"]["color"], "#c0392b"); // heat 0.45 -> Limited War red
+        assert_eq!(iran["properties"]["color"], "#c0392b"); // Limited War rung red
         // GeoJSON coordinate order is [lon, lat].
         let c = iran["geometry"]["coordinates"].as_array().unwrap();
         assert!((c[0].as_f64().unwrap() - 56.3).abs() < 1e-6);
         assert!((c[1].as_f64().unwrap() - 26.6).abs() < 1e-6);
         // No snapshot -> no features.
         assert!(build_theater_features(&None).is_empty());
+    }
+
+    #[test]
+    fn marker_color_follows_authoritative_rung_not_heat() {
+        // The engine's rung can sit ABOVE the heat-implied band: e.g. a great power is
+        // involved so `rung_for` forced Great-Power War even though raw heat (0.45) lands
+        // in the Limited-War band. The marker must take the RUNG's colour (matching its
+        // rung_label), NOT a lesser colour re-derived from heat — otherwise the map would
+        // understate exactly the apex theaters that matter most. A revert to a heat-keyed
+        // palette fails this (heat 0.45 -> Limited War #c0392b, not GP-War #7a0000).
+        let snap = json!({"theaters": [
+            {"theater_id": "nato_russia", "label": "NATO/Russia", "rung": "great_power_war",
+             "rung_label": "Great-Power War", "heat": 0.45},
+            {"theater_id": "us_china_taiwan", "label": "Taiwan", "rung": "systemic",
+             "rung_label": "Systemic War", "heat": 0.95}
+        ]});
+        let f = build_theater_features(&Some(snap));
+        assert_eq!(f[0]["properties"]["color"], "#7a0000"); // GP-War rung, despite heat 0.45
+        assert_eq!(f[0]["properties"]["rung_label"], "Great-Power War");
+        // The apex Systemic rung (nuclear use) gets its own colour, not GP-War red.
+        assert_eq!(f[1]["properties"]["color"], "#b5179e");
+        assert_ne!(f[1]["properties"]["color"], f[0]["properties"]["color"]);
     }
 
     #[tokio::test]

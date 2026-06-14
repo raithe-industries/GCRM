@@ -253,6 +253,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     great-power involvement coupler (documented qualitatively in #couplers) — optional polish.
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.7 Map marker colour follows the authoritative rung, not raw heat** — **DONE 2026-06-14.**
+  The world-map flashpoint markers (`osint.rs::build_theater_features`) coloured each theater via
+  `heat_color(heat)` — a THIRD independent copy of the rung heat thresholds (0.06/0.18/0.38/0.62,
+  duplicating `theater.rs::rung_for` + `within_band`) that re-derived the colour from raw heat. But
+  `rung_for` can raise a theater's rung ABOVE its heat band (great-power involvement, WMD use, nuclear
+  use force a higher rung), so a Great-Power-War theater at moderate heat was painted the lesser
+  Limited-War colour — disagreeing with the marker's own `rung_label` — and the apex Systemic (nuclear-
+  use) rung had no distinct colour at all (it collapsed into GP-War red). Replaced `heat_color` with
+  `rung_color(EscalationRung)` keyed off the engine's authoritative `rung` (already carried in the
+  snapshot), giving Systemic its own apex colour and removing the duplicated thresholds (the boundaries
+  now live only in `theater.rs`). Honest by construction — the marker colour can no longer understate an
+  apex rung. Locked by `rung_colors_cover_every_rung_distinctly` +
+  `marker_color_follows_authoritative_rung_not_heat`. See improvement-log 2026-06-14.
+  - FOLLOW-UP [candidate]: the rung heat boundaries (0.18/0.38/0.62) are still duplicated between
+    `theater.rs::rung_for` and `theater.rs::within_band` (only `STABLE_HEAT_CEILING` = 0.06 is named) —
+    a 1.2-class provenance leg: name them as shared `RUNG_*` constants so the two can't drift.
 - [x] **3.6 Apex I&W lights attribute WHERE to the hottest qualifying theater** — **DONE 2026-06-13.**
   The two APEX I&W board lights (`gp_kinetic`, `nuclear_brink` — the red, highest-stakes
   great-power-war conditions, `IW_APEX` on the dashboard) attributed their WHERE pointer to the
