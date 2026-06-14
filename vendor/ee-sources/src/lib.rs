@@ -8,8 +8,11 @@
 //! 3. Add the module below and register a default instance in [`registry`].
 
 pub mod acled;
+pub mod alberta511;
 pub mod cisa_kev;
 pub mod cwfis;
+pub mod cwfis_activefires;
+pub mod drivebc;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
 pub mod eccc_marine;
@@ -23,6 +26,7 @@ pub mod healthmap;
 pub mod nws;
 pub mod ontario511;
 pub mod opensky;
+pub mod quebec511;
 pub mod usgs;
 pub mod yahoo;
 
@@ -43,8 +47,12 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(eccc_aqhi::EcccAqhi),
         Box::new(eccc_marine::EcccMarine),
         Box::new(cwfis::Cwfis::default()),
+        Box::new(cwfis_activefires::CwfisActiveFires),
         Box::new(eqcanada::EqCanada::default()),
         Box::new(ontario511::Ontario511),
+        Box::new(drivebc::DriveBc),
+        Box::new(alberta511::Alberta511),
+        Box::new(quebec511::Quebec511),
         // Global feeds to densify the whole map (not just North America).
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),

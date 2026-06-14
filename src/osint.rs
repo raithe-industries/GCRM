@@ -184,9 +184,33 @@ fn feed_detail(e: &Event) -> Option<String> {
             Some(if ongoing { "Ongoing eruption".into() } else { "Recent eruption".into() })
         }
         "healthmap" => e.raw.get("label").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from),
-        "ontario511" => {
+        "ontario511" | "alberta511" => {
             let full = e.raw.get("IsFullClosure").and_then(Value::as_bool).unwrap_or(false);
             if full { Some("Full closure".to_string()) } else { e.raw.get("LanesAffected").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from) }
+        }
+        "drivebc" => {
+            // "Major" / "Minor" — the Open511 severity enum, the real road-impact read.
+            e.raw.get("severity").and_then(Value::as_str).filter(|s| !s.is_empty()).map(capitalize_first)
+        }
+        "quebec511" => {
+            let entrave = e.raw.get("entrave").and_then(Value::as_str).unwrap_or("");
+            if entrave.contains("Fermeture") {
+                Some(if entrave.contains("voie") { "Lane closure".into() } else { "Full closure".into() })
+            } else if !entrave.is_empty() {
+                Some(entrave.to_string())
+            } else {
+                None
+            }
+        }
+        "cwfis_activefires" => {
+            let stage = match e.raw.get("stage_of_control_status").and_then(Value::as_str).unwrap_or("") {
+                "OC" => "Out of control",
+                "BH" => "Being held",
+                "UC" => "Under control",
+                _ => "Active",
+            };
+            let size = e.raw.get("fire_size").and_then(Value::as_f64).unwrap_or(0.0);
+            Some(format!("{stage} · {size:.0} ha"))
         }
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
@@ -238,10 +262,11 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi,
-        eccc_marine::EcccMarine, emsc::Emsc, eonet::Eonet, eqcanada::EqCanada, firms::Firms,
-        gdacs::Gdacs, gvp_volcano::GvpVolcano, healthmap::HealthMap, nws::Nws,
-        ontario511::Ontario511, opensky::OpenSky, usgs::Usgs,
+        acled::Acled, alberta511::Alberta511, cwfis::Cwfis, cwfis_activefires::CwfisActiveFires,
+        drivebc::DriveBc, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine,
+        emsc::Emsc, eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
+        gvp_volcano::GvpVolcano, healthmap::HealthMap, nws::Nws, ontario511::Ontario511,
+        opensky::OpenSky, quebec511::Quebec511, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
@@ -250,7 +275,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -281,6 +306,14 @@ async fn feeds_payload() -> Value {
         fetch_one("ontario511", Ontario511, 9),
         // Environment Canada marine warnings (Great Lakes — rings Ontario).
         fetch_one("eccc_marine", EcccMarine, 9),
+        // CWFIS national active fires (NRCan/CIFFC) — agency fire ground-state (stage +
+        // size), the incident complement to the satellite thermal hotspots above.
+        fetch_one("cwfis_activefires", CwfisActiveFires, 15),
+        // Provincial 511 road events — BC / Alberta / Québec highways (Ontario already
+        // covered above), filling the Transport layer across the populous provinces.
+        fetch_one("drivebc", DriveBc, 9),
+        fetch_one("alberta511", Alberta511, 9),
+        fetch_one("quebec511", Quebec511, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -312,6 +345,10 @@ async fn feeds_payload() -> Value {
         (gl_conflict.0, gl_conflict.1, "acled", 800),
         (on_roads.0, on_roads.1, "ontario511", 500),
         (ca_marine.0, ca_marine.1, "eccc_marine", 100),
+        (ca_active_fires.0, ca_active_fires.1, "cwfis_activefires", 400),
+        (bc_roads.0, bc_roads.1, "drivebc", 500),
+        (ab_roads.0, ab_roads.1, "alberta511", 500),
+        (qc_roads.0, qc_roads.1, "quebec511", 300),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
