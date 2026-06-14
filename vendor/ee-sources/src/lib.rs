@@ -9,10 +9,13 @@
 
 pub mod acled;
 pub mod alberta511;
+pub mod cbsa_bwt;
+pub mod cccs;
 pub mod cisa_kev;
 pub mod cwfis;
 pub mod cwfis_activefires;
 pub mod drivebc;
+pub mod navcanada;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
 pub mod eccc_marine;
@@ -37,6 +40,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
     vec![
         Box::new(usgs::Usgs::default()),
         Box::new(cisa_kev::CisaKev),
+        Box::new(cccs::Cccs),
         Box::new(gdacs::Gdacs),
         Box::new(nws::Nws),
         Box::new(opensky::OpenSky::default()),
@@ -53,6 +57,8 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(drivebc::DriveBc),
         Box::new(alberta511::Alberta511),
         Box::new(quebec511::Quebec511),
+        Box::new(cbsa_bwt::CbsaBwt),
+        Box::new(navcanada::NavCanada),
         // Global feeds to densify the whole map (not just North America).
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),
