@@ -194,6 +194,69 @@ pub fn guardrail_from_regime(regime_multiplier: f64) -> f64 {
     ((regime_multiplier - 1.0) / GUARDRAIL_REGIME_SPAN).clamp(0.0, 1.0)
 }
 
+// ── Operator-facing "data quality" confidence (Step 9) ──────────────────────────
+//
+// The snapshot-level `estimate_confidence` is the number rendered as the dashboard
+// "Confidence — data quality" cell. It is DISPLAY-ONLY: it does not enter the
+// P(WWIII) forecast (Step 7 is already complete by the time it is computed), so it
+// carries no calibration weight and is safe to refactor as long as the value is
+// preserved. But the operator reads it as "how much evidence does this number rest
+// on", so per pillar-1 it must mean what it says — hence these named constants +
+// the pure `estimate_confidence` below, locked by test, rather than the bare
+// literals that were buried inline before.
+//
+// It blends three observable evidence signals, each saturating so a flood of
+// low-grade events can never masquerade as certainty:
+//   • the average per-domain source-tier confidence (the dominant term),
+//   • event VOLUME (log-saturating — diminishing returns past a healthy feed), and
+//   • the BREADTH of live sources (a single chatty source ≠ corroboration).
+
+/// Confidence floor when the window holds ZERO events — the model is running on the
+/// regime prior alone (feed outage / cold start), so it is near-blind. Not 0: the
+/// structural prior still carries a little information.
+pub const CONFIDENCE_OFFLINE_FLOOR: f64 = 0.05;
+
+/// Confidence when events exist but none carry a usable per-domain confidence
+/// (degenerate edge — keeps the blend from reading the domain term as 0).
+const CONFIDENCE_NO_DOMAIN_CONF: f64 = 0.1;
+
+/// Event count at which the volume term saturates (log scale): more than ~200
+/// events in the window adds essentially no further confidence — past this a
+/// healthy feed is already well-corroborated and extra volume is noise, not signal.
+pub const CONFIDENCE_EVENT_SATURATION: f64 = 200.0;
+
+/// Active-source count at which the breadth term saturates: ~20 independent live
+/// sources is treated as full corroboration breadth; fewer caps the term linearly.
+pub const CONFIDENCE_SOURCE_SATURATION: f64 = 20.0;
+
+/// Blend weights for the three confidence signals. They sum to 1.0 so the result
+/// is a true weighted mean in [0,1] — the domain source-tier quality dominates,
+/// volume next, breadth last.
+pub const CONF_W_DOMAIN: f64 = 0.5;
+pub const CONF_W_EVENTS: f64 = 0.3;
+pub const CONF_W_SOURCES: f64 = 0.2;
+// The blend is only a bounded weighted mean if the weights sum to 1 — enforce it
+// at compile time so a future re-weighting can't silently push confidence > 1.
+const _: () = assert!(CONF_W_DOMAIN + CONF_W_EVENTS + CONF_W_SOURCES == 1.0);
+
+/// Operator-facing data-quality confidence in [0,1]. Pure (so it is locked by
+/// `estimate_confidence_*` tests) and DISPLAY-ONLY — never feeds the forecast.
+/// Monotone non-decreasing in both `events` and `sources`; returns the offline
+/// floor when the window is empty. `avg_domain_conf` is the mean per-domain
+/// source-tier confidence over domains that actually saw events.
+pub fn estimate_confidence(avg_domain_conf: f64, events: usize, sources: usize) -> f64 {
+    if events == 0 {
+        return CONFIDENCE_OFFLINE_FLOOR;
+    }
+    let event_factor =
+        ((1.0 + events as f64).ln() / (1.0 + CONFIDENCE_EVENT_SATURATION).ln()).min(1.0);
+    let source_factor = (sources as f64 / CONFIDENCE_SOURCE_SATURATION).min(1.0);
+    let blended = avg_domain_conf * CONF_W_DOMAIN
+        + event_factor * CONF_W_EVENTS
+        + source_factor * CONF_W_SOURCES;
+    (blended.clamp(0.0, 1.0) * 1e3).round() / 1e3
+}
+
 /// Logistic function. Maps log-odds → probability in (0, 1).
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
@@ -735,26 +798,21 @@ impl BayesianRiskEngine {
         self.prev_annual  = snap.p_wwiii_annual;
         self.prev_30day   = snap.p_wwiii_30day;
 
-        // ── Step 9: Confidence ──
+        // ── Step 9: Confidence (operator-facing "data quality"; display-only) ──
         if snap.events_in_window == 0 {
-            snap.estimate_confidence = 0.05;
             warn!("No events in window — model running on regime prior only (offline?)");
-        } else {
-            let domain_confs: Vec<f64> = snap.domain_scores.values()
-                .filter(|ds| ds.event_count > 0)
-                .map(|ds| ds.confidence)
-                .collect();
-            let avg_conf = if domain_confs.is_empty() {
-                0.1
-            } else {
-                domain_confs.iter().sum::<f64>() / domain_confs.len() as f64
-            };
-            let event_factor = ((1.0 + snap.events_in_window as f64).ln()
-                / (1.0 + 200.0_f64).ln()).min(1.0);
-            let source_factor = (snap.sources_active as f64 / 20.0).min(1.0);
-            snap.estimate_confidence =
-                ((avg_conf * 0.5 + event_factor * 0.3 + source_factor * 0.2) * 1e3).round() / 1e3;
         }
+        let domain_confs: Vec<f64> = snap.domain_scores.values()
+            .filter(|ds| ds.event_count > 0)
+            .map(|ds| ds.confidence)
+            .collect();
+        let avg_conf = if domain_confs.is_empty() {
+            CONFIDENCE_NO_DOMAIN_CONF
+        } else {
+            domain_confs.iter().sum::<f64>() / domain_confs.len() as f64
+        };
+        snap.estimate_confidence =
+            estimate_confidence(avg_conf, snap.events_in_window, snap.sources_active);
 
         // ── Step 10: Alert ──
         // Record the configured thresholds onto the snapshot so the JSON is
@@ -1371,6 +1429,55 @@ mod tests {
         assert!(snap.co_occurrence_boost >= 1.0);
         assert!(snap.estimate_confidence >= 0.0);
         assert!(snap.estimate_confidence <= 1.0);
+    }
+
+    #[test]
+    fn estimate_confidence_is_a_bounded_monotone_blend_with_an_offline_floor() {
+        // Weights are a partition of unity, so the blend is a true weighted mean in
+        // [0,1] — the compile-time assert backs this; restate it here as a guard.
+        assert!((CONF_W_DOMAIN + CONF_W_EVENTS + CONF_W_SOURCES - 1.0).abs() < 1e-12);
+
+        // Zero events → exactly the offline floor, regardless of the (stale) domain conf.
+        assert_eq!(estimate_confidence(1.0, 0, 50), CONFIDENCE_OFFLINE_FLOOR);
+        assert_eq!(estimate_confidence(0.0, 0, 0), CONFIDENCE_OFFLINE_FLOOR);
+
+        // Bounded in [0,1] across a wide grid, AND a fully-corroborated world (perfect
+        // domain conf, saturating volume + breadth) reads exactly 1.0 — the weighted
+        // mean of three saturated unit terms.
+        for &ev in &[1usize, 5, 50, 200, 2000] {
+            for &src in &[0usize, 5, 20, 100] {
+                for &ac in &[0.0, 0.4, 1.0] {
+                    let c = estimate_confidence(ac, ev, src);
+                    assert!((0.0..=1.0).contains(&c), "conf {c} out of range");
+                }
+            }
+        }
+        assert!((estimate_confidence(1.0, 2000, 100) - 1.0).abs() < 1e-9,
+            "saturated evidence should read full confidence");
+
+        // Monotone NON-DECREASING in event volume (more corroborating events never
+        // lowers data-quality), holding sources/domain-conf fixed.
+        let mut prev = estimate_confidence(0.5, 1, 10);
+        for &ev in &[2usize, 10, 50, 200, 1000] {
+            let c = estimate_confidence(0.5, ev, 10);
+            assert!(c + 1e-12 >= prev, "confidence must not fall as events rise ({ev})");
+            prev = c;
+        }
+        // Monotone NON-DECREASING in source breadth — a wider source base never lowers it.
+        let mut prevs = estimate_confidence(0.5, 50, 0);
+        for &src in &[1usize, 5, 20, 100] {
+            let c = estimate_confidence(0.5, 50, src);
+            assert!(c + 1e-12 >= prevs, "confidence must not fall as sources rise ({src})");
+            prevs = c;
+        }
+
+        // Volume term log-saturates: counts beyond CONFIDENCE_EVENT_SATURATION add
+        // essentially nothing (a flood of low-grade events can't fake certainty).
+        let at_sat = estimate_confidence(0.0, CONFIDENCE_EVENT_SATURATION as usize, 0);
+        let way_over = estimate_confidence(0.0, CONFIDENCE_EVENT_SATURATION as usize * 50, 0);
+        assert!((at_sat - CONF_W_EVENTS).abs() < 2e-3, "volume term saturates at its weight");
+        assert!(way_over <= CONF_W_EVENTS + 1e-9 && way_over >= at_sat,
+            "beyond saturation the volume term is capped at its weight");
     }
 
     #[test]

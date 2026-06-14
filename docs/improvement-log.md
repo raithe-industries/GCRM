@@ -16,6 +16,54 @@ Format per entry:
 
 ---
 
+## 2026-06-14 — honesty/legibility — pinned the operator-facing "data quality" confidence: named constants + pure, locked `estimate_confidence` (roadmap 1.2)
+- Item: roadmap 1.2 (progressed). Honesty axis (pillar 1, "the number must mean what it says") on an
+  operator surface (the dashboard Confidence cell, pillar 2). Axis rotation: the recent batch advanced
+  awareness (06-13 ×2), legibility/honesty (06-13, 06-12 ×4) and robustness (06-12 4.4); robustness's
+  open items are a repeatedly-clean unwrap audit (4.2) and a live-network/upstream-SHA-gated re-vendor
+  policy (4.5) the cloud sandbox can't verify, and awareness's only open item (3.2 GDELT) needs live
+  network — so I took the provable-green honesty/provenance lever the 1.2 discipline already established.
+- Verified-open-first (read `bayesian.rs::compute` Step 9 end-to-end against the current code): the
+  snapshot `estimate_confidence` — the number the dashboard renders as "Confidence — N% data quality" —
+  was built from SIX bare inline literals (`0.05` offline floor, `0.1` no-usable-domain-conf fallback,
+  `200.0` event saturation, `20.0` source saturation, blend weights `0.5/0.3/0.2`) with NO rationale and
+  only a `[0,1]` bounds assert in `compute_produces_valid_snapshot`. Nothing pinned its structure: that
+  zero events drops to the floor, that more events/sources never LOWERS confidence, that the weights
+  partition unity (so the blend stays a bounded weighted mean), or that the volume term log-saturates so
+  a flood of low-grade events can't read as certainty. A drift hazard on an operator-facing honesty
+  surface — exactly the class 1.2 pins for the calibration constants, here on a DISPLAY metric.
+  Confirmed display-only: `estimate_confidence` is set AFTER the forecast (Step 7) is final and is never
+  read back into the probability path — so this is safe to refactor and carries zero backtest risk
+  (distinct from a calibration constant, which 1.2's other legs cover).
+- Change (one coherent change, `bayesian.rs` only): (a) named all six literals as documented constants
+  (`CONFIDENCE_OFFLINE_FLOOR`, `CONFIDENCE_NO_DOMAIN_CONF`, `CONFIDENCE_EVENT_SATURATION`,
+  `CONFIDENCE_SOURCE_SATURATION`, `CONF_W_DOMAIN/EVENTS/SOURCES`), each with a one-line rationale; (b)
+  added `const _: () = assert!(CONF_W_DOMAIN + CONF_W_EVENTS + CONF_W_SOURCES == 1.0)` so a future
+  re-weighting that broke the partition-of-unity (and could push confidence > 1) fails to COMPILE; (c)
+  extracted the pure `estimate_confidence(avg_domain_conf, events, sources)` (offline floor on empty
+  window, then the saturating weighted blend, with a defensive `clamp(0,1)` before the 1e-3 round) and
+  rewired Step 9 to call it. Behavior-preserving — in-range inputs produce the bit-identical value the
+  inline form did. NO model/calibration constant touched.
+- Metric moved: test count 387 → 388 by the scorecard grep (new
+  `estimate_confidence_is_a_bounded_monotone_blend_with_an_offline_floor`); a previously-unguarded
+  operator-facing honesty metric now has named provenance + a locked contract. Calibration evidence
+  UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` adds 0 warnings (the 2 pre-existing are
+  in `osint.rs` from the map feeds, untouched here); `cargo test --release` = 387 passed / 0 failed / 3
+  ignored (388 by the grep incl. the new test); `cargo test --release backtest` = 9 passed. The lock
+  asserts: weights sum to 1; zero events → exactly `CONFIDENCE_OFFLINE_FLOOR` regardless of domain conf;
+  `[0,1]` over a 5×4×3 grid of (events, sources, avg_conf); fully-corroborated evidence → exactly 1.0;
+  monotone non-decreasing in events AND in sources; and the volume term saturating at its weight
+  (`CONF_W_EVENTS`) past `CONFIDENCE_EVENT_SATURATION` so 50× the saturation count adds nothing — a
+  revert to a non-saturating or non-monotone form fails it.
+- Notes / decisions future runs must respect: `estimate_confidence` is DISPLAY-ONLY — do NOT wire it
+  into the P(WWIII) forecast (that would make a soft data-quality heuristic a calibration input). The
+  blend weights MUST keep summing to 1.0 (the compile-time assert enforces it); the saturation constants
+  are heuristic, not calibration — tune them with a documented operator-legibility reason, not blindly.
+  The per-DOMAIN confidence in `DomainScorer::score_all` still has its own inline literals
+  (`15.0` count saturation, `3.0` actor saturation, tier weights `1.0/0.65/0.20`, blend `0.5/0.35/0.15`)
+  — a future 1.2 provenance leg, also display-only.
+
 ## 2026-06-13 — awareness — apex I&W lights attribute WHERE to the hottest qualifying theater, not the first in list order (roadmap 3.6)
 - Item: roadmap 3.6 (new, now checked). Awareness axis (pillar 3, "show WHERE and WHY"). Axis rotation:
   the recent batch advanced legibility/honesty (06-13 2.5, 06-12 ×3), awareness (06-13 3.5, 06-12 3.4),

@@ -121,6 +121,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     still open (2.3): the regime-factor INSPECTOR panel (dashboard.html:1120, `api.rs::regime_summary`)
     still labels `baseline × regime_product` as "Adjusted P₀" — honestly reframe as "structural pressure".
     **RESOLVED 2026-06-12 — see the 2.3 PROGRESS line below.**
+  - PROGRESS 2026-06-14: pinned the **operator-facing "data quality" CONFIDENCE** (snapshot
+    `estimate_confidence`, the dashboard Confidence cell). NOTE this is provenance on a DISPLAY metric,
+    not a calibration constant — it does NOT enter the P(WWIII) forecast (computed in Step 9, after the
+    forecast is final), so backtests are bit-identical. But the operator reads it as "how much evidence
+    this number rests on", so per pillar-1 it must mean what it says. It was built from six bare inline
+    literals in `bayesian.rs::compute` (`0.05` floor, `0.1` no-domain fallback, `200.0` event saturation,
+    `20.0` source saturation, `0.5/0.3/0.2` blend weights) with NO rationale and only a `[0,1]` bounds
+    assert. Named them all (`CONFIDENCE_OFFLINE_FLOOR`, `CONFIDENCE_NO_DOMAIN_CONF`,
+    `CONFIDENCE_EVENT_SATURATION`, `CONFIDENCE_SOURCE_SATURATION`, `CONF_W_DOMAIN/EVENTS/SOURCES`) with a
+    rationale each, added a compile-time `const _: () = assert!` that the weights partition unity (so a
+    future re-weight can't silently push confidence > 1), and extracted the pure
+    `estimate_confidence(avg_domain_conf, events, sources)` so the contract is lockable. Behavior-preserving
+    (in-range inputs produce the identical value). Locked by
+    `estimate_confidence_is_a_bounded_monotone_blend_with_an_offline_floor` (offline floor, `[0,1]` over a
+    grid, monotone non-decreasing in events AND sources, full corroboration → exactly 1.0, log-saturation
+    of the volume term so an event flood can't fake certainty). Remaining un-pinned for 1.2: the regime ×
+    factor defaults (config surface, labeled `RegimeFactor`s, not blind literals). NB the per-DOMAIN
+    confidence (`DomainScorer::score_all`, Step ~) still has its own inline literals (`15.0`, `3.0`, tier
+    weights) — a future provenance leg.
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
