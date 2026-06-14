@@ -16,6 +16,55 @@ Format per entry:
 
 ---
 
+## 2026-06-14 — awareness/honesty — world-map marker colour follows the authoritative rung, not raw heat (roadmap 3.7)
+- Item: roadmap 3.7 (new, now checked). Awareness axis (pillar 3, "show WHERE") serving honesty
+  (pillar 1, anti-drift / "the number must mean what it says") on the world-map surface. Axis rotation:
+  the recent batch leaned honesty/legibility (06-14 1.2, 06-13 2.5, 06-12 ×4) with awareness last
+  advanced 06-13 (3.6/3.5); this rotates back to awareness with a fully-cloud-provable correctness fix
+  on the map (the open awareness item 3.2 GDELT still needs live network the sandbox lacks). The map
+  feeds are also the newest, least-audited code (added 06-13/06-14, after the last few audits).
+- Verified-open-first (read `osint.rs::build_theater_features` + `theater.rs::rung_for`/`within_band`
+  end-to-end against the current code): the map flashpoint markers coloured each theater via
+  `heat_color(heat)` — a match on bare literals `0.62/0.38/0.18/0.06`, a THIRD independent copy of the
+  rung heat thresholds (the same boundaries appear in `rung_for` and `within_band`, where only
+  `STABLE_HEAT_CEILING` = 0.06 is named). Two real defects: (1) `rung_for` can raise a theater's rung
+  ABOVE its heat-implied band — `gp_involved` at LimitedWar→GreatPowerWar, `wmd_used`→≥LimitedWar,
+  `nuclear_used`→Systemic — so a theater the engine classifies as Great-Power War at heat 0.45 was
+  painted the LESSER Limited-War colour, contradicting the marker's own `rung_label` shown in the
+  popup; (2) `heat_color` had only five colours, so the apex Systemic rung (nuclear use, the single most
+  important state to see on a map) had NO distinct colour — it collapsed into Great-Power-War red. The
+  snapshot already serialises the authoritative `rung` (full `TheaterState` via serde,
+  aggregator.rs:158), so the map had the correct answer available and was ignoring it.
+- Change (one coherent change, `osint.rs` only): (a) replaced `heat_color(heat)` with
+  `rung_color(EscalationRung)` — a match on the six rungs (Stable..Systemic), preserving the existing
+  five-shade red ramp for Stable..GreatPowerWar (so the approved map visual is unchanged for those) and
+  adding a distinct apex magenta `#b5179e` for Systemic; (b) `build_theater_features` now deserialises
+  the authoritative `rung` from the snapshot (`serde_json::from_value`, defaulting to Stable if absent)
+  and colours by `rung_color(rung)`. This removes the duplicated heat thresholds (the boundaries now
+  live ONLY in `theater.rs`) and makes the colour honest-by-construction — it can no longer understate an
+  apex rung or disagree with `rung_label`. Markers are consumed via `'circle-color':['get','color']` in
+  dashboard.html (verified), so no dashboard change is needed and the colour values stay valid hex. NO
+  model/calibration constant touched.
+- Metric moved: test count 388 → 389 by the scorecard grep (replaced the heat-keyed
+  `heat_colors_ramp_by_rung` with `rung_colors_cover_every_rung_distinctly`, +1 new
+  `marker_color_follows_authoritative_rung_not_heat`); a pillar-3 awareness defect (apex rungs
+  mis-/under-coloured on the map) and a 1.2-class drift hazard (a third copy of the rung thresholds)
+  both closed. Calibration evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence),
+  no model constant touched.
+- Proof: `cargo build --release` clean; `cargo clippy --release` adds 0 warnings (the 2 pre-existing in
+  osint.rs from the map feeds are untouched); `cargo test --release` = 388 passed / 0 failed / 3 ignored
+  (389 by the grep incl. the new test); `cargo test --release backtest` = 9 passed. The locks: every rung
+  maps to a distinct colour (incl. the apex Systemic, which the old palette collapsed into GP-War red);
+  and a theater with `rung: great_power_war` at heat 0.45 colours `#7a0000` (GP-War, matching its
+  rung_label) NOT `#c0392b` (the Limited-War colour heat 0.45 would imply) — a revert to a heat-keyed
+  palette fails it.
+- Notes / decisions future runs must respect: the map marker colour is now sourced from the engine's
+  authoritative `rung`, never re-derived from heat — do NOT reintroduce a heat-threshold palette in
+  `osint.rs` (it resurrects the apex under-colouring + the third copy of the rung boundaries). The
+  apex magenta `#b5179e` is the only Systemic-rung colour; the other five preserve the prior map ramp.
+  Remaining: the rung heat boundaries (0.18/0.38/0.62) are still duplicated between `rung_for` and
+  `within_band` in theater.rs — a future 1.2 provenance leg (name them as shared `RUNG_*` constants).
+
 ## 2026-06-14 — honesty/legibility — pinned the operator-facing "data quality" confidence: named constants + pure, locked `estimate_confidence` (roadmap 1.2)
 - Item: roadmap 1.2 (progressed). Honesty axis (pillar 1, "the number must mean what it says") on an
   operator surface (the dashboard Confidence cell, pillar 2). Axis rotation: the recent batch advanced
