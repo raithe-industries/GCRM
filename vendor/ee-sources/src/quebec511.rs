@@ -78,6 +78,25 @@ fn severity_for(cause: &str, entrave: &str) -> f64 {
     s
 }
 
+/// Short ENGLISH popup chip from the French `entrave` (obstruction). Known patterns map
+/// to a concise label; long free-text (e.g. ferry-service advisories) yields `None` so
+/// the popup falls back to type + time rather than dumping a French sentence into a chip.
+pub fn entrave_chip(entrave: &str) -> Option<String> {
+    let label = if entrave.contains("Fermeture") {
+        // "Fermeture de N voie(s)" = partial; bare "Fermeture" = full closure.
+        if entrave.contains("voie") { "Lane closure" } else { "Full closure" }
+    } else if entrave.contains("alternance") {
+        "Alternating traffic"
+    } else if entrave.contains("contresens") {
+        "Contraflow"
+    } else if entrave.contains("réduite") || entrave.contains("réduit") {
+        "Lane narrowed"
+    } else {
+        return None;
+    };
+    Some(label.to_string())
+}
+
 /// Pure parser: MTMD `ms:evenements` GeoJSON -> events. Unit-tested offline.
 pub fn parse_quebec511(json: &str) -> anyhow::Result<Vec<Event>> {
     let root: serde_json::Value = serde_json::from_str(json)?;
@@ -190,5 +209,17 @@ mod tests {
     #[test]
     fn errors_on_missing_array() {
         assert!(parse_quebec511(r#"{"x":1}"#).is_err());
+    }
+
+    #[test]
+    fn entrave_chip_translates_known_and_drops_freetext() {
+        assert_eq!(entrave_chip("Fermeture de 1 voie sur 2").as_deref(), Some("Lane closure"));
+        assert_eq!(entrave_chip("Fermeture").as_deref(), Some("Full closure"));
+        assert_eq!(entrave_chip("Circulation en alternance").as_deref(), Some("Alternating traffic"));
+        assert_eq!(entrave_chip("Circulation à contresens").as_deref(), Some("Contraflow"));
+        assert_eq!(entrave_chip("Largeur de la voie réduite à 4,6 mètres").as_deref(), Some("Lane narrowed"));
+        // Long ferry-service advisory -> no chip (popup shows type + time instead).
+        assert_eq!(entrave_chip("Horaire modifié pour une durée indéterminée. Consultez le site Web…"), None);
+        assert_eq!(entrave_chip(""), None);
     }
 }

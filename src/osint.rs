@@ -189,19 +189,16 @@ fn feed_detail(e: &Event) -> Option<String> {
             if full { Some("Full closure".to_string()) } else { e.raw.get("LanesAffected").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from) }
         }
         "drivebc" => {
-            // "Major" / "Minor" — the Open511 severity enum, the real road-impact read.
-            e.raw.get("severity").and_then(Value::as_str).filter(|s| !s.is_empty()).map(capitalize_first)
+            // "Major" / "Minor" — the Open511 severity enum (all-caps on the wire), the
+            // real road-impact read; title-cased so the chip isn't shouting.
+            e.raw.get("severity").and_then(Value::as_str).filter(|s| !s.is_empty()).map(title_case)
         }
-        "quebec511" => {
-            let entrave = e.raw.get("entrave").and_then(Value::as_str).unwrap_or("");
-            if entrave.contains("Fermeture") {
-                Some(if entrave.contains("voie") { "Lane closure".into() } else { "Full closure".into() })
-            } else if !entrave.is_empty() {
-                Some(entrave.to_string())
-            } else {
-                None
-            }
-        }
+        // Short English chip from the French `entrave` (no raw French sentences on chips).
+        "quebec511" => e
+            .raw
+            .get("entrave")
+            .and_then(Value::as_str)
+            .and_then(ee_sources::quebec511::entrave_chip),
         "cwfis_activefires" => {
             let stage = match e.raw.get("stage_of_control_status").and_then(Value::as_str).unwrap_or("") {
                 "OC" => "Out of control",
@@ -239,6 +236,15 @@ fn capitalize_first(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Title-case an ALL-CAPS provider token ("MINOR" -> "Minor").
+fn title_case(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
         None => String::new(),
     }
 }
