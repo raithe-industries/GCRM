@@ -12,6 +12,7 @@ pub mod cisa_kev;
 pub mod cwfis;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
+pub mod eccc_marine;
 pub mod emsc;
 pub mod eonet;
 pub mod firms;
@@ -20,6 +21,7 @@ pub mod gdacs;
 pub mod gvp_volcano;
 pub mod healthmap;
 pub mod nws;
+pub mod ontario511;
 pub mod opensky;
 pub mod usgs;
 pub mod yahoo;
@@ -39,8 +41,10 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         // Canada-specific geocoded feeds (NWS/USGS leave Canada sparse).
         Box::new(eccc_alerts::EcccAlerts),
         Box::new(eccc_aqhi::EcccAqhi),
+        Box::new(eccc_marine::EcccMarine),
         Box::new(cwfis::Cwfis::default()),
         Box::new(eqcanada::EqCanada::default()),
+        Box::new(ontario511::Ontario511),
         // Global feeds to densify the whole map (not just North America).
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),

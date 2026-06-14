@@ -86,7 +86,7 @@ impl SignalDomain {
             EventKind::Market => SignalDomain::Economic,
             EventKind::Aircraft | EventKind::Vessel => SignalDomain::Movement,
             EventKind::News => SignalDomain::Escalation,
-            EventKind::Other => SignalDomain::Other,
+            EventKind::Transport | EventKind::Other => SignalDomain::Other,
         }
     }
 

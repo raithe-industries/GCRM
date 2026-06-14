@@ -169,6 +169,10 @@ fn feed_detail(e: &Event) -> Option<String> {
             Some(if ongoing { "Ongoing eruption".into() } else { "Recent eruption".into() })
         }
         "healthmap" => e.raw.get("label").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from),
+        "ontario511" => {
+            let full = e.raw.get("IsFullClosure").and_then(Value::as_bool).unwrap_or(false);
+            if full { Some("Full closure".to_string()) } else { e.raw.get("LanesAffected").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from) }
+        }
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
@@ -219,9 +223,10 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, emsc::Emsc,
-        eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano,
-        healthmap::HealthMap, nws::Nws, opensky::OpenSky, usgs::Usgs,
+        acled::Acled, cwfis::Cwfis, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi,
+        eccc_marine::EcccMarine, emsc::Emsc, eonet::Eonet, eqcanada::EqCanada, firms::Firms,
+        gdacs::Gdacs, gvp_volcano::GvpVolcano, healthmap::HealthMap, nws::Nws,
+        ontario511::Ontario511, opensky::OpenSky, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
@@ -230,7 +235,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -257,6 +262,10 @@ async fn feeds_payload() -> Value {
         fetch_one("firms", Firms::default(), 12),
         // ACLED — global armed-conflict events (dormant until ACLED_USERNAME/PASSWORD).
         fetch_one("acled", Acled::default(), 12),
+        // Ontario 511 — provincial-highway road events (closures, collisions, roadwork).
+        fetch_one("ontario511", Ontario511, 9),
+        // Environment Canada marine warnings (Great Lakes — rings Ontario).
+        fetch_one("eccc_marine", EcccMarine, 9),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -286,6 +295,8 @@ async fn feeds_payload() -> Value {
         (gl_health.0, gl_health.1, "healthmap", 300),
         (gl_fires.0, gl_fires.1, "firms", 1800),
         (gl_conflict.0, gl_conflict.1, "acled", 800),
+        (on_roads.0, on_roads.1, "ontario511", 500),
+        (ca_marine.0, ca_marine.1, "eccc_marine", 100),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
