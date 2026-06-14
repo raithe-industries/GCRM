@@ -21,6 +21,7 @@ pub enum EventKind {
     Weather,
     AirQuality,
     Health,
+    Transport,
     News,
     Other,
 }

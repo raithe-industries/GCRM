@@ -143,9 +143,17 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 #worldmap canvas{outline:none}
 .maplibregl-ctrl-attrib{font-size:7px!important;background:rgba(0,0,0,.4)!important}
 .maplibregl-ctrl-attrib a{color:var(--t4)!important}
+/* Compact attribution = a small ⓘ that expands on click (license requires credit visible).
+   MapLibre's default ⓘ glyph is dark-on-dark here, so invert it to stay legible. */
+.maplibregl-ctrl-attrib.maplibregl-compact{background:rgba(8,12,16,.7)!important;border-radius:11px;min-height:18px}
+.maplibregl-ctrl-attrib-button{filter:invert(1);opacity:.5}
+.maplibregl-ctrl-attrib-button:hover{opacity:.9}
 .map-toolbar{position:absolute;top:5px;right:5px;z-index:6;display:flex;gap:3px}
 .map-btn{font-size:8px;font-weight:600;letter-spacing:.04em;color:var(--t2);background:rgba(8,12,16,.9);border:0.5px solid var(--border);border-radius:3px;padding:3px 6px;cursor:pointer;text-transform:uppercase}
 .map-btn:hover{color:var(--t1);border-color:var(--accent)}
+/* Fullscreen map: native :fullscreen, plus a CSS fallback for browsers that block the API. */
+.map-half:fullscreen,.map-half:-webkit-full-screen{border-radius:0;border:0}
+.map-half.map-fs-fallback{position:fixed;inset:0;z-index:200;border-radius:0;border:0}
 .map-btn.on{color:#fff;background:var(--accent);border-color:var(--accent)}
 .map-panel{position:absolute;top:5px;left:5px;z-index:6;width:160px;max-height:calc(100% - 12px);overflow-y:auto;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px;display:none}
 .map-panel.open{display:block}
@@ -473,6 +481,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
               <button class="map-btn" id="map-2d" onclick="setMapMode('2d')" title="Flat map">2D</button>
               <button class="map-btn on" id="map-3d" onclick="setMapMode('3d')" title="3D globe (auto-rotating)">3D</button>
               <button class="map-btn" id="map-layers-btn" onclick="toggleLayerPanel()" title="Toggle layers">Layers</button>
+              <button class="map-btn" id="map-fs" onclick="toggleMapFullscreen()" title="Fullscreen map (Esc to exit)">⛶ Full</button>
             </div>
             <div class="map-panel" id="map-panel">
               <div class="map-panel-h">Map Layers</div>
@@ -1264,7 +1273,7 @@ async function bootMap(){
       attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
       layers:[{id:'base',type:'raster',source:'base'}]},
     center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:7,renderWorldCopies:true,
-    fadeDuration:0,attributionControl:{compact:false}});
+    fadeDuration:0,attributionControl:{compact:true}});
   _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
   _map.on('load',()=>{
     _map.addSource('feeds',{type:'geojson',data:d.feeds||emptyFC()});
@@ -1337,8 +1346,8 @@ const MAP_GROUPS={security:'Security & Intelligence',environment:'Environment',
   space:'Space & Aerospace',political:'Political'};
 const MAP_GROUP_ORDER=['security','environment','aviation_maritime','infrastructure','military','humanitarian','space','political'];
 // Popup labels: turn the internal kind/source ids into plain language for the signal card.
-const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',volcano:'Volcano',weather:'Weather alert',air_quality:'Air quality',aircraft:'Aircraft',vessel:'Vessel',conflict:'Armed conflict',cyber:'Cyber',market:'Market',health:'Disease / health',news:'News',other:'Signal'};
-const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky',emsc:'EMSC',gvp_volcano:'Smithsonian GVP',healthmap:'HealthMap',firms:'NASA FIRMS',acled:'ACLED'};
+const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',volcano:'Volcano',weather:'Weather alert',air_quality:'Air quality',aircraft:'Aircraft',vessel:'Vessel',conflict:'Armed conflict',cyber:'Cyber',market:'Market',health:'Disease / health',transport:'Road / transport',news:'News',other:'Signal'};
+const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',eccc_marine:'ECCC Marine',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky',emsc:'EMSC',gvp_volcano:'Smithsonian GVP',healthmap:'HealthMap',firms:'NASA FIRMS',acled:'ACLED',ontario511:'Ontario 511'};
 function kindColor(kind){const l=_layerMeta.find(x=>x.kind===kind);return (l&&l.color)||'#9bb';}
 function relTime(iso){const t=Date.parse(iso);if(!isFinite(t))return'';let s=(Date.now()-t)/1000;if(s<0)s=0;if(s<60)return'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';}
 function safeUrl(u){return (typeof u==='string'&&/^https?:\/\//i.test(u))?u:'';}
@@ -1379,6 +1388,35 @@ function toggleLayer(kind,id,on){ const v=on?'visible':'none';
 function toggleLayerPanel(){ const p=document.getElementById('map-panel');
   const open=p.classList.toggle('open');
   document.getElementById('map-layers-btn').classList.toggle('on',open); }
+
+// Fullscreen the map for easier reading. Uses the native Fullscreen API on the whole
+// map panel (so the toolbar/markets/layer controls come along), with a CSS-fixed
+// fallback for browsers that block it. MapLibre must re-measure on the size change.
+function toggleMapFullscreen(){
+  const el=document.querySelector('.map-half'); if(!el)return;
+  const inFs=document.fullscreenElement||document.webkitFullscreenElement||el.classList.contains('map-fs-fallback');
+  if(inFs){
+    if(document.exitFullscreen)document.exitFullscreen();
+    else if(document.webkitExitFullscreen)document.webkitExitFullscreen();
+    else { el.classList.remove('map-fs-fallback'); onMapFsChange(); }
+    return;
+  }
+  const req=el.requestFullscreen||el.webkitRequestFullscreen;
+  if(req){ Promise.resolve(req.call(el)).catch(()=>{ el.classList.add('map-fs-fallback'); onMapFsChange(); }); }
+  else { el.classList.add('map-fs-fallback'); onMapFsChange(); }
+}
+function onMapFsChange(){
+  const el=document.querySelector('.map-half');
+  const fs=!!(document.fullscreenElement||document.webkitFullscreenElement)||(el&&el.classList.contains('map-fs-fallback'));
+  const btn=document.getElementById('map-fs');
+  if(btn){ btn.classList.toggle('on',!!fs); btn.title=fs?'Exit fullscreen (Esc)':'Fullscreen map (Esc to exit)'; }
+  if(_map){ setTimeout(()=>_map.resize(),60); setTimeout(()=>_map.resize(),360); }
+  // Keep the big globe spinning in fullscreen (the cursor sits inside, which would
+  // otherwise hold the hover-pause); resume once it's resized.
+  if(fs&&_mapMode==='3d'){ _hovering=false; setTimeout(spinResume,420); }
+}
+document.addEventListener('fullscreenchange',onMapFsChange);
+document.addEventListener('webkitfullscreenchange',onMapFsChange);
 
 function setMapMode(m){ _mapMode=m;
   document.getElementById('map-2d').classList.toggle('on',m==='2d');
