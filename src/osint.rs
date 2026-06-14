@@ -212,6 +212,10 @@ fn feed_detail(e: &Event) -> Option<String> {
             let size = e.raw.get("fire_size").and_then(Value::as_f64).unwrap_or(0.0);
             Some(format!("{stage} · {size:.0} ha"))
         }
+        "cbsa_bwt" => e.raw.get("max_wait_min").and_then(Value::as_u64).map(|m| {
+            if m == 0 { "No delay".to_string() } else { format!("{m} min wait") }
+        }),
+        "navcanada" => e.raw.get("tag").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from),
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
@@ -262,11 +266,12 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, alberta511::Alberta511, cwfis::Cwfis, cwfis_activefires::CwfisActiveFires,
-        drivebc::DriveBc, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine,
-        emsc::Emsc, eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
-        gvp_volcano::GvpVolcano, healthmap::HealthMap, nws::Nws, ontario511::Ontario511,
-        opensky::OpenSky, quebec511::Quebec511, usgs::Usgs,
+        acled::Acled, alberta511::Alberta511, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        cwfis_activefires::CwfisActiveFires, drivebc::DriveBc, eccc_alerts::EcccAlerts,
+        eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc, eonet::Eonet, eqcanada::EqCanada,
+        firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano, healthmap::HealthMap,
+        navcanada::NavCanada, nws::Nws, ontario511::Ontario511, opensky::OpenSky,
+        quebec511::Quebec511, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
@@ -275,7 +280,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -314,6 +319,10 @@ async fn feeds_payload() -> Value {
         fetch_one("drivebc", DriveBc, 9),
         fetch_one("alberta511", Alberta511, 9),
         fetch_one("quebec511", Quebec511, 12),
+        // CBSA land-border wait times (29 federal crossings, NB→BC).
+        fetch_one("cbsa_bwt", CbsaBwt, 9),
+        // NAV CANADA NOTAMs — airspace/aerodrome hazards at major Canadian airports.
+        fetch_one("navcanada", NavCanada, 14),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -349,6 +358,8 @@ async fn feeds_payload() -> Value {
         (bc_roads.0, bc_roads.1, "drivebc", 500),
         (ab_roads.0, ab_roads.1, "alberta511", 500),
         (qc_roads.0, qc_roads.1, "quebec511", 300),
+        (ca_borders.0, ca_borders.1, "cbsa_bwt", 60),
+        (ca_notams.0, ca_notams.1, "navcanada", 600),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
