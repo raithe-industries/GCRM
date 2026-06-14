@@ -53,6 +53,23 @@ const HOT_RAMP: f64 = 0.06;
 /// recalibration of the ramp can't dishonestly let stable theaters leak.
 const STABLE_HEAT_CEILING: f64 = 0.06;
 
+// ── Escalation-rung heat boundaries ──────────────────────────────────────────
+// The heat→rung band is partitioned by FOUR boundaries, shared as the single
+// source of truth by `rung_for` (which rung a heat lands in) and `within_band`
+// (where inside that rung's band it sits). Both functions MUST read the same
+// boundaries: the systemic index is `(rung.level() + within_band)/6`, so if the
+// two drifted, a heat just inside a rung could report a within-band fraction that
+// no longer matches its band — the index would jump discontinuously at the seam
+// (a heat one ulp either side of a boundary would read wildly different) and
+// silently lie about how far up the rung a theater is. The lower two boundaries
+// already carry semantic names (`STABLE_HEAT_CEILING` = Stable→Tension,
+// `HOT_HEAT` = Tension→Crisis); the upper two are named here so all four live in
+// exactly one place. Locked by `rung_for_and_within_band_share_one_contiguous_partition`.
+/// Crisis → Limited-War heat boundary (sustained kinetic conflict).
+const LIMITED_WAR_HEAT: f64 = 0.38;
+/// Limited-War → Great-Power-War heat boundary (great-power forces directly engaged).
+const GREAT_POWER_WAR_HEAT: f64 = 0.62;
+
 /// Nuclear-posture modality score at/above which a theater that also entangles
 /// ≥ `BRINK_MIN_GREAT_POWERS` distinct great powers counts as a direct nuclear-brink
 /// (apex) configuration — a Cuba-1962 head-to-head. This is the SINGLE source of
@@ -168,11 +185,11 @@ fn max_weighted_sum() -> f64 {
 fn rung_for(heat: f64, gp_involved: bool, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
     let mut r = if heat < STABLE_HEAT_CEILING {
         EscalationRung::Stable
-    } else if heat < 0.18 {
+    } else if heat < HOT_HEAT {
         EscalationRung::Tension
-    } else if heat < 0.38 {
+    } else if heat < LIMITED_WAR_HEAT {
         EscalationRung::Crisis
-    } else if heat < 0.62 {
+    } else if heat < GREAT_POWER_WAR_HEAT {
         EscalationRung::LimitedWar
     } else {
         EscalationRung::GreatPowerWar
@@ -563,11 +580,11 @@ impl TheaterEngine {
 /// Fractional position of `heat` within its rung's heat band → [0,1].
 fn within_band(heat: f64, rung: EscalationRung) -> f64 {
     let (lo, hi) = match rung {
-        EscalationRung::Stable        => (0.0, 0.06),
-        EscalationRung::Tension       => (0.06, 0.18),
-        EscalationRung::Crisis        => (0.18, 0.38),
-        EscalationRung::LimitedWar    => (0.38, 0.62),
-        EscalationRung::GreatPowerWar => (0.62, 1.0),
+        EscalationRung::Stable        => (0.0, STABLE_HEAT_CEILING),
+        EscalationRung::Tension       => (STABLE_HEAT_CEILING, HOT_HEAT),
+        EscalationRung::Crisis        => (HOT_HEAT, LIMITED_WAR_HEAT),
+        EscalationRung::LimitedWar    => (LIMITED_WAR_HEAT, GREAT_POWER_WAR_HEAT),
+        EscalationRung::GreatPowerWar => (GREAT_POWER_WAR_HEAT, 1.0),
         EscalationRung::Systemic      => (1.0, 1.0),
     };
     if hi <= lo { return 1.0; }
@@ -952,6 +969,54 @@ mod tests {
         assert!(HOT_HEAT > STABLE_HEAT_CEILING,
             "entanglement/alliance gate {} must stay above the Stable ceiling {}",
             HOT_HEAT, STABLE_HEAT_CEILING);
+    }
+
+    #[test]
+    fn rung_for_and_within_band_share_one_contiguous_partition() {
+        // PROVENANCE / HONESTY INVARIANT: `rung_for` (which rung a heat lands in) and
+        // `within_band` (its fractional position inside that rung) MUST read the same
+        // four heat boundaries. The systemic index is `(rung.level() + within)/6`, so the
+        // two functions agreeing is what keeps the index continuous across a rung seam —
+        // if they drifted (the bug this run closed: four bare-literal copies of the
+        // boundaries), `within_band` would compute the fraction against a band that no
+        // longer contains the heat, clamp it to 0/1, and the index would jump.
+
+        // Combined position the index uses, with no escalation overrides so rung_for is
+        // driven purely by heat.
+        let pos = |h: f64| -> f64 {
+            let r = rung_for(h, false, false, false);
+            r.level() as f64 + within_band(h, r)
+        };
+
+        // (1) Continuity + monotonicity in heat across every conventional rung seam.
+        // Contiguous bands make `pos` continuous: just below a boundary the lower rung is
+        // at the TOP of its band (within→1), AT the boundary the next rung starts at the
+        // BOTTOM (within=0), so level jumps +1 while within drops ~1 — net continuous.
+        // A drift between the two functions would make `pos` jump or run backwards here.
+        let mut prev = pos(0.0);
+        let mut h = 0.0;
+        while h <= GREAT_POWER_WAR_HEAT {
+            let cur = pos(h);
+            assert!(cur >= prev - 1e-9, "index position ran backwards at heat {h}: {prev} -> {cur}");
+            assert!((cur - prev).abs() < 0.05,
+                "index position jumped at heat {h}: {prev} -> {cur} — rung_for/within_band boundaries drifted");
+            prev = cur;
+            h += 0.0005;
+        }
+
+        // (2) Each boundary is exactly a shared constant separating adjacent rungs: AT the
+        // boundary the heat sits at the bottom of the upper band (within == 0), and one ulp
+        // below it sits near the top of the lower band (within ≈ 1).
+        for b in [STABLE_HEAT_CEILING, HOT_HEAT, LIMITED_WAR_HEAT, GREAT_POWER_WAR_HEAT] {
+            let r_at = rung_for(b, false, false, false);
+            let r_below = rung_for(b - 1e-6, false, false, false);
+            assert_eq!(r_at.level(), r_below.level() + 1,
+                "boundary {b} must separate two adjacent rungs");
+            assert_eq!(within_band(b, r_at), 0.0,
+                "heat exactly at boundary {b} must sit at the BOTTOM of its band");
+            assert!(within_band(b - 1e-6, r_below) > 0.99,
+                "heat just below boundary {b} must sit near the TOP of the lower band");
+        }
     }
 
     #[test]

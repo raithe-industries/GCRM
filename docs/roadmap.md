@@ -266,9 +266,13 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   now live only in `theater.rs`). Honest by construction — the marker colour can no longer understate an
   apex rung. Locked by `rung_colors_cover_every_rung_distinctly` +
   `marker_color_follows_authoritative_rung_not_heat`. See improvement-log 2026-06-14.
-  - FOLLOW-UP [candidate]: the rung heat boundaries (0.18/0.38/0.62) are still duplicated between
-    `theater.rs::rung_for` and `theater.rs::within_band` (only `STABLE_HEAT_CEILING` = 0.06 is named) —
-    a 1.2-class provenance leg: name them as shared `RUNG_*` constants so the two can't drift.
+  - FOLLOW-UP — **DONE 2026-06-14.** The rung heat boundaries are no longer duplicated: the upper two
+    are now named `LIMITED_WAR_HEAT` (0.38) / `GREAT_POWER_WAR_HEAT` (0.62) and the lower two reuse the
+    existing `STABLE_HEAT_CEILING` (0.06) / `HOT_HEAT` (0.18), so all four live in exactly one place and
+    both `rung_for` (which rung) and `within_band` (where in it) read the same constants. Locked by
+    `rung_for_and_within_band_share_one_contiguous_partition`, which proves the index position
+    `(rung.level()+within_band)/6` stays continuous + monotone across every rung seam (a drift between the
+    two functions would jump it). No model constant value changed. See improvement-log 2026-06-14.
 - [x] **3.6 Apex I&W lights attribute WHERE to the hottest qualifying theater** — **DONE 2026-06-13.**
   The two APEX I&W board lights (`gp_kinetic`, `nuclear_brink` — the red, highest-stakes
   great-power-war conditions, `IW_APEX` on the dashboard) attributed their WHERE pointer to the

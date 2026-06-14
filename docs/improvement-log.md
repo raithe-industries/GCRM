@@ -16,6 +16,53 @@ Format per entry:
 
 ---
 
+## 2026-06-14 — honesty — rung heat boundaries are a single shared partition (rung_for + within_band can't drift) (roadmap 3.7 follow-up)
+- Item: roadmap 3.7 FOLLOW-UP (the [candidate] leg the 06-14 map-colour entry left open), now checked.
+  Honesty axis (pillar 1, "the number must mean what it says") — a 1.2-class provenance/anti-drift fix on
+  the model's own rung structure. Axis note: honesty/awareness both advanced 06-14 already, but this is
+  the directly-flagged sibling of THIS morning's map-colour work (same defect family: duplicated rung
+  thresholds) and is fully cloud-provable, where the remaining open items are live-network-gated (3.2
+  GDELT, 4.5 re-vendor), eyes-only (2.1 small-viewport), or a repeatedly-clean audit (4.2). Closing it now
+  while the context is fresh prevents a future run from re-deriving the boundaries a third time.
+- Verified-open-first (read `theater.rs::rung_for` + `within_band` end-to-end against the current code):
+  the four heat→rung boundaries `0.06/0.18/0.38/0.62` were the contract SHARED by `rung_for` (which rung a
+  heat lands in, lines 169-179) and `within_band` (its fractional position inside that rung's band, lines
+  565-572) — but they were duplicated as bare literals in BOTH functions (only `STABLE_HEAT_CEILING` = 0.06
+  and `HOT_HEAT` = 0.18 were named, and even those weren't reused in `within_band`). A real drift hazard:
+  the systemic index is `(rung.level() + within_band)/6` (theater.rs:375), so the two functions agreeing on
+  the boundaries is exactly what keeps the index continuous across a rung seam. If a future recalibration
+  moved a threshold in `rung_for` but not the matching band edge in `within_band`, a heat just inside a rung
+  would have its fraction computed against a band that no longer contains it — silently clamped to 0/1 — and
+  the index would jump discontinuously at the boundary (a heat one ulp either side reading wildly
+  different). Nothing pinned the relationship; this is the same map-colour third-copy class, on the engine's
+  own index.
+- Change (one coherent change, `theater.rs` only): named the upper two boundaries as `LIMITED_WAR_HEAT`
+  (0.38, Crisis→Limited-War) and `GREAT_POWER_WAR_HEAT` (0.62, Limited-War→Great-Power-War) with a rationale
+  each, added a header comment documenting that all four boundaries are the single source of truth, and
+  rewired BOTH `rung_for` and `within_band` to read the four shared constants (the lower two reuse the
+  existing `STABLE_HEAT_CEILING` / `HOT_HEAT`) — so the boundaries now live in exactly one place and a
+  recalibration edits one constant. Behaviour-preserving: the literal values are unchanged, so the rung
+  mapping and within-band fraction are bit-identical. NO model/calibration constant VALUE touched.
+- Metric moved: test count 389 → 390 by the scorecard grep (new
+  `rung_for_and_within_band_share_one_contiguous_partition`); a 1.2-class drift hazard on the systemic-index
+  rung structure closed (the boundaries can no longer disagree between the two functions). Calibration
+  evidence UNCHANGED — backtest 9/9 (quiet/Ukraine/current/Cuba + evidence), no constant value changed.
+- Proof: `cargo build --release` clean; `cargo clippy --release` adds 0 warnings (the 2 pre-existing are in
+  osint.rs, untouched); `cargo test --release` = 389 passed / 0 failed / 3 ignored (390 by the grep incl.
+  the new test); `cargo test --release backtest` = 9 passed. The lock walks heat from 0 to the
+  Great-Power-War floor in 0.0005 steps asserting the index position `(rung.level()+within_band)/6`'s
+  numerator stays monotone non-decreasing and never jumps >0.05 (contiguous bands keep it continuous across
+  every seam), and checks each of the four boundaries separates two adjacent rungs with `within_band` = 0 at
+  the boundary and ≈1 one ulp below it — a drift between `rung_for` and `within_band` (or a revert to bare
+  literals that later diverge) fails it.
+- Notes / decisions future runs must respect: the four rung heat boundaries now live ONLY as the named
+  constants `STABLE_HEAT_CEILING` / `HOT_HEAT` / `LIMITED_WAR_HEAT` / `GREAT_POWER_WAR_HEAT`, read by both
+  `rung_for` and `within_band` — do NOT reintroduce bare-literal copies in either function (it resurrects
+  the drift hazard the lock guards). These are FITTED band edges; changing a value moves the rung mapping
+  and is a calibration change (re-run the backtest), not a refactor. The rung→colour map on the world map
+  (06-14, `osint.rs::rung_color`) keys off the authoritative `rung`, so it already follows these boundaries
+  transitively.
+
 ## 2026-06-14 — awareness/honesty — world-map marker colour follows the authoritative rung, not raw heat (roadmap 3.7)
 - Item: roadmap 3.7 (new, now checked). Awareness axis (pillar 3, "show WHERE") serving honesty
   (pillar 1, anti-drift / "the number must mean what it says") on the world-map surface. Axis rotation:
