@@ -55,13 +55,28 @@ fn type_label(t: &str) -> &str {
 
 /// Pure parser: 511 events JSON array -> events. Unit-tested offline.
 ///
-/// 511's `Severity` is uniformly "Unknown", so severity is derived from full-closure
-/// flag + event type instead (closures/collisions loud, routine roadwork quiet).
+/// 511's `Severity` is uniformly "Unknown" (and only sparsely populated on the Alberta
+/// twin), so severity is derived from the full-closure flag + event type instead
+/// (closures/collisions loud, routine roadwork quiet).
 pub fn parse_ontario511(json: &str) -> anyhow::Result<Vec<Event>> {
+    parse_511(json, "ontario511", "on511", "https://511on.ca/")
+}
+
+/// Shared parser for the Castle Rock / OneNetwork "511" `get/event` JSON array, whose
+/// field schema (`ID`/`EventType`/`IsFullClosure`/`RoadwayName`/`DirectionOfTravel`/
+/// `LastUpdated`/`Latitude`/`Longitude`) is byte-identical across the provincial
+/// services that run on it (Ontario 511, Alberta 511). `source_id`/`id_prefix`/`url`
+/// keep each province's events separable on the map.
+pub fn parse_511(
+    json: &str,
+    source_id: &str,
+    id_prefix: &str,
+    url: &str,
+) -> anyhow::Result<Vec<Event>> {
     let root: serde_json::Value = serde_json::from_str(json)?;
     let arr = root
         .as_array()
-        .ok_or_else(|| anyhow::anyhow!("ontario511: expected a top-level JSON array"))?;
+        .ok_or_else(|| anyhow::anyhow!("{source_id}: expected a top-level JSON array"))?;
 
     let mut out = Vec::with_capacity(arr.len());
     for e in arr {
@@ -106,14 +121,14 @@ pub fn parse_ontario511(json: &str) -> anyhow::Result<Vec<Event>> {
             .unwrap_or_else(Utc::now);
 
         out.push(Event {
-            id: format!("on511-{id}"),
-            source_id: "ontario511".to_string(),
+            id: format!("{id_prefix}-{id}"),
+            source_id: source_id.to_string(),
             kind: EventKind::Transport,
             title,
             time,
             geo: Some(geo),
             severity: Severity::new(severity),
-            url: Some("https://511on.ca/".to_string()),
+            url: Some(url.to_string()),
             raw: serde_json::json!({
                 "EventType": etype, "IsFullClosure": full_closure,
                 "Description": e.get("Description").cloned().unwrap_or(serde_json::Value::Null),
