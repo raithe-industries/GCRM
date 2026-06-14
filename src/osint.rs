@@ -213,6 +213,16 @@ fn feed_detail(e: &Event) -> Option<String> {
             if m == 0 { "No delay".to_string() } else { format!("{m} min wait") }
         }),
         "navcanada" => e.raw.get("tag").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from),
+        "digitraffic_ais" => {
+            let sog = e.raw.get("sog").and_then(Value::as_f64).unwrap_or(0.0);
+            let status = e.raw.get("status").and_then(Value::as_str).unwrap_or("Under way");
+            Some(format!("{sog:.1} kn · {status}"))
+        }
+        "ucdp_ged" => {
+            let best = e.raw.get("best").and_then(Value::as_f64).unwrap_or(0.0);
+            let ty = e.raw.get("type").and_then(Value::as_str).unwrap_or("Conflict");
+            Some(if best >= 1.0 { format!("{best:.0} killed · {ty}") } else { ty.to_string() })
+        }
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
@@ -273,11 +283,11 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 async fn feeds_payload() -> Value {
     use ee_sources::{
         acled::Acled, alberta511::Alberta511, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
-        cwfis_activefires::CwfisActiveFires, drivebc::DriveBc, eccc_alerts::EcccAlerts,
-        eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc, eonet::Eonet, eqcanada::EqCanada,
-        firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano, healthmap::HealthMap,
-        navcanada::NavCanada, nws::Nws, ontario511::Ontario511, opensky::OpenSky,
-        quebec511::Quebec511, usgs::Usgs,
+        cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
+        eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
+        eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano,
+        healthmap::HealthMap, navcanada::NavCanada, nws::Nws, ontario511::Ontario511,
+        opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
@@ -286,7 +296,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -329,6 +339,10 @@ async fn feeds_payload() -> Value {
         fetch_one("cbsa_bwt", CbsaBwt, 9),
         // NAV CANADA NOTAMs — airspace/aerodrome hazards at major Canadian airports.
         fetch_one("navcanada", NavCanada, 14),
+        // Fintraffic AIS — live Baltic vessel positions (fills the Vessel layer).
+        fetch_one("digitraffic_ais", DigitrafficAis, 15),
+        // UCDP candidate GED — georeferenced conflict events (fills the Conflict layer).
+        fetch_one("ucdp_ged", UcdpGed, 15),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -366,6 +380,8 @@ async fn feeds_payload() -> Value {
         (qc_roads.0, qc_roads.1, "quebec511", 300),
         (ca_borders.0, ca_borders.1, "cbsa_bwt", 60),
         (ca_notams.0, ca_notams.1, "navcanada", 600),
+        (vessels.0, vessels.1, "digitraffic_ais", 800),
+        (conflict.0, conflict.1, "ucdp_ged", 800),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
