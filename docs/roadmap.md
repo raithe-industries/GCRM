@@ -381,14 +381,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (`permit_wait_cancels_on_shutdown_while_pool_saturated`) holding the only permit forever so a
   regression to a bare await would hang. See improvement-log 2026-06-10. **Do NOT** revert to a
   bare `acquire_owned().await` in the recv arm, and do not change `llm.concurrency` (see 4.1).
-- [ ] **4.5 Vendored ee-* crates can drift from `engineering-effects` upstream** [candidate] —
-  GCRM vendors `vendor/ee-core|ee-correlate|ee-sources|ee-view`, but the `engineering-effects`
-  repo self-improves ~3×/day, so the vendored copies silently diverge: upstream fixes never
-  reach GCRM, and GCRM-local edits to the vendored tree (e.g. the 2026-06-12 `layer_geojson`
-  lifetime cleanup) never flow back. Establish a policy — either (a) a periodic re-vendor of the
-  crates GCRM actually uses when upstream advances (diff + `cargo test` gate before adopting),
-  or (b) pin to a recorded upstream SHA in a `vendor/README` and treat divergence as intentional.
-  Pick one and document it so the drift is a decision, not an accident.
+- [x] **4.5 Vendored ee-* crates can drift from `engineering-effects` upstream** — **DONE 2026-06-15.**
+  Chose **(b): the vendored tree is a PINNED, GCRM-owned snapshot; divergence from upstream is
+  intentional.** Option (a) blind re-vendoring is actively WRONG here — GCRM edits these crates in
+  place (the `ee-sources` map connectors are curated daily by the signal-hunter; the `ee-view`
+  `layer_geojson` lifetime fix is GCRM-local), so a wholesale re-vendor would clobber local work.
+  Policy recorded in `vendor/README.md`: adopt upstream only via a deliberate, `cargo test`-gated
+  cherry-pick that preserves GCRM-local edits, never a fast-forward. Locked by
+  `vendor_policy_documents_every_vendored_member` (every `vendor/ee-*` workspace member must be
+  documented in the policy, so a new vendored dep can't slip in undecided). See improvement-log 2026-06-15.
 
 ## 5. Toward v2  (the approved factored rebuild)
 - [ ] **5.1** Sensible standalone steps toward theaters × orthogonal modalities × couplers,
