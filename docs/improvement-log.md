@@ -16,6 +16,29 @@ Format per entry:
 
 ---
 
+## 2026-06-15 — legibility — left rail now SCROLLS instead of clipping the methodology button on short viewports (roadmap 2.1)
+- Item: roadmap 2.1 (small/short-viewport pass).
+- Change: `.left-panel` is a CSS-grid item (`.main` is `display:grid`) with `overflow-y:auto`, but
+  carried the default `min-height:auto`. On a grid item that lets the item grow past its row track
+  to fit content, so its own `overflow-y:auto` saw no overflow, never rendered a scrollbar, and the
+  bottom of the rail (Full-methodology button + brand foot) was clipped below the fold on short
+  laptop/landscape viewports — unreachable. Added `min-height:0` so the item respects the track
+  height and the scrollbar engages → the rail scrolls. One-line CSS fix, the canonical cure for the
+  flex/grid min-height defect; matches the existing `min-height:0` already used on `.chart-card`/
+  `.chart-inner`/`.chart-split`.
+- Metric moved: new test added (Test count 394 → 395); pillar-2 legibility (short-viewport reachability).
+- Proof: `cargo build --release` green; `cargo test` 395 passed / 0 failed / 3 ignored. New test
+  `dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports` asserts the live `.left-panel`
+  rule contains both `overflow-y:auto` and `min-height:0`.
+- Notes / decisions future runs must respect: final visual verdict is the deploy-time eyes gate.
+  Center/right panels share the same latent missing `min-height:0`, but use `overflow:hidden` with
+  bounded internal scroll areas and currently pass eyes — left untouched to avoid unverifiable
+  chart-resize risk; revisit only if eyes flags them. Don't remove `min-height:0` from `.left-panel`
+  (re-clips the rail). Also confirmed during this run: roadmap 4.2's cited unwrap/expect hotspots
+  (aggregator/theater/processor "~27/24/21") are dominated by TEST code — production-path unwraps in
+  those files are 0/0/1 (the lone one a literal-regex `.expect`, legitimately infallible), and the
+  flagged osint.rs:74/181 clippy nits are already fixed (named `LastGoodBatches` alias + `is_some_and`).
+
 ## 2026-06-15 — legibility/honesty — methodology now quantifies every systemic coupler (max lift per channel), templated anti-drift; closes the last 2.3 leg (roadmap 2.3)
 - Item: roadmap 2.3 (now fully addressed). Legibility axis (pillar 2), with an honesty payoff.
 - Change: the `#couplers` section of `methodology.html` listed the five couplers but gave NO

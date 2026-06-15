@@ -649,6 +649,35 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports() {
+        // Pillar-2 legibility: the cockpit is a fixed-height (100vh, body overflow
+        // hidden) 3-column grid. The left rail (gauge → windows → "what this means" →
+        // Full-methodology button → brand foot) is taller than a short laptop/landscape
+        // viewport, so it MUST scroll within its track. As a CSS-grid item it has the
+        // default `min-height:auto`, which lets the item grow past its row track to fit
+        // its content — so its own `overflow-y:auto` sees no overflow, never shows a
+        // scrollbar, and the methodology button + brand foot get clipped below the fold
+        // with no way to reach them (the exact 2.1 symptom). `min-height:0` makes the
+        // item respect the track height so the scrollbar engages. Guard both halves of
+        // the contract so a refactor can't drop either and silently re-clip the rail.
+        let rule = DASHBOARD_HTML
+            .split(".left-panel{")
+            .nth(1)
+            .and_then(|s| s.split('}').next())
+            .expect("dashboard lost the .left-panel rule");
+        assert!(
+            rule.contains("overflow-y:auto"),
+            "left rail must scroll its overflow (overflow-y:auto) so a short viewport can reach \
+             the methodology button"
+        );
+        assert!(
+            rule.contains("min-height:0"),
+            "left rail needs min-height:0 — without it the grid item grows past its track and \
+             overflow-y:auto never engages, clipping the methodology button off-screen"
+        );
+    }
+
+    #[test]
     fn dashboard_html_renders_elevation_threshold_from_model() {
         // The domain bar chart draws a dashed "elevated" reference line so an
         // operator can see at a glance which force domains have crossed the cutoff

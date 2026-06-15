@@ -162,9 +162,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   1s ticks), rewrites the header to `⚠ STALE · no update for Nm` in amber. Fires WITHOUT a new
   snapshot (the exact stall case). Locked by `dashboard_warns_when_the_live_read_goes_stale`. See
   improvement-log 2026-06-13.
-- [ ] **2.1 Small/short-viewport pass** [candidate] — the landing left rail must SCROLL
-  rather than crush the methodology button off-screen; controls reachable on a laptop and a
-  phone. Verify against `src/dashboard.html`; eyes will judge this at deploy.
+- [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
+  left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
+  `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own
+  `overflow-y:auto` saw no overflow, never showed a scrollbar, and the methodology button + brand
+  foot were clipped below the fold on short (laptop/landscape) viewports with no way to reach them.
+  Added `min-height:0` so the item respects the track height and the scrollbar engages → the rail
+  SCROLLS. Locked by `dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports` (asserts
+  both halves of the contract on the live `.left-panel` rule). Phone (≤680px) already stacks/scrolls
+  via the existing breakpoint. Final visual is the deploy-time eyes gate. (Sibling latent defect:
+  center/right panels share the same missing `min-height:0` but use `overflow:hidden` with bounded
+  internal scroll areas and currently pass eyes — left untouched to avoid unverifiable chart-resize
+  risk.) See improvement-log 2026-06-15.
 - [x] **2.2 Annotation render audit** — **DONE 2026-06-10.** Audited every Chart.js instance
   (only two: timeline `tlChart`, domain bar `dmChart`) plus the methodology page (no charts).
   No annotation-plugin overlay remained — `calibBand` and `spikeMarks` were already the only
