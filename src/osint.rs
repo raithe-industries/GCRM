@@ -223,6 +223,30 @@ fn feed_detail(e: &Event) -> Option<String> {
             let ty = e.raw.get("type").and_then(Value::as_str).unwrap_or("Conflict");
             Some(if best >= 1.0 { format!("{best:.0} killed · {ty}") } else { ty.to_string() })
         }
+        "gdacs" => {
+            // GDACS stores the whole feature in `raw`, so the authoritative read sits in
+            // `properties`: the Red/Orange/Green alert level + the hazard type, plus GDACS's
+            // own `severitydata.severitytext` — a human-readable, unit-carrying summary
+            // ("Magnitude 6.1M, Depth:10km", "max wind 92 km/h"). Without this arm a major
+            // global disaster plotted as a bare dot with no severity at all.
+            let level = pf("alertlevel").and_then(Value::as_str).filter(|s| !s.is_empty());
+            let etype = pf("eventtype").and_then(Value::as_str).map(gdacs_hazard).unwrap_or("Disaster");
+            let head = match level {
+                Some(l) => format!("{l} · {etype}"),
+                None => etype.to_string(),
+            };
+            // Append GDACS's severity text only when it's short enough for a chip (some
+            // entries carry a full sentence); otherwise the alert level + type stands alone.
+            let detail = pf("severitydata")
+                .and_then(|s| s.get("severitytext"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && s.chars().count() <= 60);
+            Some(match detail {
+                Some(d) => format!("{head} · {d}"),
+                None => head,
+            })
+        }
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
@@ -247,6 +271,21 @@ fn capitalize_first(s: &str) -> String {
     match c.next() {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
         None => String::new(),
+    }
+}
+
+/// Friendly hazard name for a GDACS `eventtype` code (the popup chip shouldn't show
+/// a raw two-letter code). Unknown codes pass through so a new GDACS type still reads.
+fn gdacs_hazard(eventtype: &str) -> &str {
+    match eventtype {
+        "EQ" => "Earthquake",
+        "TC" => "Cyclone",
+        "FL" => "Flood",
+        "DR" => "Drought",
+        "VO" => "Volcano",
+        "WF" => "Wildfire",
+        "TS" => "Tsunami",
+        other => other,
     }
 }
 
@@ -609,6 +648,35 @@ mod tests {
         assert_eq!(instrument_name("^TNX", "CBOE Interest Rate 10 Year"), "10Y Yield");
         // An unknown symbol keeps Yahoo's own short name (the fallback).
         assert_eq!(instrument_name("ZZZZ", "Some Future"), "Some Future");
+    }
+
+    #[test]
+    fn gdacs_chip_surfaces_alert_level_type_and_severity_text() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "gdacs-x".into(),
+            source_id: "gdacs".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.6),
+            url: None,
+            raw,
+        };
+        // Full read: alert level + friendly hazard name + the unit-carrying severity text.
+        let e = mk(json!({"properties": {"eventtype": "EQ", "alertlevel": "Orange",
+            "severitydata": {"severitytext": "Magnitude 6.1M, Depth:10km"}}}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Orange · Earthquake · Magnitude 6.1M, Depth:10km"));
+        // No severity text -> alert level + hazard type still carry meaning (not a bare dot).
+        let e = mk(json!({"properties": {"eventtype": "TC", "alertlevel": "Red"}}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Red · Cyclone"));
+        // A long severity sentence is dropped so the chip can't dump a paragraph.
+        let long = "Death(s) reported and a very large population is affected across multiple provinces and regions";
+        let e = mk(json!({"properties": {"eventtype": "FL", "alertlevel": "Green",
+            "severitydata": {"severitytext": long}}}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Green · Flood"));
     }
 
     #[test]
