@@ -16,6 +16,41 @@ Format per entry:
 
 ---
 
+## 2026-06-15 — robustness — recorded the vendored ee-* drift policy: pinned GCRM-owned snapshot, not a live mirror (roadmap 4.5)
+- Item: roadmap 4.5 (now checked). Robustness axis (enablers) — least-recently advanced (4.4 on 06-12,
+  vs the 06-13/06-14 honesty/awareness/legibility cluster). Deliberately NOT another +1-test provenance
+  nit: the genuinely-open high-value cloud-provable items were re-verified first — 4.2 (unwrap audit) is
+  clean (the only non-test fallible-path unwraps are compile-time/startup-safe or filter-guarded, e.g.
+  `detector::nearest_test_site`'s `partial_cmp().unwrap()` is protected by the upstream `dist <= radius`
+  filter that drops NaN), and 2.1 (small-viewport) is effectively satisfied (left-panel is
+  `overflow-y:auto` with `flex-shrink:0` children so it SCROLLS rather than crushing the methodology
+  button, plus a ≤680px mobile reflow). So I took 4.5 — the high-value decision the roadmap explicitly
+  deferred.
+- Change: established and recorded the vendoring policy that was previously an *accident*. Decided
+  option **(b)**: treat `vendor/ee-{core,sources,correlate,view}` as a PINNED, GCRM-owned snapshot —
+  divergence from `engineering-effects` upstream is intentional. Option (a) (periodic blind re-vendor)
+  is actively wrong here: GCRM edits these crates in place (the `ee-sources` map connectors are curated
+  daily by the signal-hunter routine; the `ee-view` `layer_geojson` lifetime fix is GCRM-local), so a
+  wholesale re-vendor would clobber local work. New `vendor/README.md` documents the four crates, what
+  GCRM uses each for, and the rule: adopt upstream only via a deliberate cherry-pick that preserves
+  GCRM-local edits and is gated by `cargo build --release` + full `cargo test`, never a fast-forward.
+  Stayed in lane: did NOT touch any `ee-sources` connector, the osint fan-out, or `docs/data-sources.md`
+  (the README points at that ledger as the signal-hunter's domain).
+- Metric moved: test count 390 → 391 by the scorecard grep (new
+  `vendor_policy_documents_every_vendored_member`). New capability: the vendoring drift is now a recorded
+  *decision* with a completeness lock, not silent divergence. Calibration evidence UNCHANGED — backtest
+  9/9 (no model code touched).
+- Proof: `cargo build --release` clean; `cargo test --release` = 390 passed / 0 failed / 3 ignored (391
+  by the grep incl. the new test); `cargo test --release backtest` = 9 passed; `cargo clippy --release`
+  adds 0 new warnings (the 2 pre-existing in osint.rs are untouched). The lock parses the workspace
+  `members` list and asserts every `vendor/ee-*` member is documented in `vendor/README.md` — adding a
+  vendored crate without recording its policy fails it.
+- Notes / decisions future runs must respect: do NOT blind-re-vendor the ee-* tree from upstream HEAD —
+  it discards GCRM-local edits (this is the recorded 4.5 decision). Upstream is a reference to
+  cherry-pick from, test-gated. `vendor/README.md` is the policy; keep it in sync when the workspace
+  gains/loses a vendored member (the lock enforces it). The `ee-sources` connectors + `docs/data-sources.md`
+  remain the signal-hunter routine's lane.
+
 ## 2026-06-14 — honesty — rung heat boundaries are a single shared partition (rung_for + within_band can't drift) (roadmap 3.7 follow-up)
 - Item: roadmap 3.7 FOLLOW-UP (the [candidate] leg the 06-14 map-colour entry left open), now checked.
   Honesty axis (pillar 1, "the number must mean what it says") — a 1.2-class provenance/anti-drift fix on

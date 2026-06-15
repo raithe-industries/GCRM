@@ -486,4 +486,35 @@ mod tests {
                 "INSECURE_KEYS entries must be lowercase for case-insensitive comparison: {key}");
         }
     }
+
+    // Roadmap 4.5 — the vendored `engineering-effects` crates self-improve upstream
+    // several times a day, so a vendored copy silently diverges. `vendor/README.md`
+    // records the standing decision (treat the tree as a pinned, GCRM-owned snapshot;
+    // adopt upstream only via a deliberate test-gated re-vendor). This lock keeps that
+    // decision honest: every `vendor/ee-*` crate the workspace actually builds must be
+    // documented in the policy, so a new vendored dependency can't slip in undecided.
+    #[test]
+    fn vendor_policy_documents_every_vendored_member() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let cargo = std::fs::read_to_string(format!("{root}/Cargo.toml"))
+            .expect("root Cargo.toml is readable");
+        // Pull the vendored crate names out of the `members = [ … ]` workspace list.
+        let members_line = cargo.lines()
+            .find(|l| l.trim_start().starts_with("members"))
+            .expect("workspace `members` list exists");
+        let vendored: Vec<&str> = members_line
+            .split('"')
+            .filter(|tok| tok.starts_with("vendor/"))
+            .map(|tok| tok.trim_start_matches("vendor/"))
+            .collect();
+        assert!(!vendored.is_empty(), "expected at least one vendored ee-* member");
+
+        let policy = std::fs::read_to_string(format!("{root}/vendor/README.md"))
+            .expect("vendor/README.md (the 4.5 drift policy) exists");
+        for crate_name in &vendored {
+            assert!(policy.contains(crate_name),
+                "vendored crate `{crate_name}` is a workspace member but is undocumented in \
+                 vendor/README.md — record its provenance/policy there (roadmap 4.5)");
+        }
+    }
 }
