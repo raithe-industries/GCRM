@@ -118,7 +118,7 @@ mod tests {
         }
     }
 
-    fn layer<'a>(out: &'a LayeredGeoJson, kind: EventKind) -> &'a LayerFeatures {
+    fn layer(out: &LayeredGeoJson, kind: EventKind) -> &LayerFeatures {
         out.layers.iter().find(|l| l.layer.kind == kind).expect("layer present")
     }
 

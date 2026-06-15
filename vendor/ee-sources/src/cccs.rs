@@ -66,13 +66,8 @@ fn strip_cdata(s: &str) -> &str {
 /// Severity from the advisory title: alerts (`(AL…)`) outrank advisories (`(AV…)`);
 /// control-systems (ICS) items and active "Update"s nudge it up. CCCS carries no CVSS.
 fn severity_for(title: &str) -> f64 {
-    let mut s = if title.contains("(AL") {
-        0.8
-    } else if title.contains("(AV") {
-        0.4
-    } else {
-        0.4
-    };
+    // Alerts (AL-) are loud; everything else (advisories AV-, etc.) sits at the baseline.
+    let mut s = if title.contains("(AL") { 0.8 } else { 0.4 };
     let lower = title.to_lowercase();
     if lower.contains("control system") {
         s += 0.1;

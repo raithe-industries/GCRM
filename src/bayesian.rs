@@ -1250,9 +1250,9 @@ mod tests {
         // and SOFT. Lock the RELATIONSHIPS, not the fitted magnitudes.
 
         // (a) magnitude sanity — a soft background term, not an acute driver.
-        assert!(GUARDRAIL_AMPLIFIER > 0.0 && GUARDRAIL_AMPLIFIER < 0.20,
-            "guardrail amplifier must be a small soft background multiplier");
-        assert!(GUARDRAIL_REGIME_SPAN > 0.0);
+        const { assert!(GUARDRAIL_AMPLIFIER > 0.0 && GUARDRAIL_AMPLIFIER < 0.20,
+            "guardrail amplifier must be a small soft background multiplier") };
+        const { assert!(GUARDRAIL_REGIME_SPAN > 0.0) };
 
         // (b) the regime→guardrail map: 0 at/below neutral, linear, saturating at 1.0.
         assert_eq!(guardrail_from_regime(1.0), 0.0, "neutral regime leaks nothing");

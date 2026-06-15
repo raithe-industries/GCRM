@@ -59,7 +59,7 @@ fn pick_candidate_url(page: &str) -> Option<String> {
         match page[abs..].find(".csv") {
             Some(end) => {
                 let frag = &page[abs..abs + end + 4];
-                if best.map_or(true, |b| frag > b) {
+                if best.is_none_or(|b| frag > b) {
                     best = Some(frag);
                 }
                 start = abs + end + 4;
@@ -187,7 +187,7 @@ pub fn parse_ucdp_ged(csv: &str) -> anyhow::Result<Vec<Event>> {
     }
 
     // Most recent first, so a downstream cap keeps current events.
-    out.sort_by(|a, b| b.time.cmp(&a.time));
+    out.sort_by_key(|e| std::cmp::Reverse(e.time));
     Ok(out)
 }
 
