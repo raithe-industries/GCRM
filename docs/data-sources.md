@@ -134,6 +134,28 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-15** — no new source cleared the bar (environmental block), so a verified
+  signal-meaningfulness fix instead. **WebFetch was broadly 403 this session**: every
+  CDN-fronted gov/OSINT host the fetcher tried returned HTTP 403 (NHC `CurrentStorms.json`,
+  JMA quake list, NOAA `api.weather.gov`, USGS feeds, NASA EONET, EMSC `seismicportal.eu`,
+  GDACS API, ReliefWeb API, GDELT geo, Wikipedia) — only `raw.githubusercontent.com`
+  resolved. So no new **Path-A** gov feed could be live-verified, and the GitHub-hosted
+  (**Path-B**-eligible) datasets found were either stale (GDIS ends 2018) or duplicative
+  (USGS/quake mirrors) — none fresh + non-duplicative. Candidates ruled out *this run only*
+  (re-evaluate when WebFetch can reach gov hosts; none are REJECTED): **NHC** active
+  tropical cyclones (`CurrentStorms.json` — new domain, would fill a storm gap; can't
+  verify today), **JMA** quakes (duplicative of USGS/EMSC), **MeteoAlarm** Europe (geocode
+  risk — region codes, not per-record lat/lon; unverified), **ReliefWeb** disasters
+  (UN OCHA but country-centroid + duplicative of GDACS), **GDELT** geo conflict (geocode/
+  meaningfulness risk, not strictly authoritative). Instead, **closed a signal gap on an
+  existing top-tier layer**: `gdacs` (the global multi-hazard layer) had **no `feed_detail`
+  arm**, so every disaster plotted as a bare dot with no severity. Added a chip surfacing
+  the authoritative **alert level + hazard type + GDACS `severitydata.severitytext`**
+  (e.g. "Orange · Earthquake · Magnitude 6.1M, Depth:10km"); long severity sentences are
+  dropped so the chip can't dump a paragraph, degrading gracefully to "Red · Cyclone".
+  Offline test added; `cargo build --release` + full suite green (391 passed, 0 failed, 3
+  ignored). Next run, if WebFetch reaches gov hosts: pick up **NHC tropical cyclones**
+  (Path A) as the new-domain win.
 - **2026-06-14** — filled the two biggest gaps with verified live feeds (Path A):
   `digitraffic_ais` (Fintraffic Baltic AIS → the empty Vessel layer; abnormal-nav-state
   loud, moving commercial faint, routine dropped; join locations+vessels by MMSI) and
