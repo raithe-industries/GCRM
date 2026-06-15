@@ -134,6 +134,33 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-15** (third run) — environmental block a THIRD consecutive session, so a verified
+  signal-meaningfulness fix on an existing layer rather than a half-wired source. **web fetch
+  was 403 on EVERY non-GitHub host again** (NHC `CurrentStorms.json`, USGS `significant_week`
+  GeoJSON, GDACS API, MeteoAlarm `feed.meteoalarm.org`, NOAA NGDC tsunami service) — only
+  `raw.githubusercontent.com` resolved (confirmed positive against a known public raw file).
+  So no Path-A feed could be live-verified, and the only Path-B-eligible channel
+  (`raw.githubusercontent.com`) yielded **no clean source**: searches for GitHub-Actions-
+  refreshed authoritative geocoded feeds surfaced only **personal/aggregator mirrors**
+  (`beyondtracks/act-esa-incidents-geojson`, `jalbertbowden/us-data`, `simonhuwiler/
+  russo-ukrainian-data-ressources`) — all fail bar 1 (authoritative, no scrapers/mirrors) —
+  plus already-live UCDP and licensed ACLED. None fresh + authoritative + geocoded +
+  non-duplicative. Candidates ruled out *this run only* (re-evaluate when web fetch reaches
+  gov hosts; none REJECTED): **NHC** tropical cyclones (still the top Path-A pick),
+  **MeteoAlarm** Europe, **NGDC** tsunami events. Instead, **closed the last `feed_detail`
+  gap among LIVE feeds**: `eccc_marine` (Great-Lakes / Canadian marine warnings) was the
+  only live source with no chip arm → it hit `_ => None` and plotted bare dots. Its title
+  already names the hazard ("Gale warning — Lake Ontario"), but the *wind speed that name
+  denotes* is not something a watch-floor operator carries by heart, so the new arm maps the
+  warning name → its **standardized ECCC mean-wind band with units** (Strong wind 20–33 kn /
+  Gale 34–47 kn / Storm 48–63 kn / Hurricane-force ≥64 kn; "storm surge" excluded as a
+  water-level, not wind, hazard); non-wind hazards (freezing spray, etc.) degrade to the
+  alert tier (Warning/Watch). Bands verified against ECCC's published Canadian Marine Warning
+  Program definitions. Offline test added (`wind_chip_maps_named_warning_to_its_band`);
+  `cargo build --release` + full workspace suite green (gcrm 394 / 0 failed / 3 ignored;
+  ee-sources 65; ee-view 60; ee-correlate 79; ee-core 5). Every LIVE map layer now carries a
+  meaningful popup chip. Next run, if web fetch reaches gov hosts: pick up **NHC tropical
+  cyclones** (Path A) as the new-domain (storm) win.
 - **2026-06-15** (second run) — environmental block again, so a verified signal-meaningfulness
   fix on an existing layer rather than a half-wired source. **web fetch was 403 on EVERY
   non-GitHub host this session** — not just CDN-fronted gov hosts but normally bot-friendly

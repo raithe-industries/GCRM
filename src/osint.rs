@@ -247,6 +247,9 @@ fn feed_detail(e: &Event) -> Option<String> {
                 None => head,
             })
         }
+        // Marine warning name → the standardized ECCC mean-wind band it denotes, with
+        // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
+        "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
         "eccc_alerts" => pf("alert_type").and_then(Value::as_str).map(capitalize_first),
         "nws" => pf("severity")
             .and_then(Value::as_str)
