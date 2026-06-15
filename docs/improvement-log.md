@@ -16,6 +16,25 @@ Format per entry:
 
 ---
 
+## 2026-06-15 — legibility/honesty — methodology now quantifies every systemic coupler (max lift per channel), templated anti-drift; closes the last 2.3 leg (roadmap 2.3)
+- Item: roadmap 2.3 (now fully addressed). Legibility axis (pillar 2), with an honesty payoff.
+- Change: the `#couplers` section of `methodology.html` listed the five couplers but gave NO
+  magnitudes — an operator couldn't see how large each lift is, nor that the nuclear brink is
+  *designed* to outweigh breadth. Each bullet now shows its bounded max lift, TEMPLATED from
+  `theater.rs`'s own constants (made `pub`): great-power entanglement `+45%` (saturates at 3 GPs),
+  multi-theater concurrency `+26%`, alliance activation `+30%`, guardrail collapse `+12%`, nuclear
+  brink `+70%`. The brink bullet states the locked honesty relationship in operator terms
+  (`+70% > +26%`, so breadth never swamps a single brink — the engine invariant
+  `breadth_never_swamps_the_nuclear_brink`). Substituted in `server.rs` (single source of truth),
+  same anti-drift pattern as the guardrail/alert/ceiling figures.
+- Metric moved: Test count 391 → 392; methodology completeness (2.3 fully closed). No calibration
+  constant value changed — backtest 9/9, calibration evidence identical (Brier ~2e-6, in-band 4/4).
+- Proof: `cargo build --release` clean; `cargo test` 392 passed / 0 failed / 3 ignored;
+  `methodology_renders_coupler_magnitudes_from_the_model_constants` ok; backtest bands
+  quiet/Ukraine/current/Cuba ok; clippy clean on touched files.
+- Notes: the five coupler constants are now `pub` — keep them the single source of truth; the
+  methodology renders from them, so never hand-type a coupler magnitude into the whitepaper.
+
 ## 2026-06-15 — robustness — recorded the vendored ee-* drift policy: pinned GCRM-owned snapshot, not a live mirror (roadmap 4.5)
 - Item: roadmap 4.5 (now checked). Robustness axis (enablers) — least-recently advanced (4.4 on 06-12,
   vs the 06-13/06-14 honesty/awareness/legibility cluster). Deliberately NOT another +1-test provenance

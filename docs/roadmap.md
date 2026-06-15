@@ -251,6 +251,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     never disagree with `guardrail_from_regime`. No model constant touched. Locked by
     `methodology_renders_guardrail_collapse_from_the_model_constants`. Remaining under 2.3: the GP /
     great-power involvement coupler (documented qualitatively in #couplers) — optional polish.
+  - PROGRESS 2026-06-15: closed the **last 2.3 leg** — quantified the whole `#couplers` section. The
+    bullets named the five systemic couplers but gave NO magnitudes, so an operator couldn't see how
+    big each lift is or — crucially — that the nuclear brink (`+70%`) is *designed* to outweigh
+    multi-theater breadth (`+26%`). Each bullet now shows its max lift, all TEMPLATED from `theater.rs`'s
+    own constants (`COUPLING_GP_WEIGHT` `+45%` / `COUPLING_ALLIANCE_WEIGHT` `+30%` /
+    `GP_ENTANGLEMENT_SATURATION` 3 / `BREADTH_ASYMPTOTE` `+26%` / `BRINK_AMPLIFIER` `+70%`), substituted
+    in `server.rs` (made the five constants `pub`, single source of truth) — same anti-drift pattern as
+    the guardrail figures. The brink bullet now states the locked honesty relationship in operator-facing
+    terms: `+70% > +26%`, so breadth never swamps a single nuclear brink (the engine invariant
+    `breadth_never_swamps_the_nuclear_brink`). No model constant value changed; backtest 9/9, calibration
+    evidence identical. Locked by `methodology_renders_coupler_magnitudes_from_the_model_constants`. **2.3
+    is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.7 Map marker colour follows the authoritative rung, not raw heat** — **DONE 2026-06-14.**
