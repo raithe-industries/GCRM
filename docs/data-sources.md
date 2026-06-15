@@ -134,6 +134,26 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-15** (second run) — environmental block again, so a verified signal-meaningfulness
+  fix on an existing layer rather than a half-wired source. **web fetch was 403 on EVERY
+  non-GitHub host this session** — not just CDN-fronted gov hosts but normally bot-friendly
+  ones too (NHC `CurrentStorms.json`, GDACS API, MeteoAlarm, JMA quake list, USGS GeoJSON,
+  ReliefWeb API, EMSC `seismicportal.eu`, `api.open-meteo.com`, Wikipedia API). Only
+  `raw.githubusercontent.com` resolved (confirmed positive against a known public raw file).
+  So **no Path-A feed could be live-verified** (NHC, teed up last run, 403s) and **no Path-B
+  snapshot could be built** (can't reach any origin to mirror it; the GitHub-mirrored
+  conflict datasets a search surfaced were licensed (ACLED) or already-live (UCDP) — none
+  fresh + authoritative + geocoded + non-duplicative). Candidates ruled out *this run only*
+  (re-evaluate when web fetch reaches gov hosts; none REJECTED): **NHC** tropical cyclones
+  (Path-A storm-domain win, still the top pick), **MeteoAlarm** Europe, **JMA** quakes
+  (duplicative). Instead, **closed a signal gap on the OpenSky Aircraft layer** (up to 800
+  plotted dots): it had **no `feed_detail` arm**, so every aircraft showed only "Aircraft" +
+  time — a bare dot with no identifying read. Added a chip from OpenSky's state vector:
+  emergency squawk first (`7500` hijack / `7600` radio-failure / `7700` emergency — the only
+  intrinsic alert), else barometric altitude + ground speed in aviation units (`"36089 ft ·
+  447 kn"`), else `"On ground"`. Offline test added; `cargo build --release` + full workspace
+  suite green (gcrm 393 passed / 0 failed / 3 ignored; ee-sources 64; ee-view 60; ee-correlate
+  79; ee-core 5). Next run, if web fetch reaches gov hosts: pick up **NHC tropical cyclones** (Path A).
 - **2026-06-15** — no new source cleared the bar (environmental block), so a verified
   signal-meaningfulness fix instead. **web fetch was broadly 403 this session**: every
   CDN-fronted gov/OSINT host the fetcher tried returned HTTP 403 (NHC `CurrentStorms.json`,

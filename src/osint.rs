@@ -261,6 +261,35 @@ fn feed_detail(e: &Event) -> Option<String> {
             .and_then(|c| c.get("title"))
             .and_then(Value::as_str)
             .map(str::to_string),
+        "opensky" => {
+            // `raw` is OpenSky's 17-element state vector (not a `properties` object), so
+            // the operational read is by index: 7 baro-altitude (m), 8 on-ground, 9
+            // velocity (m/s), 14 squawk. Without this arm every aircraft was a bare dot.
+            // An emergency squawk is the only intrinsic alert, so it takes precedence;
+            // otherwise altitude + ground speed in aviation units (ft / kn), or "On ground".
+            let arr = e.raw.as_array();
+            let at = |i: usize| arr.and_then(|a| a.get(i));
+            let emerg = at(14).and_then(Value::as_str).and_then(|sq| match sq {
+                "7500" => Some("Squawk 7500 · hijack"),
+                "7600" => Some("Squawk 7600 · radio failure"),
+                "7700" => Some("Squawk 7700 · emergency"),
+                _ => None,
+            });
+            if let Some(label) = emerg {
+                Some(label.to_string())
+            } else if at(8).and_then(Value::as_bool).unwrap_or(false) {
+                Some("On ground".to_string())
+            } else {
+                let alt = at(7).and_then(Value::as_f64).map(|m| format!("{:.0} ft", m * 3.28084));
+                let spd = at(9).and_then(Value::as_f64).map(|ms| format!("{:.0} kn", ms * 1.94384));
+                match (alt, spd) {
+                    (Some(a), Some(s)) => Some(format!("{a} · {s}")),
+                    (Some(a), None) => Some(a),
+                    (None, Some(s)) => Some(s),
+                    (None, None) => None,
+                }
+            }
+        }
         _ => None,
     }
 }
@@ -677,6 +706,33 @@ mod tests {
         let e = mk(json!({"properties": {"eventtype": "FL", "alertlevel": "Green",
             "severitydata": {"severitytext": long}}}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Green · Flood"));
+    }
+
+    #[test]
+    fn opensky_chip_surfaces_altitude_speed_and_emergency() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "ac".into(),
+            source_id: "opensky".into(),
+            kind: EventKind::Aircraft,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.1),
+            url: None,
+            raw,
+        };
+        // Airborne: index 7 baro-altitude (m)->ft, index 9 velocity (m/s)->kn.
+        // 11000 m ≈ 36089 ft, 230 m/s ≈ 447 kn.
+        let e = mk(json!(["abc","DLH456","Germany",1,1,8.5,50.1,11000.0,false,230.0,180.0,0,null,11200.0,"1000",false,0]));
+        assert_eq!(feed_detail(&e).as_deref(), Some("36089 ft · 447 kn"));
+        // An emergency squawk (index 14) wins over the altitude/speed read.
+        let e = mk(json!(["def","N99","US",1,1,-95.4,29.8,9000.0,false,200.0,90.0,0,null,9100.0,"7700",false,0]));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Squawk 7700 · emergency"));
+        // On the ground (index 8 = true): no airborne figures to surface.
+        let e = mk(json!(["ghi","TAXI","US",1,1,-80.0,25.0,0.0,true,5.0,0.0,0,null,0.0,"1200",false,0]));
+        assert_eq!(feed_detail(&e).as_deref(), Some("On ground"));
     }
 
     #[test]
