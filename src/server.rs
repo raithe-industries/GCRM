@@ -85,7 +85,24 @@ impl ServerState {
                 .replace("{{GUARDRAIL_AMPLIFIER_PCT}}",
                          &format!("{:.0}%", crate::bayesian::GUARDRAIL_AMPLIFIER * 100.0))
                 .replace("{{GUARDRAIL_SATURATION_X}}",
-                         &format!("{:.1}×", 1.0 + crate::bayesian::GUARDRAIL_REGIME_SPAN)),
+                         &format!("{:.1}×", 1.0 + crate::bayesian::GUARDRAIL_REGIME_SPAN))
+                // Systemic coupler magnitudes: the maximum lift each channel adds to
+                // L_sys, rendered from the engine's own theater.rs constants (single
+                // source of truth) so the whitepaper's quantified couplers — and the
+                // design ordering brink > breadth (breadth never swamps the brink,
+                // locked by breadth_never_swamps_the_nuclear_brink) — can never drift
+                // from the running model. Same anti-drift pattern as the guardrail
+                // figures above.
+                .replace("{{COUPLING_GP_PCT}}",
+                         &format!("{:.0}%", crate::theater::COUPLING_GP_WEIGHT * 100.0))
+                .replace("{{COUPLING_ALLIANCE_PCT}}",
+                         &format!("{:.0}%", crate::theater::COUPLING_ALLIANCE_WEIGHT * 100.0))
+                .replace("{{GP_ENTANGLEMENT_SAT}}",
+                         &format!("{:.0}", crate::theater::GP_ENTANGLEMENT_SATURATION))
+                .replace("{{BREADTH_ASYMPTOTE_PCT}}",
+                         &format!("{:.0}%", crate::theater::BREADTH_ASYMPTOTE * 100.0))
+                .replace("{{BRINK_AMPLIFIER_PCT}}",
+                         &format!("{:.0}%", crate::theater::BRINK_AMPLIFIER * 100.0)),
         );
         let state = Self {
             app_state,
@@ -819,6 +836,45 @@ mod tests {
         // hardcoded value fails this.
         assert!(METHODOLOGY_HTML.contains("{{GUARDRAIL_AMPLIFIER_PCT}}"),
             "guardrail internals must be templated, not hardcoded");
+    }
+
+    #[test]
+    fn methodology_renders_coupler_magnitudes_from_the_model_constants() {
+        // 2.3 (systemic couplers): the #couplers section now quantifies the maximum lift
+        // each coupler adds to L_sys — rendered from theater.rs's own constants (single
+        // source of truth), so the whitepaper can never disagree with the running model.
+        // Anti-drift, same pattern as the guardrail figures.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let m = &*state.methodology_html;
+        for tok in ["{{COUPLING_GP_PCT}}", "{{COUPLING_ALLIANCE_PCT}}", "{{GP_ENTANGLEMENT_SAT}}",
+                    "{{BREADTH_ASYMPTOTE_PCT}}", "{{BRINK_AMPLIFIER_PCT}}"] {
+            assert!(!m.contains(tok), "coupler placeholder {tok} must be substituted at startup");
+        }
+        let gp = format!("+{:.0}%", crate::theater::COUPLING_GP_WEIGHT * 100.0);
+        assert!(m.contains(&gp),
+            "methodology must render the great-power coupler lift ({gp}) from COUPLING_GP_WEIGHT");
+        let alliance = format!("+{:.0}%", crate::theater::COUPLING_ALLIANCE_WEIGHT * 100.0);
+        assert!(m.contains(&alliance),
+            "methodology must render the alliance coupler lift ({alliance}) from COUPLING_ALLIANCE_WEIGHT");
+        let breadth = format!("+{:.0}%", crate::theater::BREADTH_ASYMPTOTE * 100.0);
+        assert!(m.contains(&breadth),
+            "methodology must render the concurrency ceiling ({breadth}) from BREADTH_ASYMPTOTE");
+        let brink = format!("+{:.0}%", crate::theater::BRINK_AMPLIFIER * 100.0);
+        assert!(m.contains(&brink),
+            "methodology must render the nuclear-brink lift ({brink}) from BRINK_AMPLIFIER");
+        assert!(m.contains(&format!("{:.0}", crate::theater::GP_ENTANGLEMENT_SATURATION)),
+            "methodology must render the great-power entanglement saturation count");
+        // The honesty relationship the model locks (breadth_never_swamps_the_nuclear_brink)
+        // must be visible on the operator-facing page: the rendered brink lift is strictly
+        // greater than the rendered concurrency ceiling.
+        assert!(crate::theater::BRINK_AMPLIFIER > crate::theater::BREADTH_ASYMPTOTE,
+            "design invariant: the brink amplifier must exceed the concurrency asymptote");
+        assert!(m.contains("never swamp"),
+            "methodology must state breadth never swamps a single nuclear brink");
+        // Raw template carries placeholders, not hand-typed numbers — a revert to a
+        // hardcoded magnitude fails this.
+        assert!(METHODOLOGY_HTML.contains("{{BRINK_AMPLIFIER_PCT}}"),
+            "coupler magnitudes must be templated, not hardcoded");
     }
 
     #[test]

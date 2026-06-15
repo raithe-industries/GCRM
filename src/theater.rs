@@ -106,18 +106,18 @@ pub const FORECAST_INDEX_CEILING: f64 = 95.0;
 /// theaters is amplified by up to +45%. The largest coupler weight, because direct
 /// great-power entanglement is the strongest single escalator from a regional war to a
 /// systemic one.
-const COUPLING_GP_WEIGHT: f64 = 0.45;
+pub const COUPLING_GP_WEIGHT: f64 = 0.45;
 
 /// Alliance-activation weight in the coupling multiplier: a mutual-defense invocation in a
 /// hot theater adds up to +30% (half that for an invocation in a non-hot theater). Below
 /// the GP weight — an alliance call is a strong escalator but a step short of great powers
 /// already directly entangled.
-const COUPLING_ALLIANCE_WEIGHT: f64 = 0.30;
+pub const COUPLING_ALLIANCE_WEIGHT: f64 = 0.30;
 
 /// Distinct great powers that must be directly entangled across hot theaters to SATURATE
 /// great-power entanglement at 1.0. Three (e.g. US + Russia + China all in it) is the
 /// practical ceiling for a systemic configuration.
-const GP_ENTANGLEMENT_SATURATION: f64 = 3.0;
+pub const GP_ENTANGLEMENT_SATURATION: f64 = 3.0;
 
 /// Maximum additional amplification from multi-theater CONCURRENCY (breadth) as the number
 /// of simultaneously-hot theaters grows without bound. Saturating (not linear) by
@@ -126,7 +126,7 @@ const GP_ENTANGLEMENT_SATURATION: f64 = 3.0;
 /// nuclear-brink apex — the "breadth-swamps-brink" regression a previous linear
 /// +0.12/theater term produced (a no-brink four-theater world pegged flat at the 0.90
 /// ceiling). LOCKED by `breadth_never_swamps_the_nuclear_brink`.
-const BREADTH_ASYMPTOTE: f64 = 0.26;
+pub const BREADTH_ASYMPTOTE: f64 = 0.26;
 
 /// e-fold scale of the breadth saturation: at `breadth = BREADTH_EFOLD` extra hot theaters
 /// the concurrency bonus has reached (1 − 1/e) ≈ 63% of its asymptote. Larger = slower
@@ -138,7 +138,7 @@ const BREADTH_EFOLD: f64 = 1.7;
 /// great-power nuclear standoff within ONE theater (Cuba 1962) multiplies the systemic
 /// likelihood by 1 + 0.70. Strictly greater than `BREADTH_ASYMPTOTE` by design so the apex
 /// head-to-head always outweighs mere breadth at equal intensity.
-const BRINK_AMPLIFIER: f64 = 0.70;
+pub const BRINK_AMPLIFIER: f64 = 0.70;
 
 /// Canonical great-power actor ids → a coarse great-power label, for counting how
 /// many DISTINCT great powers are entangled across hot theaters.
