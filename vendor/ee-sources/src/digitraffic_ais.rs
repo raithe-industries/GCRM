@@ -135,11 +135,11 @@ pub fn parse_digitraffic_ais(locations: &str, vessels: &str) -> anyhow::Result<V
         let sog = props.get("sog").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
         let (name, ship_type) = meta.get(&mmsi).cloned().unwrap_or_default();
         let st_bucket = ship_type / 10;
-        let commercial = matches!(st_bucket, 6 | 7 | 8); // passenger / cargo / tanker
+        let commercial = matches!(st_bucket, 6..=8); // passenger / cargo / tanker
 
         // Keep only meaningful vessels: abnormal status, or moving commercial traffic.
-        let anomalous = is_anomalous(nav);
-        if !anomalous && !(commercial && sog >= 0.5) {
+        let keep = is_anomalous(nav) || (commercial && sog >= 0.5);
+        if !keep {
             continue;
         }
 

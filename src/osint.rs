@@ -71,8 +71,8 @@ static FINANCE_CACHE: PayloadCache = PayloadCache::new(StdDuration::from_secs(50
 /// Per-feed last-good event batches. `None` until first use (so it can be a `const`
 /// static); filled lazily under the lock in `feeds_payload`. Lets a transient empty
 /// upstream fall back to its most recent good data instead of a deceptive zero.
-static FEED_LAST_GOOD: Mutex<Option<HashMap<String, (Instant, Vec<Event>)>>> =
-    Mutex::const_new(None);
+type LastGoodBatches = HashMap<String, (Instant, Vec<Event>)>;
+static FEED_LAST_GOOD: Mutex<Option<LastGoodBatches>> = Mutex::const_new(None);
 /// How long a feed's last-good batch may stand in for an empty live pull (30 min).
 const LAST_GOOD_MAX_AGE: StdDuration = StdDuration::from_secs(1800);
 
@@ -178,7 +178,7 @@ fn feed_detail(e: &Event) -> Option<String> {
             Some(if dead > 0.0 { format!("{etype} · {dead:.0} killed") } else { etype.to_string() })
         }
         "gvp_volcano" => {
-            let ongoing = pf("ContinuingEruption").map_or(false, |v| {
+            let ongoing = pf("ContinuingEruption").is_some_and(|v| {
                 v.as_str() == Some("Yes") || v.as_bool() == Some(true) || v.as_i64() == Some(1)
             });
             Some(if ongoing { "Ongoing eruption".into() } else { "Recent eruption".into() })

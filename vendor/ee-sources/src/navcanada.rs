@@ -112,9 +112,9 @@ fn severity_for(raw_upper: &str) -> f64 {
         0.8
     } else if raw_upper.contains("SIGMET") || raw_upper.contains("SEV TURB") {
         0.7
-    } else if raw_upper.contains("TWY") && raw_upper.contains("CLSD") {
-        0.4
-    } else if raw_upper.contains("RSC") {
+    } else if (raw_upper.contains("TWY") && raw_upper.contains("CLSD")) || raw_upper.contains("RSC") {
+        // Taxiway closure or runway-surface condition — distinct hazards, same moderate weight
+        // (the popup tag still tells them apart; see hazard_tag).
         0.4
     } else if raw_upper.contains("CLSD") || raw_upper.contains("CLOSED") {
         0.5

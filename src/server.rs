@@ -867,8 +867,8 @@ mod tests {
         // The honesty relationship the model locks (breadth_never_swamps_the_nuclear_brink)
         // must be visible on the operator-facing page: the rendered brink lift is strictly
         // greater than the rendered concurrency ceiling.
-        assert!(crate::theater::BRINK_AMPLIFIER > crate::theater::BREADTH_ASYMPTOTE,
-            "design invariant: the brink amplifier must exceed the concurrency asymptote");
+        const { assert!(crate::theater::BRINK_AMPLIFIER > crate::theater::BREADTH_ASYMPTOTE,
+            "design invariant: the brink amplifier must exceed the concurrency asymptote") };
         assert!(m.contains("never swamp"),
             "methodology must state breadth never swamps a single nuclear brink");
         // Raw template carries placeholders, not hand-typed numbers — a revert to a
