@@ -87,6 +87,42 @@ fn active_warning(props: &serde_json::Value) -> Option<(String, String, String)>
     None
 }
 
+/// Operator chip for an active marine warning: the standardized mean-wind band the
+/// named warning denotes, with units. ECCC marine wind-warning names map to fixed
+/// thresholds a watch-floor operator won't carry by heart — a "Gale warning" is
+/// 34–47 kn, a "Storm warning" 48–63 kn — so the chip turns the title's hazard word
+/// into the actual wind speed it implies. Non-wind hazards (e.g. freezing spray) carry
+/// no band, so they degrade to the alert tier (Warning/Watch) and still read.
+pub fn warning_chip(raw: &serde_json::Value) -> Option<String> {
+    let props = raw.get("properties")?;
+    let (name, _zone, ty) = active_warning(props)?;
+    let lname = name.to_ascii_lowercase();
+    // ECCC mean-wind warning bands (excluding gusts), most severe first. "storm surge"
+    // is a water-level hazard, not a wind band, so it's excluded from the "storm" match.
+    let band = if lname.contains("hurricane force") {
+        Some("≥64 kn winds")
+    } else if lname.contains("storm") && !lname.contains("surge") {
+        Some("48–63 kn winds")
+    } else if lname.contains("gale") {
+        Some("34–47 kn winds")
+    } else if lname.contains("strong wind") {
+        Some("20–33 kn winds")
+    } else {
+        None
+    };
+    Some(match band {
+        Some(b) => b.to_string(),
+        // Non-wind hazard: title-case the alert tier so the chip still says something.
+        None => {
+            let mut c = ty.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
+                None => return None,
+            }
+        }
+    })
+}
+
 /// Pure parser: marine GeoJSON -> events for zones with an active warning. Offline-tested.
 pub fn parse_eccc_marine(json: &str) -> anyhow::Result<Vec<Event>> {
     let root: serde_json::Value = serde_json::from_str(json)?;
@@ -171,5 +207,26 @@ mod tests {
     #[test]
     fn errors_on_missing_array() {
         assert!(parse_eccc_marine(r#"{"x":1}"#).is_err());
+    }
+
+    #[test]
+    fn wind_chip_maps_named_warning_to_its_band() {
+        // The fixture's active warning is a "Strong wind warning" → its ECCC band.
+        let ev = parse_eccc_marine(FIXTURE).unwrap();
+        assert_eq!(warning_chip(&ev[0].raw).as_deref(), Some("20–33 kn winds"));
+
+        // Gale / Storm / Hurricane-force escalate; "storm surge" is NOT a wind band.
+        let band = |name: &str| {
+            let raw = serde_json::json!({"properties":{"warnings":{"locations":[
+                {"name":{"en":"Zone"},"events":[
+                    {"name":{"en":name},"type":{"en":"warning"},"status":{"en":"IN EFFECT"}}]}]}}});
+            warning_chip(&raw)
+        };
+        assert_eq!(band("Gale warning").as_deref(), Some("34–47 kn winds"));
+        assert_eq!(band("Storm warning").as_deref(), Some("48–63 kn winds"));
+        assert_eq!(band("Hurricane force wind warning").as_deref(), Some("≥64 kn winds"));
+        // Non-wind hazard → alert tier, not a fabricated wind band.
+        assert_eq!(band("Freezing spray warning").as_deref(), Some("Warning"));
+        assert_eq!(band("Storm surge warning").as_deref(), Some("Warning"));
     }
 }
