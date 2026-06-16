@@ -16,6 +16,35 @@ Format per entry:
 
 ---
 
+## 2026-06-16 — awareness — the "dominant coupling channel" read-out can now name structural guardrail collapse (roadmap 3.4)
+- Item: roadmap 3.4 (extends the dominant-coupling-amplifier read-out).
+- Change: `couplers.coupling_driver` ("led by X") was named in `theater::score_all` from only the FOUR
+  acute couplers (brink, GP-entanglement, concurrency, alliance). The fifth coupler, guardrail collapse,
+  is derived later in `bayesian::compute` from the regime multiplier, so it could NEVER be named the
+  dominant amplifier — even when a degraded-but-acutely-quiet world had eroded arms-control/deterrence as
+  the single largest lift on `l_sys`. The operator was told "regional, not yet systemically coupled" while
+  structural collapse was the only thing amplifying a live crisis — an awareness gap. Fix: `dominant_coupling_amplifier`
+  now returns `(label, lift)` (the acute winner's magnitude); the Bayesian engine compares the guardrail
+  lift (`GUARDRAIL_AMPLIFIER × guardrail`, same multiplicative-excess units) and overwrites the driver to
+  "structural guardrail collapse" when it strictly outlifts the acute winner. Strict `>` keeps the apex tie-break
+  (an equal acute lift still wins — guardrail is soft/subordinate); gated on `tout.l_sys > floor` so a CALM
+  world never names guardrails (engine invariant: guardrails amplify a live crisis, never manufacture risk
+  from calm). `brief.rs` gains the matching honest sentence.
+- Metric moved: Test count 395 → 396; pillar-3 awareness (the systemic "why" can now surface its structural
+  channel). No model constant touched — backtest 9/9 green, calibration evidence Brier 0.00000 / RMSE 0.14pp /
+  in-band 4/4 (unchanged); this is a display/attribution fix, not a math change.
+- Proof: `cargo build --release` green; `cargo test` all green (lib 396). New
+  `guardrail_collapse_is_named_dominant_coupler_only_when_it_outlifts_the_acute_ones` (bayesian.rs) locks the
+  trichotomy: (A) single non-GP hot theater + collapsed guardrails → named "structural guardrail collapse";
+  (B) add US+Russia entanglement → acute gp lift (~0.30) keeps the name (guardrail ≤ ~0.12 never overrides);
+  (C) calm world + collapsed guardrails → names nothing. `dominant_coupling_amplifier`'s tuple return + the
+  brief guardrail-sentence branch are locked by their existing tests.
+- Notes / decisions future runs must respect: the guardrail overlay lives in `bayesian::compute` (it is the
+  only stage that knows the regime-derived guardrail lift) — do NOT move it into the theater engine, which
+  cannot see it. Keep the `tout.l_sys > floor` gate (removing it would name guardrails in a calm world, a
+  pillar-1 overstatement). `COUPLING_AMPLIFIER_FLOOR` is now shared (theater.rs) — both acute and structural
+  couplers are held to the same threshold. Dashboard `· led by …` renders the string verbatim, no JS change.
+
 ## 2026-06-15 — legibility — left rail now SCROLLS instead of clipping the methodology button on short viewports (roadmap 2.1)
 - Item: roadmap 2.1 (small/short-viewport pass).
 - Change: `.left-panel` is a CSS-grid item (`.main` is `display:grid`) with `overflow-y:auto`, but

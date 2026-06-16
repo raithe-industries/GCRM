@@ -16,7 +16,7 @@ use crate::models::{
     AlertLevel, DomainScore, GeopoliticalEvent, RegimeFactor,
     RiskSnapshot, SourceTier, ELEVATION_THRESHOLD, FORECAST_PROB_CEILING, HISTORICAL_ANCHOR,
 };
-use crate::theater::{TheaterEngine, EVIDENCE_GAIN_SYS};
+use crate::theater::{TheaterEngine, EVIDENCE_GAIN_SYS, COUPLING_AMPLIFIER_FLOOR};
 
 // ── Core constants ─────────────────────────────────────────────────────────────
 
@@ -771,6 +771,25 @@ impl BayesianRiskEngine {
         let guardrail = guardrail_from_regime(snap.regime_multiplier);
         tout.couplers.guardrail_collapse = (guardrail * 1e3).round() / 1e3;
         let l_sys = tout.l_sys * (1.0 + GUARDRAIL_AMPLIFIER * guardrail);
+        // The "dominant coupling channel" read-out (couplers.coupling_driver) is named in
+        // the theater engine from only the four ACUTE couplers — it cannot see this fifth,
+        // structural one, because guardrail collapse is derived here from the regime
+        // multiplier. Its lift on l_sys is GUARDRAIL_AMPLIFIER × guardrail, directly
+        // comparable to the acute lifts. If structural collapse is the largest single
+        // amplifier of a LIVE crisis, name it — otherwise the operator would be told
+        // "regional, not yet systemically coupled" while eroded arms-control / deterrence is
+        // the only thing lifting the systemic likelihood. Gated on tout.l_sys > floor (a real
+        // hot theater exists): per the engine's honesty invariant, guardrails amplify a live
+        // crisis but never manufacture risk from calm, so a quiet world is never "led by"
+        // them. Strict `>` keeps the apex-severity tie-break — an acute coupler of equal lift
+        // still wins (guardrail is the soft, subordinate background channel).
+        let guardrail_lift = GUARDRAIL_AMPLIFIER * guardrail;
+        if tout.l_sys > COUPLING_AMPLIFIER_FLOOR
+            && guardrail_lift > COUPLING_AMPLIFIER_FLOOR
+            && guardrail_lift > tout.coupling_driver_lift
+        {
+            tout.couplers.coupling_driver = "structural guardrail collapse".to_string();
+        }
         snap.theaters         = tout.theaters;
         snap.couplers         = tout.couplers;
         snap.systemic_index   = tout.systemic_index;
@@ -1314,6 +1333,69 @@ mod tests {
 
         // and that lifts the headline, monotone (never lowers it)
         assert!(s_degraded.p_wwiii_annual >= s_neutral.p_wwiii_annual);
+    }
+
+    #[test]
+    fn guardrail_collapse_is_named_dominant_coupler_only_when_it_outlifts_the_acute_ones() {
+        // Awareness/honesty: the "dominant coupling channel" read-out is named in the theater
+        // engine from only the four ACUTE couplers; the fifth, structural one (guardrail
+        // collapse) is derived here from the regime multiplier and was therefore UNNAMEABLE —
+        // even when it is the single largest amplifier of a live crisis. This locks the
+        // Bayesian-engine overlay that fixes that, and its honesty guard rails.
+        use crate::models::EventType;
+        let ev = |theater: &str, domain: &str, sev: f64, actors: &[&str], gp: bool| {
+            let mut e = GeopoliticalEvent::new("t".into(), "src".into(), SourceTier::Tier1, Utc::now());
+            e.theater                   = Some(theater.to_string());
+            e.domain_signals            = [(domain.to_string(), 0.9)].into_iter().collect();
+            e.domain_tags               = vec![domain.to_string()];
+            e.severity                  = sev;
+            e.escalation_language_score = 0.4;
+            e.actor_ids                 = actors.iter().map(|s| s.to_string()).collect();
+            e.great_power_involved      = gp;
+            e.event_type                = EventType::MilitaryStrike;
+            e
+        };
+        // Maximally degraded regime → guardrail pinned at its +GUARDRAIL_AMPLIFIER ceiling,
+        // the strongest the structural coupler can ever be.
+        let degraded = || vec![RegimeFactor { id: "d".into(), label: "d".into(), multiplier: 10.0, active: true }];
+        // A single hot theater, several modalities, NON-great-power actors (clears HOT_HEAT).
+        let single = |theater: &'static str, actors: &'static [&'static str], gp: bool| {
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                v.push(ev(theater, "military_escalation",  0.9,  actors, gp));
+                v.push(ev(theater, "economic_warfare",     0.9,  actors, gp));
+                v.push(ev(theater, "cyber_info_ops",       0.85, actors, gp));
+                v.push(ev(theater, "diplomatic_breakdown", 0.85, actors, gp));
+            }
+            v
+        };
+
+        // (A) Single non-GP hot theater: brink/breadth/GP/alliance all zero, so structural
+        //     guardrail collapse is the ONLY thing amplifying the live l_sys → it is named.
+        let mut eng = BayesianRiskEngine::new(degraded(), 0.025, 0.08);
+        let sa = eng.compute(&single("us_iran", &["iran"], false));
+        assert!(sa.likelihood_ratio > 0.0, "precondition: a live crisis exists");
+        assert!(sa.couplers.guardrail_collapse > 0.0, "precondition: guardrails collapsed");
+        assert_eq!(sa.couplers.coupling_driver, "structural guardrail collapse",
+            "all acute couplers zero → structural collapse leads, got {:?}", sa.couplers.coupling_driver);
+
+        // (B) Add great-power entanglement (US+Russia, conventional): the acute gp lift (~0.30)
+        //     outranks even a maxed guardrail lift (≤ +GUARDRAIL_AMPLIFIER ≈ 0.12), so the
+        //     acute coupler keeps the name — guardrail is soft/subordinate, never overrides.
+        let mut eng = BayesianRiskEngine::new(degraded(), 0.025, 0.08);
+        let sg = eng.compute(&single("nato_russia", &["united_states", "russia"], true));
+        assert!(sg.couplers.gp_entanglement > 0.0, "precondition: great powers entangled");
+        assert_eq!(sg.couplers.coupling_driver, "great-power entanglement",
+            "an acute coupler outlifting guardrail must keep the name, got {:?}", sg.couplers.coupling_driver);
+
+        // (C) Calm world (no events) + collapsed guardrails: guardrails amplify a live crisis
+        //     but never manufacture risk from calm — so NOTHING is named, never guardrail.
+        let mut eng = BayesianRiskEngine::new(degraded(), 0.025, 0.08);
+        let sc = eng.compute(&[]);
+        assert!(sc.couplers.guardrail_collapse > 0.0, "precondition: guardrails still collapsed");
+        assert_eq!(sc.couplers.coupling_driver, "",
+            "a calm world names no dominant coupler even with collapsed guardrails, got {:?}",
+            sc.couplers.coupling_driver);
     }
 
     #[test]

@@ -330,6 +330,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   construction, no model constant touched. Locked by
   `coupling_driver_names_the_dominant_systemic_amplifier` (theater.rs) +
   `dashboard_surfaces_the_systemic_coupling_driver` (server.rs). See improvement-log 2026-06-12.
+  - PROGRESS 2026-06-16: closed the **structural-coupler blind spot** in that read-out. The four
+    candidates were only the ACUTE couplers — the fifth, `guardrail_collapse`, is derived in
+    `bayesian::compute` from the regime multiplier (AFTER the theater engine names the driver), so
+    `coupling_driver` could NEVER name it, even when eroded arms-control/deterrence was the single
+    largest amplifier of a live crisis (a degraded-but-acutely-quiet world would read "regional, not
+    yet systemically coupled" while structural collapse was the only lift). `dominant_coupling_amplifier`
+    now returns `(label, lift)`; the Bayesian engine compares the guardrail lift (`GUARDRAIL_AMPLIFIER ×
+    guardrail`, same units) and names "structural guardrail collapse" when it strictly outlifts the
+    acute winner — gated on `tout.l_sys > floor` so guardrails amplify a live crisis but never get
+    named in a calm world (honesty invariant: they never manufacture risk from calm). No model constant
+    touched; backtest 9/9, evidence Brier identical. Locked by
+    `guardrail_collapse_is_named_dominant_coupler_only_when_it_outlifts_the_acute_ones` (bayesian.rs, the
+    acute-wins / guardrail-leads / calm-names-nothing trichotomy) + the brief sentence branch.
 - [x] **3.1 Feed-liveness guard** — **DONE 2026-06-09.** Two `#[ignore]`d live-network
   tests in `src/ingestor.rs`: `feed_roster_liveness` probes EVERY RSS_FEEDS entry
   (HTTP 200 + feed-rs parse + ≥1 entry — the exact path `fetch_rss_feed` needs), with a
