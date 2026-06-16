@@ -134,6 +134,29 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-16** — environmental block a FOURTH consecutive session, and this run found the
+  signal-meaningfulness lever **exhausted** too, so an honest **NO-OP** (per the routine's "do
+  not half-wire a source to look busy"). **web fetch was 403 on every non-GitHub host again**:
+  NHC `CurrentStorms.json`, MeteoAlarm `live/rss`, GDACS `gdacsapi` event list, ECCC
+  `api.weather.gc.ca` OGC SWOB — all 403; only `raw.githubusercontent.com` resolved (confirmed
+  positive against a known public raw file). So no Path-A feed could be live-verified. The
+  Path-B channel (`raw.githubusercontent.com`) again yielded **no clean source**: web searches
+  for authoritative-org GitHub-hosted fresh geocoded feeds returned only static boundary files
+  (`UK-GeoJSON`, `world-geojson` — not events), **personal UCDP mirrors** (`optgeo/ucdp-*` —
+  fail bar 1 *and* duplicate the live `ucdp_ged`), **non-geo** CISA data (`cisagov/dotgov-data`),
+  and licensed **ACLED**. None fresh + authoritative + geocoded + non-duplicative. Candidates
+  ruled out *this run only* (re-evaluate when web fetch reaches gov hosts; none REJECTED): **NHC**
+  tropical cyclones (still the top Path-A pick), **MeteoAlarm** Europe, **ECCC SWOB-realtime**
+  (OGC API — but raw obs would need a per-station baseline to mean anything, cf. the hydrometric
+  rejection). Unlike the prior three runs, **no chip improvement was available**: audited
+  `feed_detail` end-to-end — every LIVE map layer now has a meaningful arm (the `_ => None` tail
+  is hit only by the non-geo catalog sources `cisa_kev`/`cccs` and the finance-panel `yahoo`),
+  and the two newest connectors already surface human labels not raw codes (`ucdp_ged`
+  type_of_violence→State-based/Non-state/One-sided; `digitraffic_ais` navStat→Aground/NUC/…).
+  The #1 stated gap (AIS beyond the Baltic) needs a *different* authoritative source — Fintraffic
+  returns its whole coverage area, no bbox to widen — so it's blocked by the same network reality.
+  No code change; tree left clean; ledger run-log updated. Next run, if web fetch reaches gov
+  hosts: **NHC tropical cyclones** (Path A, storm-domain win) is the standing first pick.
 - **2026-06-15** (third run) — environmental block a THIRD consecutive session, so a verified
   signal-meaningfulness fix on an existing layer rather than a half-wired source. **web fetch
   was 403 on EVERY non-GitHub host again** (NHC `CurrentStorms.json`, USGS `significant_week`
