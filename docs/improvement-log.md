@@ -16,6 +16,30 @@ Format per entry:
 
 ---
 
+## 2026-06-16 — honesty/legibility — I&W cross-domain light now tracks the model's elevation threshold + modality set (no hardcoded drift)
+- Item: ad-hoc (honesty anti-drift; same class as the `{{ELEVATION_THRESHOLD}}` templating already shipped on the dashboard/methodology).
+- Change: the I&W board's "Cross-domain escalation in one theater (≥3 modalities elevated)" light
+  (`indicators.rs`) decided "elevated" with a HARDCODED `0.32` over a HARDCODED 5-modality array —
+  a third, silent copy of the model's definition of "elevated". `models::ELEVATION_THRESHOLD`'s own
+  comment promises it is the single source of truth "so both modules always agree on 'elevated'", but
+  this surface had been missed. A recalibration of `ELEVATION_THRESHOLD` (or a modality add/remove in
+  `bayesian::DOMAIN_WEIGHTS`) would leave the board counting "elevated" by a stale rule — the board
+  could read 2/3 (clear) while the headline's co-occurrence amplifier, dashboard "elevated" line, and
+  `secondary_driver` all called a modality elevated, or vice-versa. Now the light filters
+  `DOMAIN_WEIGHTS` modalities by `>= ELEVATION_THRESHOLD`, so the board's cross-domain reading can
+  never drift from what the number itself calls elevated. Behaviour bit-identical today (same 5
+  modalities, same 0.32); no model constant touched.
+- Metric moved: Test count **396 → 397**; new honesty invariant locked (board ≡ model on "elevated").
+- Proof: `cargo build --release` clean; `cargo test --release` = **396 passed / 0 failed / 3 ignored**;
+  calibration bands + evidence untouched (no constant changed). New test
+  `cross_domain_light_tracks_the_model_elevation_threshold_and_modality_set` proves both halves track
+  the constants: all `DOMAIN_WEIGHTS` modalities at exactly `ELEVATION_THRESHOLD` → trips with
+  `DOMAIN_WEIGHTS.len()` elevated; the same set one step below → reads clear 0/3. A stale hardcoded
+  threshold/list fails one side under recalibration.
+- Notes future runs must respect: the I&W board, the dashboard "elevated" line, `theater.rs`
+  `secondary_driver`, and `bayesian.rs` step 7 must all key "elevated" off `models::ELEVATION_THRESHOLD`
+  — never re-introduce a hardcoded `0.32` or a hardcoded modality list on any of them.
+
 ## 2026-06-16 — awareness — the "dominant coupling channel" read-out can now name structural guardrail collapse (roadmap 3.4)
 - Item: roadmap 3.4 (extends the dominant-coupling-amplifier read-out).
 - Change: `couplers.coupling_driver` ("led by X") was named in `theater::score_all` from only the FOUR

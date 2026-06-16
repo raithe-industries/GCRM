@@ -159,9 +159,15 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     //    leading theater has elevated, against the 3 needed) — same legibility idiom as
     //    the nuclear/energy lights — so a theater sitting at 2/3 (one axis from tripping)
     //    is distinguishable from a quiet board, rather than a bare "No theater with 3+".
+    //    "Elevated" here is the MODEL's `ELEVATION_THRESHOLD` (the same cutoff that feeds
+    //    the intra-theater co-occurrence amplifier and that the dashboard draws as the
+    //    "elevated" line), counted over the model's own modality set `DOMAIN_WEIGHTS` —
+    //    not a hardcoded value/list. So the board's "cross-domain" reading can never drift
+    //    from what the headline number calls elevated, even if either is recalibrated.
     let cross = theaters.iter().map(|t| {
-        let n = ["military_escalation","nuclear_posture","economic_warfare","cyber_info_ops","diplomatic_breakdown"]
-            .iter().filter(|m| modality(t, m) >= 0.32).count();
+        let n = crate::bayesian::DOMAIN_WEIGHTS.iter()
+            .filter(|(m, _)| modality(t, m) >= crate::models::ELEVATION_THRESHOLD)
+            .count();
         (t, n)
     }).max_by_key(|(_, n)| *n);
     let ind_cross = match cross {
@@ -453,6 +459,46 @@ mod tests {
         assert!(!alliance.tripped, "no invoked alliance must read clear");
         assert!(alliance.theater.is_none(), "a clear alliance light must name no theater");
         assert_eq!(alliance.detail, "None");
+    }
+
+    #[test]
+    fn cross_domain_light_tracks_the_model_elevation_threshold_and_modality_set() {
+        use crate::bayesian::DOMAIN_WEIGHTS;
+        use crate::models::ELEVATION_THRESHOLD;
+        // The cross-domain light's notion of an "elevated modality" must be the MODEL's —
+        // `ELEVATION_THRESHOLD` over the model's own `DOMAIN_WEIGHTS` set — not a hardcoded
+        // value/list that can silently drift from the headline. Lock both halves:
+
+        // (a) Threshold boundary tracks the constant: every model modality set to EXACTLY
+        //     ELEVATION_THRESHOLD counts as elevated → n == DOMAIN_WEIGHTS.len() (≥3 → trips).
+        //     If the code kept a stale hardcoded threshold while the constant changed, a
+        //     modality placed at the new threshold would fall on the wrong side and break this.
+        let at: Vec<(&str, f64)> =
+            DOMAIN_WEIGHTS.iter().map(|(m, _)| (*m, ELEVATION_THRESHOLD)).collect();
+        let snap = RiskSnapshot {
+            theaters: vec![theater("nato_russia", EscalationRung::Crisis, true, &at,
+                &["russia", "united_states"])],
+            ..Default::default()
+        };
+        let cross = evaluate(&snap).into_iter().find(|i| i.id == "cross_domain").unwrap();
+        assert!(cross.tripped, "all model modalities at the elevation threshold must trip");
+        assert!(cross.detail.contains(&format!("{} modalities", DOMAIN_WEIGHTS.len())),
+            "the count must span the model's whole modality set, got {:?}", cross.detail);
+
+        // (b) Just BELOW the constant is not elevated: every modality at ELEVATION_THRESHOLD
+        //     − 0.01 counts zero → clear. A stale hardcoded threshold below the (changed)
+        //     constant would still count these and wrongly trip.
+        let below: Vec<(&str, f64)> =
+            DOMAIN_WEIGHTS.iter().map(|(m, _)| (*m, ELEVATION_THRESHOLD - 0.01)).collect();
+        let snap = RiskSnapshot {
+            theaters: vec![theater("nato_russia", EscalationRung::Crisis, true, &below,
+                &["russia", "united_states"])],
+            ..Default::default()
+        };
+        let cross = evaluate(&snap).into_iter().find(|i| i.id == "cross_domain").unwrap();
+        assert!(!cross.tripped, "modalities just below the elevation threshold must read clear");
+        assert!(cross.detail.contains("0/3"),
+            "near-miss detail should report 0/3 elevated, got {:?}", cross.detail);
     }
 
     #[test]
