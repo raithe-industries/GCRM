@@ -288,6 +288,11 @@ pub struct TheaterOutput {
     /// 0..100 escalation-ladder-aligned headline index.
     pub systemic_index: f64,
     pub driver:        String,
+    /// Lift magnitude of the dominant *acute* coupler named in `couplers.coupling_driver`
+    /// (0.0 when none fired). Internal — not serialized. The Bayesian engine compares the
+    /// regime-derived guardrail-collapse lift against this to decide whether the structural
+    /// coupler is the true dominant amplifier, then overwrites `coupling_driver` if so.
+    pub coupling_driver_lift: f64,
 }
 
 impl TheaterEngine {
@@ -404,12 +409,13 @@ impl TheaterEngine {
         // the systemic "why": is this close to a world war because of a single-theater
         // nuclear brink, great powers entangled across theaters, many theaters hot at
         // once, or an alliance invocation?
-        let coupling_driver = dominant_coupling_amplifier(
+        let (coupling_driver, coupling_driver_lift) = dominant_coupling_amplifier(
             brink_mult - 1.0,
             COUPLING_GP_WEIGHT * gp_entanglement,
             concurrency_mult - 1.0,
             COUPLING_ALLIANCE_WEIGHT * alliance_activation,
-        ).to_string();
+        );
+        let coupling_driver = coupling_driver.to_string();
 
         let couplers = SystemicCouplers {
             gp_entanglement,
@@ -426,6 +432,7 @@ impl TheaterEngine {
             l_sys: (l_sys * 1e6).round() / 1e6,
             systemic_index: (systemic_index * 1e2).round() / 1e2,
             driver,
+            coupling_driver_lift,
         }
     }
 
@@ -591,6 +598,12 @@ fn within_band(heat: f64, rung: EscalationRung) -> f64 {
     ((heat - lo) / (hi - lo)).clamp(0.0, 1.0)
 }
 
+/// Tiny floor so float dust on an otherwise-uncoupled world doesn't name a phantom
+/// channel; well below the smallest real lift any coupler can produce when engaged.
+/// Shared with the Bayesian engine so the structural guardrail coupler is held to the
+/// same threshold as the four acute ones.
+pub const COUPLING_AMPLIFIER_FLOOR: f64 = 1e-6;
+
 /// Names the systemic *coupling* amplifier contributing the largest multiplicative lift
 /// to the systemic likelihood — the model's own answer to "what is turning this regional
 /// crisis into a *world*-war risk right now". The candidate channels are exactly the
@@ -600,14 +613,16 @@ fn within_band(heat: f64, rung: EscalationRung) -> f64 {
 /// `(multiplier − 1)` contribution, so this is a pure read-out of the engine's own terms —
 /// it can never disagree with the math and introduces no new lever.
 ///
-/// Returns "" when no channel lifts above `AMPLIFIER_FLOOR` (the risk is purely
+/// Returns `("", 0.0)` when no channel lifts above `AMPLIFIER_FLOOR` (the risk is purely
 /// single-theater heat — an honest "regional, not yet systemically coupled" read).
 /// Ties resolve in apex-severity order (brink ≻ great-power entanglement ≻ concurrency ≻
 /// alliance): the nuclear brink is the most dangerous configuration, so it wins any tie.
-pub fn dominant_coupling_amplifier(brink_lift: f64, gp_lift: f64, breadth_lift: f64, alliance_lift: f64) -> &'static str {
-    // Tiny floor so float dust on an otherwise-uncoupled world doesn't name a phantom
-    // channel; well below the smallest real lift any channel can produce when engaged.
-    const AMPLIFIER_FLOOR: f64 = 1e-6;
+///
+/// Returns the winning channel's label AND its lift magnitude. The magnitude lets a later
+/// stage (the Bayesian engine, which alone knows the regime-derived guardrail-collapse
+/// lift) compare the fifth, structural coupler against these four acute ones — see
+/// `COUPLING_AMPLIFIER_FLOOR` and the guardrail overlay in `BayesianEngine::compute`.
+pub fn dominant_coupling_amplifier(brink_lift: f64, gp_lift: f64, breadth_lift: f64, alliance_lift: f64) -> (&'static str, f64) {
     // Ordered by apex severity; the first strict-max wins, so ties favour the earlier
     // (more dangerous) channel.
     let channels = [
@@ -619,7 +634,7 @@ pub fn dominant_coupling_amplifier(brink_lift: f64, gp_lift: f64, breadth_lift: 
     let (label, lift) = channels.iter().fold(("", 0.0_f64), |best, &(l, v)| {
         if v > best.1 { (l, v) } else { best }
     });
-    if lift > AMPLIFIER_FLOOR { label } else { "" }
+    if lift > COUPLING_AMPLIFIER_FLOOR { (label, lift) } else { ("", 0.0) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1133,14 +1148,17 @@ mod tests {
         // the tie/floor rules; four live worlds isolate each channel, and one proves the
         // honest "regional, not yet systemically coupled" empty read.
 
-        // (a) Pure decomposition + tie/floor.
-        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.0), "",
+        // (a) Pure decomposition + tie/floor. The function returns (label, lift); the lift
+        //     magnitude lets the Bayesian engine compare the structural guardrail coupler.
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.0), ("", 0.0),
             "no lift anywhere → no systemic coupling named");
-        assert_eq!(dominant_coupling_amplifier(0.70, 0.30, 0.18, 0.0), "single-theater nuclear brink");
-        assert_eq!(dominant_coupling_amplifier(0.0, 0.30, 0.18, 0.0), "great-power entanglement");
-        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.18, 0.0), "multi-theater concurrency");
-        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.30), "alliance activation");
-        assert_eq!(dominant_coupling_amplifier(0.3, 0.3, 0.3, 0.3), "single-theater nuclear brink",
+        assert_eq!(dominant_coupling_amplifier(0.70, 0.30, 0.18, 0.0).0, "single-theater nuclear brink");
+        assert_eq!(dominant_coupling_amplifier(0.70, 0.30, 0.18, 0.0).1, 0.70,
+            "the winning channel's lift magnitude is returned for the guardrail comparison");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.30, 0.18, 0.0).0, "great-power entanglement");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.18, 0.0).0, "multi-theater concurrency");
+        assert_eq!(dominant_coupling_amplifier(0.0, 0.0, 0.0, 0.30).0, "alliance activation");
+        assert_eq!(dominant_coupling_amplifier(0.3, 0.3, 0.3, 0.3).0, "single-theater nuclear brink",
             "a tie must resolve to the most dangerous channel (apex order)");
 
         // (b) Brink world: a US–Russia nuclear standoff → brink lift 0.70 outranks the

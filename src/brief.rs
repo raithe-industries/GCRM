@@ -93,6 +93,10 @@ fn coupling_sentence(coupling_driver: &str) -> Option<&'static str> {
         "alliance activation" => Some(
             "The dominant systemic amplifier is a mutual-defense alliance invocation, which can convert \
              a bilateral clash into a bloc-wide war."),
+        "structural guardrail collapse" => Some(
+            "The dominant systemic amplifier is structural guardrail collapse — eroded arms-control and \
+             deterrence frameworks — which raises the danger of any live crisis rather than acute coupling \
+             across theaters."),
         _ => None,
     }
 }
@@ -235,5 +239,13 @@ mod tests {
         let b3 = templated_brief(&snap3);
         assert!(b3.contains("regionally contained"),
             "an uncoupled-but-hot world must read as regionally contained, got:\n{b3}");
+
+        // Structural guardrail collapse leading a live crisis → the brief names the structural
+        // channel (eroded arms-control/deterrence), not a fabricated acute-coupling story.
+        let mut snap4 = sample();
+        snap4["couplers"]["coupling_driver"] = json!("structural guardrail collapse");
+        let b4 = templated_brief(&snap4);
+        assert!(b4.contains("structural guardrail collapse"),
+            "a guardrail-led world must name the structural channel, got:\n{b4}");
     }
 }
