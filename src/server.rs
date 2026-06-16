@@ -678,6 +678,31 @@ mod tests {
     }
 
     #[test]
+    fn nuke_banner_formats_magnitude_and_depth_to_one_decimal() {
+        // Pillar-2 legibility: the red seismic-anomaly banner is the most prominent,
+        // highest-stakes element on the dashboard. It built its text from the raw
+        // JSON `magnitude`/`depth_km` floats, so a depth of 0.7331km or a magnitude
+        // of 5.2999999 rendered with full float noise — while the operator-panel
+        // seismic list right beside it already formatted both to one decimal
+        // (`a.magnitude?.toFixed(1)`). The banner must match: a number rendered with
+        // garbled precision on the apex alert reads as broken, which per the mission
+        // is a FAILED render even when the value is correct. Guard the formatted form
+        // and forbid a revert to the raw concatenation.
+        assert!(
+            DASHBOARD_HTML.contains("top.magnitude?.toFixed(1)"),
+            "nuke banner must format magnitude to one decimal (it was rendering raw float noise)"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("top.depth_km?.toFixed(1)"),
+            "nuke banner must format depth to one decimal (it was rendering raw float noise)"
+        );
+        assert!(
+            !DASHBOARD_HTML.contains("'M'+top.magnitude+' depth='"),
+            "nuke banner reverted to the raw unformatted magnitude/depth concatenation"
+        );
+    }
+
+    #[test]
     fn dashboard_html_renders_elevation_threshold_from_model() {
         // The domain bar chart draws a dashed "elevated" reference line so an
         // operator can see at a glance which force domains have crossed the cutoff

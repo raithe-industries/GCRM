@@ -16,6 +16,31 @@ Format per entry:
 
 ---
 
+## 2026-06-16 — legibility — nuke banner formats seismic magnitude/depth to one decimal (apex alert no longer renders float noise)
+- Item: ad-hoc (pillar-2 legibility; discovered auditing 4.2 — see note below).
+- Change: the red seismic-anomaly banner (`dashboard.html` `pollNuclear`) — the most prominent,
+  highest-stakes element on the cockpit — built its text from the RAW JSON `magnitude`/`depth_km`
+  floats (`'M'+top.magnitude+' depth='+top.depth_km+'km'`), so an FDSN depth like 0.7331km or a
+  magnitude like 5.2999999 rendered with full float noise on the apex alert. The operator-panel
+  seismic list right beside it (`fetchSeismic`) already formatted both to one decimal
+  (`a.magnitude?.toFixed(1)`) — so the same data rendered cleanly in one place and garbled in the
+  louder one. Brought the banner to the same `?.toFixed(1)` form. Per the mission a correct number
+  rendered broken has FAILED; this closes that on the single most attention-grabbing readout. No
+  server/model code touched (the addLog line already uses the server-formatted `:.1` `description`).
+- Metric moved: test count 397 → 398 (new lock); legibility of the apex banner (raw float → 1dp).
+- Proof: `cargo test --release` = 397 passed / 0 failed / 3 ignored. New test
+  `nuke_banner_formats_magnitude_and_depth_to_one_decimal` (server.rs) asserts both formatted forms
+  and forbids a revert to the raw concatenation. Final visual is the deploy-time eyes gate.
+- Notes future runs MUST respect: **4.2 production-path audit is essentially CLOSED.** Audited every
+  `unwrap()/expect()` outside `#[cfg(test)]` across `src/`: the roadmap's "~27/~24/~21" counts for
+  aggregator/theater/processor are almost entirely TEST code; production paths are clean. The few
+  remaining are legitimately-infallible (startup fail-fast HTTP/signal builders; `position(...).unwrap()`
+  on a value just proven present; `Semaphore::acquire().unwrap()` on a never-closed local sem) or
+  guarded by an upstream filter (`detector.rs:146` `partial_cmp().unwrap()` — the `dist <= radius`
+  filter drops every NaN before `min_by`, and coords come from finite GeoJSON, so it is not reachable;
+  hardening it to `total_cmp` would be behaviour-bit-identical defense-in-depth, i.e. the +1-test grind).
+  Don't re-chase 4.2 as if it were open.
+
 ## 2026-06-16 — honesty/legibility — I&W cross-domain light now tracks the model's elevation threshold + modality set (no hardcoded drift)
 - Item: ad-hoc (honesty anti-drift; same class as the `{{ELEVATION_THRESHOLD}}` templating already shipped on the dashboard/methodology).
 - Change: the I&W board's "Cross-domain escalation in one theater (≥3 modalities elevated)" light
