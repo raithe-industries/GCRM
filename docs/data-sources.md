@@ -134,6 +134,22 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-16** (second run) — environmental block a **FIFTH** consecutive session; honest
+  **NO-OP**. **web fetch 403 on every non-GitHub host again** — NHC `CurrentStorms.json`,
+  `api.weather.gov` active alerts, GDACS `gdacsapi` event list, USGS `significant_week`
+  GeoJSON — all 403; only `raw.githubusercontent.com` resolved (positive control against a
+  known public raw file). So no Path-A feed live-verifiable. Path B (`raw.githubusercontent.com`)
+  again yielded **no clean source**: fresh web searches for authoritative-org GitHub-hosted
+  geocoded event feeds returned only **personal mirrors** (`beyondtracks/act-esa-incidents-geojson`,
+  `PetraLee2019/...`, assorted USGS-feed visualizers — all fail bar 1), **static boundary
+  files** (`georgique/world-geojson`, `gregoiredavid/france-geojson` — not events), and the
+  official USGS/NOAA/NASA feeds living only on their 403-ing origin hosts. None authoritative +
+  fresh + geocoded + non-duplicative. Standing first pick unchanged: **NHC tropical cyclones**
+  (Path A) the moment web fetch reaches gov hosts. Re-confirmed the **chip lever stays exhausted**:
+  audited `feed_detail` again end-to-end — every LIVE map layer carries a meaningful, unit-bearing
+  arm (the `_ => None` tail is hit only by the non-geo catalog `cisa_kev`/`cccs` and finance-panel
+  `yahoo`), so no honest signal-meaningfulness fix remained either. No code change; tree clean;
+  ledger-only commit.
 - **2026-06-16** — environmental block a FOURTH consecutive session, and this run found the
   signal-meaningfulness lever **exhausted** too, so an honest **NO-OP** (per the routine's "do
   not half-wire a source to look busy"). **web fetch was 403 on every non-GitHub host again**:
