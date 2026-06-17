@@ -16,6 +16,31 @@ Format per entry:
 
 ---
 
+## 2026-06-17 — honesty — Confidence info-modal renders its blend formula from the model constants (anti-drift)
+- Item: roadmap 1.2 (provenance/anti-drift leg; same class as the 2026-06-14 estimate_confidence pin).
+- Change: the dashboard's **Confidence** info-modal — the operator's explanation of how the
+  data-quality score is built — HAND-TYPED the blend formula (`×0.5 + ×0.3 + ×0.2`, "saturates near
+  200 events", "near 20 feeds"). Those are live `CONF_W_DOMAIN`/`CONF_W_EVENTS`/`CONF_W_SOURCES` and
+  `CONFIDENCE_EVENT_SATURATION`/`CONFIDENCE_SOURCE_SATURATION` constants in `bayesian.rs` — the exact
+  ones `estimate_confidence` blends. A re-weighting would leave the modal silently misexplaining the
+  operator's own Confidence number (a pillar-1 violation: the explanation must mean what the formula
+  does). Templated all five via `{{CONF_W_*}}`/`{{CONFIDENCE_*_SAT}}`, substituted in `server.rs::
+  generate_dashboard_html` (same anti-drift mechanism as `{{ELEVATION_THRESHOLD}}`/`{{BASELINE_ANNUAL_PCT}}`
+  on this surface). The methodology page's confidence note (methodology.html) is qualitative — no numbers
+  to drift — so it was left as-is. Behaviour bit-identical today (same 0.5/0.3/0.2, 200, 20); no model
+  constant touched.
+- Metric moved: test count 400 → 401 (new lock); closes a real open drift hazard on the primary
+  operator surface (not a fabricated nit — a hand-typed model formula that could lie after a re-weight).
+- Proof: `cargo build --release` clean; `cargo test --release` = 401 passed / 0 failed / 3 ignored;
+  clippy clean; calibration UNTOUCHED (bands quiet/ukraine/current/cuba green, evidence identical — no
+  constant changed). New test `dashboard_renders_confidence_formula_from_the_model_constants` (server.rs)
+  asserts all five placeholders template, substitute at render, and the rendered prose embeds the live
+  constants; a revert to the hardcoded `×0.5 … 200 events … 20 feeds` fails it.
+- Notes / decisions future runs must respect: do NOT re-hardcode confidence numbers in the modal —
+  they render from the constants. The `CONF_W_*` partition-unity compile assert in bayesian.rs still
+  guards the weights; the modal now auto-follows them. AUDIT NOTE: 4.2 (risky unwrap/expect) remains a
+  verified NON-FINDING per the 2026-06-16/17 entries — don't re-chase it.
+
 ## 2026-06-17 — awareness — I&W board gains a VELOCITY-at-altitude warning condition (10th light)
 - Item: roadmap 3.8 (new; under Awareness).
 - Change: all nine prior I&W lights (`indicators.rs::evaluate`) were standing-LEVEL reads — none

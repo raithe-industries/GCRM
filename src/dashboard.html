@@ -784,7 +784,7 @@ const INFO={
   conf:{title:'Confidence',html:`
     <p><b>Confidence</b> is how much to trust the current estimate, from the quality and quantity of evidence behind it — <b>not</b> how dangerous the world is.</p>
     <span class="ih">Formula</span>
-    <p><code>avg domain confidence ×0.5 + event volume ×0.3 + active sources ×0.2</code>. Event volume saturates near 200 events in the window; sources near 20 feeds.</p>
+    <p><code>avg domain confidence ×{{CONF_W_DOMAIN}} + event volume ×{{CONF_W_EVENTS}} + active sources ×{{CONF_W_SOURCES}}</code>. Event volume saturates near {{CONFIDENCE_EVENT_SAT}} events in the window; sources near {{CONFIDENCE_SOURCE_SAT}} feeds.</p>
     <span class="ih">Bands</span>
     <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
   trend:{title:'6h Trend',html:`

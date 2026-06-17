@@ -134,6 +134,19 @@ fn generate_dashboard_html(base_path: &str) -> String {
         // methodology page already carries for P₀.
         .replace("{{BASELINE_ANNUAL_PCT}}",
                  &format!("{:.1}", crate::models::BASELINE_ANNUAL * 100.0))
+        // The Confidence info-modal explains how the operator's data-quality score is
+        // built. Its blend weights and saturation points render from the engine's own
+        // CONF_W_*/CONFIDENCE_*_SATURATION constants (the same ones estimate_confidence
+        // blends, single source of truth) so the explanation can never drift from the
+        // running formula after a re-weighting — same anti-drift guarantee P₀ and the
+        // elevation line already carry on this surface.
+        .replace("{{CONF_W_DOMAIN}}", &format!("{:.1}", crate::bayesian::CONF_W_DOMAIN))
+        .replace("{{CONF_W_EVENTS}}", &format!("{:.1}", crate::bayesian::CONF_W_EVENTS))
+        .replace("{{CONF_W_SOURCES}}", &format!("{:.1}", crate::bayesian::CONF_W_SOURCES))
+        .replace("{{CONFIDENCE_EVENT_SAT}}",
+                 &format!("{:.0}", crate::bayesian::CONFIDENCE_EVENT_SATURATION))
+        .replace("{{CONFIDENCE_SOURCE_SAT}}",
+                 &format!("{:.0}", crate::bayesian::CONFIDENCE_SOURCE_SATURATION))
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -998,6 +1011,41 @@ mod tests {
             rendered.contains(&format!("~{pct}%</code> modern quiet-year baseline")),
             "rendered dashboard calibration line must embed the baseline from BASELINE_ANNUAL"
         );
+    }
+
+    #[test]
+    fn dashboard_renders_confidence_formula_from_the_model_constants() {
+        // HONESTY (pillar 1): the Confidence info-modal explains how the operator's
+        // data-quality score is built. Its blend weights and saturation points MUST
+        // render from the engine's own CONF_W_*/CONFIDENCE_*_SATURATION constants — the
+        // same ones estimate_confidence blends — not hand-typed numbers that could
+        // silently drift from the running formula after a re-weighting. A revert to a
+        // hardcoded "×0.5 … 200 events … 20 feeds" fails this.
+        const PHS: [&str; 5] = ["{{CONF_W_DOMAIN}}", "{{CONF_W_EVENTS}}",
+            "{{CONF_W_SOURCES}}", "{{CONFIDENCE_EVENT_SAT}}", "{{CONFIDENCE_SOURCE_SAT}}"];
+        for ph in PHS {
+            assert!(DASHBOARD_HTML.contains(ph),
+                "confidence formula must be templated, not hardcoded ({ph})");
+        }
+        let rendered = generate_dashboard_html("/risk");
+        for ph in PHS {
+            assert!(!rendered.contains(ph),
+                "confidence placeholder was not substituted at render time ({ph})");
+        }
+        // The rendered prose must quote the live constants, so the operator-facing
+        // explanation can never disagree with what estimate_confidence actually computes.
+        let blend = format!(
+            "avg domain confidence ×{:.1} + event volume ×{:.1} + active sources ×{:.1}",
+            crate::bayesian::CONF_W_DOMAIN, crate::bayesian::CONF_W_EVENTS,
+            crate::bayesian::CONF_W_SOURCES);
+        assert!(rendered.contains(&blend),
+            "rendered confidence blend must embed CONF_W_* from the model");
+        assert!(rendered.contains(&format!(
+            "saturates near {:.0} events", crate::bayesian::CONFIDENCE_EVENT_SATURATION)),
+            "rendered prose must embed CONFIDENCE_EVENT_SATURATION");
+        assert!(rendered.contains(&format!(
+            "near {:.0} feeds", crate::bayesian::CONFIDENCE_SOURCE_SATURATION)),
+            "rendered prose must embed CONFIDENCE_SOURCE_SATURATION");
     }
 
     #[test]

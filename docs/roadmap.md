@@ -140,6 +140,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     factor defaults (config surface, labeled `RegimeFactor`s, not blind literals). NB the per-DOMAIN
     confidence (`DomainScorer::score_all`, Step ~) still has its own inline literals (`15.0`, `3.0`, tier
     weights) — a future provenance leg.
+  - PROGRESS 2026-06-17: closed the **operator-facing drift hazard** on the snapshot-confidence
+    formula (sibling to the 2026-06-14 pin, on the DISPLAY side). The dashboard **Confidence** info-modal
+    HAND-TYPED the blend (`×0.5 + ×0.3 + ×0.2`, "200 events", "20 feeds") — the very `CONF_W_*`/
+    `CONFIDENCE_*_SATURATION` constants `estimate_confidence` blends — so a re-weight would leave the
+    modal silently misexplaining the operator's own Confidence number. Templated all five
+    (`{{CONF_W_*}}`/`{{CONFIDENCE_*_SAT}}`, substituted in `server.rs::generate_dashboard_html`, same
+    anti-drift mechanism as `{{BASELINE_ANNUAL_PCT}}`). Behaviour bit-identical; no constant touched.
+    Locked by `dashboard_renders_confidence_formula_from_the_model_constants`. Remaining un-pinned for
+    1.2: the regime × factor defaults (config surface) + the per-DOMAIN confidence literals (`15.0`,
+    `3.0`, tier weights in `score_all`).
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
