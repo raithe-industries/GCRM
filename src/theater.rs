@@ -367,7 +367,21 @@ impl TheaterEngine {
         // single threshold/great-power definition, so the headline amplifier and the
         // board light trip on exactly the same state and can never disagree about
         // whether the apex configuration is live.
-        let brink = if states.iter().any(theater_is_nuclear_brink) { 1.0 } else { 0.0 };
+        //
+        // Identify WHICH theater carries the brink (the most acute by nuclear posture),
+        // not just whether one exists: the apex lever (BRINK_AMPLIFIER, +70%, the single
+        // largest term in `l_sys`) lives in THAT theater, which — per the note above —
+        // need NOT be the hottest by raw heat. The systemic "where" must name the brink
+        // theater, not a louder conventional one. `any(theater_is_nuclear_brink)` is
+        // exactly `brink_theater.is_some()`, so the amplifier is unchanged.
+        let brink_theater = states.iter()
+            .filter(|s| theater_is_nuclear_brink(s))
+            .max_by(|a, b| {
+                let na = a.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0);
+                let nb = b.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0);
+                na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        let brink = if brink_theater.is_some() { 1.0 } else { 0.0 };
 
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
         // multiple simultaneously-hot theaters with DIMINISHING returns; brink is the
@@ -399,6 +413,13 @@ impl TheaterEngine {
         let hot_count = states.iter().filter(|s| s.heat >= HOT_HEAT).count();
         let driver = if top_heat < STABLE_HEAT_CEILING {
             "No theater above baseline".to_string()
+        } else if let Some(bt) = brink_theater {
+            // Apex configuration: lead the "where" with the nuclear-brink theater (the
+            // +70% apex lever), even when a louder conventional theater is hotter by raw
+            // heat. The hottest theater stays visible in the dashboard sub-line ("hottest:
+            // …") and the ladder strip, so the operator gets BOTH apex and hottest.
+            format!("{} at nuclear brink; {} theater{} hot",
+                bt.label, hot_count, if hot_count == 1 { "" } else { "s" })
         } else {
             format!("{} at {}; {} theater{} hot",
                 top_label, max_rung.label(), hot_count, if hot_count == 1 { "" } else { "s" })
@@ -1138,6 +1159,69 @@ mod tests {
         assert!((1.6..=1.8).contains(&ratio),
             "brink in a non-hottest theater should raise l_sys by ~1.70×, got ratio {ratio} \
              (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
+    }
+
+    #[test]
+    fn driver_names_the_brink_theater_not_the_hottest_one() {
+        // Awareness "WHERE" for the apex case: the systemic `driver` string is the
+        // operator's headline "where". The brink theater carries the single largest
+        // lever on l_sys (BRINK_AMPLIFIER, +70%) yet — per the l_sys test above — need
+        // NOT be the hottest by raw heat. So the "where" must name the BRINK theater,
+        // not a louder conventional one that wins the raw-heat sort. The hottest stays
+        // visible in the dashboard sub-line + ladder strip.
+
+        // Hottest-by-heat, conventional, no nuclear → never a brink itself.
+        let conventional_hottest = || {
+            let mut v = Vec::new();
+            for _ in 0..6 {
+                v.push(ev("us_iran", "military_escalation", 1.0, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "economic_warfare",    0.9, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "cyber_info_ops",      0.85, 0.9, &["united_states", "iran"], true));
+                v.push(ev("us_iran", "diplomatic_breakdown",0.85, 0.9, &["united_states", "iran"], true));
+            }
+            v
+        };
+        // Cooler theater whose heat is purely extreme nuclear posture → a 2-GP brink.
+        let mut world = conventional_hottest();
+        for _ in 0..6 {
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["united_states", "russia"], true);
+            e.escalation_language_score = 0.8; // clear the 0.78 brink threshold
+            world.push(e);
+        }
+
+        let mut te = TheaterEngine::new();
+        let out = te.compute(&world);
+
+        // Precondition: the conventional theater is hottest; the brink sits in the cooler one.
+        let hottest = out.theaters.iter()
+            .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap()).unwrap();
+        assert_eq!(hottest.theater_id, "us_iran",
+            "precondition: conventional theater must be hottest, got {}", hottest.theater_id);
+        let brink_t = out.theaters.iter().find(|t| theater_is_nuclear_brink(t)).unwrap();
+        assert_eq!(brink_t.theater_id, "nato_russia", "precondition: brink is the cooler theater");
+
+        // The driver names the BRINK theater + the apex configuration, NOT the hottest.
+        assert!(out.driver.contains("NATO–Russia"),
+            "driver must name the brink theater, got {:?}", out.driver);
+        assert!(out.driver.contains("nuclear brink"),
+            "driver must name the apex configuration, got {:?}", out.driver);
+        assert!(!out.driver.contains("US/Israel–Iran"),
+            "the hottest theater must NOT be the headline 'where' when a brink leads, got {:?}", out.driver);
+
+        // Contrast: with the brink theater downgraded to ONE great power (not a brink),
+        // the driver falls back to naming the hottest theater with its rung label.
+        let mut world2 = conventional_hottest();
+        for _ in 0..6 {
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia"], true);
+            e.escalation_language_score = 0.8;
+            world2.push(e);
+        }
+        let mut te2 = TheaterEngine::new();
+        let out2 = te2.compute(&world2);
+        assert!(!out2.theaters.iter().any(theater_is_nuclear_brink),
+            "precondition: no brink when only one great power is present");
+        assert!(out2.driver.contains("US/Israel–Iran") && !out2.driver.contains("nuclear brink"),
+            "with no brink, the driver names the hottest theater, got {:?}", out2.driver);
     }
 
     #[test]

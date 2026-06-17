@@ -16,6 +16,36 @@ Format per entry:
 
 ---
 
+## 2026-06-17 — awareness — headline "where" names the nuclear-brink theater, not the loudest one
+- Item: roadmap 3.9 (new; under Awareness — show WHERE).
+- Change: the systemic `driver` string (`theater::score_all`) — the dashboard's Primary Driver
+  "where" (`#cmd-driver`) — named the hottest-by-heat theater. But the nuclear-brink amplifier
+  (BRINK_AMPLIFIER +70%, the single largest term in `l_sys`) is detected across ALL theaters and,
+  per the existing `brink_fires_in_a_non_hottest_theater` lock, need NOT live in the hottest one —
+  a Cuba-style standoff has near-zero kinetic volume yet maximal nuclear danger. So in the apex
+  configuration the headline "where" pointed at a louder CONVENTIONAL theater while the theater
+  actually carrying the +70% apex lever sat unnamed (the `coupling_driver` said "single-theater
+  nuclear brink" but never WHICH theater). `score_all` now captures the brink theater (most acute
+  by `nuclear_posture`); `any(theater_is_nuclear_brink)` ≡ `brink_theater.is_some()`, so the
+  amplifier value is bit-identical. When a brink leads, the driver reads "{brink theater} at
+  nuclear brink; N theaters hot"; the hottest theater stays visible in the dashboard sub-line
+  ("hottest: …", set client-side from the heat-sorted top theater) and the ladder strip, so the
+  operator now gets BOTH apex and hottest. No model/calibration constant touched.
+- Metric moved: NEW pillar-3 capability — the most dangerous configuration now shows its true
+  WHERE on the headline. Test count 401 → 402.
+- Proof: `cargo build --release` clean; `cargo clippy --release` clean; `cargo test --release` =
+  401 passed / 0 failed / 3 ignored (402 `#[test]` fns). Calibration UNTOUCHED: bands quiet 2.03 /
+  ukraine 38.84 / current 60.10 / cuba 79.80 all in-band, Brier 0.00000 / RMSE 0.14pp / in-band
+  4/4 (identical). New test `driver_names_the_brink_theater_not_the_hottest_one` (theater.rs):
+  conventional us_iran hottest + a nato_russia 2-GP nuclear brink → driver names "NATO–Russia at
+  nuclear brink" and NOT "US/Israel–Iran"; downgrading the brink theater to one great power flips
+  it back to naming the hottest with its rung label.
+- Notes / decisions future runs must respect: this is a DISPLAY/attribution fix on the systemic
+  `driver` string only — it touches no math (l_sys, systemic_index, couplers all unchanged). Do
+  NOT re-tie the headline "where" to raw heat when a brink is live; the apex lever defines the
+  "where". The dashboard sub-line "hottest: …" is the COMPLEMENT (still the heat-sorted top), not
+  a duplicate — keep both.
+
 ## 2026-06-17 — honesty — Confidence info-modal renders its blend formula from the model constants (anti-drift)
 - Item: roadmap 1.2 (provenance/anti-drift leg; same class as the 2026-06-14 estimate_confidence pin).
 - Change: the dashboard's **Confidence** info-modal — the operator's explanation of how the
