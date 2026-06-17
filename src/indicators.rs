@@ -181,6 +181,47 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             tripped: false, theater: None, detail: "No theater data".into() },
     };
 
+    // 10. Active escalation at a flashpoint — a theater already at Crisis or above that
+    //    is ALSO rising this tick. The other nine lights are all LEVEL reads; none flags
+    //    VELOCITY-at-altitude — a hot flashpoint getting *worse* — which is the classic
+    //    I&W leading indicator (the I&W method is fundamentally about detecting CHANGE,
+    //    not just standing level). It reuses the MODEL's own classification — the rung
+    //    (Crisis = heat ≥ HOT_HEAT, the same "hot" boundary the concurrency coupler uses)
+    //    and `trend == "rising"` — so it introduces NO new calibrated threshold and can
+    //    never disagree with the ladder strip about which theaters are hot/rising. Names
+    //    the HOTTEST qualifying theater (same hottest-qualifying rule as the apex lights)
+    //    and surfaces the rising driver, so the operator sees both WHERE risk is
+    //    accelerating and WHY. On a clear reading it names the hottest theater rising at
+    //    all (even below Crisis), so a sub-Crisis flashpoint heating up is visible rather
+    //    than hidden behind a bare "nothing escalating".
+    let hottest_escalating = theaters.iter()
+        .filter(|t| t.rung.level() >= EscalationRung::Crisis.level() && t.trend == "rising")
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
+    let nearest_rising = theaters.iter()
+        .filter(|t| t.trend == "rising")
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
+    let ind_escalating = match hottest_escalating {
+        Some(t) => Indicator {
+            id: "active_escalation", label: "Active escalation at a flashpoint",
+            tripped: true, theater: Some(t.label.clone()),
+            detail: {
+                let why = if !t.rising_driver.is_empty() {
+                    format!(", rising on {}", t.rising_driver)
+                } else { String::new() };
+                format!("{} at {} and rising ({:+.3}{})", t.label, t.rung_label, t.delta, why)
+            },
+        },
+        None => Indicator {
+            id: "active_escalation", label: "Active escalation at a flashpoint",
+            tripped: false, theater: None,
+            detail: match nearest_rising {
+                Some(t) => format!("No hot theater rising (closest {} at {}, {:+.3})",
+                    t.label, t.rung_label, t.delta),
+                None => "No theater rising".into(),
+            },
+        },
+    };
+
     // 9. Nuclear-brink configuration (direct ≥2-great-power nuclear confrontation).
     // Uses the SAME `theater_is_nuclear_brink` predicate as the systemic amplifier
     // (theater.rs), so this board light trips on exactly the state where the headline's
@@ -200,8 +241,8 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
                               None => "No direct nuclear-superpower brink".into() },
     };
 
-    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_concurrency, ind_gp_entangle,
-         ind_alliance, ind_guardrails, ind_cross, ind_brink]
+    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_concurrency, ind_escalating,
+         ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink]
 }
 
 #[cfg(test)]
@@ -224,7 +265,7 @@ mod tests {
     fn empty_snapshot_trips_nothing() {
         let snap = RiskSnapshot::default();
         let inds = evaluate(&snap);
-        assert_eq!(inds.len(), 9);
+        assert_eq!(inds.len(), 10);
         assert!(inds.iter().all(|i| !i.tripped));
     }
 
@@ -590,5 +631,50 @@ mod tests {
             "board must show apex brink exactly when the amplifier engages");
         assert!(!board_trips(&one_gp),
             "a single great power is not a brink, on the board or in the model");
+    }
+
+    #[test]
+    fn active_escalation_trips_on_a_hot_rising_theater_and_names_the_hottest() {
+        // The board's only VELOCITY light: a theater at Crisis+ that is ALSO rising must
+        // trip it, naming the HOTTEST such theater (not the first listed) and surfacing
+        // the rising driver as the WHY. Regression guard: a cooler rising flashpoint
+        // listed FIRST must not steal the attribution from a hotter one listed second.
+        let mut cool = theater("us_iran", EscalationRung::Crisis, true,
+            &[("military_escalation", 0.40)], &["united_states", "iran"]);
+        cool.trend = "rising".into(); cool.heat = 0.30; cool.delta = 0.05;
+        let mut hot = theater("nato_russia", EscalationRung::LimitedWar, true,
+            &[("military_escalation", 0.70)], &["russia", "united_states"]);
+        hot.trend = "rising".into(); hot.heat = 0.55; hot.delta = 0.12;
+        hot.rising_driver = "military_escalation".into();
+        let snap = RiskSnapshot { theaters: vec![cool, hot], ..Default::default() };
+
+        let inds = evaluate(&snap);
+        let esc = inds.iter().find(|i| i.id == "active_escalation").unwrap();
+        assert!(esc.tripped, "a Crisis+ theater that is rising must trip the velocity light");
+        assert_eq!(esc.theater.as_deref(), Some("nato_russia"),
+            "must name the HOTTEST escalating theater, not the first listed");
+        assert!(esc.detail.contains("military_escalation"),
+            "detail should surface the rising driver (the WHY), got {:?}", esc.detail);
+    }
+
+    #[test]
+    fn active_escalation_requires_velocity_not_just_level() {
+        // A hot but NON-rising theater must read CLEAR — standing level alone is not
+        // escalation (the other nine lights already cover level). The clear detail must
+        // surface the hottest theater that IS rising at all, even one below Crisis, so a
+        // sub-Crisis flashpoint heating up stays visible rather than hidden.
+        let mut hot_stable = theater("nato_russia", EscalationRung::LimitedWar, true,
+            &[("military_escalation", 0.70)], &["russia", "united_states"]);
+        hot_stable.trend = "stable".into(); hot_stable.heat = 0.55;
+        let mut warming = theater("us_china_taiwan", EscalationRung::Tension, true,
+            &[("military_escalation", 0.20)], &["china", "united_states"]);
+        warming.trend = "rising".into(); warming.heat = 0.15; warming.delta = 0.03;
+        let snap = RiskSnapshot { theaters: vec![hot_stable, warming], ..Default::default() };
+
+        let inds = evaluate(&snap);
+        let esc = inds.iter().find(|i| i.id == "active_escalation").unwrap();
+        assert!(!esc.tripped, "a hot but STABLE theater must not trip the velocity light");
+        assert!(esc.detail.contains("us_china_taiwan"),
+            "clear detail should name the hottest theater rising at all, got {:?}", esc.detail);
     }
 }

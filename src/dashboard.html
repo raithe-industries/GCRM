@@ -122,7 +122,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
 .tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
 .tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
-/* Indications & Warning board — a 3×3 light panel of the nine deterministic
+/* Indications & Warning board — a 3-column light panel of the ten deterministic
    warning conditions (indicators::evaluate). Mirrors the ladder strip's idiom. */
 .iw-board{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .iw-cell{background:var(--bg);padding:5px 9px;display:flex;align-items:center;gap:7px;min-width:0}
@@ -463,7 +463,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the model-internal rail on the left.) -->
     <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
     <div class="theater-ladder" id="theater-ladder"></div>
-    <!-- v2 Indications & Warning board: the nine deterministic, observable warning
+    <!-- v2 Indications & Warning board: the ten deterministic, observable warning
          conditions the IC I&W method tracks. Each is computed from the live theaters
          + couplers (never the LLM), so the operator sees WHICH specific danger
          conditions have tripped — the "why" behind the headline number, not just how
