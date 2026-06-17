@@ -134,6 +134,23 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-17** (second run) — environmental block a **SEVENTH** consecutive session; honest
+  **NO-OP**. Re-probed the network fresh: **WebFetch 403 on every non-GitHub host** — NHC
+  `CurrentStorms.json`, GDACS `gdacsapi` event list, USGS `significant_week` GeoJSON, NGDC
+  `hazel` tsunami-events service, ReliefWeb `api.reliefweb.int` disasters — all 403; only
+  `raw.githubusercontent.com` resolved (positive control: fetched `facebook/react` `package.json`
+  and got real content). So no **Path-A** gov feed could be live-verified (NHC tropical cyclones —
+  the standing first pick — 403s as before). The **Path-B** channel again yielded **no clean
+  source**: WebSearches for authoritative-org GitHub-hosted geocoded fresh feeds returned only
+  GitHub-org/marketplace meta pages, generic dataset indexes (`awesomedata/awesome-public-datasets`),
+  and software repos (`usgs/strec` ships a *static* `volcanic.geojson`, not a fresh event feed) —
+  none authoritative + fresh + geocoded + non-duplicative. **Chip lever confirmed exhausted**:
+  audited `feed_detail` end-to-end this run — all 25 LIVE feed arms carry meaningful, unit-bearing
+  reads; the `_ => None` tail is reached only by the non-geo catalog `cisa_kev`/`cccs` and
+  finance-panel `yahoo`. No defensible coverage/severity edit either — without live data to verify
+  against, fabricating a band would risk the "nonsense number" the signal rule forbids. No code
+  change; tree left clean; ledger run-log only. Standing first pick the moment WebFetch reaches gov
+  hosts: **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-17** — environmental block a **SIXTH** consecutive session; honest **NO-OP**.
   **WebFetch 403 on every non-GitHub host again**, across five distinct hosts/CDNs — NHC
   `CurrentStorms.json`, `api.weather.gov` active alerts, USGS `significant_week` GeoJSON,
