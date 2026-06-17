@@ -16,6 +16,33 @@ Format per entry:
 
 ---
 
+## 2026-06-17 — awareness — I&W board gains a VELOCITY-at-altitude warning condition (10th light)
+- Item: roadmap 3.8 (new; under Awareness).
+- Change: all nine prior I&W lights (`indicators.rs::evaluate`) were standing-LEVEL reads — none
+  flagged a hot flashpoint *getting worse*, the classic I&W leading indicator (the method is about
+  detecting CHANGE). Added a 10th condition `active_escalation` ("Active escalation at a flashpoint"):
+  trips when a theater at Crisis+ (rung ≥ Crisis = heat ≥ `HOT_HEAT`) is ALSO `trend == "rising"`.
+  Reuses the model's own rung + rising classification — **no new calibrated constant** — names the
+  HOTTEST qualifying theater (apex-light rule) and surfaces the rising driver as the WHY; clear
+  reading names the hottest theater rising at all (even sub-Crisis). Dashboard renders it
+  automatically (board maps over `inds`, amber — not in `IW_APEX`); updated stale "nine"/"3×3" copy
+  to "ten"/"3-column" in dashboard.html + methodology.html + the server.rs board test comment.
+- Metric moved: NEW capability — the consolidated warning board now covers velocity, not only level
+  (frontier expansion, not just +1 test). Test count 398 → 400.
+- Proof: `cargo build --release` green; `cargo test --release` = 399 passed / 0 failed / 3 ignored;
+  clippy clean; calibration UNTOUCHED (Brier 0.00000 / RMSE 0.14pp / in-band 4/4 — bands quiet/
+  ukraine/current/cuba all green). New tests: `active_escalation_trips_on_a_hot_rising_theater_and_
+  names_the_hottest`, `active_escalation_requires_velocity_not_just_level`.
+- Notes / decisions future runs must respect: this is NOT a calibration knob — it touches only the
+  legibility board, never the headline math. It deliberately reuses the model's `trend`/rung rather
+  than a new threshold, so do NOT "tune a rapid-escalation delta" — there is none. AUDIT FINDING
+  while picking this: roadmap **4.2 (risky unwrap/expect)** is effectively a NON-FINDING — the big
+  counts it cites (aggregator ~27 / theater ~24 / processor ~21) are almost all TEST-module unwraps;
+  the few prod-path ones are infallible-by-construction (NaN pre-filtered before `partial_cmp`,
+  `Some` matched immediately before `.unwrap()`, semaphore never closed, static regex/HTTP-client
+  `expect` at startup = fail-fast). No reachable runtime panic on bad external data remains. Don't
+  re-chase 4.2 as if those counts are prod hazards.
+
 ## 2026-06-16 — legibility — nuke banner formats seismic magnitude/depth to one decimal (apex alert no longer renders float noise)
 - Item: ad-hoc (pillar-2 legibility; discovered auditing 4.2 — see note below).
 - Change: the red seismic-anomaly banner (`dashboard.html` `pollNuclear`) — the most prominent,

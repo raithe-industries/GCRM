@@ -274,6 +274,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.8 I&W board gains a VELOCITY-at-altitude warning condition** — **DONE 2026-06-17.**
+  All nine prior I&W lights were standing-LEVEL reads; none flagged a hot flashpoint *getting
+  worse* — yet the IC I&W method is fundamentally about detecting CHANGE, so the consolidated
+  warning board (its deterministic, LLM-independent summary) was missing its core leading
+  indicator. Added a 10th condition, **"Active escalation at a flashpoint"** (`active_escalation`,
+  `indicators.rs`): trips when a theater already at Crisis+ (rung ≥ Crisis = heat ≥ `HOT_HEAT`,
+  the same hot boundary the concurrency coupler uses) is ALSO `trend == "rising"`. It reuses the
+  model's own rung + rising classification — **no new calibrated constant** — so it can never
+  disagree with the ladder strip, names the HOTTEST qualifying theater (same hottest-qualifying
+  rule as the apex lights) and surfaces the rising driver as the WHY; the clear reading names the
+  hottest theater rising at all (even sub-Crisis), so a flashpoint heating up stays visible. The
+  dashboard renders it automatically (the board maps over `inds`); stale "nine"/"3×3" copy in the
+  dashboard + methodology updated to "ten"/"3-column". Locked by
+  `active_escalation_trips_on_a_hot_rising_theater_and_names_the_hottest` +
+  `active_escalation_requires_velocity_not_just_level`. No headline math touched — calibration
+  identical (Brier 0.00000, in-band 4/4). See improvement-log 2026-06-17.
 - [x] **3.7 Map marker colour follows the authoritative rung, not raw heat** — **DONE 2026-06-14.**
   The world-map flashpoint markers (`osint.rs::build_theater_features`) coloured each theater via
   `heat_color(heat)` — a THIRD independent copy of the rung heat thresholds (0.06/0.18/0.38/0.62,

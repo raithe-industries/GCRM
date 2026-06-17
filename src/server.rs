@@ -1121,7 +1121,7 @@ mod tests {
     fn dashboard_renders_iw_board() {
         // The I&W board (indicators::evaluate) is computed and served at
         // data.indicators, and the methodology page advertises it ("an I&W board
-        // tracks nine deterministic observable warning conditions"). It must
+        // tracks ten deterministic observable warning conditions"). It must
         // actually be rendered, so the operator can see WHICH danger conditions
         // have tripped — the "why" behind the headline, not just how high.
         assert!(DASHBOARD_HTML.contains("id=\"iw-board\""), "I&W board container missing");
