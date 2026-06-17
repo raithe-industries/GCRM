@@ -284,6 +284,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.9 Headline "where" names the nuclear-brink theater, not the loudest one** — **DONE
+  2026-06-17.** The systemic `driver` string (the dashboard's Primary Driver "where") named the
+  hottest-by-heat theater. But the brink amplifier (the +70% apex lever, the single largest term
+  in `l_sys`) is detected across ALL theaters and — per `brink_fires_in_a_non_hottest_theater` —
+  need NOT live in the hottest one (a Cuba-style standoff has near-zero kinetic volume yet maximal
+  nuclear danger). So in the most dangerous configuration the headline "where" pointed at a louder
+  conventional theater while the actual apex sat unnamed. `theater::score_all` now captures the
+  brink theater (most acute by nuclear posture; `any(theater_is_nuclear_brink)` ≡ `is_some()`, so
+  the amplifier is unchanged) and the driver reads "{brink theater} at nuclear brink; N theaters
+  hot" when a brink leads — the hottest theater stays visible in the dashboard sub-line + ladder
+  strip, so the operator gets BOTH apex and hottest. No model/calibration constant touched. Locked
+  by `driver_names_the_brink_theater_not_the_hottest_one`. See improvement-log 2026-06-17.
 - [x] **3.8 I&W board gains a VELOCITY-at-altitude warning condition** — **DONE 2026-06-17.**
   All nine prior I&W lights were standing-LEVEL reads; none flagged a hot flashpoint *getting
   worse* — yet the IC I&W method is fundamentally about detecting CHANGE, so the consolidated
