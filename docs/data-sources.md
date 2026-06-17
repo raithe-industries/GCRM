@@ -134,6 +134,28 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-17** — environmental block a **SIXTH** consecutive session; honest **NO-OP**.
+  **web fetch 403 on every non-GitHub host again**, across five distinct hosts/CDNs — NHC
+  `CurrentStorms.json`, `api.weather.gov` active alerts, USGS `significant_week` GeoJSON,
+  GDACS `gdacsapi` event list, MeteoAlarm `feeds.meteoalarm.org` legacy atom — all 403;
+  only `raw.githubusercontent.com` resolved (positive control: fetched a known public raw
+  `package.json` and got real content). So no **Path-A** gov feed could be live-verified
+  (NHC tropical cyclones — the standing first pick — 403s as before; Atlantic season is open
+  so there may be live storms, but I can't confirm shape/freshness from here). The **Path-B**
+  channel (`raw.githubusercontent.com`) again yielded **no clean source**: fresh web searches
+  for authoritative-org GitHub-hosted geocoded event feeds returned only **personal
+  aggregators / mirrors** (`beyondtracks/act-esa-incidents-geojson`, `zhukovyuri/VIINA`
+  academic news-scraped Ukraine ML events — all fail bar 1: authoritative, no scrapers/
+  mirrors), **retrospective/stale** databases (`cghss/dons` — WHO DON *retrospective* archive,
+  not fresh), and **already-live / duplicative** coverage (GDACS, UCDP conflict). None cleared
+  authoritative + fresh + geocoded + non-duplicative. **No chip improvement was available
+  either** — re-confirmed the chip lever stays exhausted (documented across the prior five
+  runs): every LIVE map layer carries a meaningful, unit-bearing `feed_detail` arm, and the
+  `_ => None` tail is reached only by the non-geo catalog `cisa_kev`/`cccs` and finance-panel
+  `yahoo`. The #1 stated gap (AIS beyond the Baltic) still needs a *different* authoritative
+  source and is blocked by the same network reality. No code change; tree left clean;
+  ledger run-log only. Standing first pick the moment web fetch reaches gov hosts: **NHC
+  tropical cyclones** (Path A, storm-domain win).
 - **2026-06-16** (second run) — environmental block a **FIFTH** consecutive session; honest
   **NO-OP**. **web fetch 403 on every non-GitHub host again** — NHC `CurrentStorms.json`,
   `api.weather.gov` active alerts, GDACS `gdacsapi` event list, USGS `significant_week`
