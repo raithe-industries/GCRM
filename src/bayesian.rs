@@ -627,17 +627,19 @@ impl ActorTracker {
 
 /// Calibrated risk index formula (log-odds / logistic form):
 ///
-///   P_risk = sigmoid( logit(P₀_adj) + β × L )   clamped to [0, FORECAST_PROB_CEILING]
+///   P_risk = sigmoid( logit(P₀) + β × L )   clamped to [0, FORECAST_PROB_CEILING]
 ///
 /// where:
-///   P₀_adj = BASELINE_ANNUAL × regime_multiplier
-///           = (modern quiet-year baseline) × product(active_regime_factors)
-///   L      = weighted_domain_sum / max_weighted_sum × co_occurrence_boost
-///   β      = EVIDENCE_GAIN
+///   P₀     = BASELINE_ANNUAL — the FLAT modern quiet-year baseline. v2 does NOT
+///            multiply the regime into the prior (that was the superseded v1 form);
+///            the regime enters L as a guardrail-collapse amplifier (Step 6), so a
+///            calm world sits at P₀ and the systemic likelihood does all the lifting.
+///   L      = systemic likelihood l_sys × (1 + GUARDRAIL_AMPLIFIER × guardrail_collapse)
+///   β      = EVIDENCE_GAIN_SYS
 ///
 /// NOTE — Mathematical character of this formula:
 ///   This is NOT a formal Bayesian update P(H|E) = P(E|H)P(H)/P(E). It is a
-///   calibrated risk index that combines a regime-adjusted prior with the
+///   calibrated risk index that combines the flat baseline prior with the
 ///   likelihood evidence additively on the log-odds scale — the standard way to
 ///   fold evidence into a prior probability. Properties this buys over the older
 ///   `P₀_adj × (1 + L·k)` form: the output is always a valid probability in
@@ -692,12 +694,15 @@ impl BayesianRiskEngine {
     }
 
     pub fn compute(&mut self, events: &[GeopoliticalEvent]) -> RiskSnapshot {
-        let mut snap = RiskSnapshot::default();
-        snap.historical_anchor = HISTORICAL_ANCHOR;
-
-        // ── Step 1: Regime-adjusted prior ──
-        snap.regime_multiplier = self.regime.compute();
-        snap.adjusted_prior    = HISTORICAL_ANCHOR * snap.regime_multiplier;
+        // ── Step 1: Structural regime multiplier ──
+        // v2: this does NOT adjust the prior (the superseded v1 form). It drives
+        // guardrail collapse (Step 6), which softly amplifies the systemic likelihood
+        // l_sys — never the flat baseline prior. See guardrail_from_regime.
+        // (historical_anchor defaults to the flat HISTORICAL_ANCHOR baseline.)
+        let mut snap = RiskSnapshot {
+            regime_multiplier: self.regime.compute(),
+            ..RiskSnapshot::default()
+        };
 
         // ── Step 2: Actor tracking ──
         self.actor_tracker.update(events);
@@ -1503,7 +1508,6 @@ mod tests {
         let snap = engine.compute(&events);
         assert!(snap.historical_anchor > 0.0);
         assert!(snap.regime_multiplier > 0.0);
-        assert!(snap.adjusted_prior    > 0.0);
         assert_eq!(snap.events_in_window, 1);
         assert!(snap.weighted_domain_sum >= 0.0);
         assert!(snap.likelihood_ratio    >= 0.0);

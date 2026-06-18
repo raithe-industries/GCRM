@@ -16,6 +16,37 @@ Format per entry:
 
 ---
 
+## 2026-06-18 — honesty — purge the superseded v1 "regime-adjusts-the-prior" framing (last vestige: the served JSON + the formula docstring)
+- Item: roadmap 1.2 (same v1-vestige class as the dead `gp_bonus` removal 2026-06-11 and the v1
+  footer fix 2026-06-12 — this is the LAST surface still carrying it).
+- Change: the v2 engine uses a FLAT prior (`prior = HISTORICAL_ANCHOR`, bayesian.rs Step 7); the
+  regime multiplier enters ONLY as the bounded guardrail-collapse amplifier on the systemic
+  likelihood `l_sys`, never the prior (locked by
+  `guardrail_collapse_is_live_in_compute_and_only_amplifies_the_likelihood`). But three places still
+  spoke the abandoned v1 multiplicative form `P₀_adj = anchor × regime`: (1) the served snapshot JSON
+  `prior.adjusted_prior` (aggregator.rs) — a precomputed `historical_anchor × regime_multiplier`
+  product in the public API contract, so any consumer could reconstruct the exact "regime moves the
+  prior" misconception the dashboard/regime-inspector were scrubbed of on 2026-06-12; (2) the
+  authoritative Bayesian formula docstring (`P₀_adj = BASELINE_ANNUAL × regime_multiplier`), directly
+  contradicting the in-line v2 comment 30 lines below it; (3) the `Step 1: Regime-adjusted prior`
+  comment + the dead `snap.adjusted_prior` field (computed, stored, serialized — but NEVER read by
+  the math). Removed the `adjusted_prior` field (struct + Default + computation), dropped it from the
+  served JSON and added an honest `regime_role` note ("structural pressure on the systemic likelihood
+  via guardrail collapse, not a prior multiplier (v2)"), and rewrote both stale comments to the v2
+  flat-prior form. No model/calibration constant touched — display/contract + docs only.
+- Metric moved: test count 403 → 404; NEW honesty-of-contract guard (the public snapshot can no
+  longer reconstruct the v1 adjusted-prior chain).
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 403 passed / 0 failed / 3 ignored. Calibration UNTOUCHED — backtest bands + Brier/RMSE/in-band
+  all pass identically (display-only change; `adjusted_prior` was never in the math path — prior is
+  flat at line bayesian.rs Step 7). New `served_prior_is_v2_flat_not_a_v1_adjusted_prior`
+  (aggregator.rs) locks: a regime of 1.5 (above neutral) serves NO `adjusted_prior`, the `regime_role`
+  note states guardrail collapse, and the served anchor stays the flat baseline.
+- Notes / decisions future runs must respect: the served `prior` block is FLAT — do NOT re-add an
+  `adjusted_prior`/`anchor × regime` product anywhere (JSON, dashboard, or docstring). `regime_multiplier`
+  stays in the contract as structural pressure; its risk role is guardrail collapse on `l_sys`
+  (couplers.guardrail_collapse), never the prior.
+
 ## 2026-06-18 — legibility/honesty — I&W apex (red) lights are engine-driven, summary flags apex
 - Item: ad-hoc (pillar-2 legibility + pillar-1 anti-drift; same class as the templated-constant work).
 - Change: the dashboard decided which I&W lights go RED from a HARD-CODED client-side set

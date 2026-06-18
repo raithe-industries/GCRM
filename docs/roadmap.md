@@ -150,6 +150,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     Locked by `dashboard_renders_confidence_formula_from_the_model_constants`. Remaining un-pinned for
     1.2: the regime × factor defaults (config surface) + the per-DOMAIN confidence literals (`15.0`,
     `3.0`, tier weights in `score_all`).
+  - PROGRESS 2026-06-18: purged the **last v1 "regime-adjusts-the-prior" vestige**, sibling of the dead
+    `gp_bonus` (2026-06-11) and v1-footer (2026-06-12) removals. v2's prior is FLAT and the regime enters
+    only via guardrail collapse on `l_sys`, yet three places still spoke the abandoned `P₀_adj = anchor ×
+    regime` form: the served snapshot JSON `prior.adjusted_prior` (a precomputed product in the public
+    contract — any consumer could rebuild the v1 misconception), the authoritative Bayesian formula
+    docstring, and the `Step 1` comment + the dead `RiskSnapshot.adjusted_prior` field (computed/stored/
+    served but NEVER read by the math). Removed the field everywhere, dropped it from the served JSON with
+    an honest `regime_role` note, and rewrote both stale comments to the flat-prior v2 form. No constant
+    touched (display/contract + docs only; backtest + Brier identical). Locked by
+    `served_prior_is_v2_flat_not_a_v1_adjusted_prior`.
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat
