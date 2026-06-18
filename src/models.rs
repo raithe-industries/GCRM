@@ -716,7 +716,6 @@ pub struct RiskSnapshot {
 
     pub historical_anchor:  f64,
     pub regime_multiplier:  f64,
-    pub adjusted_prior:     f64,
 
     pub domain_scores:     HashMap<String, DomainScore>,
     pub elevated_domains:  usize,
@@ -776,7 +775,6 @@ impl Default for RiskSnapshot {
             aggregation_window_hours: 72.0,
             historical_anchor: HISTORICAL_ANCHOR,
             regime_multiplier: 1.0,
-            adjusted_prior: HISTORICAL_ANCHOR,
             domain_scores: HashMap::new(),
             elevated_domains: 0,
             co_occurrence_boost: 1.0,

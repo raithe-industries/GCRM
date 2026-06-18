@@ -120,7 +120,12 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "historical_anchor": snap.historical_anchor,
             "formula":           "modern quiet-year baseline (v2; backtested, not a 2000-yr frequency)",
             "regime_multiplier": snap.regime_multiplier,
-            "adjusted_prior":    snap.adjusted_prior,
+            // v2: the prior is FLAT. regime_multiplier is NOT applied to it (the
+            // superseded v1 "adjusted_prior = anchor × regime" form, removed) — it
+            // drives guardrail collapse on the systemic likelihood instead (see
+            // couplers.guardrail_collapse), so a degraded-but-quiet world stays at
+            // the baseline anchor, not an inflated prior.
+            "regime_role":       "structural pressure on the systemic likelihood via guardrail collapse, not a prior multiplier (v2)",
         },
         "domains": domains,
         "co_occurrence": {
@@ -1451,6 +1456,26 @@ mod tests {
         let v = snapshot_to_json(&snap);
         let anchor = v["prior"]["historical_anchor"].as_f64().unwrap();
         assert!((anchor - HISTORICAL_ANCHOR).abs() < 1e-10);
+    }
+
+    #[test]
+    fn served_prior_is_v2_flat_not_a_v1_adjusted_prior() {
+        // The served `prior` block must not reconstruct the superseded v1 chain
+        // (anchor × regime = adjusted_prior). v2's prior is FLAT; the regime enters
+        // the systemic likelihood via guardrail collapse (couplers), never the prior.
+        // A regime ABOVE neutral once produced an `adjusted_prior` strictly above the
+        // anchor — exactly the misleading product this guards against re-appearing.
+        let snap = RiskSnapshot { regime_multiplier: 1.5, ..RiskSnapshot::default() };
+        let v = snapshot_to_json(&snap);
+        assert!(v["prior"]["adjusted_prior"].is_null(),
+            "the v1 'adjusted_prior' (anchor × regime) must not be served — it implies the regime moves the prior");
+        // The honest v2 role note must be present so a contract consumer can't re-derive v1.
+        assert!(v["prior"]["regime_role"].as_str().unwrap_or("").contains("guardrail collapse"),
+            "the served prior must state regime enters via guardrail collapse, not the prior");
+        // The flat anchor is still served and unchanged by the regime multiplier.
+        let anchor = v["prior"]["historical_anchor"].as_f64().unwrap();
+        assert!((anchor - HISTORICAL_ANCHOR).abs() < 1e-10,
+            "the served prior anchor must stay the flat baseline regardless of regime");
     }
 
     // ── EpochStore ────────────────────────────────────────────────────────────
