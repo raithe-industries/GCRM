@@ -134,6 +134,26 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-18** — environmental block an **EIGHTH** consecutive session; honest **NO-OP**.
+  Re-probed the network fresh across four distinct hosts: **WebFetch 403 on every non-GitHub
+  host** — NHC `CurrentStorms.json`, ReliefWeb `api.reliefweb.int` disasters, GDACS
+  `gdacs.org/xml/rss.xml`, USGS HANS `getElevatedVolcanoes` — all 403; only
+  `raw.githubusercontent.com` resolved (positive control: fetched `facebook/react`
+  `package.json`, got real content). So no **Path-A** gov feed was live-verifiable (NHC
+  tropical cyclones — the standing first pick — 403s again). For **Path B** this run I went
+  past WebSearch and used the **GitHub repo + code search** directly (the one reachable
+  channel), targeting the two stated gaps — AIS/vessel and conflict: results were entirely
+  **personal OSINT projects / aggregators** (`BigBodyCobain/Shadowbroker`, `tg12/phantomtide`,
+  `oliv3561/hormuz-tracker`, `s0914712/taiwan-grayzone-monitor`) and **awesome-lists**
+  (`awesomedata/awesome-public-datasets`) — none is an authoritative gov/scientific body
+  self-publishing a fresh geocoded feed to `raw.githubusercontent.com` (all fail bar 1). No
+  authoritative GitHub-native mirror exists to ingest. **Chip lever confirmed exhausted**:
+  re-audited `feed_detail` end-to-end — all 24 LIVE feeds carry a meaningful, unit-bearing arm;
+  the `_ => None` tail is reached only by the non-geo catalog `cisa_kev`/`cccs` and finance-panel
+  `yahoo`. No defensible coverage/severity edit without live data to verify against (fabricating
+  a band risks the "nonsense number" the signal rule forbids). No code change; tree left clean;
+  ledger run-log only. Standing first pick the moment WebFetch reaches gov hosts: **NHC tropical
+  cyclones** (Path A, storm-domain win).
 - **2026-06-17** (second run) — environmental block a **SEVENTH** consecutive session; honest
   **NO-OP**. Re-probed the network fresh: **WebFetch 403 on every non-GitHub host** — NHC
   `CurrentStorms.json`, GDACS `gdacsapi` event list, USGS `significant_week` GeoJSON, NGDC
