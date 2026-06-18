@@ -272,8 +272,34 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
                               None => "No direct nuclear-superpower brink".into() },
     };
 
+    // 11. Seismic event consistent with a nuclear test. The strongest PHYSICAL nuclear
+    // indicator — a shallow event at a known test site that has cleared the natural-
+    // earthquake discriminator (no aftershock sequence, or a CTBTO statement). Sourced
+    // from the seismic monitor's own `SeismicAlert::is_test_consistent` determination
+    // (carried on the snapshot by the aggregator), so it is still deterministic and
+    // LLM-independent — but it adds the one warning the theater/coupler engine cannot
+    // see (a possible detonation), which previously lived only on the standalone banner.
+    // Not apex: the apex set is reserved for great-power-WAR configurations, and this is
+    // an explicitly "consistent with" heuristic, so it lights amber, named to its site.
+    let ind_seismic = if snap.seismic_test_consistent {
+        Indicator {
+            id: "seismic_test", label: "Seismic event consistent with nuclear test",
+            tripped: true, theater: Some(snap.seismic_site.clone()),
+            detail: format!(
+                "Shallow seismic event at {} cleared the aftershock / CTBTO discriminator",
+                if snap.seismic_site.is_empty() { "a known test site" } else { &snap.seismic_site }
+            ),
+        }
+    } else {
+        Indicator {
+            id: "seismic_test", label: "Seismic event consistent with nuclear test",
+            tripped: false, theater: None,
+            detail: "No test-consistent seismic anomaly at a known test site".into(),
+        }
+    };
+
     vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_concurrency, ind_escalating,
-         ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink]
+         ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink, ind_seismic]
 }
 
 #[cfg(test)]
@@ -325,7 +351,7 @@ mod tests {
     fn empty_snapshot_trips_nothing() {
         let snap = RiskSnapshot::default();
         let inds = evaluate(&snap);
-        assert_eq!(inds.len(), 10);
+        assert_eq!(inds.len(), 11);
         assert!(inds.iter().all(|i| !i.tripped));
     }
 
@@ -736,5 +762,32 @@ mod tests {
         assert!(!esc.tripped, "a hot but STABLE theater must not trip the velocity light");
         assert!(esc.detail.contains("us_china_taiwan"),
             "clear detail should name the hottest theater rising at all, got {:?}", esc.detail);
+    }
+
+    #[test]
+    fn seismic_test_light_trips_off_the_snapshot_flag_and_names_the_site() {
+        // The 11th light surfaces the seismic monitor's test-consistent determination onto
+        // the board. It must trip purely off the snapshot's `seismic_test_consistent` flag
+        // (set by the aggregator from `SeismicAlert::is_test_consistent`), name the site as
+        // the WHERE, and — being a physical-indicator heuristic, not a great-power-WAR state
+        // — must NOT be apex (it stays amber so it can't paint itself the same red as a
+        // confirmed great-power war).
+        let snap = RiskSnapshot {
+            seismic_test_consistent: true,
+            seismic_site: "Punggye-ri".into(),
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let s = inds.iter().find(|i| i.id == "seismic_test").unwrap();
+        assert!(s.tripped, "the seismic light must trip when the snapshot flag is set");
+        assert_eq!(s.theater.as_deref(), Some("Punggye-ri"), "must name the test site as the WHERE");
+        assert!(s.detail.contains("Punggye-ri"), "detail should name the site, got {:?}", s.detail);
+        assert!(!s.is_apex(), "the seismic light is amber, not apex");
+
+        // Default (no live anomaly) reads CLEAR, with no site attribution.
+        let clear = evaluate(&RiskSnapshot::default());
+        let sc = clear.iter().find(|i| i.id == "seismic_test").unwrap();
+        assert!(!sc.tripped && sc.theater.is_none(),
+            "no test-consistent anomaly must read clear with no site");
     }
 }

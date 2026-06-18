@@ -16,6 +16,33 @@ Format per entry:
 
 ---
 
+## 2026-06-18 — awareness — seismic test-consistency reaches the I&W board (11th deterministic light)
+- Item: roadmap 3.10 (new). Also recorded an audit finding under 4.2.
+- Change: the strongest PHYSICAL nuclear indicator — a shallow event at a known test site that has
+  cleared the natural-earthquake discriminator (no aftershock sequence at the 2h re-query, or a
+  CTBTO statement) — lived only on the standalone `pollNuclear` banner, absent from the consolidated
+  I&W warning board. Added an 11th light, "Seismic event consistent with nuclear test"
+  (`seismic_test`), sourced from the detector's own new `SeismicAlert::is_test_consistent` predicate
+  (within-radius AND level ∈ {AftershockAbsent, CtbtoStatement}). The aggregator carries the
+  highest-confidence qualifying alert onto the snapshot (`seismic_test_consistent` + `seismic_site`,
+  set AFTER `compute`), and `indicators::evaluate` renders the light + the site as the WHERE. Amber,
+  not apex (apex stays reserved for great-power-WAR states; this is an explicit "consistent with"
+  heuristic). Still LLM-independent → the board's honesty contract holds; methodology prose updated
+  to "theaters, couplers, and the seismic monitor".
+- Metric moved: NEW capability (awareness) — I&W board 10 → 11 deterministic conditions; the physical
+  nuclear indicator is now on the consolidated board, not just the banner. Test count 403 → 405.
+  DISPLAY-only: P(WWIII) untouched — backtest 9/9, calibration evidence bit-identical (Brier 0.00000,
+  RMSE 0.14pp, in-band 4/4).
+- Proof: `cargo build --release` green; `cargo test --release` = 405 passed / 0 failed / 3 ignored;
+  clippy 0 warnings. New locks: `seismic_test_light_trips_off_the_snapshot_flag_and_names_the_site`
+  (indicators.rs), `is_test_consistent_requires_proximity_and_a_cleared_discriminator` (detector.rs).
+- Notes / decisions future runs must respect: the seismic light is DISPLAY-only — do NOT wire
+  `seismic_test_consistent` into `bayesian::compute`/P(WWIII) (the detector confidence is heuristic;
+  coupling it to the headline would be a calibration/honesty risk). Keep it amber, not apex. ALSO:
+  the 4.2 risky-unwrap audit of src/ came up CLEAN — the high counts in the routine prompt are
+  test-code; the few production unwraps are each provably safe (see roadmap 4.2 PROGRESS). Don't
+  re-chase phantom unwrap counts.
+
 ## 2026-06-18 — honesty — purge the superseded v1 "regime-adjusts-the-prior" framing (last vestige: the served JSON + the formula docstring)
 - Item: roadmap 1.2 (same v1-vestige class as the dead `gp_bonus` removal 2026-06-11 and the v1
   footer fix 2026-06-12 — this is the LAST surface still carrying it).

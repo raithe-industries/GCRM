@@ -289,6 +289,22 @@ pub struct SeismicAlert {
 }
 
 impl SeismicAlert {
+    /// True when this event has cleared the natural-earthquake discriminator and
+    /// sits inside a known test site's radius — the detector's own "consistent with
+    /// an explosion source" determination. Deterministic (level + proximity, never
+    /// the language model): trips only at `AftershockAbsent` (no aftershock sequence
+    /// at the 2h re-query) or `CtbtoStatement` (a CTBTO public statement), so a raw
+    /// single-network `Anomaly` or a merely multi-network detection that has NOT yet
+    /// passed the aftershock test does NOT over-claim a test. Surfaced onto the I&W
+    /// board via `RiskSnapshot::seismic_test_consistent`; it does not feed P(WWIII).
+    pub fn is_test_consistent(&self) -> bool {
+        self.within_radius
+            && matches!(
+                self.level,
+                SeismicAlertLevel::AftershockAbsent | SeismicAlertLevel::CtbtoStatement
+            )
+    }
+
     fn compute_confidence(&self) -> f64 {
         let mut score: f64 = 0.0;
 
@@ -1104,6 +1120,35 @@ mod tests {
         a.ctbto_statement       = true;
         a.news_escalation_score = 1.0;
         assert!(a.compute_confidence() <= 1.0);
+    }
+
+    #[test]
+    fn is_test_consistent_requires_proximity_and_a_cleared_discriminator() {
+        // The board's seismic light keys off this determination, so lock its honesty:
+        // a raw single-network Anomaly — even shallow, near the site — is NOT yet
+        // test-consistent (the natural-quake discriminator hasn't run); only an
+        // aftershock-absent or CTBTO-confirmed event inside the radius qualifies.
+        let raw = make_alert(1.0, 5.0, 30.0, 1);
+        assert!(!raw.is_test_consistent(), "a bare Anomaly must not claim test-consistency");
+
+        let mut multi = make_alert(1.0, 5.0, 30.0, 3);
+        multi.level = SeismicAlertLevel::MultiNetwork;
+        assert!(!multi.is_test_consistent(),
+            "multi-network alone (no aftershock test) is not test-consistency");
+
+        let mut absent = make_alert(1.0, 5.0, 30.0, 3);
+        absent.level = SeismicAlertLevel::AftershockAbsent;
+        assert!(absent.is_test_consistent(),
+            "aftershock-absent inside the radius is the explosion-consistent state");
+
+        // Same cleared discriminator but OUTSIDE any test-site radius → not attributable.
+        let far = SeismicAlert { within_radius: false,
+            level: SeismicAlertLevel::AftershockAbsent, ..make_alert(1.0, 5.0, 300.0, 3) };
+        assert!(!far.is_test_consistent(), "outside every site radius is not test-consistent");
+
+        let mut ctbto = make_alert(8.0, 5.0, 90.0, 2);
+        ctbto.level = SeismicAlertLevel::CtbtoStatement;
+        assert!(ctbto.is_test_consistent(), "a CTBTO statement inside the radius qualifies");
     }
 
     #[test]
