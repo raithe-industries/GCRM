@@ -16,6 +16,35 @@ Format per entry:
 
 ---
 
+## 2026-06-18 — legibility/honesty — I&W apex (red) lights are engine-driven, summary flags apex
+- Item: ad-hoc (pillar-2 legibility + pillar-1 anti-drift; same class as the templated-constant work).
+- Change: the dashboard decided which I&W lights go RED from a HARD-CODED client-side set
+  `IW_APEX=new Set(['gp_kinetic','nuclear_brink'])` — a parallel copy of the engine's apex
+  classification. The server (`indicators.rs`) owns which conditions exist, but the client
+  independently re-declared which are apex, so adding/renaming an apex condition in the engine would
+  silently leave its dot amber (the old `dashboard_renders_iw_board` test even documented working
+  around this, but only checked the two hard-coded ids were *real* — it could not catch a NEW apex
+  condition). Made the engine the single source of truth: `indicators::APEX_INDICATORS` + a derived
+  `Indicator::is_apex()`, serialized as a per-indicator `apex` field via a manual `Serialize` impl
+  (derived from the id — no stored bool that can drift). The dashboard now reads `i.apex` off the
+  data. Also closed a real legibility gap: the at-a-glance board summary ("N / 10 tripped", amber
+  regardless) now appends "· N APEX" and turns RED when a great-power-war condition is live, so an
+  operator sees an apex trip without scanning every dot. No model/calibration constant touched.
+- Metric moved: test count 402 → 403; NEW capability (indicators carry their own apex severity;
+  the red lights + summary can no longer drift from the engine).
+- Proof: `cargo build --release` clean; `cargo clippy --release` 0 warnings; `cargo test --release`
+  = 403 passed / 0 failed / 3 ignored. Calibration UNTOUCHED — bands quiet 2.03 / ukraine 38.84 /
+  current 60.10 / cuba 79.80 all in-band, Brier 0.00000 / RMSE 0.14pp / in-band 4/4 (identical). New
+  `apex_flag_marks_exactly_the_two_apex_conditions_and_serializes` (indicators.rs) locks the derived
+  flag (exactly gp_kinetic+nuclear_brink, APEX_INDICATORS agreement, and the `apex` field reaching
+  the serialized JSON); `dashboard_renders_iw_board` (server.rs) now asserts the dashboard reads
+  `i.tripped&&i.apex`, the hard-coded `IW_APEX` set is GONE, the summary flags apex, and the engine
+  emits an `apex` field on every indicator.
+- Notes / decisions future runs must respect: `APEX_INDICATORS` (indicators.rs) is now the ONE place
+  that decides which I&W conditions are apex — add one there and its light goes red + counts in the
+  summary with NO frontend edit. Do NOT re-introduce a client-side apex set in dashboard.html. The
+  `apex` JSON field is derived from the id (no stored flag), so it can't fall out of sync.
+
 ## 2026-06-17 — awareness — headline "where" names the nuclear-brink theater, not the loudest one
 - Item: roadmap 3.9 (new; under Awareness — show WHERE).
 - Change: the systemic `driver` string (`theater::score_all`) — the dashboard's Primary Driver

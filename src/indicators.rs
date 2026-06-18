@@ -13,11 +13,11 @@
 // single opaque number. These are evaluated deterministically from the current
 // systemic snapshot (theaters + couplers), so the board never depends on the LLM.
 
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::models::{EscalationRung, RiskSnapshot};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Indicator {
     pub id:      &'static str,
     pub label:   &'static str,
@@ -25,6 +25,37 @@ pub struct Indicator {
     pub theater: Option<String>, // which theater tripped it, if specific
     pub detail:  String,
 }
+
+impl Indicator {
+    /// Whether this is an apex (highest-stakes, red-lit) condition — derived from
+    /// the id against `APEX_INDICATORS`, the single source of truth, so there is no
+    /// stored flag that can drift.
+    pub fn is_apex(&self) -> bool { APEX_INDICATORS.contains(&self.id) }
+}
+
+// Serialize with a derived `apex` field so the dashboard reads which lights are red
+// off the data (`i.apex`) instead of re-hardcoding the apex set client-side. The
+// engine (`APEX_INDICATORS`) stays the one place that decides which conditions are
+// apex; add one here and its light goes red with no parallel frontend edit.
+impl Serialize for Indicator {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut st = s.serialize_struct("Indicator", 6)?;
+        st.serialize_field("id", self.id)?;
+        st.serialize_field("label", self.label)?;
+        st.serialize_field("tripped", &self.tripped)?;
+        st.serialize_field("theater", &self.theater)?;
+        st.serialize_field("detail", &self.detail)?;
+        st.serialize_field("apex", &self.is_apex())?;
+        st.end()
+    }
+}
+
+/// The apex warning conditions: an active great-power kinetic war and a direct
+/// ≥2-great-power nuclear-brink standoff — the two great-power-WAR states that light
+/// red on the board. Single source of truth, exposed per-indicator via the derived
+/// `apex` field (which the dashboard renders), so a future apex condition added here
+/// lights red automatically without a parallel edit to the frontend.
+pub const APEX_INDICATORS: &[&str] = &["gp_kinetic", "nuclear_brink"];
 
 fn modality(snap_theater: &crate::models::TheaterState, m: &str) -> f64 {
     snap_theater.modality_scores.get(m).copied().unwrap_or(0.0)
@@ -259,6 +290,35 @@ mod tests {
             top_driver: String::new(), rising_driver: String::new(),
             secondary_driver: String::new(),
         }
+    }
+
+    #[test]
+    fn apex_flag_marks_exactly_the_two_apex_conditions_and_serializes() {
+        // The two great-power-WAR conditions (an active great-power kinetic war and a
+        // direct nuclear-brink standoff) are apex; every other light is not. The flag is
+        // DERIVED from the id against APEX_INDICATORS — the single source of truth the
+        // dashboard now reads (`i.apex`) instead of re-hardcoding the apex set — so the
+        // red lights can never drift from the engine. Lock both the predicate and that it
+        // reaches the serialized snapshot the dashboard consumes.
+        let inds = evaluate(&RiskSnapshot::default());
+        for i in &inds {
+            let want = i.id == "gp_kinetic" || i.id == "nuclear_brink";
+            assert_eq!(i.is_apex(), want, "apex flag wrong for `{}`", i.id);
+            assert_eq!(APEX_INDICATORS.contains(&i.id), want,
+                "APEX_INDICATORS membership disagrees with the apex set for `{}`", i.id);
+        }
+        // Exactly two apex conditions exist, and every APEX_INDICATORS id is a real light.
+        assert_eq!(inds.iter().filter(|i| i.is_apex()).count(), APEX_INDICATORS.len());
+        let ids: Vec<&str> = inds.iter().map(|i| i.id).collect();
+        for a in APEX_INDICATORS {
+            assert!(ids.contains(a), "APEX_INDICATORS id `{a}` is not produced by evaluate()");
+        }
+        // The derived `apex` field must appear in the serialized JSON (what the dashboard reads).
+        let v = serde_json::to_value(&inds).unwrap();
+        let gp = v.as_array().unwrap().iter().find(|x| x["id"] == "gp_kinetic").unwrap();
+        assert_eq!(gp["apex"], serde_json::json!(true), "gp_kinetic must serialize apex=true");
+        let conc = v.as_array().unwrap().iter().find(|x| x["id"] == "multi_theater").unwrap();
+        assert_eq!(conc["apex"], serde_json::json!(false), "a non-apex light must serialize apex=false");
     }
 
     #[test]
