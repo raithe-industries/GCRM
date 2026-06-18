@@ -134,6 +134,29 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-18** (second run) — environmental block a **NINTH** consecutive session; honest
+  **NO-OP**. Re-probed the network fresh and **wider** to test whether the block is per-host
+  bot-protection or egress-wide: **web fetch 403 on every non-GitHub host** across two batches —
+  NHC `CurrentStorms.json`, GDACS `xml/rss.xml`, MeteoAlarm legacy-atom, USGS `significant_week`
+  GeoJSON, ReliefWeb `api.reliefweb.int`, NDBC `latest_obs`, **plus normally bot-friendly
+  open APIs** `api.open-meteo.com`, `en.wikipedia.org` REST, an ArcGIS `services.arcgis.com`
+  FeatureServer, and EMSC `seismicportal.eu` FDSNWS — **all 403**. Only `raw.githubusercontent.com`
+  resolved (positive control: `facebook/react` raw file returned real content). The breadth
+  (even open-meteo/Wikipedia, which don't bot-block) confirms the restriction is **egress-wide
+  on web fetch to all non-GitHub hosts**, not per-host CDN protection — so **Path A is
+  structurally impossible** until the environment's network policy is changed (owner-side).
+  **Path B** stays dry: the one reachable channel (GitHub) was exhaustively searched across the
+  prior eight runs (only personal mirrors / aggregators / awesome-lists — none an authoritative
+  body self-publishing a fresh geocoded feed to `raw.githubusercontent.com`); no new authoritative
+  GitHub-native source to ingest. **Chip lever re-confirmed exhausted by independent audit this
+  run** (not trusted from the ledger): read `feed_detail` end-to-end — all LIVE map arms carry a
+  meaningful, unit-bearing read; the `_ => None` tail is reached only by the non-geo catalog
+  `cisa_kev`/`cccs` and finance-panel `yahoo`. No defensible offline coverage/severity edit
+  without live data to verify a band against (would risk the "nonsense number" the signal rule
+  forbids). No code change; tree left clean; ledger run-log only. **Escalated to owner** that the
+  routine has now been structurally idle nine straight runs and needs the env network policy to
+  allowlist gov/OSINT hosts (or web fetch egress unblocked) to resume. Standing first pick the
+  moment web fetch reaches gov hosts: **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-18** — environmental block an **EIGHTH** consecutive session; honest **NO-OP**.
   Re-probed the network fresh across four distinct hosts: **web fetch 403 on every non-GitHub
   host** — NHC `CurrentStorms.json`, ReliefWeb `api.reliefweb.int` disasters, GDACS
