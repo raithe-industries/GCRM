@@ -1176,20 +1176,24 @@ mod tests {
         assert!(DASHBOARD_HTML.contains("renderIndicators"), "I&W render fn missing");
         assert!(DASHBOARD_HTML.contains("d.indicators"), "dashboard must read the live indicators array");
         assert!(DASHBOARD_HTML.contains("Indications &amp; Warning"), "I&W board title missing");
-        // The apex set must name the two apex conditions exactly as the engine ids
-        // them, so the red lights track indicators.rs (gp_kinetic + nuclear_brink).
-        assert!(DASHBOARD_HTML.contains("'gp_kinetic'") && DASHBOARD_HTML.contains("'nuclear_brink'"),
-            "I&W apex set must reference the engine's apex indicator ids");
-        // Cross-check the hard-coded apex ids against the live engine output so a
-        // future rename in indicators.rs can't silently break the red lights: every
-        // id the dashboard treats as apex MUST be a real indicator id.
-        let real_ids: Vec<&'static str> = crate::indicators::evaluate(
-            &crate::models::RiskSnapshot::default()
-        ).iter().map(|i| i.id).collect();
-        for apex in ["gp_kinetic", "nuclear_brink"] {
-            assert!(real_ids.contains(&apex),
-                "dashboard apex id `{apex}` is not produced by indicators::evaluate — they drifted");
-        }
+        // The red (apex) lights must be driven by the engine's per-indicator `apex`
+        // flag carried in the data — NOT a hard-coded client-side set that can silently
+        // drift when indicators.rs adds/renames an apex condition. Lock that the
+        // dashboard reads `i.apex` and no longer hard-codes the apex ids.
+        assert!(DASHBOARD_HTML.contains("i.tripped&&i.apex"),
+            "the apex (red) light must be driven by the engine's `i.apex` flag");
+        assert!(!DASHBOARD_HTML.contains("IW_APEX"),
+            "the client-side hard-coded apex set must be gone — apex is engine-driven now");
+        // The at-a-glance board summary must surface an apex trip (so an operator sees a
+        // great-power-war condition is live without scanning every dot).
+        assert!(DASHBOARD_HTML.contains("APEX") && DASHBOARD_HTML.contains("apexTrip"),
+            "the I&W summary must flag apex trips distinctly");
+        // Cross-check the engine actually emits a serialized `apex` field, so the
+        // dashboard's `i.apex` read is backed by real data (engine = single source).
+        let inds = crate::indicators::evaluate(&crate::models::RiskSnapshot::default());
+        let v = serde_json::to_value(&inds).unwrap();
+        assert!(v.as_array().map(|a| a.iter().all(|x| x.get("apex").is_some())).unwrap_or(false),
+            "every serialized indicator must carry an `apex` field for the dashboard to read");
     }
 
     #[test]

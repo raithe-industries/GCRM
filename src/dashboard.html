@@ -899,17 +899,23 @@ function trendColor(v){return v>0.0005?'#E24B4A':v<-0.0005?'#1D9E75':'var(--t2)'
 // Honest sub-label: state the ACTUAL span when we don't yet hold a full ~6h.
 function trendSub(t){if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';return'vs '+lbl+' ago ('+t.samples+' samples)';}return'vs 6 hrs ago ('+t.samples+' samples)';}
 async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude?.toFixed(1)+' depth='+top.depth_km?.toFixed(1)+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
-// The two apex warning conditions (a great-power kinetic war; a direct ≥2-power
+// The apex warning conditions (a great-power kinetic war; a direct ≥2-power
 // nuclear-brink standoff) light red; every other tripped condition lights amber.
-const IW_APEX=new Set(['gp_kinetic','nuclear_brink']);
+// Which conditions are apex is decided by the engine and carried per-indicator as
+// `i.apex` (indicators.rs::APEX_INDICATORS) — read it off the data so the red lights
+// can't drift from the engine, rather than re-hardcoding the set here.
 function renderIndicators(inds){
   const board=document.getElementById('iw-board');if(!board)return;
   const summ=document.getElementById('iw-summary');
   const tripped=inds.filter(i=>i.tripped).length;
-  if(summ){summ.textContent=inds.length?(tripped+' / '+inds.length+' tripped'):'awaiting data';summ.style.color=tripped>0?'var(--amber)':'var(--t4)';}
+  const apexTrip=inds.filter(i=>i.tripped&&i.apex).length;
+  // Surface an apex trip in the at-a-glance summary: a red "· N APEX" tag and red
+  // colour, so an operator can tell whether the trips include a great-power-war
+  // condition without scanning every dot for a red one.
+  if(summ){summ.textContent=inds.length?(tripped+' / '+inds.length+' tripped'+(apexTrip?' · '+apexTrip+' APEX':'')):'awaiting data';summ.style.color=apexTrip>0?'var(--red)':(tripped>0?'var(--amber)':'var(--t4)');}
   if(!inds.length){board.innerHTML='<div class="iw-cell"><span class="iw-dot"></span><span class="iw-label">awaiting indicator data…</span></div>';return;}
   board.innerHTML=inds.map(i=>{
-    const apex=i.tripped&&IW_APEX.has(i.id);
+    const apex=i.tripped&&i.apex;
     const dotCls=i.tripped?(apex?'iw-dot apex':'iw-dot trip'):'iw-dot';
     const where=i.theater?(' — '+i.theater):'';
     const title=(i.label+(i.tripped?' · TRIPPED':' · clear')+where+'\n'+(i.detail||'')).replace(/"/g,'&quot;');
