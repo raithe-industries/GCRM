@@ -294,6 +294,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.10 Seismic test-consistency reaches the I&W board** — **DONE 2026-06-18.** The
+  strongest PHYSICAL nuclear indicator — a shallow event at a known test site that has cleared
+  the natural-earthquake discriminator (no aftershock sequence, or a CTBTO statement) — lived
+  ONLY on the standalone `pollNuclear` banner, absent from the consolidated I&W warning board an
+  operator scans. Added an 11th deterministic light, **"Seismic event consistent with nuclear
+  test"** (`seismic_test`), sourced from the detector's own `SeismicAlert::is_test_consistent`
+  determination (within-radius AND level ∈ {AftershockAbsent, CtbtoStatement} — so a raw
+  single-network Anomaly or a not-yet-aftershock-tested multi-network detection does NOT
+  over-claim). The aggregator carries the strongest qualifying alert onto the snapshot
+  (`seismic_test_consistent` + `seismic_site`) AFTER `compute`, so it is DISPLAY-only and never
+  touches P(WWIII) (backtest 9/9, Brier identical). Amber (not apex): the apex set stays reserved
+  for great-power-WAR states, and this is an explicitly "consistent with" heuristic. Still
+  LLM-independent, so the board's honesty contract holds (prose updated to "theaters, couplers,
+  and the seismic monitor"). Locked by `seismic_test_light_trips_off_the_snapshot_flag_and_names_the_site`
+  + `is_test_consistent_requires_proximity_and_a_cleared_discriminator`. See improvement-log 2026-06-18.
 - [x] **3.9 Headline "where" names the nuclear-brink theater, not the loudest one** — **DONE
   2026-06-17.** The systemic `driver` string (the dashboard's Primary Driver "where") named the
   hottest-by-heat theater. But the brink amplifier (the +70% apex lever, the single largest term
@@ -442,6 +457,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   genuinely fallible runtime paths (network, parse, lock-poisoning) that could panic the
   service; convert to graceful handling. Skip the legitimately-infallible ones. Lock each
   fix with a test that exercises the error path.
+  - PROGRESS 2026-06-18: AUDITED src/ (the high counts cited in the routine prompt —
+    aggregator ~27 / theater ~24 / processor ~21 — are almost entirely TEST-code unwraps).
+    The production-path unwrap/expect set is small and each is provably safe: `detector.rs`
+    `nearest_test_site` `partial_cmp().unwrap()` (the NaN-prone idiom) can't panic because the
+    `dist <= radius` filter above it drops every NaN distance (NaN ≤ x is false → empty → None,
+    no min_by call); `detector.rs:491 nearest_site.unwrap()` is guarded by an early `None` return;
+    `models.rs:221/243 position().unwrap()` are called only with members of `Theater::primary()`;
+    the HTTP-client/signal `.expect`s are infallible startup constructors. **No genuine prod-panic
+    target remains in src/** (vendor/ee-* is the signal-hunter's lane). Recorded so a future run
+    doesn't re-chase the phantom counts (cf. the enricher cautionary tale).
 - [x] **4.4 LLM output sanitation boundary** — **DONE 2026-06-12.** The clamp that keeps an
   out-of-range or non-finite model score from reaching the risk engine was an inline loop buried
   in `LlmEnricher::classify`'s async network path — UNTESTED (no test exercised out-of-range LLM

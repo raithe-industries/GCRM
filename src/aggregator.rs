@@ -1017,6 +1017,23 @@ impl Aggregator {
             snapshot.sources_active = self.event_window.iter()
                 .map(|e| e.source.as_str()).collect::<HashSet<_>>().len();
 
+            // Surface the seismic monitor's strongest test-consistent anomaly onto the
+            // snapshot so the I&W board carries the physical nuclear indicator (the
+            // detector's own `is_test_consistent` conclusion, not the LLM). DISPLAY only
+            // — set AFTER compute, so it never touches the P(WWIII) math. Pick the
+            // highest-confidence qualifying alert for the WHERE pointer.
+            {
+                let alerts = self.state.nuclear_alerts.lock().await;
+                if let Some(a) = alerts.iter()
+                    .filter(|a| a.is_test_consistent())
+                    .max_by(|a, b| a.confidence.partial_cmp(&b.confidence)
+                        .unwrap_or(std::cmp::Ordering::Equal))
+                {
+                    snapshot.seismic_test_consistent = true;
+                    snapshot.seismic_site = a.nearest_site_name.clone();
+                }
+            }
+
             info!(
                 "Batch: +{new_count} corroborated={corroborated} | window={} | P(WWIII)={:.4}% | Δ{:+.4}%",
                 self.event_window.len(),

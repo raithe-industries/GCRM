@@ -122,7 +122,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
 .tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
 .tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
-/* Indications & Warning board — a 3-column light panel of the ten deterministic
+/* Indications & Warning board — a 3-column light panel of the eleven deterministic
    warning conditions (indicators::evaluate). Mirrors the ladder strip's idiom. */
 .iw-board{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .iw-cell{background:var(--bg);padding:5px 9px;display:flex;align-items:center;gap:7px;min-width:0}
@@ -463,11 +463,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the model-internal rail on the left.) -->
     <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
     <div class="theater-ladder" id="theater-ladder"></div>
-    <!-- v2 Indications & Warning board: the ten deterministic, observable warning
+    <!-- v2 Indications & Warning board: the eleven deterministic, observable warning
          conditions the IC I&W method tracks. Each is computed from the live theaters
-         + couplers (never the LLM), so the operator sees WHICH specific danger
-         conditions have tripped — the "why" behind the headline number, not just how
-         high. Mirrors indicators::evaluate() served at data.indicators. -->
+         + couplers + the seismic monitor (never the LLM), so the operator sees WHICH
+         specific danger conditions have tripped — the "why" behind the headline number,
+         not just how high. Mirrors indicators::evaluate() served at data.indicators. -->
     <div class="tl-head" onclick="openInfo('iw')" style="cursor:pointer" title="Click for a full explanation">Indications &amp; Warning · Board<span class="tl-head-note" id="iw-summary">awaiting data</span></div>
     <div class="iw-board" id="iw-board"></div>
     <div class="charts-area">
@@ -804,7 +804,7 @@ const INFO={
     <span class="ih">How to read it</span>
     <p>Each light is one warning condition. <span class="pill" style="background:#1f1000;color:#ffaa40">amber</span> = tripped (the condition is observed right now); <span class="pill" style="background:#0d1117;color:#7090a8">dim</span> = clear. The two apex conditions — an active great-power kinetic war and a direct nuclear-brink standoff — light <span class="pill" style="background:#2a0000;color:#ff7070">red</span>. Hover any light for the theater and the live value behind it.</p>
     <span class="ih">Honesty</span>
-    <p>Every indicator is computed deterministically from the live theaters and couplers — <b>never the language model</b> — so the board can never disagree with the math. The nuclear-brink light trips on the exact same condition that engages the headline's apex amplifier.</p>`}
+    <p>Every indicator is computed deterministically from the live theaters and couplers — <b>never the language model</b> — so the board can never disagree with the math. The nuclear-brink light trips on the exact same condition that engages the headline's apex amplifier. The <b>seismic</b> light is the one physical indicator: it surfaces the seismic monitor's own "consistent with a nuclear test" determination (a shallow event at a known test site that has cleared the natural-earthquake discriminator), so a possible detonation reaches the consolidated board — not just the standalone banner. It is awareness only and does not move the headline number.</p>`}
 };
 function openInfo(k){const i=INFO[k];if(!i)return;document.getElementById('info-title').textContent=i.title;document.getElementById('info-body').innerHTML=i.html;document.getElementById('info-overlay').classList.add('open');}
 function closeInfo(){document.getElementById('info-overlay').classList.remove('open');}

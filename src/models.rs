@@ -765,6 +765,21 @@ pub struct RiskSnapshot {
     /// Human-readable driver string, e.g. "US/Israel–Iran at Great-Power War; 2 theaters hot".
     #[serde(default)]
     pub driver: String,
+
+    /// True when the seismic monitor holds a live event the detector judges
+    /// consistent with a nuclear test — near a known test site AND past the
+    /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
+    /// statement). A DISPLAY flag only: it surfaces the detector's own
+    /// `SeismicAlert::is_test_consistent` conclusion onto the I&W board so the
+    /// strongest physical nuclear indicator is on the consolidated warning board,
+    /// not just the standalone banner. It does NOT enter the P(WWIII) math — set
+    /// in the aggregator AFTER `compute`, so backtests are bit-identical.
+    #[serde(default)]
+    pub seismic_test_consistent: bool,
+    /// The test site behind that determination (e.g. "Punggye-ri") — the WHERE for
+    /// the I&W seismic light. Empty when no test-consistent event is live.
+    #[serde(default)]
+    pub seismic_site: String,
 }
 
 impl Default for RiskSnapshot {
@@ -799,6 +814,8 @@ impl Default for RiskSnapshot {
             theaters: vec![],
             couplers: SystemicCouplers::default(),
             driver: String::new(),
+            seismic_test_consistent: false,
+            seismic_site: String::new(),
         }
     }
 }
