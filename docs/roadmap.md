@@ -182,6 +182,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   1s ticks), rewrites the header to `⚠ STALE · no update for Nm` in amber. Fires WITHOUT a new
   snapshot (the exact stall case). Locked by `dashboard_warns_when_the_live_read_goes_stale`. See
   improvement-log 2026-06-13.
+- [x] **2.6 Blind-read honesty (no live signal ≠ calm world)** — **DONE 2026-06-19.** The
+  freshness watchdog (2.5) catches a stalled *connection*, but a healthy server computing on a
+  window of ZERO live events (total feed outage / cold start) keeps broadcasting snapshots — so
+  the header stayed "Live" while the headline had silently collapsed to the BASELINE PRIOR
+  (~1.5%, calm green), indistinguishable from a genuinely quiet world (pillar-1: cosmetic
+  reassurance). Named the state at its source — `bayesian::is_data_blind(events)` (the exact
+  offline-confidence-floor condition, single source of truth), served as `meta.data_blind`, and
+  the watchdog now shows `⚠ NO LIVE SIGNAL · baseline only` (amber) when the read is blind but
+  fresh (STALE still takes precedence). DISPLAY-only — P(WWIII) untouched. Locked by
+  `is_data_blind_agrees_with_the_offline_confidence_floor` (bayesian),
+  `meta_data_blind_flags_a_zero_event_read_as_baseline_only` (aggregator),
+  `dashboard_flags_a_blind_read_instead_of_claiming_live` (server). See improvement-log 2026-06-19.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own

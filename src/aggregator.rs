@@ -165,6 +165,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
+            "data_blind":               crate::bayesian::is_data_blind(snap.events_in_window),
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
             "regions_active":           snap.regions_active,
@@ -1208,6 +1209,23 @@ mod tests {
         assert!(v["co_occurrence"]["elevated_count"].is_number());
         assert!(v["alert"]["level"].is_string());
         assert!(v["meta"]["events_in_window"].is_number());
+    }
+
+    #[test]
+    fn meta_data_blind_flags_a_zero_event_read_as_baseline_only() {
+        // A populated window is a real measurement → not blind.
+        let live = make_snapshot(0.03, 0.001, 2); // events_in_window = 10
+        assert_eq!(snapshot_to_json(&live)["meta"]["data_blind"], serde_json::json!(false));
+
+        // Zero events → the headline is the baseline prior, not a measurement. The
+        // served contract must say so, so the dashboard's "NO LIVE SIGNAL" warning
+        // can't drift from the model's offline state. Single source of truth:
+        // bayesian::is_data_blind (== the offline-confidence-floor condition).
+        let mut blind = make_snapshot(0.015, 0.0, 0);
+        blind.events_in_window = 0;
+        let v = snapshot_to_json(&blind);
+        assert_eq!(v["meta"]["data_blind"], serde_json::json!(true));
+        assert!(crate::bayesian::is_data_blind(0));
     }
 
     #[test]

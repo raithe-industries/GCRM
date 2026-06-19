@@ -216,6 +216,18 @@ pub fn guardrail_from_regime(regime_multiplier: f64) -> f64 {
 /// structural prior still carries a little information.
 pub const CONFIDENCE_OFFLINE_FLOOR: f64 = 0.05;
 
+/// The read is **blind**: zero live events in the window, so the headline number is
+/// the BASELINE PRIOR, not a measurement of the live world. This is the exact
+/// condition under which `estimate_confidence` returns the offline floor — kept as a
+/// named predicate (single source of truth, locked by
+/// `is_data_blind_agrees_with_the_offline_confidence_floor`) so the operator-facing
+/// "no live signal" warning can never drift from the model's own offline state.
+/// Honesty: a baseline read during a total ingestion outage must NOT masquerade as a
+/// calm, measured quiet world — the two are indistinguishable by the number alone.
+pub fn is_data_blind(events: usize) -> bool {
+    events == 0
+}
+
 /// Confidence when events exist but none carry a usable per-domain confidence
 /// (degenerate edge — keeps the blend from reading the domain term as 0).
 const CONFIDENCE_NO_DOMAIN_CONF: f64 = 0.1;
@@ -1564,6 +1576,30 @@ mod tests {
         assert!((at_sat - CONF_W_EVENTS).abs() < 2e-3, "volume term saturates at its weight");
         assert!(way_over <= CONF_W_EVENTS + 1e-9 && way_over >= at_sat,
             "beyond saturation the volume term is capped at its weight");
+    }
+
+    #[test]
+    fn is_data_blind_agrees_with_the_offline_confidence_floor() {
+        // The "blind" predicate (drives the dashboard's NO-LIVE-SIGNAL warning) must be
+        // EXACTLY the condition under which confidence collapses to the offline floor —
+        // i.e. the read is the baseline prior, not a measurement. Locking the two
+        // together stops the operator-facing warning from drifting off the model state.
+        for &ev in &[0usize, 1, 5, 50, 200, 5000] {
+            let blind = is_data_blind(ev);
+            // Sweep the other inputs: blindness depends ONLY on event volume, and it
+            // holds iff confidence is pinned at the offline floor.
+            for &ac in &[0.0, 0.5, 1.0] {
+                for &src in &[0usize, 3, 20, 100] {
+                    let at_floor = (estimate_confidence(ac, ev, src) - CONFIDENCE_OFFLINE_FLOOR).abs() < 1e-12;
+                    assert_eq!(blind, ev == 0, "blindness is the zero-event state ({ev})");
+                    if blind {
+                        assert!(at_floor, "a blind read must sit at the offline floor (ev={ev})");
+                    }
+                }
+            }
+        }
+        // A non-blind read with one corroborating event already lifts above the floor.
+        assert!(estimate_confidence(0.5, 1, 1) > CONFIDENCE_OFFLINE_FLOOR);
     }
 
     #[test]
