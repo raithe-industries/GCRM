@@ -134,6 +134,30 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-19** — environmental block a **TENTH** consecutive session; honest **NO-OP**.
+  Did NOT trust the prior nine entries — re-probed fresh. **web fetch 403 on every non-GitHub
+  host** across a deliberately mixed batch: NHC `CurrentStorms.json`, USGS `significant_week`
+  GeoJSON, GDACS `xml/rss.xml`, an ArcGIS Hub search API, **and the normally bot-friendly
+  `api.open-meteo.com`** — all 403. Only `raw.githubusercontent.com` resolved (positive
+  control: `facebook/react` raw file returned real content). The open-meteo 403 again confirms
+  the restriction is **egress-wide on web fetch**, not per-host CDN bot-protection → **Path A is
+  structurally impossible** until the env network policy is changed (owner-side). **Path B**
+  channel re-searched directly via the GitHub MCP this run (the one reachable channel), biased
+  to the two open gaps — AIS-beyond-Baltic and a fresher conflict feed: repo search returned
+  only **personal OSINT projects / aggregators** (`s0914712/taiwan-grayzone-monitor`,
+  `BigBodyCobain/Shadowbroker`, `Wishop21/sentinel`) and World-Monitor clones (the conflict-
+  dataset query returned **zero** results) — none an authoritative gov/scientific body
+  self-publishing a fresh geocoded feed to `raw.githubusercontent.com` (all fail bar 1). No
+  GitHub-native authoritative source to ingest. **Chip lever re-audited independently** (not
+  trusted from the ledger): read `feed_detail` end-to-end — every LIVE map feed carries a
+  meaningful, unit-bearing arm; the `_ => None` tail is reached only by the non-geo catalog
+  `cisa_kev`/`cccs` and finance-panel `yahoo`. No defensible offline coverage/severity edit
+  without live data to verify a band against (would risk the "nonsense number" the signal rule
+  forbids). No code change; tree left clean; ledger run-log only. **Escalated to owner via
+  push notification** (not just this ledger line, which nobody reads live): the routine has now
+  been structurally idle ten straight runs and needs the env network policy to allowlist
+  gov/OSINT hosts (or web fetch egress unblocked) to resume. Standing first pick the moment
+  web fetch reaches gov hosts: **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-18** (second run) — environmental block a **NINTH** consecutive session; honest
   **NO-OP**. Re-probed the network fresh and **wider** to test whether the block is per-host
   bot-protection or egress-wide: **web fetch 403 on every non-GitHub host** across two batches —
