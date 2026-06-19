@@ -693,6 +693,32 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear() {
+        // Pillar-1 honesty, board surface: during a blind read (zero live events) every
+        // theater/coupler I&W light derives from NO signal, so the lights all read "clear"
+        // and the board summary would say a reassuring grey "0 / 11 tripped" — a calm
+        // all-clear indistinguishable from a genuinely quiet world. The board is its own
+        // operator surface (its own summary line), so it must carry the same blind-read
+        // honesty the header watchdog (2.6) added, gated on the SAME `_dataBlind` flag.
+        let render = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderIndicators").expect("renderIndicators present")..];
+        let render = &render[..render.find("function applyData").unwrap_or(render.len())];
+        assert!(
+            render.contains("_dataBlind"),
+            "the I&W board summary no longer consults the blind-read flag — a blackout reads as a calm all-clear"
+        );
+        assert!(
+            render.contains("all-clear unconfirmed"),
+            "the I&W board dropped the blind-read qualifier — a 0/N all-clear would masquerade as a measured quiet board"
+        );
+        // A light that IS tripped during a blind read (e.g. the independent seismic
+        // monitor) must still be surfaced, not buried under the no-signal note.
+        assert!(
+            render.contains("no live event signal"),
+            "a real trip during a blind read must still show its count, tagged as running on no live event signal"
+        );
+    }
+
+    #[test]
     fn dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports() {
         // Pillar-2 legibility: the cockpit is a fixed-height (100vh, body overflow
         // hidden) 3-column grid. The left rail (gauge → windows → "what this means" →

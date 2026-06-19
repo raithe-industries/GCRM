@@ -16,6 +16,30 @@ Format per entry:
 
 ---
 
+## 2026-06-19 — honesty/legibility — I&W board flags a blind read instead of a calm all-clear
+- Item: roadmap 2.6 follow-up (extends the same-day header fix to a second operator surface).
+- Change: yesterday's blind-read fix (2.6) caught the HEADER — but the I&W board is its own
+  operator surface with its own summary line, and during a blind read (zero live events) every
+  theater/coupler light derives from NO signal, so all 11 read "clear" and the board summary
+  showed a reassuring grey `0 / 11 tripped` all-clear, indistinguishable from a genuinely quiet
+  board (the same pillar-1 cosmetic-reassurance failure the header fix named). `renderIndicators`
+  now consults the SAME `_dataBlind` flag the header watchdog uses (set once per snapshot in
+  `applyData` from `meta.data_blind`, the `bayesian::is_data_blind` single source of truth) and,
+  when blind, renders `no live signal · all-clear unconfirmed` in amber. A light still tripped
+  during a blackout (e.g. the independent seismic monitor, which does not depend on the news-event
+  window) is surfaced as `N / 11 tripped · no live event signal`, not buried. DISPLAY-only.
+- Metric moved: NEW capability — the I&W board distinguishes "we can't see the world" from "all
+  conditions clear." Test count 408 → 409. P(WWIII) untouched (no engine path touched).
+- Proof: `cargo build --release` green; `cargo test --release` = 409 passed / 0 failed / 3 ignored;
+  clippy 0 warnings. New lock: `dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear`
+  (server — asserts the `renderIndicators` body consults `_dataBlind`, carries the `all-clear
+  unconfirmed` qualifier, and keeps the `no live event signal` count branch for a live trip).
+- Notes / decisions future runs must respect: the board reads the SAME `_dataBlind` flag as the
+  header — do NOT introduce a second blind predicate. Keep the blind qualifier amber (not red);
+  apex during a zero-event read is impossible (apex lights are event-derived), the red fallback is
+  only defensive. The seismic light is independent of the event window, so a blind read can still
+  legitimately show a real trip — that is why the count branch is preserved.
+
 ## 2026-06-19 — honesty/legibility — blind read (no live signal) no longer masquerades as a calm world
 - Item: roadmap 2.6 (new).
 - Change: the freshness watchdog (2.5) only catches a stalled CONNECTION. But a healthy server
