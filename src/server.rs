@@ -662,6 +662,37 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_blind_read_instead_of_claiming_live() {
+        // Pillar-1 honesty: snapshots can keep arriving (connection Live, watchdog quiet)
+        // while the window holds ZERO live events — a feed outage / cold start. Then the
+        // headline is the BASELINE PRIOR, not a measurement, and a calm green ~1.5% read
+        // is indistinguishable from a genuinely quiet world. The header must NOT say
+        // "Live" in that state; it must surface a no-live-signal warning gated on the
+        // server-computed `data_blind` flag (single source of truth: bayesian::is_data_blind).
+        assert!(
+            DASHBOARD_HTML.contains("data_blind"),
+            "dashboard no longer reads the server data_blind flag — a blind read would claim Live"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("NO LIVE SIGNAL"),
+            "dashboard dropped the no-live-signal warning — a baseline-only read would masquerade as a measured calm world"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("_dataBlind"),
+            "dashboard no longer tracks the blind state for the freshness watchdog"
+        );
+        // The blind warning must live INSIDE renderFreshness (the age-gated header
+        // watchdog), so STALE still takes precedence and the warning re-renders on the
+        // timer even without a new snapshot.
+        let fresh = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderFreshness").expect("renderFreshness present")..];
+        let fresh = &fresh[..fresh.find("setInterval(renderFreshness").unwrap_or(fresh.len())];
+        assert!(
+            fresh.contains("NO LIVE SIGNAL") && fresh.contains("_dataBlind"),
+            "the blind warning must be produced by the age-gated renderFreshness watchdog, after the STALE check"
+        );
+    }
+
+    #[test]
     fn dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports() {
         // Pillar-2 legibility: the cockpit is a fixed-height (100vh, body overflow
         // hidden) 3-column grid. The left rail (gauge → windows → "what this means" →

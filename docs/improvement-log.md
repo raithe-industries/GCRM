@@ -16,6 +16,36 @@ Format per entry:
 
 ---
 
+## 2026-06-19 — honesty/legibility — blind read (no live signal) no longer masquerades as a calm world
+- Item: roadmap 2.6 (new).
+- Change: the freshness watchdog (2.5) only catches a stalled CONNECTION. But a healthy server
+  computing on a window of ZERO live events (total feed outage / cold start) keeps broadcasting
+  snapshots ~1×/s — so `renderFreshness` showed "Live · time" while the headline had silently
+  fallen to the BASELINE PRIOR (~1.5%, calm green), indistinguishable from a genuinely quiet
+  world. That is exactly the pillar-1 failure mode the mission forbids: cosmetic reassurance, a
+  number that doesn't mean what it says. Named the state at its source — added
+  `bayesian::is_data_blind(events) = events == 0` (the EXACT condition under which
+  `estimate_confidence` returns `CONFIDENCE_OFFLINE_FLOOR`, kept as one named predicate so the
+  operator-facing warning can't drift off the model's offline state), served it as
+  `meta.data_blind`, and the dashboard records `_dataBlind` per snapshot. `renderFreshness` now
+  orders: STALE (age > threshold) → `⚠ NO LIVE SIGNAL · baseline only` (amber) → `Live`. The
+  blind branch only fires at zero events, so a warm live deploy (the eyes gate) sees the
+  unchanged Live path.
+- Metric moved: NEW honesty/legibility capability — the dashboard distinguishes "we can't see
+  the world" from "the world is quiet." Test count 405 → 408. DISPLAY-only: P(WWIII) untouched —
+  backtest 9/9, calibration evidence bit-identical (Brier ~0 / RMSE 0.14pp / in-band 4/4).
+- Proof: `cargo build --release` green; `cargo clippy --release --all-targets` 0 warnings;
+  `cargo test --release` = 408 passed / 0 failed / 3 ignored. New locks:
+  `is_data_blind_agrees_with_the_offline_confidence_floor` (bayesian — sweeps events×sources×conf,
+  proves blind ⟺ events==0 and blind ⟹ confidence at the offline floor),
+  `meta_data_blind_flags_a_zero_event_read_as_baseline_only` (aggregator — served contract),
+  `dashboard_flags_a_blind_read_instead_of_claiming_live` (server — the warning lives inside the
+  age-gated watchdog after the STALE check, reads `data_blind`/`_dataBlind`).
+- Notes / decisions future runs must respect: `is_data_blind` is the ONE place that defines the
+  blind state (== the offline-floor trigger). Do NOT wire `data_blind` into `bayesian::compute`/
+  P(WWIII) — it is DISPLAY-only. STALE must keep precedence over NO LIVE SIGNAL in
+  `renderFreshness` (a connection that's also dead is the more urgent fact).
+
 ## 2026-06-18 — awareness — seismic test-consistency reaches the I&W board (11th deterministic light)
 - Item: roadmap 3.10 (new). Also recorded an audit finding under 4.2.
 - Change: the strongest PHYSICAL nuclear indicator — a shallow event at a known test site that has
