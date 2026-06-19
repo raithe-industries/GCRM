@@ -194,6 +194,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `is_data_blind_agrees_with_the_offline_confidence_floor` (bayesian),
   `meta_data_blind_flags_a_zero_event_read_as_baseline_only` (aggregator),
   `dashboard_flags_a_blind_read_instead_of_claiming_live` (server). See improvement-log 2026-06-19.
+  - PROGRESS 2026-06-19: extended the blind-read honesty to the **I&W board** — the header
+    watchdog (2.6) caught the headline, but the board is its own operator surface with its own
+    summary line, and during a blind read every theater/coupler light derives from ZERO events,
+    so the board read a calm grey "0 / 11 tripped" all-clear, indistinguishable from a quiet
+    world (same pillar-1 cosmetic-reassurance failure). `renderIndicators` now consults the same
+    `_dataBlind` flag and shows `no live signal · all-clear unconfirmed` (amber) when blind; a
+    light still tripped (e.g. the independent seismic monitor) is surfaced as
+    `N / 11 tripped · no live event signal`, not buried. Locked by
+    `dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear`. See improvement-log 2026-06-19.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own
