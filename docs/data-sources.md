@@ -134,6 +134,30 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-19** (second run) — environmental block an **ELEVENTH** consecutive session;
+  honest **NO-OP**. Re-probed fresh (did not trust the prior ten lines). **WebFetch 403 on
+  every non-GitHub host** across a mixed batch — NHC `CurrentStorms.json`, USGS
+  `significant_week` GeoJSON, **and the normally bot-friendly `api.open-meteo.com`** — all 403;
+  only `raw.githubusercontent.com` resolved (positive control returned real content). The
+  open-meteo 403 again confirms the restriction is **egress-wide on WebFetch**, not per-host
+  bot-protection → **Path A is structurally impossible** until the env network policy is changed
+  (owner-side). **WebSearch works** (Anthropic-routed) and was used to re-hunt the open gaps:
+  for AIS-beyond-Baltic the strongest lead surfaced was **NOAA/USCG `ocm-marinecadastre/
+  ais-vessel-traffic`** — authoritative, but its data files live on **Azure blob**
+  (`*.blob.core.windows.net`, 403 in-sandbox), **not** GitHub raw, in heavy **GeoParquet**
+  daily/monthly bulk (historical, not live, no hand-parse) → fails the no-heavy-deps + GitHub-raw
+  + freshness bars; not a Path-B fit. Conflict/flood/storm GitHub searches again returned only
+  Wikipedia event articles, awesome-topic lists, and R-package wrappers — no authoritative body
+  self-publishing a fresh geocoded feed to `raw.githubusercontent.com`. **Chip lever
+  independently re-audited** (read `feed_detail` end-to-end, not trusted from the ledger): every
+  LIVE map feed carries a meaningful, unit-bearing arm; the `_ => None` tail is reached only by
+  the non-geo catalog `cisa_kev`/`cccs` and finance-panel `yahoo`. No defensible offline
+  coverage/severity edit without live data to verify a band against (would risk the "nonsense
+  number" the signal rule forbids). No code change; tree left clean; ledger run-log only.
+  **Escalated to owner via push notification**: the routine has now been structurally idle eleven
+  straight runs and needs the env network policy to allowlist gov/OSINT hosts (or WebFetch egress
+  unblocked) to resume. Standing first pick the moment WebFetch reaches gov hosts: **NHC tropical
+  cyclones** (Path A, storm-domain win).
 - **2026-06-19** — environmental block a **TENTH** consecutive session; honest **NO-OP**.
   Did NOT trust the prior nine entries — re-probed fresh. **WebFetch 403 on every non-GitHub
   host** across a deliberately mixed batch: NHC `CurrentStorms.json`, USGS `significant_week`
