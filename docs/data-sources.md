@@ -114,7 +114,12 @@ Bias each run toward the least-covered axis below.
 
 - **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic). Gap
   now: extend coverage beyond the Baltic — other authoritative auth-free AIS regions
-  (Danish Maritime Authority, NOAA, port authorities) or a GitHub-mirrored snapshot.
+  (NOAA, port authorities) or a GitHub-mirrored snapshot. Two leads ruled out: **NOAA/USCG
+  marinecadastre** (authoritative but data on Azure blob, GeoParquet bulk historical — not
+  GitHub-raw, not live, no hand-parse) and **Danish Maritime Authority** (live AIS is *paid*,
+  DKK 1,800–5,600/yr; only historical 2006–2016 bulk CSV is free, on `web.ais.dk` not GitHub;
+  the `dma-ais` GitHub org is Java *software* libraries, no data feed). Neither is a Path-A or
+  Path-B fit.
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV). `acled` stays
   dormant (no Open API). Remaining: a higher-frequency conflict signal if one exists
   auth-free, or the ACLED aggregated-weekly Path-B snapshot.
@@ -134,6 +139,29 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-20** — environmental block a **TWELFTH** consecutive session; honest **NO-OP**.
+  Re-probed fresh (did not trust the prior eleven lines). **web fetch 403 on every non-GitHub
+  host** — NHC `CurrentStorms.json`, USGS `significant_week` GeoJSON, **and the normally
+  bot-friendly `api.open-meteo.com`** — all 403; only `raw.githubusercontent.com` resolved
+  (positive control returned real content: `facebook/react` `package.json`, correctly read as
+  `private:true`/no name). The open-meteo 403 again confirms the restriction is **egress-wide on
+  web fetch**, not per-host bot-protection → **Path A stays structurally impossible** until the env
+  network policy is changed (owner-side). **web search + the GitHub MCP** (the reachable channels)
+  used to re-hunt the two open gaps. **AIS-beyond-Baltic:** ran down the Danish Maritime Authority
+  lead end-to-end — its live AIS is **paid** (DKK 1,800–5,600/yr), only historical 2006–2016 bulk
+  CSV is free and it lives on `web.ais.dk` (403, not GitHub); the `dma-ais` GitHub org is **Java
+  software libraries**, no data feed. NOAA marinecadastre (prior run) stays out (Azure GeoParquet
+  bulk). **Conflict / generic geocoded feeds:** GitHub repo searches for `conflict events geojson`,
+  `official AIS geojson live`, and `earthquake/flood/storm geojson auto-update` (pushed >2026-05/06)
+  returned **zero** authoritative hits — no gov/scientific body self-publishes a fresh geocoded feed
+  to `raw.githubusercontent.com`. `cisagov/dotgov-data` is non-geo (a .gov domain list, no lat/lon).
+  **Chip lever** remains exhausted (six prior independent `feed_detail` audits all concur; no live
+  data this run to verify a new band against → fabricating one would risk the "nonsense number" the
+  signal rule forbids). No code change; tree left clean; ledger run-log + AIS-gap note only.
+  **Escalated to owner via push notification**: twelve straight structurally-idle runs — the env
+  network policy must allowlist gov/OSINT hosts (or unblock web fetch egress) to resume Path A.
+  Standing first pick the moment web fetch reaches gov hosts: **NHC tropical cyclones** (Path A,
+  storm-domain win).
 - **2026-06-19** (second run) — environmental block an **ELEVENTH** consecutive session;
   honest **NO-OP**. Re-probed fresh (did not trust the prior ten lines). **web fetch 403 on
   every non-GitHub host** across a mixed batch — NHC `CurrentStorms.json`, USGS
