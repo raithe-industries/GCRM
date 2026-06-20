@@ -139,6 +139,34 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-20** (second run) — environmental block a **THIRTEENTH** consecutive session;
+  honest **NO-OP**. Re-probed fresh (did not trust the prior twelve lines). **web fetch 403 on
+  every non-GitHub host** — NHC `CurrentStorms.json` *and* the normally bot-friendly
+  `api.open-meteo.com` (Ottawa current-temp) both 403; only `raw.githubusercontent.com`
+  resolved (positive control: `facebook/react` `package.json`, correctly read as
+  `private:true`/no name). The open-meteo 403 re-confirms the restriction is **egress-wide on
+  web fetch**, not per-host bot-protection → **Path A stays structurally impossible** until the
+  env network policy is changed (owner-side). **Path B re-hunted via the GitHub MCP** (the one
+  reachable channel): repo searches (`earthquake/conflict/flood geojson auto-update`,
+  `AIS vessel positions geojson`, gov-org `geojson data`) and a code search for
+  `"FeatureCollection" "fatalities"` GeoJSON returned **only personal/academic/data-journalism
+  projects and static historical files** — the conflict hits (`Skytuhua/SIGINT`,
+  `AlfonsoCifuentes/riskmap`, `danielrosehill/Iran-Israel-War-2026-OSINT-Data`) are OSINT
+  scrapers/aggregators, exactly what **bar 1** excludes; none is an authoritative gov/scientific
+  body self-publishing a fresh geocoded feed to `raw.githubusercontent.com`. **Chip lever
+  re-audited independently** (read `feed_detail` end-to-end, not trusted from the ledger): all 22
+  LIVE map feeds carry a meaningful, unit-bearing arm; the `_ => None` tail is reached only by the
+  non-geo catalog `cisa_kev`/`cccs` and finance-panel `yahoo` — no honest offline chip edit
+  remains. (Considered a third OpenSky bbox for the Asia-Pacific theaters (Taiwan/Korea, currently
+  uncovered) but **rejected this run**: the existing 3-min TTL is explicitly sized to OpenSky's
+  anonymous daily credit budget, so a +50% call volume risks rate-limiting and *degrading* the
+  working aircraft layer — net-negative, and unverifiable here. Logged as a coverage idea, not
+  shipped.) No code change; build green + full suite green (gcrm 414 / ee-correlate 79 /
+  ee-sources 65 / ee-view 60 / ee-core 5; 3 ignored live tests); tree left clean; ledger run-log
+  only. **Escalated to owner via push notification**: thirteen straight structurally-idle runs —
+  the env network policy must allowlist gov/OSINT hosts (or unblock web fetch egress) to resume
+  Path A. Standing first pick the moment web fetch reaches gov hosts: **NHC tropical cyclones**
+  (Path A, storm-domain win).
 - **2026-06-20** — environmental block a **TWELFTH** consecutive session; honest **NO-OP**.
   Re-probed fresh (did not trust the prior eleven lines). **web fetch 403 on every non-GitHub
   host** — NHC `CurrentStorms.json`, USGS `significant_week` GeoJSON, **and the normally
