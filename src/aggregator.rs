@@ -166,6 +166,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         "meta": {
             "events_in_window":         snap.events_in_window,
             "data_blind":               crate::bayesian::is_data_blind(snap.events_in_window),
+            "thinly_sourced":           crate::bayesian::is_thinly_sourced(snap.events_in_window, snap.sources_active),
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
             "regions_active":           snap.regions_active,
@@ -1226,6 +1227,23 @@ mod tests {
         let v = snapshot_to_json(&blind);
         assert_eq!(v["meta"]["data_blind"], serde_json::json!(true));
         assert!(crate::bayesian::is_data_blind(0));
+    }
+
+    #[test]
+    fn meta_thinly_sourced_flags_a_narrow_source_base() {
+        // A read on a healthy source base (default 3 feeds = the corroboration floor) is
+        // broadly corroborated → not thin.
+        let broad = make_snapshot(0.03, 0.001, 2); // events 10, sources 3
+        assert_eq!(snapshot_to_json(&broad)["meta"]["thinly_sourced"], serde_json::json!(false));
+
+        // Live events but only one reporting feed (partial outage) → the served contract
+        // flags it so the header can warn the read rests on a narrow base. Single source
+        // of truth: bayesian::is_thinly_sourced. Distinct from data_blind (events > 0).
+        let mut thin = make_snapshot(0.03, 0.001, 2);
+        thin.sources_active = 1;
+        let v = snapshot_to_json(&thin);
+        assert_eq!(v["meta"]["thinly_sourced"], serde_json::json!(true));
+        assert_eq!(v["meta"]["data_blind"], serde_json::json!(false));
     }
 
     #[test]

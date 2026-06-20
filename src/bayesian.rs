@@ -228,6 +228,26 @@ pub fn is_data_blind(events: usize) -> bool {
     events == 0
 }
 
+/// Independent live feeds required before a read counts as broadly corroborated. Below
+/// this, the headline — though a real measurement, not the blind baseline — rests on
+/// only one or two reporting outlets (a feed-fleet partial outage where most sources are
+/// dark), so it leans on a narrow base that one editorial line or a single feed bug could
+/// skew. Three is the classic corroboration floor (two independent confirmations plus the
+/// originator). Well below `CONFIDENCE_SOURCE_SATURATION` (20), so the breadth term of
+/// confidence is far from saturated whenever this trips.
+pub const MIN_CORROBORATING_SOURCES: usize = 3;
+
+/// The read is **thinly sourced**: it has live events (so it is NOT blind) but fewer than
+/// `MIN_CORROBORATING_SOURCES` distinct active feeds behind it. A weaker honesty state
+/// than blindness — the number means something, but it is thinly corroborated — and
+/// mutually exclusive with `is_data_blind` by construction (blind requires zero events).
+/// Surfaced as a header caveat so a partial outage doesn't masquerade as a full-coverage
+/// "Live" read. DISPLAY-only; never feeds the forecast. Locked by
+/// `is_thinly_sourced_is_a_narrow_base_distinct_from_blindness`.
+pub fn is_thinly_sourced(events: usize, sources: usize) -> bool {
+    events > 0 && sources < MIN_CORROBORATING_SOURCES
+}
+
 /// Confidence when events exist but none carry a usable per-domain confidence
 /// (degenerate edge — keeps the blend from reading the domain term as 0).
 const CONFIDENCE_NO_DOMAIN_CONF: f64 = 0.1;
@@ -1600,6 +1620,38 @@ mod tests {
         }
         // A non-blind read with one corroborating event already lifts above the floor.
         assert!(estimate_confidence(0.5, 1, 1) > CONFIDENCE_OFFLINE_FLOOR);
+    }
+
+    #[test]
+    fn is_thinly_sourced_is_a_narrow_base_distinct_from_blindness() {
+        // The thin-coverage state is the partial-outage sibling of blindness: live events
+        // exist (so the read is a measurement, not the baseline) but they come from fewer
+        // than MIN_CORROBORATING_SOURCES distinct feeds. It must (1) require events,
+        // (2) trip iff sources are below the floor, (3) be mutually exclusive with a blind
+        // read, and (4) only ever fire while the confidence breadth term is well short of
+        // saturation (a thin base can't read as fully corroborated).
+        assert!(MIN_CORROBORATING_SOURCES < CONFIDENCE_SOURCE_SATURATION as usize,
+            "the corroboration floor must sit below breadth saturation");
+        for &ev in &[0usize, 1, 5, 50, 200] {
+            for &src in &[0usize, 1, 2, 3, 5, 20, 100] {
+                let thin = is_thinly_sourced(ev, src);
+                // (1)+(2): exactly events>0 AND a below-floor source base.
+                assert_eq!(thin, ev > 0 && src < MIN_CORROBORATING_SOURCES,
+                    "thin iff a live read on a below-floor source base (ev={ev}, src={src})");
+                // (3): a blind read is never also "thin" (and vice versa).
+                assert!(!(thin && is_data_blind(ev)),
+                    "thin and blind are mutually exclusive (ev={ev}, src={src})");
+                // (4): whenever thin, the breadth term of confidence is below half its weight.
+                if thin {
+                    let breadth = (src as f64 / CONFIDENCE_SOURCE_SATURATION).min(1.0);
+                    assert!(breadth < 0.5,
+                        "a thinly-sourced read must read as poorly corroborated on breadth (src={src})");
+                }
+            }
+        }
+        // At the floor (3 sources) a live read is NO LONGER thin — broadly corroborated.
+        assert!(!is_thinly_sourced(50, MIN_CORROBORATING_SOURCES));
+        assert!(is_thinly_sourced(50, MIN_CORROBORATING_SOURCES - 1));
     }
 
     #[test]

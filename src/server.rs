@@ -693,6 +693,37 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_thinly_sourced_read_instead_of_full_coverage_live() {
+        // Pillar-1 honesty, partial-outage sibling of the blind-read warning: a window
+        // can hold live events (so it is NOT blind, watchdog quiet) yet draw them from
+        // only one or two feeds — a feed-fleet partial outage. The headline is then a
+        // real measurement but rests on a narrow base, so a flat "Live" overstates how
+        // broadly corroborated it is. The header must caveat it, gated on the
+        // server-computed `thinly_sourced` flag (single source of truth:
+        // bayesian::is_thinly_sourced), inside the age-gated watchdog AFTER the blind check.
+        assert!(
+            DASHBOARD_HTML.contains("thinly_sourced"),
+            "dashboard no longer reads the server thinly_sourced flag — a one-feed read would claim full-coverage Live"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("THIN COVERAGE"),
+            "dashboard dropped the thin-coverage warning — a narrowly-sourced read would masquerade as fully corroborated"
+        );
+        let fresh = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderFreshness").expect("renderFreshness present")..];
+        let fresh = &fresh[..fresh.find("setInterval(renderFreshness").unwrap_or(fresh.len())];
+        assert!(
+            fresh.contains("THIN COVERAGE") && fresh.contains("_thinSourced"),
+            "the thin-coverage warning must be produced by the age-gated renderFreshness watchdog"
+        );
+        // Ordering: the stronger blind state must be checked before thin coverage, so a
+        // zero-event read reads as NO LIVE SIGNAL, not the weaker THIN COVERAGE.
+        assert!(
+            fresh.find("NO LIVE SIGNAL").unwrap() < fresh.find("THIN COVERAGE").unwrap(),
+            "the blind check must precede the thin-coverage check (blind is the stronger state)"
+        );
+    }
+
+    #[test]
     fn dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear() {
         // Pillar-1 honesty, board surface: during a blind read (zero live events) every
         // theater/coupler I&W light derives from NO signal, so the lights all read "clear"

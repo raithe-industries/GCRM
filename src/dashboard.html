@@ -547,7 +547,7 @@ let _lastCalTs=null,_firstSnapReceived=false;
 // no frames). _lastSnapMs is the wall-clock receipt time of the last snapshot;
 // renderFreshness() rewrites the header status from it on a timer so a stale read
 // announces itself instead of masquerading as "Live" with a frozen timestamp.
-let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false;
+let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false,_thinSourced=false,_sourcesActive=0;
 const STALE_AFTER_MS=45000; // ~45 missed 1s ticks — a real stall, not network jitter
 function renderFreshness(){
   const ts=document.getElementById('ts');if(!ts)return;
@@ -562,6 +562,11 @@ function renderFreshness(){
     // is the BASELINE PRIOR, not a measurement (feed outage / cold start). The
     // connection being "Live" would dishonestly imply a measured calm world.
     ts.textContent='⚠ NO LIVE SIGNAL · baseline only';ts.style.color='var(--amber)';
+  }else if(_thinSourced){
+    // Live events ARE arriving, but from only one or two feeds (a feed-fleet partial
+    // outage). The headline is a measurement, not the baseline — but it rests on a
+    // narrow base, so a flat "Live" would overstate how broadly corroborated it is.
+    ts.textContent='⚠ THIN COVERAGE · '+_sourcesActive+' feed'+(_sourcesActive===1?'':'s')+' reporting';ts.style.color='var(--amber)';
   }else{
     ts.textContent='Live · '+toET(_lastComputedAt);ts.style.color='';
   }
@@ -982,7 +987,7 @@ function applyData(d){
   // data age, so a stalled worker or a silently-hung WebSocket can't keep claiming
   // the read is current with a frozen timestamp (pillar-1 honesty: the number must
   // mean what it says).
-  _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();_dataBlind=!!(d.meta&&d.meta.data_blind);renderFreshness();
+  _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();_dataBlind=!!(d.meta&&d.meta.data_blind);_thinSourced=!!(d.meta&&d.meta.thinly_sourced);_sourcesActive=(d.meta&&d.meta.sources_active)||0;renderFreshness();
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';
