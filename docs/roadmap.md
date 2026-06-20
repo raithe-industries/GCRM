@@ -214,6 +214,13 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     untouched. Locked by `is_thinly_sourced_is_a_narrow_base_distinct_from_blindness` (bayesian),
     `meta_thinly_sourced_flags_a_narrow_source_base` (aggregator),
     `dashboard_flags_a_thinly_sourced_read_instead_of_full_coverage_live` (server). See improvement-log 2026-06-20.
+  - PROGRESS 2026-06-20: extended the thin-coverage state to the **I&W board** — the header carried
+    the thin caveat but the board still showed a flat grey `0 / 11 tripped` all-clear during a thin
+    read, overstating how broadly the quiet is corroborated (board analog of a flat "Live").
+    `renderIndicators` now consults the same `_thinSourced` flag and shows
+    `all-clear · thin coverage · N feed(s)` (amber) AFTER the stronger blind branch; trips stay
+    visible. Locked by `dashboard_iw_board_flags_a_thinly_sourced_read_instead_of_a_full_coverage_all_clear`.
+    The board and header now read the same blind/thin flags. See improvement-log 2026-06-20.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own
