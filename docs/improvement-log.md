@@ -16,6 +16,34 @@ Format per entry:
 
 ---
 
+## 2026-06-20 — honesty/legibility — I&W board flags a STALE read instead of a frozen all-clear
+- Item: roadmap 2.6 follow-up / 2.5 watchdog (completes the board's three caveat states).
+- Change: the header freshness watchdog (2.5) flips to STALE when snapshots stop arriving, and the
+  board already mirrored the header's blind/thin caveats — but it had NO stale state. `renderIndicators`,
+  which writes the I&W board summary, runs ONLY on snapshot arrival (by definition never stale), so
+  during a connection stall the board kept its last `0 / N tripped` all-clear frozen on screen,
+  presenting an old read as current — the board analog of the exact header lie 2.5 catches (pillar-1
+  cosmetic reassurance). `renderIndicators` now caches the trip/total/apex counts (`_lastTripped` /
+  `_lastIndsLen` / `_lastApexTrip`); `renderFreshness`'s age-gated STALE branch re-flags the board
+  summary on its 5s timer from those counts (`all-clear · STALE · last read Nm ago`, amber, red on a
+  cached apex trip), so it fires WITHOUT a new snapshot — the only time staleness can occur. A fresh
+  snapshot resets `_lastSnapMs` (no longer stale) and re-runs `renderIndicators`, clearing the caveat.
+  DISPLAY-only — no engine/aggregator path touched.
+- Metric moved: NEW capability — the I&W board now distinguishes a frozen/stalled all-clear from a
+  current one (its third honesty state; board and header now agree on stale/blind/thin). Test count
+  413 → 414. P(WWIII) untouched.
+- Proof: `cargo build --release` green; `cargo test --release` = 414 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; backtest 9/9; calibration evidence Brier=0.00000
+  / RMSE=0.14pp / in-band 4/4 (identical). New lock:
+  `dashboard_iw_board_flags_a_stale_read_instead_of_a_frozen_all_clear` (server — asserts the STALE
+  re-flag lives in the age-gated `renderFreshness` STALE branch, targets `iw-summary`, carries the
+  STALE qualifier, and reconstructs from the cached counts `renderIndicators` writes).
+- Notes / decisions future runs must respect: the board STALE re-flag is timer-driven (in the STALE
+  branch of `renderFreshness`), NOT a snapshot-path branch in `renderIndicators` — keep it there or it
+  can never fire during an actual stall. STALE is the strongest caveat (data is old, not just narrow),
+  so it overrides blind/thin by construction (the timer overwrites; a fresh snapshot then clears it).
+  Reuses the existing cached counts — do NOT wire any new server flag or engine path for this.
+
 ## 2026-06-20 — honesty/legibility — I&W board flags a thin-coverage read instead of a full-coverage all-clear
 - Item: roadmap 2.6 follow-up (extends the same-day header thin-coverage fix to the second operator surface).
 - Change: this morning's run added the THIN COVERAGE state to the HEADER (a window with live
