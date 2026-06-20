@@ -777,6 +777,45 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_iw_board_flags_a_stale_read_instead_of_a_frozen_all_clear() {
+        // Pillar-1 honesty, board surface: the header freshness watchdog flips to STALE
+        // when snapshots stop arriving, but renderIndicators (which writes the I&W board
+        // summary) runs ONLY on snapshot arrival — by definition never during a stall.
+        // So a stalled read leaves the board summary frozen on its last trip count,
+        // presenting a stale "0 / N tripped" all-clear as a current read: the board
+        // analog of the header lie the watchdog (2.5) catches. The watchdog must re-flag
+        // the board summary as STALE on the timer, from cached counts, so the board can't
+        // go quiet while the world goes unwatched.
+        let fresh = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderFreshness").expect("renderFreshness present")..];
+        let fresh = &fresh[..fresh.find("setInterval(renderFreshness").unwrap_or(fresh.len())];
+        // The board re-flag must live in the age-gated STALE branch (so it fires on the
+        // timer without a new snapshot — the exact stall case), and address the board's
+        // own summary element.
+        let stale_branch = &fresh[fresh.find("age>STALE_AFTER_MS").expect("stale branch present")..];
+        let stale_branch = &stale_branch[..stale_branch.find("_dataBlind").unwrap_or(stale_branch.len())];
+        assert!(
+            stale_branch.contains("iw-summary"),
+            "the STALE branch must re-flag the I&W board summary — otherwise a stalled board keeps a frozen all-clear"
+        );
+        assert!(
+            stale_branch.contains("STALE"),
+            "the board re-flag must carry the STALE qualifier so the frozen count reads as not-current"
+        );
+        // The watchdog reconstructs the summary from counts cached by renderIndicators
+        // (it has no fresh `inds` during a stall) — guard both the cache write and read.
+        assert!(
+            stale_branch.contains("_lastTripped") && stale_branch.contains("_lastIndsLen"),
+            "the STALE board re-flag must use the cached trip/total counts (no live inds during a stall)"
+        );
+        let render = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderIndicators").expect("renderIndicators present")..];
+        let render = &render[..render.find("function applyData").unwrap_or(render.len())];
+        assert!(
+            render.contains("_lastTripped=tripped") && render.contains("_lastApexTrip=apexTrip"),
+            "renderIndicators must cache the board counts so the freshness watchdog can re-flag them as STALE"
+        );
+    }
+
+    #[test]
     fn dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports() {
         // Pillar-2 legibility: the cockpit is a fixed-height (100vh, body overflow
         // hidden) 3-column grid. The left rail (gauge → windows → "what this means" →

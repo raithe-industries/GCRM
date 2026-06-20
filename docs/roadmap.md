@@ -221,6 +221,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `all-clear · thin coverage · N feed(s)` (amber) AFTER the stronger blind branch; trips stay
     visible. Locked by `dashboard_iw_board_flags_a_thinly_sourced_read_instead_of_a_full_coverage_all_clear`.
     The board and header now read the same blind/thin flags. See improvement-log 2026-06-20.
+  - PROGRESS 2026-06-20: closed the **STALE state on the I&W board** — the third and last board
+    honesty state (the 2.5 freshness-watchdog analog of the blind/thin board fixes above). The
+    header watchdog flips to STALE during a connection stall, but `renderIndicators` (which writes
+    the board summary) runs ONLY on snapshot arrival — by definition never during a stall — so the
+    board kept a FROZEN `0 / N tripped` all-clear, presenting an old read as current (the board
+    analog of the exact header lie 2.5 catches). `renderIndicators` now caches the trip/total/apex
+    counts and `renderFreshness`'s age-gated STALE branch re-flags the board summary on the timer
+    (`all-clear · STALE · last read Nm ago`, amber/red-on-apex). DISPLAY-only — P(WWIII) untouched.
+    Board and header now agree on all three caveat states (stale/blind/thin). Locked by
+    `dashboard_iw_board_flags_a_stale_read_instead_of_a_frozen_all_clear`. See improvement-log 2026-06-20.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own
