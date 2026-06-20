@@ -750,6 +750,33 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_iw_board_flags_a_thinly_sourced_read_instead_of_a_full_coverage_all_clear() {
+        // Pillar-1 honesty, board surface: the same partial-outage hole the header's
+        // thin-coverage warning closed (thinly_sourced) also exists on the I&W board. A
+        // thin read (live events from fewer than the corroboration floor of feeds) leaves
+        // every light derived from a narrow base, so a grey "0 / N tripped" all-clear
+        // overstates how broadly the quiet is corroborated — the board analog of a flat
+        // "Live". The board summary must caveat it, gated on the SAME server-computed
+        // `_thinSourced` flag the header reads, and AFTER the stronger blind branch.
+        let render = &DASHBOARD_HTML[DASHBOARD_HTML.find("function renderIndicators").expect("renderIndicators present")..];
+        let render = &render[..render.find("function applyData").unwrap_or(render.len())];
+        assert!(
+            render.contains("_thinSourced"),
+            "the I&W board summary no longer consults the thin-coverage flag — a one-feed read reads as a full-coverage all-clear"
+        );
+        assert!(
+            render.contains("thin coverage"),
+            "the I&W board dropped the thin-coverage qualifier — a narrowly-sourced all-clear would masquerade as broadly corroborated"
+        );
+        // Ordering: blind (zero events) is the stronger state and must be checked before
+        // the thin branch, so a blackout reads "no live signal", not the weaker "thin".
+        assert!(
+            render.find("_dataBlind").unwrap() < render.find("_thinSourced").unwrap(),
+            "the blind check must precede the thin-coverage check on the board (blind is the stronger state)"
+        );
+    }
+
+    #[test]
     fn dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports() {
         // Pillar-2 legibility: the cockpit is a fixed-height (100vh, body overflow
         // hidden) 3-column grid. The left rail (gauge → windows → "what this means" →

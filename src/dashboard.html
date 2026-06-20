@@ -930,6 +930,16 @@ function renderIndicators(inds){
       // light still tripped (e.g. the independent seismic monitor) is surfaced, not buried.
       summ.textContent=tripped?(tripped+' / '+inds.length+' tripped · no live event signal'):'no live signal · all-clear unconfirmed';
       summ.style.color=apexTrip>0?'var(--red)':'var(--amber)';
+    }else if(_thinSourced){
+      // Pillar-1 honesty, partial-outage sibling of the blind branch: a thin read (live
+      // events drawn from fewer than the corroboration floor of feeds — most of the ~100
+      // sources dark) rests every theater/coupler light on a narrow base, so a grey
+      // "0 / N tripped" all-clear overstates how broadly the quiet is corroborated. Mirror
+      // the header's THIN COVERAGE qualifier on the board; trips stay visible. Blind (zero
+      // events) is the stronger state and is checked first, so the two never collide.
+      summ.textContent=(tripped?(tripped+' / '+inds.length+' tripped'):'all-clear')
+        +' · thin coverage · '+_sourcesActive+' feed'+(_sourcesActive===1?'':'s');
+      summ.style.color=apexTrip>0?'var(--red)':'var(--amber)';
     }else{
       summ.textContent=inds.length?(tripped+' / '+inds.length+' tripped'+(apexTrip?' · '+apexTrip+' APEX':'')):'awaiting data';
       summ.style.color=apexTrip>0?'var(--red)':(tripped>0?'var(--amber)':'var(--t4)');

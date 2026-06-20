@@ -16,6 +16,34 @@ Format per entry:
 
 ---
 
+## 2026-06-20 — honesty/legibility — I&W board flags a thin-coverage read instead of a full-coverage all-clear
+- Item: roadmap 2.6 follow-up (extends the same-day header thin-coverage fix to the second operator surface).
+- Change: this morning's run added the THIN COVERAGE state to the HEADER (a window with live
+  events drawn from fewer than the corroboration floor of feeds — a feed-fleet partial outage),
+  but the I&W board is its own operator surface with its own summary line and still showed a flat
+  grey `0 / 11 tripped` all-clear during a thin read. Every theater/coupler light then derives from
+  a narrow base, so that all-clear overstates how broadly the quiet is corroborated — the board
+  analog of a flat "Live", the exact pillar-1 hole the header fix named. `renderIndicators` now
+  consults the SAME server-computed `_thinSourced` flag (set in `applyData` from
+  `meta.thinly_sourced`, the `bayesian::is_thinly_sourced` single source of truth the header reads)
+  and, when thin, renders `all-clear · thin coverage · N feed(s)` (or keeps the trip count visible
+  if a light is up) in amber. Blind (zero events) is the stronger state and is checked FIRST, so
+  the two branches never collide. DISPLAY-only — no engine path touched.
+- Metric moved: NEW capability — the I&W board now distinguishes a narrowly-sourced all-clear from
+  a broadly-corroborated one (a third board honesty state, matching the header's blind/thin/Live).
+  Test count 412 → 413. P(WWIII) untouched (no engine path).
+- Proof: `cargo build --release` green; `cargo test --release` = 413 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings. New lock:
+  `dashboard_iw_board_flags_a_thinly_sourced_read_instead_of_a_full_coverage_all_clear` (server —
+  asserts the `renderIndicators` body consults `_thinSourced`, carries the `thin coverage`
+  qualifier, and orders the thin branch AFTER the stronger `_dataBlind` branch).
+- Notes / decisions future runs must respect: blind and thin stay SEPARATE, mutually-exclusive
+  states on the board exactly as on the header — blind (0 events) keeps precedence over thin. The
+  thin qualifier is amber (an under-corroborated all-clear is a warning, not a red trip); apex still
+  forces red if a light is up. Reuses the already-served `_sourcesActive` for N — no new flag, no
+  engine/calibration path. The board and header now read the same two flags; do NOT add a third
+  blind/thin predicate.
+
 ## 2026-06-20 — honesty/legibility — thin-coverage read no longer masquerades as full-coverage "Live" (roadmap 2.6 follow-up)
 - Item: roadmap 2.6 follow-up (partial-outage sibling of the blind-read fix).
 - Change: `is_data_blind` is binary — it catches a TOTAL outage (zero events) but says nothing
