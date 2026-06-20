@@ -16,6 +16,35 @@ Format per entry:
 
 ---
 
+## 2026-06-20 — honesty/legibility — thin-coverage read no longer masquerades as full-coverage "Live" (roadmap 2.6 follow-up)
+- Item: roadmap 2.6 follow-up (partial-outage sibling of the blind-read fix).
+- Change: `is_data_blind` is binary — it catches a TOTAL outage (zero events) but says nothing
+  about a window holding live events drawn from only ONE or TWO feeds (a feed-fleet partial
+  outage, most of the ~100 sources dark). That read is a real measurement, not the baseline,
+  but it rests on a narrow base one editorial line or a single feed bug could skew — and the
+  header still showed a flat "Live", overstating how broadly corroborated it is (the same
+  pillar-1 failure mode as the blind read, one step weaker). Added
+  `bayesian::is_thinly_sourced(events, sources) = events > 0 && sources < MIN_CORROBORATING_SOURCES`
+  (new named constant = 3, the classic corroboration floor; sits below `CONFIDENCE_SOURCE_SATURATION`,
+  and mutually exclusive with blind by construction), served it as `meta.thinly_sourced`, and
+  `renderFreshness` now orders STALE → NO LIVE SIGNAL (blind) → `⚠ THIN COVERAGE · N feed(s)
+  reporting` → Live (the stronger blind state checked first). DISPLAY-only — no engine path touched.
+- Metric moved: NEW capability — the header distinguishes a narrowly-sourced read from a
+  fully-corroborated one (a third honesty state between "blind" and "Live"). Test count 409 → 412.
+  P(WWIII) untouched: backtest 9/9, calibration bands green, ordering holds (evidence bit-identical).
+- Proof: `cargo build --release` green; `cargo test --release` = 412 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings. New locks:
+  `is_thinly_sourced_is_a_narrow_base_distinct_from_blindness` (bayesian — sweeps events×sources,
+  proves events>0 ∧ sources<floor, mutual exclusion with blind, breadth term below half-weight),
+  `meta_thinly_sourced_flags_a_narrow_source_base` (aggregator — served contract, distinct from
+  data_blind), `dashboard_flags_a_thinly_sourced_read_instead_of_full_coverage_live` (server —
+  warning lives in the age-gated watchdog, checked AFTER the blind branch).
+- Notes / decisions future runs must respect: blind and thin are SEPARATE, mutually-exclusive
+  states — blind (0 events) must keep precedence over thin in `renderFreshness`. The floor of 3 is
+  a DISPLAY threshold, not a calibration constant (do not wire `thinly_sourced` into
+  `bayesian::compute`/P(WWIII)). It only trips in a severe partial outage, so a warm live deploy
+  (eyes gate) keeps the unchanged Live path. Reuses the already-served `meta.sources_active` for N.
+
 ## 2026-06-19 — honesty/legibility — I&W board flags a blind read instead of a calm all-clear
 - Item: roadmap 2.6 follow-up (extends the same-day header fix to a second operator surface).
 - Change: yesterday's blind-read fix (2.6) caught the HEADER — but the I&W board is its own

@@ -203,6 +203,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     light still tripped (e.g. the independent seismic monitor) is surfaced as
     `N / 11 tripped · no live event signal`, not buried. Locked by
     `dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear`. See improvement-log 2026-06-19.
+  - PROGRESS 2026-06-20: added the **partial-outage sibling** of the blind state. `is_data_blind`
+    is binary (zero events); but a window with live events from only ONE or TWO feeds (a feed-fleet
+    partial outage, most sources dark) is a real measurement on a NARROW base — the header still
+    said a flat "Live", overstating how broadly corroborated the read is. Added
+    `bayesian::is_thinly_sourced(events, sources)` = `events > 0 && sources < MIN_CORROBORATING_SOURCES`
+    (=3, the corroboration floor; below `CONFIDENCE_SOURCE_SATURATION`, mutually exclusive with blind),
+    served as `meta.thinly_sourced`, and `renderFreshness` now shows `⚠ THIN COVERAGE · N feed(s)
+    reporting` (amber) AFTER the blind check (blind is the stronger state). DISPLAY-only — P(WWIII)
+    untouched. Locked by `is_thinly_sourced_is_a_narrow_base_distinct_from_blindness` (bayesian),
+    `meta_thinly_sourced_flags_a_narrow_source_base` (aggregator),
+    `dashboard_flags_a_thinly_sourced_read_instead_of_full_coverage_live` (server). See improvement-log 2026-06-20.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own
