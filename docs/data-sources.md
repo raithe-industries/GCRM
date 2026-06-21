@@ -139,6 +139,34 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-21** — environmental block a **FOURTEENTH** consecutive session; honest **NO-OP**.
+  Re-probed fresh (did not trust the prior thirteen lines). **web fetch 403 on every non-GitHub
+  host** — NHC `CurrentStorms.json`, `api.open-meteo.com` (Ottawa current-temp), USGS
+  `significant_week` GeoJSON, **and a `*.github.io` GitHub-Pages URL (`w3c.github.io`)** — all
+  403; only `raw.githubusercontent.com` resolved (positive control: `facebook/react`
+  `package.json`, correctly read as `private:true`/no name). The github.io 403 newly pins the
+  allowlist to **`raw.githubusercontent.com` specifically**, not "GitHub broadly" — so even
+  authoritative data served from GitHub Pages is out of reach; only raw repo files are. Path A
+  stays structurally impossible (egress-wide web fetch block, owner-side). **Path B re-hunted via
+  the GitHub MCP** (the one reachable channel) on the two open gaps — AIS/vessel and conflict:
+  repo searches (`AIS vessel positions geojson pushed:>2026-05`, `conflict events fatalities
+  geojson auto-update`, `vessel tracking AIS realtime`) returned **zero authoritative hits** —
+  only SDR-hobbyist feeders (`sdr-enthusiasts/docker-shipfeeder`), awesome-lists, and public-API
+  indexes. A code search for `"FeatureCollection" "fatalities"` GeoJSON surfaced **237 files, all
+  personal/academic/data-journalism or static historical** — OSINT scrapers/aggregators
+  (`Skytuhua/SIGINT`, `AlfonsoCifuentes/riskmap`, `danielrosehill/Iran-Israel-War-2026-OSINT-Data`),
+  road-crash/tornado/shooting datasets, and a 2008 WITS-derived Iraq file — every one fails
+  **bar 1** (authoritative gov/scientific, no scrapers/mirrors). No authoritative body
+  self-publishes a fresh geocoded feed to `raw.githubusercontent.com`. **Chip lever re-audited
+  independently** (read `feed_detail` end-to-end, not trusted from the ledger): all 22 LIVE map
+  feeds carry a meaningful, unit-bearing arm; the `_ => None` tail is reached only by the non-geo
+  catalog `cisa_kev`/`cccs` and finance-panel `yahoo` — no honest offline chip edit remains, and
+  with no live data to verify against, fabricating a band would risk the "nonsense number" the
+  signal rule forbids. No code change; tree left clean; ledger run-log only. **Did NOT re-send a
+  push notification** this run: the env-network block is unchanged and already escalated to the
+  owner six+ times across the prior blocks — a 14th identical alert is noise, not signal
+  (re-spamming degrades the channel). Standing first pick the moment web fetch reaches gov hosts:
+  **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-20** (second run) — environmental block a **THIRTEENTH** consecutive session;
   honest **NO-OP**. Re-probed fresh (did not trust the prior twelve lines). **web fetch 403 on
   every non-GitHub host** — NHC `CurrentStorms.json` *and* the normally bot-friendly
