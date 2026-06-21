@@ -16,6 +16,37 @@ Format per entry:
 
 ---
 
+## 2026-06-21 — legibility/honesty — the hero positions the live read on the model's own historical ladder (Ukraine-2022 / Cuba-1962), and the For-scale poles stop being hand-typed
+- Item: roadmap 2.x legibility (awareness/anti-drift). The bare annual P(WWIII)% is hard to
+  feel; an operator grasps "how close to great-power war" best against crises they know.
+- Change: TWO things in one coherent edit. (1) HONESTY/anti-drift: the "For scale" risk
+  info-line hand-typed `~39%`/`~80%` for the Ukraine-2022 / Cuba-1962 analogs while the model
+  COMPUTES them (`backtest::calibration_anchors`) — a live drift hazard (a recalibration would
+  leave the line quoting stale references), the same class the program has been closing
+  (BASELINE_ANNUAL_PCT, coupler magnitudes, …). Added `backtest::analog_model_pct(name)` (the
+  live engine's own annualized output for a named analog, single source of truth) and templated
+  both poles `{{ANALOG_UKRAINE_PCT}}`/`{{ANALOG_CUBA_PCT}}` in `server.rs::generate_dashboard_html`.
+  (2) LEGIBILITY: a new hero `#gauge-hist` sub-line (`renderHistContext` in `applyData`) positions
+  the LIVE read on that same model ladder — `below Ukraine-2022 (39%)` / `≈ Ukraine-2022` /
+  `between Ukraine-2022 & Cuba-1962` / `≈ Cuba-1962` / `above Cuba-1962` (≈ snaps within 3pp).
+  The poles are the model's OWN analog output, so the live read and the references share one
+  consistent scale — not a hand-typed yardstick.
+- Metric moved: Test count 420 → 422 (+2); NEW capability (the operator now reads the bare %
+  against crises they know, from the model's own calibration). DISPLAY-only — no calibration
+  constant touched; backtest bands 4/4, Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 421 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; bands_{quiet,ukraine,current_full,cuba} +
+  calibration_evidence_report + diurnal_robustness all green. New locks:
+  `backtest::analog_model_pct_reports_the_live_model_output_for_named_analogs` (model output, not
+  expert centre; ordering Ukraine<Cuba; unknown→None) +
+  `server::dashboard_renders_historical_analogs_from_the_model` (placeholders present, substituted,
+  rendered poles == the model's live analog scores).
+- Notes / decisions future runs must respect: `analog_model_pct` is the single source of truth for
+  the operator-facing historical reference — do NOT re-hand-type the Ukraine/Cuba %s. The hero poles
+  are the model's OWN analog output (so the live read positions on one scale); do not swap them for
+  Robert's expert band CENTRES. Final visual is the deploy-time eyes gate. The `bands_*` calibration
+  tests must stay green — this is DISPLAY-only and never feeds the forecast.
+
 ## 2026-06-21 — honesty/legibility — a forecast pegged at the ceiling reads "≥90%" + a capped caveat, not a bare measured 90%
 - Item: roadmap 2.6 follow-up (the capped-read sibling of blind/thin/stale).
 - Change: the forecast is hard-clamped to `FORECAST_PROB_CEILING` (0.90) for epistemic
