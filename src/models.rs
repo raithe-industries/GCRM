@@ -50,6 +50,35 @@ pub const HISTORICAL_ANCHOR: f64 = BASELINE_ANNUAL;
 // systemic INDEX (a 0–100 display scale), not this annual probability.
 pub const FORECAST_PROB_CEILING: f64 = 0.90;
 
+// ── Honesty layer: headline uncertainty interval + epistemic posture (2026-06-21) ──
+// A point estimate ("75.328%") projects a precision the model does not have — a forecast of an
+// effectively unprecedented event, calibrated against a handful of historical analogs, cannot be
+// known to five decimals. So the headline is published as an INTERVAL, never a bare point, and
+// carries a plain statement of its reference-class limits and its error posture. These are the
+// honest-forecasting dials (Robert's call, like the calibration bands) — named + justified here,
+// rendered on the dashboard, so the choice is visible and defensible, never buried.
+
+/// Minimum half-width of the headline interval, in probability units. The deliberate floor of
+/// humility: GCRM never claims to know P(WWIII) to better than ±this, no matter how stable the
+/// live read looks — because short-term stability is not the same as being right about an
+/// out-of-distribution future. Widened (never narrowed) by observed volatility and thin data.
+pub const HUMILITY_FLOOR_HW: f64 = 0.07;
+
+/// How much low data-quality widens the interval: half-width ×= 1 + this × (1 − confidence).
+/// Thin/stale coverage should make the band visibly wider, not silently keep its apparent precision.
+pub const DATA_QUALITY_WIDENING: f64 = 1.0;
+
+/// Plain-language reference-class limit — what the calibration is anchored to and what it may miss.
+pub const EPISTEMIC_REFERENCE_CLASS: &str =
+    "Forecast under deep uncertainty, calibrated to historical analogs (Cuba 1962, Ukraine 2022, a quiet year). \
+     Novel dynamics — AI-enabled, cyber, multipolar — may be out-of-distribution and unmodeled.";
+
+/// The model's error posture — which mistake it is tuned to prefer. Every choice has consequences;
+/// this names ours so a reader knows how to weigh the number. MUST be kept in sync with the actual
+/// tuning (the persistence floor holds an active war through news gaps → it errs toward false alarm).
+pub const ERROR_POSTURE_NOTE: &str =
+    "Tuned to hold an active war through news gaps — this model errs toward false alarm over false calm.";
+
 // ── Source tier ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

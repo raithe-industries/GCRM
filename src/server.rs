@@ -189,7 +189,16 @@ pub async fn broadcast_snapshots(
         {
             let es = server_state.app_state.epoch_store.lock().await;
             data["trend_6h"] = es.trend_6h(snap.p_wwiii_annual);
+            // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
+            // plain-language reference-class limit and error posture. The interval is computed
+            // server-side from the durable ring (same discipline as trend_6h); the epistemic
+            // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
+            data["uncertainty"] = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
         }
+        data["epistemic"] = serde_json::json!({
+            "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
+            "error_posture":   crate::models::ERROR_POSTURE_NOTE,
+        });
 
         // Update latest in shared state
         {
@@ -604,6 +613,17 @@ mod tests {
     #[test]
     fn dashboard_html_has_websocket_connect() {
         assert!(DASHBOARD_HTML.contains("new WebSocket"));
+    }
+
+    #[test]
+    fn dashboard_renders_the_honesty_interval_and_error_posture() {
+        // Honesty layer: the hero must publish an interval (not just a point) and the error
+        // posture, both server-driven. Lock the render hooks so a UI refactor can't silently
+        // drop them and revert the headline to a bare false-precise number.
+        assert!(DASHBOARD_HTML.contains("gauge-interval"), "headline must render the uncertainty interval");
+        assert!(DASHBOARD_HTML.contains("gauge-posture"),  "headline must render the error posture");
+        assert!(DASHBOARD_HTML.contains("d.uncertainty"),  "interval must read the server-computed uncertainty block");
+        assert!(DASHBOARD_HTML.contains("d.epistemic"),    "posture must read the server-provided epistemic block");
     }
 
     #[test]

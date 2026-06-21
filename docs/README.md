@@ -113,7 +113,11 @@ Co-occurrence amplification applies non-linear boosts when multiple domains are 
 
 Domain-specific exponential decay ensures recent events matter more, with each half-life set to how long that modality's STATE persists without fresh confirmation — not how long a single news pulse trends. An active kinetic war is a sustained strategic state, so military escalation persists at a 72-hour half-life (a peer of nuclear posture at 72 hours); economic warfare lingers longest at 96 hours, diplomatic breakdown at 48, and genuinely episodic cyber/info ops at 24. This keeps the systemic read stable across an overnight news lull while still cooling over a multi-day silence — the signature of a real de-escalation.
 
-The 0.85 ceiling is an explicit engineering decision — the model has no access to ground truth and must never emit near-certainty values.
+A **persistence floor** governs the multi-day tail asymmetrically: a theater that reached sustained war holds a slowly-decaying floor (a war-state heat on a ~15-day half-life, at 85% weight) so an active war is not forgotten during a several-day news gap — fast rise, slow *earned* fall. The floor is gated to theaters that actually reached war (a quiet world never gets a phantom floor) and is *released* the moment genuine de-escalation evidence appears (a recency-weighted negative escalation step — a ceasefire or deal), so a real peace process cools the read quickly while mere silence does not. This is a deliberate error posture: the model errs toward holding (false alarm) over premature stand-down (false calm).
+
+**The headline is published as an interval, never a point.** A single number ("75.328%") projects a precision a forecast of an unprecedented event cannot have. The dashboard shows a range — the model's own recent spread, floored at a deliberate humility minimum and widened when data quality is low — alongside a plain statement of the model's reference-class limits and its error posture, so a reader knows how to weigh the number.
+
+The 0.90 ceiling is an explicit engineering decision — the model has no access to ground truth and must never emit near-certainty values.
 
 ### 5. Warmup Gate
 
