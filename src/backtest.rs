@@ -160,6 +160,16 @@ fn aged(scn: (f64, Vec<GeopoliticalEvent>), hours: i64) -> (f64, Vec<Geopolitica
     (rm, ev)
 }
 
+/// Stamp every event with a strongly de-escalatory escalation_step (a ceasefire / peace deal,
+/// −1 … +1 scale). Used to verify the persistence floor RELEASES on genuine de-escalation
+/// evidence rather than being propped up by mere silence (silence ≠ peace).
+#[cfg(test)]
+fn deescalated(scn: (f64, Vec<GeopoliticalEvent>)) -> (f64, Vec<GeopoliticalEvent>) {
+    let (rm, mut ev) = scn;
+    for e in &mut ev { e.escalation_step = -0.7; }
+    (rm, ev)
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────────
 
 /// Readout of the calibrated bands. Run with `cargo test calibration_readout -- --nocapture`.
@@ -199,6 +209,22 @@ fn diurnal_readout() {
     eprintln!();
 }
 
+/// Measured readout of the persistence floor: a silent war (floor HOLDS) vs the same corpus
+/// carrying de-escalation evidence (floor RELEASED), across ages. Run:
+///   cargo test persistence_floor_readout -- --nocapture
+#[test]
+fn persistence_floor_readout() {
+    eprintln!("\n── GCRM persistence floor (current_2026): silent war (floor holds) vs de-escalation (released) ──");
+    for h in [0i64, 12, 24, 48, 72, 96, 168, 336] {
+        let silent = { let s = aged(current_2026(), h); run(s.0, &s.1) };
+        let deesc  = { let s = aged(deescalated(current_2026()), h); run(s.0, &s.1) };
+        eprintln!("age {:>4}h   silent P={:6.2}% (L={:.3})    de-escalating P={:6.2}% (L={:.3})",
+            h, silent.p_wwiii_annual * 100.0, silent.likelihood_ratio,
+            deesc.p_wwiii_annual * 100.0, deesc.likelihood_ratio);
+    }
+    eprintln!();
+}
+
 #[test]
 fn diurnal_robustness_active_war_survives_a_news_lull() {
     // REALISM LOCK (2026-06-21). A systemic-war ANNUAL probability must not swing on a single
@@ -209,10 +235,11 @@ fn diurnal_robustness_active_war_survives_a_news_lull() {
     // half-life the systemic likelihood is essentially flat across an overnight lull, and only
     // genuine multi-day silence (a real de-escalation) cools it. This is the discipline the four
     // `bands_*` tests lacked — they all score at peak freshness, never exercising the decay.
+    // Scope: the LULL window (≤24h). The multi-day tail (hold vs de-escalation release) is the
+    // persistence floor's job and is locked by the `persistence_floor_*` tests below.
     let fresh = run(current_2026().0, &current_2026().1);
     let lull  = { let s = aged(current_2026(), 12);  run(s.0, &s.1) };  // overnight
     let day   = { let s = aged(current_2026(), 24);  run(s.0, &s.1) };  // a full quiet day
-    let week  = { let s = aged(current_2026(), 168); run(s.0, &s.1) };  // a week of silence
 
     // (1) An overnight lull keeps the systemic likelihood ≥93% intact and the headline P inside
     //     its calibration band — the model no longer confuses a quiet night with peace. Under the
@@ -227,15 +254,62 @@ fn diurnal_robustness_active_war_survives_a_news_lull() {
         "a 12h news lull must not drop P by >3pp; fresh={:.3} lull={:.3}",
         fresh.p_wwiii_annual, lull.p_wwiii_annual);
 
-    // (2) Decay is still ALIVE (not a frozen floor): a longer lull never reads hotter than a
-    //     shorter one.
+    // (2) Decay is still ALIVE in the lull window (not a frozen floor): a longer lull never reads
+    //     hotter than a shorter one.
     assert!(day.p_wwiii_annual <= lull.p_wwiii_annual + 1e-9,
         "a full-day lull must not read hotter than an overnight one");
+}
 
-    // (3) Genuine multi-day silence MUST register as real de-escalation: a week with no fresh
-    //     events on the same corpus falls well below the live band, back toward baseline.
-    assert!(week.p_wwiii_annual < 0.10,
-        "a week of silence must cool the read toward baseline, got {:.2}%", week.p_wwiii_annual * 100.0);
+// ── Persistence floor (PROTOTYPE) ──────────────────────────────────────────────────
+// The asymmetric, evidence-gated floor: a war HOLDS through a multi-day news gap (silence ≠
+// peace) but a war carrying genuine de-escalation evidence (negative escalation_step) is RELEASED
+// and cools to the pure-decay baseline. A quiet world never manufactures a phantom floor.
+
+#[test]
+fn persistence_floor_holds_a_silent_war_through_a_multiday_gap() {
+    // 96h (4 days) with NO fresh events and NO de-escalation evidence: the floor holds the read
+    // well above baseline — far above where the same corpus lands once de-escalation evidence
+    // releases the floor (which is the pure-72h-decay read). This is the core asymmetry.
+    let silent = { let s = aged(current_2026(), 96); run(s.0, &s.1) };
+    let released = { let s = aged(deescalated(current_2026()), 96); run(s.0, &s.1) };
+    assert!(silent.p_wwiii_annual > 0.18,
+        "a 4-day-silent active war should be HELD elevated by the floor, got {:.2}%", silent.p_wwiii_annual * 100.0);
+    assert!(silent.p_wwiii_annual > released.p_wwiii_annual + 0.10,
+        "the floor must hold a silent war ≥10pp above the de-escalation-released read; silent={:.2}% released={:.2}%",
+        silent.p_wwiii_annual * 100.0, released.p_wwiii_annual * 100.0);
+}
+
+#[test]
+fn persistence_floor_releases_on_deescalation_evidence() {
+    // Same 4-day-old corpus, but carrying ceasefire/peace evidence (escalation_step −0.7): the
+    // floor RELEASES and the read cools toward baseline — well below the silent (held) case and
+    // below the elevated band. Cooling is EARNED by evidence, not granted by mere silence.
+    let silent   = { let s = aged(current_2026(), 96); run(s.0, &s.1) };
+    let released = { let s = aged(deescalated(current_2026()), 96); run(s.0, &s.1) };
+    assert!(released.p_wwiii_annual < 0.10,
+        "a de-escalating war should cool toward baseline, got {:.2}%", released.p_wwiii_annual * 100.0);
+    assert!(released.p_wwiii_annual < 0.5 * silent.p_wwiii_annual,
+        "de-escalation must cool the read to under half the silent-hold value; released={:.2}% silent={:.2}%",
+        released.p_wwiii_annual * 100.0, silent.p_wwiii_annual * 100.0);
+}
+
+#[test]
+fn persistence_floor_never_engages_in_a_quiet_world() {
+    // Honesty invariant: a calm world (no theater at sustained war) must NEVER get a phantom floor.
+    // Aged a full week, quiet stays at baseline — the floor's war-rung gate keeps it at exactly zero.
+    let quiet_week = { let s = aged(quiet(), 168); run(s.0, &s.1) };
+    assert!(quiet_week.p_wwiii_annual < 0.05,
+        "a quiet world must not manufacture a persistence floor, got {:.2}%", quiet_week.p_wwiii_annual * 100.0);
+}
+
+#[test]
+fn persistence_floor_is_band_neutral_at_peak_freshness() {
+    // At age 0, slow_heat == fast_heat so floor = FLOOR_FRACTION × fast_heat < fast_heat → the
+    // floor cannot raise the read. All four bands scoring at Utc::now are therefore unchanged;
+    // this pins the no-regression property directly on the current-world analog.
+    let fresh = p_of(current_2026());
+    assert!(fresh > 0.55 && fresh < 0.75,
+        "the floor must not move the fresh current-world band, got {:.2}%", fresh * 100.0);
 }
 
 #[test]

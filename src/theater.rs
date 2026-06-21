@@ -22,9 +22,9 @@
 
 use std::collections::HashMap;
 
-use crate::bayesian::{co_occurrence_boost, domain_weight, soft_elevation_weight, DomainScorer, DOMAIN_WEIGHTS};
+use crate::bayesian::{co_occurrence_boost, domain_weight, recency_weight, soft_elevation_weight, DomainScorer, DOMAIN_WEIGHTS};
 use crate::models::{
-    EscalationRung, GeopoliticalEvent, SystemicCouplers, Theater, TheaterState,
+    DomainScore, EscalationRung, GeopoliticalEvent, SystemicCouplers, Theater, TheaterState,
     ELEVATION_THRESHOLD,
 };
 
@@ -140,6 +140,40 @@ const BREADTH_EFOLD: f64 = 1.7;
 /// head-to-head always outweighs mere breadth at equal intensity.
 pub const BRINK_AMPLIFIER: f64 = 0.70;
 
+// ── Persistence floor (PROTOTYPE, 2026-06-21) ─────────────────────────────────────
+// An active war is a sustained STATE, not a news pulse. The 72h kinetic half-life already
+// keeps a theater stable across an overnight lull; this floor handles the multi-DAY tail
+// ASYMMETRICALLY — fast rise, slow *earned* fall — so a war does not collapse during a
+// several-day news gap, yet still fades if it goes truly silent or shows de-escalation.
+//   heat = max(fast_heat, floor),  floor = FLOOR_FRACTION × slow_war_state_heat
+// where slow_war_state_heat is the SAME intra-theater heat recomputed with a long half-life.
+// Gated to theaters that reached sustained war and RELEASED on de-escalation evidence, so a
+// quiet world never manufactures phantom heat. At peak freshness fast_heat == slow_heat, so
+// the floor sits below fast_heat and the calibration bands (all scored at age 0) cannot move.
+// Provisional — fitted against the persistence/diurnal backtest scenarios.
+
+/// Multiplier on every domain half-life for the slow war-state floor. 5.0 turns the 72h kinetic
+/// half-life into a ~15-day floor decay, so a silent war fades over weeks rather than days.
+pub const WAR_STATE_HALF_LIFE_SCALE: f64 = 5.0;
+
+/// The floor holds at this fraction of the slow war-state heat. Strictly < 1.0 so that at peak
+/// freshness (fast_heat == slow_heat) floor < fast_heat → the live read is unchanged at age 0.
+/// 0.85 (Robert, 2026-06-21): engages by ~24h and catches the 1–2 day "data-gap cliff" (a 3-war
+/// world holds ~38% across a 2-day gap rather than decaying to ~31%), reflecting the chosen error
+/// posture — err toward holding (false alarm) over premature stand-down (false calm). The
+/// de-escalation gate still releases the floor regardless of this value.
+pub const FLOOR_FRACTION: f64 = 0.85;
+
+/// The floor engages only for a theater whose slow war-state heat reached at least sustained war
+/// (Limited-War rung). A crisis/tension spike never earns a multi-week floor, and a quiet world
+/// (slow heat ≈ 0) never gets phantom heat — the honesty invariant.
+pub const WAR_STATE_FLOOR_GATE: f64 = LIMITED_WAR_HEAT;
+
+/// Recency-weighted mean escalation_step below which a theater counts as genuinely DE-ESCALATING
+/// (escalation_step is −1 ceasefire/deal … +1 escalatory). When de-escalation evidence dominates,
+/// the floor is RELEASED so a real peace process cools the read quickly instead of being propped up.
+pub const DEESCALATION_STEP_THRESHOLD: f64 = -0.30;
+
 /// Canonical great-power actor ids → a coarse great-power label, for counting how
 /// many DISTINCT great powers are entangled across hot theaters.
 fn great_power_label(actor_id: &str) -> Option<&'static str> {
@@ -179,6 +213,35 @@ fn smoothstep(x: f64, lo: f64, hi: f64) -> f64 {
 
 fn max_weighted_sum() -> f64 {
     DOMAIN_WEIGHTS.iter().map(|(_, w)| w).sum()
+}
+
+/// Intra-theater heat from a set of modality scores: the weighted modality sum normalised by the
+/// maximum possible, amplified by the shared intra-theater co-occurrence boost, capped at 1.0.
+/// Factored out so the fast read and the slow war-state floor use the IDENTICAL formula.
+fn heat_from_scores(scores: &HashMap<String, DomainScore>) -> f64 {
+    let weighted: f64 = DOMAIN_WEIGHTS.iter()
+        .map(|(m, _)| scores.get(*m).map(|d| d.score * domain_weight(m)).unwrap_or(0.0))
+        .sum();
+    let soft_elev: f64 = scores.values().map(|d| soft_elevation_weight(d.score)).sum();
+    let cooc = co_occurrence_boost(soft_elev);
+    ((weighted / max_weighted_sum()) * cooc).min(1.0)
+}
+
+/// Whether a theater's recent coverage shows genuine de-escalation — the recency-weighted mean
+/// signed escalation_step (−1 ceasefire/deal … +1 escalatory) is below DEESCALATION_STEP_THRESHOLD.
+/// Recency-weighted (military half-life) so a fresh ceasefire outweighs stale war chatter; a theater
+/// with no qualifying events is NOT de-escalating (silence ≠ peace), which is what makes the floor
+/// hold through a lull but release on real conciliation.
+fn theater_is_deescalating(tev: &[GeopoliticalEvent]) -> bool {
+    let (mut wsum, mut w) = (0.0_f64, 0.0_f64);
+    for e in tev {
+        let rw = recency_weight(&e.published_at, "military_escalation");
+        if rw < 0.01 { continue; }
+        wsum += rw * e.escalation_step;
+        w += rw;
+    }
+    if w <= 0.0 { return false; }
+    (wsum / w) < DEESCALATION_STEP_THRESHOLD
 }
 
 /// Map a theater's heat (+ overrides) to a discrete escalation rung.
@@ -486,23 +549,29 @@ impl TheaterEngine {
         }
 
         // Peak-aware modality scoring on this theater's events (fresh scorer; the
-        // anomaly detector simply never fires with no cross-tick history).
+        // anomaly detector simply never fires with no cross-tick history). The displayed
+        // modality_scores below stay the FAST read — current evidence, not the floor.
+        // Intra-theater co-occurrence (inside heat_from_scores): simultaneous modalities within
+        // ONE theater are far more dangerous than the same breadth spread across the globe, and it
+        // reuses the shared `soft_elevation_weight` ramp so "elevated" means one thing model-wide.
         let mut scorer = DomainScorer::new();
         let scores = scorer.score_all(tev);
+        let fast_heat = heat_from_scores(&scores);
 
-        let weighted: f64 = DOMAIN_WEIGHTS.iter()
-            .map(|(m, _)| scores.get(*m).map(|d| d.score * domain_weight(m)).unwrap_or(0.0))
-            .sum();
-        // Intra-theater co-occurrence: simultaneous modalities within ONE theater
-        // are far more dangerous than the same breadth spread across the globe.
-        // Uses the shared `soft_elevation_weight` — the SAME smooth ramp the systemic
-        // co-occurrence uses — so "elevated" means one thing model-wide and a faint
-        // sub-threshold modality contributes exactly 0 (no drift, no phantom boost).
-        let soft_elev: f64 = scores.values()
-            .map(|d| soft_elevation_weight(d.score))
-            .sum();
-        let cooc = co_occurrence_boost(soft_elev);
-        let heat = ((weighted / max_weighted_sum()) * cooc).min(1.0);
+        // ── Persistence floor (PROTOTYPE) ──
+        // A slowly-decaying war-state heat (same formula, long half-life) holds a hot theater up
+        // through a multi-day lull. Gated to theaters that reached sustained war and released on
+        // de-escalation evidence, so a quiet world never gets a phantom floor and a real peace
+        // process cools fast. At age 0 slow_heat == fast_heat, so floor < fast_heat → no change.
+        let mut slow_scorer = DomainScorer::new();
+        let slow_scores = slow_scorer.score_all_scaled(tev, WAR_STATE_HALF_LIFE_SCALE);
+        let slow_heat = heat_from_scores(&slow_scores);
+        let floor = if slow_heat >= WAR_STATE_FLOOR_GATE && !theater_is_deescalating(tev) {
+            FLOOR_FRACTION * slow_heat
+        } else {
+            0.0
+        };
+        let heat = fast_heat.max(floor).min(1.0);
 
         let gp_involved      = tev.iter().any(|e| e.great_power_involved);
         let alliance_invoked = tev.iter().any(|e| e.alliance_indicator);
