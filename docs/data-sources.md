@@ -139,6 +139,23 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-21** (second run) — environmental block a **FIFTEENTH** consecutive session; honest
+  **NO-OP**. Re-probed fresh: WebFetch positive control on `raw.githubusercontent.com` correct
+  (`facebook/react` `package.json` → `private:true`/no name); NHC `CurrentStorms.json` **and**
+  the normally bot-friendly `api.open-meteo.com` (Ottawa current-temp) both **403** → egress-wide
+  WebFetch block unchanged, Path A still structurally impossible (owner-side). **Path B re-hunted
+  via the GitHub MCP** across both open gaps (AIS/vessel + conflict) and the geography gap: repo
+  searches (`AIS vessel positions geojson`, `conflict events fatalities geojson auto-update`,
+  `earthquake feed geojson updated hourly`, `meteoalarm/copernicus emergency geojson`) and code
+  searches (`"FeatureCollection"` vessel/earthquake geojson) returned **zero hits** — no
+  authoritative gov/scientific body self-publishes a fresh geocoded feed to
+  `raw.githubusercontent.com`. **Chip lever re-audited independently** (read `feed_detail`
+  end-to-end, lines 164–298): all 22 LIVE map feeds carry a meaningful, unit-bearing arm; the
+  `_ => None` tail is reached only by the non-geo catalog `cisa_kev`/`cccs` and finance-panel
+  `yahoo` — no honest offline chip edit remains. No code change; tree left clean; ledger run-log
+  only. **Did NOT re-send a push notification**: the env-network block is unchanged and already
+  escalated 6+ times — a 15th identical alert is noise. Standing first pick the moment WebFetch
+  reaches gov hosts: **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-21** — environmental block a **FOURTEENTH** consecutive session; honest **NO-OP**.
   Re-probed fresh (did not trust the prior thirteen lines). **WebFetch 403 on every non-GitHub
   host** — NHC `CurrentStorms.json`, `api.open-meteo.com` (Ottawa current-temp), USGS
