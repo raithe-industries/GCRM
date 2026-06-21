@@ -1102,10 +1102,16 @@ function applyData(d){
       // the rising arrow so the operator sees WHERE risk is concentrating, early.
       const rise=(t.trend==='rising'&&t.rising_driver)?domainLabel(t.rising_driver):'';
       const riseTag=rise?'<span class="tl-rise" style="color:#E24B4A" title="heating up on '+rise+'">↑ '+rise+'</span>':'';
-      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(t.gp_involved?' · great power engaged':'')+'">'
+      // Honesty: when the heat is HELD by the persistence floor (a remembered war-state carried
+      // through a news gap) rather than fresh evidence, say so — the number is a memory, not a
+      // live read, and it releases on de-escalation evidence. Amber "held" tag, distinct from a
+      // live-hot chip, so an operator doesn't mistake sustained silence for live fighting.
+      const held=!!t.held_by_floor;
+      const heldTag=held?'<span class="tl-held" style="color:#EF9F27" title="heat held by the persistence floor — no fresh escalation; a remembered war-state, released on de-escalation evidence">⏸ held</span>':'';
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(held?' · held by persistence floor (no fresh escalation)':'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
         +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
-        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
+        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+(heldTag?' '+heldTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
         +'</div>';
     }).join('');
   }

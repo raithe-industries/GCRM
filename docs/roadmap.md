@@ -355,6 +355,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.11 A floor-held theater is flagged, not shown as a live read** — **DONE 2026-06-21.**
+  The persistence floor (2026-06-21 model change) holds a hot theater's heat up through a multi-day
+  news gap (silence ≠ peace), so the displayed heat can be a *remembered* war-state rather than a
+  fresh measurement — but the operator had no way to tell a live-hot flashpoint from one the model
+  is holding quiet (pillar-1 "the number must mean what it says" + pillar-3 "show WHY"). Named the
+  state at its source: `TheaterState.held_by_floor = floor > fast_heat` (the floor strictly outweighs
+  the fresh read), honest by construction. Surfaced on the theater-ladder chip as an amber `⏸ held`
+  tag + tooltip ("heat held by the persistence floor — no fresh escalation; released on de-escalation
+  evidence"). DISPLAY-only — P(WWIII) untouched, all four calibration bands + Brier bit-identical.
+  Locked by `held_by_floor_flags_a_war_carried_through_a_news_gap_not_a_fresh_read` (theater.rs:
+  fresh→false, 4-day-silent→true, de-escalation-released→false, quiet-world→false) +
+  `dashboard_flags_a_floor_held_theater_instead_of_a_live_read` (server.rs render lock). See
+  improvement-log 2026-06-21.
 - [x] **3.10 Seismic test-consistency reaches the I&W board** — **DONE 2026-06-18.** The
   strongest PHYSICAL nuclear indicator — a shallow event at a known test site that has cleared
   the natural-earthquake discriminator (no aftershock sequence, or a CTBTO statement) — lived

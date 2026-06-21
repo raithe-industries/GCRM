@@ -314,7 +314,7 @@ mod tests {
             trend: "stable".into(), delta: 0.0, event_count: 5, gp_involved: gp,
             alliance_invoked: false, top_actors: actors.iter().map(|s| s.to_string()).collect(),
             top_driver: String::new(), rising_driver: String::new(),
-            secondary_driver: String::new(),
+            secondary_driver: String::new(), held_by_floor: false,
         }
     }
 
