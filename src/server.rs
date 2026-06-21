@@ -662,6 +662,32 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_capped_read_instead_of_a_measured_ceiling() {
+        // Pillar-1 honesty: when the forecast is hard-clamped to FORECAST_PROB_CEILING,
+        // the displayed number is a FLOOR, not a point estimate. A bare "90.0%" would
+        // masquerade as a measured 90%; the hero must read "≥" + carry a "capped" caveat,
+        // both gated on the server-computed `at_ceiling` flag (single source of truth:
+        // bayesian::is_at_forecast_ceiling).
+        assert!(
+            DASHBOARD_HTML.contains("at_ceiling"),
+            "dashboard no longer reads the server at_ceiling flag — a clamped read would show a bare measured 90%"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("_atCeiling"),
+            "dashboard no longer tracks the capped state"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("gauge-cap") && DASHBOARD_HTML.contains("capped at ceiling"),
+            "dashboard dropped the capped caveat — a clamped read would masquerade as a measured ceiling"
+        );
+        // The hero value must prefix "≥" when capped (a floor, not a point estimate).
+        assert!(
+            DASHBOARD_HTML.contains("(_atCeiling?'≥':'')+(pA*100).toFixed(1)"),
+            "hero P(WWIII) no longer marks a capped read with ≥"
+        );
+    }
+
+    #[test]
     fn dashboard_flags_a_blind_read_instead_of_claiming_live() {
         // Pillar-1 honesty: snapshots can keep arriving (connection Live, watchdog quiet)
         // while the window holds ZERO live events — a feed outage / cold start. Then the
