@@ -147,6 +147,16 @@ fn generate_dashboard_html(base_path: &str) -> String {
                  &format!("{:.0}", crate::bayesian::CONFIDENCE_EVENT_SATURATION))
         .replace("{{CONFIDENCE_SOURCE_SAT}}",
                  &format!("{:.0}", crate::bayesian::CONFIDENCE_SOURCE_SATURATION))
+        // The "For scale" info line and the hero's vs-history positioning anchor the bare
+        // P(WWIII)% to two crises an operator knows (Ukraine 2022, Cuba 1962). The two
+        // poles render from the model's OWN output for those analogs (backtest::
+        // analog_model_pct, the live engine via calibration_anchors), so the reference can
+        // never drift from what the model actually produces — and the hero positions the
+        // live read against them on the same scale. Same anti-drift pattern as P₀ above.
+        .replace("{{ANALOG_UKRAINE_PCT}}",
+                 &format!("{:.0}", crate::backtest::analog_model_pct("ukraine_2022").unwrap_or(39.0)))
+        .replace("{{ANALOG_CUBA_PCT}}",
+                 &format!("{:.0}", crate::backtest::analog_model_pct("cuba_1962").unwrap_or(80.0)))
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -893,6 +903,33 @@ mod tests {
             !DASHBOARD_HTML.contains("'M'+top.magnitude+' depth='"),
             "nuke banner reverted to the raw unformatted magnitude/depth concatenation"
         );
+    }
+
+    #[test]
+    fn dashboard_renders_historical_analogs_from_the_model() {
+        // The hero's vs-history positioning and the "For scale" info line anchor the bare
+        // P(WWIII)% to two crises an operator knows (Ukraine 2022, Cuba 1962). Both poles
+        // MUST render from the model's own analog output (templated), never a hand-typed
+        // literal that could silently drift after a recalibration — and the hero compares
+        // the live read against them on the same scale, so a stale pole would mis-position
+        // the read. The template carries the placeholders; the render substitutes them with
+        // backtest::analog_model_pct so the reference can never lie about the model's own scale.
+        assert!(DASHBOARD_HTML.contains("{{ANALOG_UKRAINE_PCT}}"),
+            "dashboard template lost the Ukraine-analog placeholder");
+        assert!(DASHBOARD_HTML.contains("{{ANALOG_CUBA_PCT}}"),
+            "dashboard template lost the Cuba-analog placeholder");
+        assert!(DASHBOARD_HTML.contains("function renderHistContext"),
+            "dashboard dropped the historical-positioning readout");
+        assert!(DASHBOARD_HTML.contains("id=\"gauge-hist\""),
+            "dashboard dropped the hero vs-history element");
+        let rendered = generate_dashboard_html("/risk");
+        assert!(!rendered.contains("{{ANALOG_UKRAINE_PCT}}") && !rendered.contains("{{ANALOG_CUBA_PCT}}"),
+            "analog placeholders were not substituted at render time");
+        let ukr = format!("{:.0}", crate::backtest::analog_model_pct("ukraine_2022").unwrap());
+        let cuba = format!("{:.0}", crate::backtest::analog_model_pct("cuba_1962").unwrap());
+        // The rendered poles must equal the live model's own analog output (one consistent scale).
+        assert!(rendered.contains(&format!("const HIST_UKR={}/100,HIST_CUBA={}/100", ukr, cuba)),
+            "rendered hero poles must embed the model's Ukraine ({ukr}) / Cuba ({cuba}) analog scores");
     }
 
     #[test]

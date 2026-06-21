@@ -378,6 +378,34 @@ pub fn calibration_evidence_html() -> String {
         ev.brier, ev.rmse * 100.0, ev.in_band, ev.n)
 }
 
+/// The live model's annualized P (as a percentage) for a named calibration analog —
+/// the single source of truth for the operator-facing "historical reference" scale on
+/// the dashboard (the For-scale info line + the hero's vs-history positioning). Driven
+/// by `calibration_anchors` (the running engine), so the reference can never drift from
+/// what the model ACTUALLY produces for that analog — and, crucially, the hero compares
+/// the LIVE read against these poles on the very same model scale. Returns `None` for an
+/// unknown analog. Startup-only (template substitution); no hot path.
+pub fn analog_model_pct(name: &str) -> Option<f64> {
+    calibration_anchors().into_iter().find(|a| a.name == name).map(|a| a.p * 100.0)
+}
+
+#[test]
+fn analog_model_pct_reports_the_live_model_output_for_named_analogs() {
+    // The dashboard's historical-reference poles must be the model's OWN output for each
+    // analog (so the live hero positions on one consistent scale), not Robert's expert
+    // centres — and they must keep the calibrated ordering. Unknown analogs → None.
+    let ukr = analog_model_pct("ukraine_2022").expect("ukraine analog");
+    let cuba = analog_model_pct("cuba_1962").expect("cuba analog");
+    // Same value calibration_anchors carries (the live engine), not a hand-typed constant.
+    let anchors = calibration_anchors();
+    let a_ukr = anchors.iter().find(|a| a.name == "ukraine_2022").unwrap().p * 100.0;
+    assert!((ukr - a_ukr).abs() < 1e-9, "must equal the live anchor's model output");
+    assert!(ukr < cuba, "Ukraine analog must score below the Cuba nuclear-brink analog");
+    assert!(ukr > 30.0 && ukr < 50.0, "ukraine analog ~39%, got {ukr:.2}%");
+    assert!(cuba > 70.0 && cuba < 90.0, "cuba analog ~80%, got {cuba:.2}%");
+    assert!(analog_model_pct("nope").is_none(), "unknown analog must be None");
+}
+
 #[test]
 fn brier_score_is_correct() {
     assert_eq!(brier_score(&[]), 0.0);

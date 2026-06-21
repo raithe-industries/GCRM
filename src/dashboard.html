@@ -417,6 +417,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
+      <!-- Historical positioning: where the live read sits on the model's OWN calibration
+           ladder (the same Ukraine-2022 / Cuba-1962 analog scores the For-scale info line
+           and the methodology table render), so the bare % gains meaning against crises an
+           operator knows. The two poles are server-substituted from the live model
+           (backtest::analog_model_pct), never hand-typed — same anti-drift guarantee as the
+           baseline prior. Filled by renderHistContext() in applyData. -->
+      <div class="gauge-hist" id="gauge-hist" style="font-size:8px;color:var(--t4);text-align:center;margin-top:2px;line-height:1.2"></div>
       <!-- Honesty caveat: shown only when the forecast is hard-clamped to
            FORECAST_PROB_CEILING. A clamped value is a FLOOR, not a measurement, so the
            hero reads "≥90.0%" and this line says the true read may be higher (capped for
@@ -781,6 +788,23 @@ const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data
 let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[];
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
 function pc(p){return p>=ALERT_CRIT?'var(--red)':p>=ALERT_ELEV?'var(--amber)':'var(--green)'}
+// Position the live annual P(WWIII) on the model's own historical-analog ladder so the
+// bare % reads against crises an operator knows. The two poles are the model's score for
+// each analog, server-substituted (anti-drift, single source of truth = the same engine
+// the live read comes from), so this is one consistent scale, not a hand-typed reference.
+// A read within HIST_NEAR of a pole snaps to "≈"; otherwise below / between / above.
+const HIST_UKR={{ANALOG_UKRAINE_PCT}}/100,HIST_CUBA={{ANALOG_CUBA_PCT}}/100,HIST_NEAR=0.03;
+function renderHistContext(p){
+  const el=document.getElementById('gauge-hist');if(!el)return;
+  const u=(HIST_UKR*100).toFixed(0),c=(HIST_CUBA*100).toFixed(0);
+  let t;
+  if(Math.abs(p-HIST_CUBA)<HIST_NEAR)      t='≈ Cuba-1962 ('+c+'%)';
+  else if(p>=HIST_CUBA)                    t='above Cuba-1962 ('+c+'%)';
+  else if(Math.abs(p-HIST_UKR)<HIST_NEAR)  t='≈ Ukraine-2022 ('+u+'%)';
+  else if(p>=HIST_UKR)                      t='between Ukraine-2022 ('+u+'%) & Cuba-1962 ('+c+'%)';
+  else                                      t='below Ukraine-2022 ('+u+'%)';
+  el.textContent='vs history: '+t;
+}
 // Escalation-rung → 0..5 level → severity colour (mirrors EscalationRung::level in
 // the engine; keep in sync if a rung is ever added/removed).
 const RUNG_LVL={stable:0,tension:1,crisis:2,limited_war:3,great_power_war:4,systemic:5};
@@ -802,7 +826,7 @@ const INFO={
   risk:{title:'WWIII Risk (Annual)',html:`
     <p><b>WWIII Risk (Annual)</b> is the model's estimate of the probability that a <b>world-war-scale conflict begins within the next 12 months</b>, read continuously from live news.</p>
     <span class="ih">For scale</span>
-    <p><code>~{{BASELINE_ANNUAL_PCT}}%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~39%</code> ≈ Ukraine, Feb 2022 · <code>~80%</code> ≈ Cuba, Oct 1962.</p>
+    <p><code>~{{BASELINE_ANNUAL_PCT}}%</code> modern quiet-year baseline · <code>≥8%</code> critical · <code>~{{ANALOG_UKRAINE_PCT}}%</code> ≈ Ukraine, Feb 2022 · <code>~{{ANALOG_CUBA_PCT}}%</code> ≈ Cuba, Oct 1962. These two are the live model's own score for each crisis, not hand-typed.</p>
     <span class="ih">How it's built</span>
     <p>The forecast starts from a <b>flat</b> modern quiet-year baseline and folds in a <b>systemic coupling likelihood</b> on the log-odds scale — drawn from the five force domains across theaters and amplified by great-power entanglement, multi-theater concurrency, and structural <b>guardrail collapse</b> (arms-control death, deterrence erosion). The regime no longer inflates the prior; it enters the likelihood through guardrail collapse. The more domains elevated and entangled across great powers, the higher the read. The sub-line is the change since the previous snapshot.</p>`},
   driver:{title:'Primary Driver',html:`
@@ -1007,6 +1031,7 @@ function applyData(d){
   const _atCeiling=!!(d.meta&&d.meta.at_ceiling);
   const gv=document.getElementById('gauge-val');gv.textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(1)+'%';gv.style.color=pCol;
   const _gc=document.getElementById('gauge-cap');if(_gc)_gc.style.display=_atCeiling?'block':'none';
+  renderHistContext(pA);
   // Live movement of P(WWIII): heartbeat dot blips every recompute; the arrow shows
   // direction at all times; the Δ/s shows only when it actually moves (when the
   // inputs don't change the output genuinely doesn't either — so we don't fake it).
