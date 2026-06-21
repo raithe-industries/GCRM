@@ -345,12 +345,23 @@ fn is_tracked_actor(actor: &str) -> bool {
 /// score_all (where this is a multiplier). Clamp age to 0 so a future-dated
 /// event is treated as brand-new (weight 1.0) rather than super-weighted.
 pub fn recency_weight(published_at: &DateTime<Utc>, domain: &str) -> f64 {
+    recency_weight_scaled(published_at, domain, 1.0)
+}
+
+/// Recency weight with the domain half-life multiplied by `half_life_scale`. `scale = 1.0`
+/// reproduces `recency_weight` exactly. The persistence-floor prototype (theater.rs) uses a
+/// large scale (the "war-state" half-life) to compute a slowly-decaying floor under a hot
+/// theater, so an active war does not collapse during a multi-day news lull while still
+/// fading if it goes truly silent. Scale only affects AGED events: at age 0 the weight is
+/// 1.0 for any scale, so any floor built on this is identical to the fast read at peak
+/// freshness — the calibration bands (all scored at Utc::now) are provably unchanged.
+pub fn recency_weight_scaled(published_at: &DateTime<Utc>, domain: &str, half_life_scale: f64) -> f64 {
     let age_hours = (Utc::now() - *published_at).num_seconds() as f64 / 3600.0;
     if age_hours > MAX_EVENT_AGE_HOURS {
         return 0.0;
     }
     let age_hours = age_hours.max(0.0); // future-dated → treat as "just now", cap weight at 1.0
-    let half_life = domain_half_life(domain);
+    let half_life = domain_half_life(domain) * half_life_scale.max(1e-9);
     (-std::f64::consts::LN_2 * age_hours / half_life).exp()
 }
 
@@ -420,6 +431,13 @@ impl DomainScorer {
     }
 
     pub fn score_all(&mut self, events: &[GeopoliticalEvent]) -> HashMap<String, DomainScore> {
+        self.score_all_scaled(events, 1.0)
+    }
+
+    /// As `score_all`, but the recency decay uses each domain's half-life × `half_life_scale`.
+    /// `scale = 1.0` is the normal (fast) read. The persistence-floor prototype calls this with
+    /// a large scale to obtain a slowly-decaying "war-state" heat for the floor (see theater.rs).
+    pub fn score_all_scaled(&mut self, events: &[GeopoliticalEvent], half_life_scale: f64) -> HashMap<String, DomainScore> {
         // Local accumulators — named scored_* to avoid shadowing event.domain_signals field.
         let mut scored_signals:    HashMap<String, Vec<f64>>        = HashMap::new();
         let mut domain_event_ids:  HashMap<String, Vec<String>>     = HashMap::new();
@@ -456,7 +474,7 @@ impl DomainScorer {
                 if !DOMAIN_WEIGHTS.iter().any(|(d, _)| *d == domain) {
                     continue;
                 }
-                let rw = recency_weight(&event.published_at, &domain);
+                let rw = recency_weight_scaled(&event.published_at, &domain, half_life_scale);
                 if rw < 0.01 { continue; }
 
                 // Corroboration factor: each additional confirmed source adds
