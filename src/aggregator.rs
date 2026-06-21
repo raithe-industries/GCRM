@@ -467,6 +467,90 @@ impl EpochStore {
             }),
         }
     }
+
+    /// Honest headline interval around the current P(WWIII), computed server-side from the durable
+    /// ring (like [`trend_6h`]). The dashboard renders the BAND, never a bare point. See
+    /// [`Self::uncertainty_window`] for the construction.
+    pub fn uncertainty_6h(&self, current_p: f64, confidence: f64) -> serde_json::Value {
+        self.uncertainty_window(current_p, confidence, Utc::now(), 6 * 3600)
+    }
+
+    /// Testable core of [`uncertainty_6h`]. The interval half-width is:
+    ///   hw = max(empirical, HUMILITY_FLOOR_HW) × (1 + DATA_QUALITY_WIDENING × (1 − confidence))
+    /// where `empirical` is half the central-80% (P10..P90) spread of the last-window reads — how
+    /// much the model itself has actually been moving. The humility floor means a momentarily
+    /// stable read still publishes an honest band (stability ≠ being right about the future), and
+    /// thin/stale data widens it further. Clamped to [0, FORECAST_PROB_CEILING] so the band never
+    /// claims a value above the engineering ceiling. `floored` flags that the irreducible humility
+    /// floor — not observed volatility — is what set the width.
+    pub fn uncertainty_window(
+        &self,
+        current_p: f64,
+        confidence: f64,
+        now: DateTime<Utc>,
+        window_secs: i64,
+    ) -> serde_json::Value {
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        let mut ps: Vec<f64> = Vec::new();
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue,
+            };
+            if t < cutoff {
+                break;
+            }
+            if let Some(p) = e.get("p_annual").and_then(|v| v.as_f64()) {
+                ps.push(p);
+            }
+        }
+        // Empirical half-width = half the central-80% spread of recent reads (robust to single spikes).
+        let empirical_hw = if ps.len() >= 4 {
+            ps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            (percentile_sorted(&ps, 0.90) - percentile_sorted(&ps, 0.10)) / 2.0
+        } else {
+            0.0
+        };
+        let conf = confidence.clamp(0.0, 1.0);
+        let floored = empirical_hw < crate::models::HUMILITY_FLOOR_HW;
+        let hw = empirical_hw.max(crate::models::HUMILITY_FLOOR_HW)
+            * (1.0 + crate::models::DATA_QUALITY_WIDENING * (1.0 - conf));
+        let low = (current_p - hw).max(0.0);
+        let high = (current_p + hw).min(crate::models::FORECAST_PROB_CEILING);
+        let r6 = |x: f64| (x * 1e6).round() / 1e6;
+        serde_json::json!({
+            "low":             r6(low),
+            "high":            r6(high),
+            "low_pct":         (low  * 100.0 * 1e2).round() / 1e2,
+            "high_pct":        (high * 100.0 * 1e2).round() / 1e2,
+            "half_width_pct":  (hw   * 100.0 * 1e2).round() / 1e2,
+            "empirical_hw_pct":(empirical_hw * 100.0 * 1e2).round() / 1e2,
+            "floored":         floored,
+            "samples":         ps.len(),
+            "basis": "central-80% of the last 6h of model reads, floored at the humility minimum \
+                      for irreducible forecast uncertainty, widened when data quality is low",
+        })
+    }
+}
+
+/// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
+/// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
+fn percentile_sorted(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let rank = q.clamp(0.0, 1.0) * (sorted.len() - 1) as f64;
+    let lo = rank.floor() as usize;
+    let hi = rank.ceil() as usize;
+    let frac = rank - lo as f64;
+    sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }
 
 /// Boot loader: reads timeline JSONL files from disk once at startup and
@@ -1628,6 +1712,70 @@ mod tests {
         assert_eq!(tr["samples"], 2); // the 10h-old one excluded
         assert!((tr["baseline"].as_f64().unwrap() - 0.70).abs() < 1e-9);
         assert!((tr["delta"].as_f64().unwrap() - 0.05).abs() < 1e-9);
+    }
+
+    // ── Honesty-layer uncertainty interval ────────────────────────────────────────
+
+    #[test]
+    fn percentile_sorted_interpolates_and_handles_edges() {
+        assert_eq!(percentile_sorted(&[], 0.5), 0.0);
+        assert_eq!(percentile_sorted(&[0.4], 0.9), 0.4);
+        let v = [0.0, 0.25, 0.5, 0.75, 1.0];
+        assert!((percentile_sorted(&v, 0.0) - 0.0).abs() < 1e-12);
+        assert!((percentile_sorted(&v, 1.0) - 1.0).abs() < 1e-12);
+        assert!((percentile_sorted(&v, 0.5) - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn uncertainty_stable_read_falls_back_to_the_humility_floor() {
+        // A dead-flat recent series has ~zero empirical spread, so the band must be the deliberate
+        // humility floor — NOT a near-zero width. Stability is not the same as certainty.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.72)); }
+        let u = es.uncertainty_window(0.72, 1.0, now, 6 * 3600); // confidence 1.0 → no widening
+        assert_eq!(u["floored"], true, "a flat series must be floored at the humility minimum");
+        let hw = (u["half_width_pct"].as_f64().unwrap()) / 100.0;
+        assert!((hw - crate::models::HUMILITY_FLOOR_HW).abs() < 1e-6,
+            "flat + full confidence → half-width == humility floor, got {hw}");
+        // The band straddles the point estimate.
+        assert!(u["low"].as_f64().unwrap() < 0.72 && u["high"].as_f64().unwrap() > 0.72);
+    }
+
+    #[test]
+    fn uncertainty_volatile_read_widens_beyond_the_floor() {
+        // A bouncing recent series has a real spread that must widen the band past the floor —
+        // the model being visibly unstable is honestly reflected as a wider interval.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for (i, p) in [0.50, 0.62, 0.55, 0.70, 0.58, 0.66, 0.52, 0.68].iter().enumerate() {
+            es.push(epoch_at(300 - i as i64 * 30, now, *p));
+        }
+        let u = es.uncertainty_window(0.60, 1.0, now, 6 * 3600);
+        assert_eq!(u["floored"], false, "a volatile series must exceed the humility floor");
+        assert!((u["half_width_pct"].as_f64().unwrap()) / 100.0 > crate::models::HUMILITY_FLOOR_HW);
+    }
+
+    #[test]
+    fn uncertainty_low_data_quality_widens_the_band() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.40)); }
+        let full = es.uncertainty_window(0.40, 1.0, now, 6 * 3600);
+        let thin = es.uncertainty_window(0.40, 0.5, now, 6 * 3600); // half confidence
+        assert!(thin["half_width_pct"].as_f64().unwrap() > full["half_width_pct"].as_f64().unwrap(),
+            "lower data-quality must widen the interval");
+    }
+
+    #[test]
+    fn uncertainty_band_is_clamped_to_zero_and_the_ceiling() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.89)); }
+        // Near the ceiling with low confidence: high must clamp at FORECAST_PROB_CEILING, low ≥ 0.
+        let u = es.uncertainty_window(0.89, 0.2, now, 6 * 3600);
+        assert!(u["high"].as_f64().unwrap() <= crate::models::FORECAST_PROB_CEILING + 1e-12);
+        assert!(u["low"].as_f64().unwrap() >= 0.0);
     }
 
     #[test]

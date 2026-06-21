@@ -416,6 +416,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <!-- HERO dial — forward-looking outlook: annual P(WWIII) -->
       <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
+      <!-- Honesty layer: the headline is published as a RANGE, never a false-precise point. The
+           band is the model's own recent spread, floored at a deliberate humility minimum and
+           widened when data is thin (server-computed, EpochStore::uncertainty_6h). A point
+           estimate of an unprecedented event would claim a precision the model does not have. -->
+      <div class="gauge-interval" id="gauge-interval" style="font-size:10px;color:var(--t3);text-align:center;margin-top:1px;line-height:1.2;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
       <!-- Historical positioning: where the live read sits on the model's OWN calibration
            ladder (the same Ukraine-2022 / Cuba-1962 analog scores the For-scale info line
@@ -430,6 +435,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            epistemic humility — the model has no ground truth). Hidden in every normal
            state. Driven by meta.at_ceiling (bayesian::is_at_forecast_ceiling). -->
       <div class="gauge-cap" id="gauge-cap" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">▲ capped at ceiling · true read may be higher</div>
+      <!-- Error posture (honesty layer): names which mistake the model is tuned to prefer, so a
+           reader knows how to weigh the number. Every choice has consequences; this makes ours
+           legible. Server-driven from models::ERROR_POSTURE_NOTE (single source of truth); the
+           reference-class limit is the hover title and the methodology page. -->
+      <div class="gauge-posture" id="gauge-posture" style="font-size:8px;color:var(--t4);text-align:center;margin-top:3px;line-height:1.25" title="">—</div>
       <!-- Live movement of P(WWIII): the dot blips on every recompute (heartbeat),
            the arrow shows direction at all times (▲ rising / ▼ falling / ↔ steady),
            and the Δ/s shows only when it actually moves. The Bayesian chain itself
@@ -1031,6 +1041,18 @@ function applyData(d){
   const _atCeiling=!!(d.meta&&d.meta.at_ceiling);
   const gv=document.getElementById('gauge-val');gv.textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(1)+'%';gv.style.color=pCol;
   const _gc=document.getElementById('gauge-cap');if(_gc)_gc.style.display=_atCeiling?'block':'none';
+  // Honesty layer: render the headline INTERVAL (a range, not a point) and the error posture.
+  const _u=d.uncertainty,_gi=document.getElementById('gauge-interval');
+  if(_gi){
+    if(_u&&typeof _u.low_pct==='number'&&typeof _u.high_pct==='number'){
+      _gi.textContent='range '+_u.low_pct.toFixed(0)+'–'+_u.high_pct.toFixed(0)+'%'+(_atCeiling?' · capped':'');
+    } else { _gi.textContent=''; }
+  }
+  const _ep=d.epistemic,_gp=document.getElementById('gauge-posture');
+  if(_gp){
+    if(_ep&&_ep.error_posture){ _gp.textContent='⚖ '+_ep.error_posture; _gp.title=_ep.reference_class||''; }
+    else { _gp.textContent=''; }
+  }
   renderHistContext(pA);
   // Live movement of P(WWIII): heartbeat dot blips every recompute; the arrow shows
   // direction at all times; the Δ/s shows only when it actually moves (when the
