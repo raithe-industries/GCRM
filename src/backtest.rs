@@ -146,6 +146,20 @@ fn p_of(scn: (f64, Vec<GeopoliticalEvent>)) -> f64 {
     run(scn.0, &scn.1).p_wwiii_annual
 }
 
+/// Re-date every event in a scenario to `hours` ago. The four `bands_*` analogs all score
+/// at peak freshness (Utc::now()), so the decay half-lives were never exercised by the
+/// harness — yet the live model's read moves continuously as events age between news bursts.
+/// This lets the diurnal-robustness lock score the SAME conflict corpus after a news lull
+/// (an overnight gap with no fresh events) to verify the systemic read does not collapse on
+/// a quiet cycle while the underlying wars are unchanged.
+#[cfg(test)]
+fn aged(scn: (f64, Vec<GeopoliticalEvent>), hours: i64) -> (f64, Vec<GeopoliticalEvent>) {
+    let (rm, mut ev) = scn;
+    let t = Utc::now() - chrono::Duration::hours(hours);
+    for e in &mut ev { e.published_at = t; }
+    (rm, ev)
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────────
 
 /// Readout of the calibrated bands. Run with `cargo test calibration_readout -- --nocapture`.
@@ -169,6 +183,59 @@ fn calibration_readout() {
             c.gp_entanglement, c.guardrail_collapse, snap.driver);
     }
     eprintln!();
+}
+
+/// Measured readout of the news-lull behavior. Run:
+///   cargo test diurnal_readout -- --nocapture
+#[test]
+fn diurnal_readout() {
+    eprintln!("\n── GCRM diurnal robustness (current_2026 aged across a news lull) ──");
+    for h in [0i64, 6, 12, 18, 24, 48, 72, 168] {
+        let s = aged(current_2026(), h);
+        let snap = run(s.0, &s.1);
+        eprintln!("age {:>4}h  P={:6.2}%  L_sys={:.3}  idx={:5.1}",
+            h, snap.p_wwiii_annual * 100.0, snap.likelihood_ratio, snap.systemic_index);
+    }
+    eprintln!();
+}
+
+#[test]
+fn diurnal_robustness_active_war_survives_a_news_lull() {
+    // REALISM LOCK (2026-06-21). A systemic-war ANNUAL probability must not swing on a single
+    // quiet news cycle. Before the fix, military escalation decayed with a 24h half-life, so a
+    // half-day with no fresh kinetic events halved the dominant signal and the live read sagged
+    // ~10pp overnight even though three great-power wars were unchanged on the ground — the model
+    // was tracking news VOLUME, not conflict STATE. With the corrected 72h sustained-state
+    // half-life the systemic likelihood is essentially flat across an overnight lull, and only
+    // genuine multi-day silence (a real de-escalation) cools it. This is the discipline the four
+    // `bands_*` tests lacked — they all score at peak freshness, never exercising the decay.
+    let fresh = run(current_2026().0, &current_2026().1);
+    let lull  = { let s = aged(current_2026(), 12);  run(s.0, &s.1) };  // overnight
+    let day   = { let s = aged(current_2026(), 24);  run(s.0, &s.1) };  // a full quiet day
+    let week  = { let s = aged(current_2026(), 168); run(s.0, &s.1) };  // a week of silence
+
+    // (1) An overnight lull keeps the systemic likelihood ≥93% intact and the headline P inside
+    //     its calibration band — the model no longer confuses a quiet night with peace. Under the
+    //     old 24h half-life a 12h lull dropped l_sys far more, so this bound genuinely pins the fix.
+    assert!(lull.likelihood_ratio >= 0.93 * fresh.likelihood_ratio,
+        "12h lull must retain ≥93% of l_sys; fresh={:.3} lull={:.3} ({:.0}%)",
+        fresh.likelihood_ratio, lull.likelihood_ratio,
+        100.0 * lull.likelihood_ratio / fresh.likelihood_ratio);
+    assert!(lull.p_wwiii_annual > 0.55 && lull.p_wwiii_annual < 0.75,
+        "12h lull must stay in the current-world band (0.55–0.75), got {:.2}%", lull.p_wwiii_annual * 100.0);
+    assert!(lull.p_wwiii_annual > fresh.p_wwiii_annual - 0.03,
+        "a 12h news lull must not drop P by >3pp; fresh={:.3} lull={:.3}",
+        fresh.p_wwiii_annual, lull.p_wwiii_annual);
+
+    // (2) Decay is still ALIVE (not a frozen floor): a longer lull never reads hotter than a
+    //     shorter one.
+    assert!(day.p_wwiii_annual <= lull.p_wwiii_annual + 1e-9,
+        "a full-day lull must not read hotter than an overnight one");
+
+    // (3) Genuine multi-day silence MUST register as real de-escalation: a week with no fresh
+    //     events on the same corpus falls well below the live band, back toward baseline.
+    assert!(week.p_wwiii_annual < 0.10,
+        "a week of silence must cool the read toward baseline, got {:.2}%", week.p_wwiii_annual * 100.0);
 }
 
 #[test]

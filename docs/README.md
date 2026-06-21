@@ -111,7 +111,7 @@ The historical anchor (2 world wars / 2026 years ≈ 0.0987%/yr) provides the Ba
 
 Co-occurrence amplification applies non-linear boosts when multiple domains are simultaneously elevated: 2 elevated → 1.3×, 3 → 2.0×, 5+ → 5.0×. This captures the compounding danger of simultaneous crises.
 
-Domain-specific exponential decay ensures recent events matter more: military escalation decays with a 24-hour half-life, nuclear posture changes persist at 72 hours, economic warfare at 96 hours.
+Domain-specific exponential decay ensures recent events matter more, with each half-life set to how long that modality's STATE persists without fresh confirmation — not how long a single news pulse trends. An active kinetic war is a sustained strategic state, so military escalation persists at a 72-hour half-life (a peer of nuclear posture at 72 hours); economic warfare lingers longest at 96 hours, diplomatic breakdown at 48, and genuinely episodic cyber/info ops at 24. This keeps the systemic read stable across an overnight news lull while still cooling over a multi-day silence — the signature of a real de-escalation.
 
 The 0.85 ceiling is an explicit engineering decision — the model has no access to ground truth and must never emit near-certainty values.
 

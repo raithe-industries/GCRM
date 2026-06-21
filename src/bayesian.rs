@@ -22,11 +22,24 @@ use crate::theater::{TheaterEngine, EVIDENCE_GAIN_SYS, COUPLING_AMPLIFIER_FLOOR}
 
 /// Domain-specific decay half-lives in hours.
 /// Fast-moving domains decay quickly; structural ones persist longer.
+///
+/// The half-life encodes how long a modality's STATE persists without fresh
+/// confirmation — not how long a single news pulse trends. This distinction was the
+/// 2026-06-21 realism fix for `military_escalation`: it was 24h ("battles" — episodic
+/// engagements), which made the model forget an *active war* within a day whenever the
+/// news cycle slowed (e.g. overnight), so P(WWIII) sagged ~10pp on a quiet night while
+/// three great-power wars were unchanged on the ground — the model was measuring news
+/// VOLUME, not conflict STATE. An active kinetic war is a sustained strategic state, as
+/// persistent as an extreme nuclear posture, so military now shares nuclear's 72h
+/// half-life. Genuine de-escalation (a ceasefire: a multi-day drop in fresh kinetic
+/// events + de-escalation language) still registers — just on a 2–3 day scale, which is
+/// the correct timescale for an ANNUAL systemic-war probability that must not swing on a
+/// single news lull. The diurnal-robustness lock in backtest.rs pins this property.
 pub const DOMAIN_HALF_LIVES: &[(&str, f64)] = &[
-    ("military_escalation",  24.0),   // KINETIC — battles; active wars are persistent
+    ("military_escalation",  72.0),   // KINETIC — an active war is a sustained state (was 24h; see note above)
     ("nuclear_posture",      72.0),   // NUCLEAR — posture changes persist
-    ("economic_warfare",     96.0),   // COERCIVE-ECONOMIC — blockades/sanctions linger
-    ("cyber_info_ops",       24.0),   // CYBER/INFO — episodic
+    ("economic_warfare",     96.0),   // COERCIVE-ECONOMIC — blockades/sanctions linger longest
+    ("cyber_info_ops",       24.0),   // CYBER/INFO — genuinely episodic (a discrete operation/leak)
     ("diplomatic_breakdown", 48.0),   // DIPLOMATIC — channel breakdown lingers
 ];
 
@@ -1019,10 +1032,15 @@ mod tests {
     }
 
     #[test]
-    fn h24_event_weight_near_half() {
-        let pub_at = Utc::now() - Duration::hours(24);
-        let w = recency_weight(&pub_at, "military_escalation");
-        assert!(w > 0.45 && w < 0.55);
+    fn military_half_life_is_72h() {
+        // Military escalation now persists like nuclear posture (72h): an active war is a
+        // sustained state, not an episodic news pulse (2026-06-21 realism fix). At one
+        // half-life (72h) the weight is ~0.5; at the OLD half-life (24h) it is still ~0.79,
+        // not halved — the property that keeps the systemic read stable across a news lull.
+        let w_72 = recency_weight(&(Utc::now() - Duration::hours(72)), "military_escalation");
+        assert!(w_72 > 0.45 && w_72 < 0.55, "72h military weight should be ~0.5, got {w_72}");
+        let w_24 = recency_weight(&(Utc::now() - Duration::hours(24)), "military_escalation");
+        assert!(w_24 > 0.75 && w_24 < 0.82, "24h military weight should now be ~0.79, got {w_24}");
     }
 
     #[test]
@@ -1044,17 +1062,30 @@ mod tests {
 
     #[test]
     fn h72_event_still_has_weight() {
+        // At ~one half-life (73h) a military event retains ~half its weight (sustained-state
+        // 72h half-life): a multi-day-old war signal still counts, but is clearly decayed.
         let pub_at = Utc::now() - Duration::hours(73);
         let w = recency_weight(&pub_at, "military_escalation");
-        assert!(w > 0.0 && w < 0.5);
+        assert!(w > 0.40 && w < 0.55, "73h military weight should be ~half, got {w}");
     }
 
     #[test]
-    fn nuclear_domain_decays_slower_than_military() {
+    fn sustained_state_domains_decay_slowest_cyber_fastest() {
+        // Corrected persistence ordering (2026-06-21): military escalation is a sustained
+        // strategic state and now shares nuclear posture's 72h half-life — they are PEERS,
+        // both slower than diplomatic (48h) and far slower than the genuinely episodic cyber
+        // (24h); economic warfare (96h) lingers longest of all. This locks the realism intent
+        // that an active war must not decay faster than a nuclear posture shift.
         let pub_at = Utc::now() - Duration::hours(48);
-        let w_mil = recency_weight(&pub_at, "military_escalation");
-        let w_nuc = recency_weight(&pub_at, "nuclear_posture");
-        assert!(w_nuc > w_mil);
+        let w_cyber = recency_weight(&pub_at, "cyber_info_ops");
+        let w_diplo = recency_weight(&pub_at, "diplomatic_breakdown");
+        let w_mil   = recency_weight(&pub_at, "military_escalation");
+        let w_nuc   = recency_weight(&pub_at, "nuclear_posture");
+        let w_eco   = recency_weight(&pub_at, "economic_warfare");
+        assert!(w_cyber < w_diplo, "cyber must decay fastest");
+        assert!(w_diplo < w_mil,   "military must persist longer than diplomatic");
+        assert!((w_mil - w_nuc).abs() < 1e-9, "military and nuclear are sustained-state peers (both 72h)");
+        assert!(w_eco > w_nuc,     "economic warfare must linger longest");
     }
 
     #[test]
@@ -1097,18 +1128,28 @@ mod tests {
     }
 
     #[test]
-    fn actor_tracker_drops_military_actors_at_82h() {
-        // Military event at 82h. The 0.1 threshold is crossed at:
-        //   h = 24 × ln(10) / ln(2) ≈ 79.73h
-        // At 82h: recency_weight("military_escalation", 82h) = exp(-ln2 × 82/24) ≈ 0.0975 < 0.1.
-        // At 78h: recency_weight = exp(-ln2 × 78/24) ≈ 0.1047 > 0.1 (not yet dropped).
-        // 82h is safely past the threshold in both directions.
-        let mut tracker = ActorTracker::default();
-        let mut event = make_event_with_signals("military_escalation", 0.9, 82.0, SourceTier::Tier1);
-        event.actor_ids = vec!["russia_military".into()];
-        tracker.update(&[event]);
-        assert!(!tracker.counts.contains_key("russia_military"),
-            "Military actor at 82h should be dropped — recency_weight(military, 82h) ≈ 0.0975 < 0.1");
+    fn actor_tracker_retains_military_actors_at_82h_drops_past_10_days() {
+        // Corrected for the 72h sustained-state military half-life (2026-06-21). The 0.1
+        // retention threshold is now crossed at:
+        //   h = 72 × ln(10) / ln(2) ≈ 239.2h (~10 days)
+        // so a military actor at 82h is RETAINED (an active war's combatant stays tracked,
+        // not forgotten overnight), and is only dropped once the kinetic signal has been
+        // silent for well over a week.
+        // At 82h:  recency_weight("military_escalation", 82h)  = exp(-ln2 × 82/72)  ≈ 0.454 > 0.1 (retained).
+        // At 260h: recency_weight("military_escalation", 260h) = exp(-ln2 × 260/72) ≈ 0.082 < 0.1 (dropped).
+        let mut retained = ActorTracker::default();
+        let mut e82 = make_event_with_signals("military_escalation", 0.9, 82.0, SourceTier::Tier1);
+        e82.actor_ids = vec!["russia_military".into()];
+        retained.update(&[e82]);
+        assert!(retained.counts.contains_key("russia_military"),
+            "Military actor at 82h should now be retained — recency_weight(military, 82h) ≈ 0.454 > 0.1");
+
+        let mut dropped = ActorTracker::default();
+        let mut e260 = make_event_with_signals("military_escalation", 0.9, 260.0, SourceTier::Tier1);
+        e260.actor_ids = vec!["russia_military".into()];
+        dropped.update(&[e260]);
+        assert!(!dropped.counts.contains_key("russia_military"),
+            "Military actor at 260h (~11 days quiet) should be dropped — recency_weight ≈ 0.082 < 0.1");
     }
 
     #[test]
@@ -1153,13 +1194,13 @@ mod tests {
             "Test".into(), "src".into(), SourceTier::Tier1, Utc::now()
         );
         event.domain_signals = [
-            ("military_escalation".into(), 0.5),  // 24h
-            ("nuclear_posture".into(),     0.8),  // 72h — longest
+            ("cyber_info_ops".into(),      0.5),  // 24h
+            ("nuclear_posture".into(),     0.8),  // 72h — longest of this pair
         ].into_iter().collect();
         event.event_type = EventType::NuclearTest;
         let hl = event_max_half_life(&event);
         assert!((hl - 72.0).abs() < 1e-9,
-            "Max half-life for military+nuclear event should be 72h (nuclear_posture), got {hl}");
+            "Max half-life for a cyber+nuclear event should be 72h (nuclear_posture), got {hl}");
     }
 
     #[test]
@@ -1171,8 +1212,8 @@ mod tests {
         event.event_type = EventType::MilitaryStrike;
         // No domain_signals, no domain_tags
         let hl = event_max_half_life(&event);
-        assert!((hl - 24.0).abs() < 1e-9,
-            "Max half-life with no domains should fall back to military_escalation 24h, got {hl}");
+        assert!((hl - 72.0).abs() < 1e-9,
+            "Max half-life with no domains should fall back to military_escalation 72h, got {hl}");
     }
 
     // ── Domain scorer ─────────────────────────────────────────────────────────
@@ -1203,13 +1244,21 @@ mod tests {
     }
 
     #[test]
-    fn h80_event_still_scores() {
-        // weight = exp(-ln2 * 80/24) ≈ 0.099 — small but non-zero
-        let mut scorer = DomainScorer::new();
-        let event = make_event("military_escalation", 0.7, 80.0, SourceTier::Tier1);
-        let scores = scorer.score_all(&[event]);
-        assert!(scores["military_escalation"].score > 0.0);
-        assert!(scores["military_escalation"].score < 0.15);
+    fn h80_event_still_scores_but_is_decayed() {
+        // Military escalation is a sustained-state 72h domain: at 80h (just past one half-life)
+        // weight = exp(-ln2 * 80/72) ≈ 0.46, so an old war signal still scores meaningfully but
+        // is clearly decayed relative to a fresh one. Compared against a fresh equivalent so the
+        // invariant is "decayed-but-present", not a magic magnitude tied to a specific half-life.
+        let fresh = DomainScorer::new()
+            .score_all(&[make_event("military_escalation", 0.7, 0.5, SourceTier::Tier1)])
+            ["military_escalation"].score;
+        let aged = DomainScorer::new()
+            .score_all(&[make_event("military_escalation", 0.7, 80.0, SourceTier::Tier1)])
+            ["military_escalation"].score;
+        assert!(aged > 0.0, "an 80h military event should still score, got {aged}");
+        assert!(aged < fresh, "an 80h event must be decayed below a fresh one (fresh={fresh}, aged={aged})");
+        assert!(aged > 0.3 * fresh,
+            "at ~one half-life the 80h score should retain a meaningful fraction, got {aged} vs fresh {fresh}");
     }
 
     #[test]
