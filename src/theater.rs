@@ -544,7 +544,7 @@ impl TheaterEngine {
                 trend: trend.into(), delta: (delta * 1e4).round() / 1e4, event_count: 0,
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
                 top_driver: String::new(), rising_driver: String::new(),
-                secondary_driver: String::new(),
+                secondary_driver: String::new(), held_by_floor: false,
             };
         }
 
@@ -572,6 +572,11 @@ impl TheaterEngine {
             0.0
         };
         let heat = fast_heat.max(floor).min(1.0);
+        // The read is HELD when the floor strictly outweighs the fresh evidence: the
+        // displayed heat is a remembered war-state carried through a news gap, not a live
+        // measurement. Honest by construction; surfaced so the operator can tell a
+        // live-hot theater from one the model is holding quiet (silence ≠ peace).
+        let held_by_floor = floor > fast_heat;
 
         let gp_involved      = tev.iter().any(|e| e.great_power_involved);
         let alliance_invoked = tev.iter().any(|e| e.alliance_indicator);
@@ -670,6 +675,7 @@ impl TheaterEngine {
             event_count: tev.len(),
             gp_involved, alliance_invoked, top_actors,
             top_driver, rising_driver, secondary_driver,
+            held_by_floor,
         }
     }
 }
@@ -747,6 +753,51 @@ mod tests {
         e.actor_ids = actors.iter().map(|s| s.to_string()).collect();
         e.great_power_involved = gp;
         e
+    }
+
+    #[test]
+    fn held_by_floor_flags_a_war_carried_through_a_news_gap_not_a_fresh_read() {
+        use chrono::Duration;
+        // A sustained great-power war in one theater (strong kinetic + nuclear signal), aged to a
+        // chosen number of hours and carrying a chosen signed escalation_step. The persistence
+        // floor exists to hold exactly this read through a multi-day news gap; `held_by_floor`
+        // must mark when the displayed heat is that remembered war-state, not the fresh evidence.
+        let make = |age_h: i64, step: f64| -> Vec<GeopoliticalEvent> {
+            let mut v = Vec::new();
+            for _ in 0..8 {
+                let mut a = ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true);
+                let mut b = ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false);
+                a.published_at = Utc::now() - Duration::hours(age_h);
+                b.published_at = Utc::now() - Duration::hours(age_h);
+                a.escalation_step = step; b.escalation_step = step;
+                v.push(a); v.push(b);
+            }
+            v
+        };
+        let gulf = |out: &TheaterOutput| out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap().clone();
+
+        // (1) FRESH (age 0): slow_heat == fast_heat, so floor = FLOOR_FRACTION × slow_heat <
+        //     fast_heat → NOT held. A live war reads as a live measurement.
+        let fresh = gulf(&TheaterEngine::new().compute(&make(0, 0.2)));
+        assert!(!fresh.held_by_floor,
+            "a fresh active war is a live read, not floor-held; heat={}", fresh.heat);
+
+        // (2) AGED 96h, no de-escalation evidence: the fast read has decayed below the slowly
+        //     decaying war-state floor, so the displayed heat is HELD by memory — flagged.
+        let aged = gulf(&TheaterEngine::new().compute(&make(96, 0.2)));
+        assert!(aged.held_by_floor,
+            "a 4-day-silent active war should be HELD by the floor and flagged; heat={}", aged.heat);
+
+        // (3) AGED 96h WITH genuine de-escalation evidence (strongly negative step): the floor
+        //     RELEASES, so nothing is held — the read cools honestly to the pure decay.
+        let deesc = gulf(&TheaterEngine::new().compute(&make(96, -0.7)));
+        assert!(!deesc.held_by_floor,
+            "a de-escalating war releases the floor — not held; heat={}", deesc.heat);
+
+        // (4) A quiet world never manufactures a held flag.
+        let quiet = TheaterEngine::new().compute(&[]);
+        assert!(quiet.theaters.iter().all(|s| !s.held_by_floor),
+            "a quiet world must never flag a held read");
     }
 
     #[test]

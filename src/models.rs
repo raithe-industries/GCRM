@@ -706,6 +706,16 @@ pub struct TheaterState {
     /// surfaces only when a flashpoint is genuinely multi-dimensional (which is what
     /// the intra-theater co-occurrence amplifier keys on).
     pub secondary_driver: String,
+    /// True when this theater's displayed `heat` is being HELD UP by the persistence
+    /// floor (a slowly-decaying remembered war-state) rather than fresh evidence —
+    /// i.e. the floor strictly exceeds the current fast read. It marks a war the model
+    /// is holding through a multi-day news gap (silence ≠ peace): the number is a
+    /// memory of a sustained war, not a live measurement, and it releases on genuine
+    /// de-escalation evidence. Honest by construction (`floor > fast_heat`), so the
+    /// operator can tell a live-hot flashpoint from one held quiet. `#[serde(default)]`
+    /// keeps older persisted snapshots loadable.
+    #[serde(default)]
+    pub held_by_floor:    bool,
 }
 
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────

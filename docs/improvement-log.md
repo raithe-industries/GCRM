@@ -16,6 +16,32 @@ Format per entry:
 
 ---
 
+## 2026-06-21 — honesty/awareness — a theater HELD by the persistence floor is flagged, not shown as a live read
+- Item: roadmap 3.11 (now checked) — the awareness/honesty completion of the same-day persistence-floor
+  model change (silence ≠ peace).
+- Change: the persistence floor holds a hot theater's heat up through a multi-day news gap, so the
+  displayed `heat` can be a REMEMBERED war-state (`heat = fast_heat.max(floor)` with `floor > fast_heat`)
+  rather than a fresh measurement — yet the ladder chip presented it identically to a live-hot flashpoint
+  (pillar-1: the number must mean what it says; pillar-3: show WHY). Named the state at its source —
+  `TheaterState.held_by_floor = floor > fast_heat` in `theater.rs::score_theater` (honest by
+  construction; `#[serde(default)]` so older persisted snapshots still load) — and surfaced it on the
+  theater-ladder chip as an amber `⏸ held` tag + tooltip ("heat held by the persistence floor — no fresh
+  escalation; a remembered war-state, released on de-escalation evidence"). The flag is false at peak
+  freshness (slow==fast → floor < fast), true once the fast read decays below the slow war-state floor,
+  and false again the moment de-escalation evidence releases the floor.
+- Metric moved: Test count 433 → 435 (+2); NEW capability — the operator can now distinguish a
+  live-hot theater from one the model is holding quiet through silence. DISPLAY-only: no calibration
+  constant touched; all four `bands_*` + Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 434 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; `bands_{quiet,ukraine,current_full,cuba}` green.
+  New locks: `held_by_floor_flags_a_war_carried_through_a_news_gap_not_a_fresh_read` (theater.rs —
+  fresh→false / 4-day-silent→true / de-escalation-released→false / quiet-world→false) +
+  `dashboard_flags_a_floor_held_theater_instead_of_a_live_read` (server.rs render-hook lock).
+- Notes / decisions future runs must respect: `held_by_floor` is `floor > fast_heat`, the single source
+  of truth — do NOT re-derive a "held" heuristic client-side. DISPLAY-only; it must never feed the
+  forecast. The amber `⏸ held` tag's final visual is the deploy-time eyes gate. Do NOT remove it to
+  "clean up" the chip — a held read presented as live fighting is the exact pillar-1 failure it guards.
+
 ## 2026-06-21 — legibility/honesty — the hero positions the live read on the model's own historical ladder (Ukraine-2022 / Cuba-1962), and the For-scale poles stop being hand-typed
 - Item: roadmap 2.x legibility (awareness/anti-drift). The bare annual P(WWIII)% is hard to
   feel; an operator grasps "how close to great-power war" best against crises they know.

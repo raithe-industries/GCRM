@@ -627,6 +627,18 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_floor_held_theater_instead_of_a_live_read() {
+        // Honesty/awareness: when a theater's heat is HELD by the persistence floor (a remembered
+        // war-state carried through a news gap) rather than fresh evidence, the ladder chip must
+        // say so — the number is a memory, not a live read. Lock the render hooks so a UI refactor
+        // can't silently drop the caveat and present a held read as live fighting.
+        assert!(DASHBOARD_HTML.contains("held_by_floor"),
+            "ladder chip must read the server-provided held_by_floor flag");
+        assert!(DASHBOARD_HTML.contains("tl-held"),
+            "ladder chip must render the held tag");
+    }
+
+    #[test]
     fn dashboard_html_uses_live_endpoints() {
         // The cockpit is WebSocket-driven with the live article feed + sources + epoch.
         assert!(DASHBOARD_HTML.contains("/ws"));
