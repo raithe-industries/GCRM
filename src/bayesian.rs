@@ -248,6 +248,19 @@ pub fn is_thinly_sourced(events: usize, sources: usize) -> bool {
     events > 0 && sources < MIN_CORROBORATING_SOURCES
 }
 
+/// The read is **at the forecast ceiling**: annual P(WWIII) has been hard-clamped to
+/// `FORECAST_PROB_CEILING` (0.90) in `compute`, so the displayed number is a FLOOR, not a
+/// point estimate — the unclamped systemic signal sits at or above it. Honesty: a clamped
+/// 90% must NOT masquerade as a measured 90%; the operator needs to know the true read
+/// could be higher but is capped for epistemic humility (the model has no ground truth).
+/// The same class of "the number doesn't mean what it appears to" as `is_data_blind`. The
+/// single source of truth for the operator-facing "capped" caveat, locked by
+/// `is_at_forecast_ceiling_agrees_with_the_clamp`. DISPLAY-only — the clamp itself lives in
+/// `compute`, so the forecast is already capped before this is read.
+pub fn is_at_forecast_ceiling(p_annual: f64) -> bool {
+    p_annual >= FORECAST_PROB_CEILING - 1e-9
+}
+
 /// Confidence when events exist but none carry a usable per-domain confidence
 /// (degenerate edge — keeps the blend from reading the domain term as 0).
 const CONFIDENCE_NO_DOMAIN_CONF: f64 = 0.1;
@@ -1512,6 +1525,35 @@ mod tests {
         assert!(snap.p_wwiii_annual <= FORECAST_PROB_CEILING,
             "p_wwiii_annual {} must never exceed the ceiling {}",
             snap.p_wwiii_annual, FORECAST_PROB_CEILING);
+    }
+
+    #[test]
+    fn is_at_forecast_ceiling_agrees_with_the_clamp() {
+        // The operator-facing "capped" caveat must trip on EXACTLY the clamp condition
+        // (single source of truth), never on a sub-ceiling measured read — so a clamped
+        // 90% can't masquerade as a measured 90% on the dashboard.
+        assert!(is_at_forecast_ceiling(FORECAST_PROB_CEILING));
+        assert!(is_at_forecast_ceiling(1.0));
+        assert!(!is_at_forecast_ceiling(FORECAST_PROB_CEILING - 0.01));
+        assert!(!is_at_forecast_ceiling(0.0));
+
+        // It agrees with the actual clamp: drive the exact formula compute() uses with a
+        // saturating likelihood (the same construction as
+        // forecast_prob_ceiling_is_the_named_honesty_clamp). The unclamped value exceeds
+        // the ceiling; the clamped value reads as capped — so the caveat keys off the real
+        // clamp, not a vestige.
+        let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5);
+        let prior_logodds = (prior / (1.0 - prior)).ln();
+        let unclamped     = sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * 100.0);
+        assert!(unclamped > FORECAST_PROB_CEILING, "precondition: saturating raw exceeds the ceiling");
+        assert!(is_at_forecast_ceiling(unclamped.min(FORECAST_PROB_CEILING)),
+            "a clamped saturating read must register as capped");
+
+        // A real calm computed read does NOT read as capped.
+        let mut engine = minimal_engine();
+        let calm = engine.compute(&[make_event("diplomatic_breakdown", 0.5, 0.3, SourceTier::Tier1)]);
+        assert!(!is_at_forecast_ceiling(calm.p_wwiii_annual),
+            "a calm sub-ceiling read must not read as capped, got {}", calm.p_wwiii_annual);
     }
 
     #[test]

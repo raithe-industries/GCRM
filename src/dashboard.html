@@ -417,6 +417,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <canvas id="gauge-canvas"></canvas>
       <div class="gauge-val" id="gauge-val">—</div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
+      <!-- Honesty caveat: shown only when the forecast is hard-clamped to
+           FORECAST_PROB_CEILING. A clamped value is a FLOOR, not a measurement, so the
+           hero reads "≥90.0%" and this line says the true read may be higher (capped for
+           epistemic humility — the model has no ground truth). Hidden in every normal
+           state. Driven by meta.at_ceiling (bayesian::is_at_forecast_ceiling). -->
+      <div class="gauge-cap" id="gauge-cap" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">▲ capped at ceiling · true read may be higher</div>
       <!-- Live movement of P(WWIII): the dot blips on every recompute (heartbeat),
            the arrow shows direction at all times (▲ rising / ▼ falling / ↔ steady),
            and the Δ/s shows only when it actually moves. The Bayesian chain itself
@@ -995,7 +1001,12 @@ function applyData(d){
   // Hero dial: P(WWIII) as a fraction of 1.0, coloured by probability severity.
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
   animateHero(Math.min(1,pA));
-  const gv=document.getElementById('gauge-val');gv.textContent=(pA*100).toFixed(1)+'%';gv.style.color=pCol;
+  // A read clamped to FORECAST_PROB_CEILING is a FLOOR, not a point estimate (the
+  // unclamped systemic signal sits at or above it). Render "≥" + a caveat so a capped
+  // 90% can't masquerade as a measured 90% (pillar-1 honesty). Driven by meta.at_ceiling.
+  const _atCeiling=!!(d.meta&&d.meta.at_ceiling);
+  const gv=document.getElementById('gauge-val');gv.textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(1)+'%';gv.style.color=pCol;
+  const _gc=document.getElementById('gauge-cap');if(_gc)_gc.style.display=_atCeiling?'block':'none';
   // Live movement of P(WWIII): heartbeat dot blips every recompute; the arrow shows
   // direction at all times; the Δ/s shows only when it actually moves (when the
   // inputs don't change the output genuinely doesn't either — so we don't fake it).
@@ -1019,7 +1030,7 @@ function applyData(d){
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';
-  document.getElementById('cmd-risk').textContent=(pA*100).toFixed(2)+'%';document.getElementById('cmd-risk').style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'var(--t1)';
+  document.getElementById('cmd-risk').textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(2)+'%';document.getElementById('cmd-risk').style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'var(--t1)';
   document.getElementById('cmd-risk-delta').textContent=dA>0?'▲ +'+(dA*100).toFixed(4)+'% last snap':dA<0?'▼ '+(dA*100).toFixed(4)+'% last snap':'─ stable';
   document.getElementById('cmd-risk-delta').style.color=dA>0?'#E24B4A':dA<0?'#1D9E75':'var(--t4)';
   document.getElementById('cmd-driver').textContent=(d.systemic&&d.systemic.driver)||'—';document.getElementById('cmd-driver').style.color=idxCol;

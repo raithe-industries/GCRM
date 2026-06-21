@@ -167,6 +167,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "events_in_window":         snap.events_in_window,
             "data_blind":               crate::bayesian::is_data_blind(snap.events_in_window),
             "thinly_sourced":           crate::bayesian::is_thinly_sourced(snap.events_in_window, snap.sources_active),
+            "at_ceiling":               crate::bayesian::is_at_forecast_ceiling(snap.p_wwiii_annual),
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
             "regions_active":           snap.regions_active,
@@ -1244,6 +1245,22 @@ mod tests {
         let v = snapshot_to_json(&thin);
         assert_eq!(v["meta"]["thinly_sourced"], serde_json::json!(true));
         assert_eq!(v["meta"]["data_blind"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn meta_at_ceiling_flags_a_clamped_read_as_capped() {
+        // A sub-ceiling read is a point estimate → not capped.
+        let measured = make_snapshot(0.42, 0.001, 2);
+        assert_eq!(snapshot_to_json(&measured)["meta"]["at_ceiling"], serde_json::json!(false));
+
+        // A read pegged at FORECAST_PROB_CEILING is a clamped FLOOR, not a measured value —
+        // the served contract must say so, so the dashboard's "capped" caveat can't drift
+        // from the model's own clamp. Single source of truth: bayesian::is_at_forecast_ceiling.
+        let mut capped = make_snapshot(crate::models::FORECAST_PROB_CEILING, 0.0, 5);
+        capped.p_wwiii_annual = crate::models::FORECAST_PROB_CEILING;
+        let v = snapshot_to_json(&capped);
+        assert_eq!(v["meta"]["at_ceiling"], serde_json::json!(true));
+        assert!(crate::bayesian::is_at_forecast_ceiling(crate::models::FORECAST_PROB_CEILING));
     }
 
     #[test]

@@ -231,6 +231,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     (`all-clear · STALE · last read Nm ago`, amber/red-on-apex). DISPLAY-only — P(WWIII) untouched.
     Board and header now agree on all three caveat states (stale/blind/thin). Locked by
     `dashboard_iw_board_flags_a_stale_read_instead_of_a_frozen_all_clear`. See improvement-log 2026-06-20.
+  - PROGRESS 2026-06-21: closed the **capped-read sibling** — the same "displayed number doesn't
+    mean what it says" failure as blind/thin/stale, but at the TOP of the scale. The forecast is
+    hard-clamped to `FORECAST_PROB_CEILING` (0.90) for epistemic humility, yet a pegged read showed
+    a bare `90.0%` — indistinguishable from a *measured* 90% when the unclamped systemic signal
+    sits at or above the ceiling (the apex world that `forecast_prob_ceiling_is_the_named_honesty_clamp`
+    proves reaches it). Named the state — `bayesian::is_at_forecast_ceiling(p_annual)` (single source
+    of truth, `p ≥ FORECAST_PROB_CEILING − 1e-9`), served as `meta.at_ceiling` — and the hero now reads
+    `≥90.0%` with a `▲ capped at ceiling · true read may be higher` caveat (the command-strip risk cell
+    also gets the `≥`). DISPLAY-only — the clamp itself is untouched; no calibration constant moved.
+    Locked by `is_at_forecast_ceiling_agrees_with_the_clamp` (bayesian),
+    `meta_at_ceiling_flags_a_clamped_read_as_capped` (aggregator),
+    `dashboard_flags_a_capped_read_instead_of_a_measured_ceiling` (server). See improvement-log 2026-06-21.
 - [x] **2.1 Small/short-viewport pass** — **DONE 2026-06-15.** Root-caused the clipping: the
   left rail (`.left-panel`) is a CSS-grid item with `overflow-y:auto`, but had the default
   `min-height:auto` — which lets a grid item grow past its row track to fit content, so its own

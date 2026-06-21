@@ -16,6 +16,28 @@ Format per entry:
 
 ---
 
+## 2026-06-21 — honesty/legibility — a forecast pegged at the ceiling reads "≥90%" + a capped caveat, not a bare measured 90%
+- Item: roadmap 2.6 follow-up (the capped-read sibling of blind/thin/stale).
+- Change: the forecast is hard-clamped to `FORECAST_PROB_CEILING` (0.90) for epistemic
+  humility, but a pegged read showed a bare `90.0%` — indistinguishable from a *measured*
+  90% when the unclamped systemic signal sits at/above the ceiling (the apex world
+  `forecast_prob_ceiling_is_the_named_honesty_clamp` proves reaches it). A clamped value
+  is a FLOOR, not a point estimate; presenting it as a measurement is the same pillar-1
+  failure as a blind read masquerading as a calm world. Named the state at its source —
+  `bayesian::is_at_forecast_ceiling(p_annual)` (`p ≥ ceiling − 1e-9`, single source of
+  truth, next to `is_data_blind`/`is_thinly_sourced`) — served as `meta.at_ceiling`; the
+  hero now renders `≥90.0%` + a `▲ capped at ceiling · true read may be higher` caveat
+  (hidden in every normal state), and the command-strip risk cell also gets the `≥`.
+- Metric moved: Test count 415 → 418 (+3; the 414 baseline predated the 2026-06-20 STALE-board test); new capability (operator can now distinguish a
+  capped read from a measured one). DISPLAY-only — clamp untouched, no calibration constant
+  moved, backtest bands + Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test` 418 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings.
+- Notes / decisions future runs must respect: `is_at_forecast_ceiling` is the single source
+  of truth for the "capped" caveat — do NOT re-derive the threshold client-side. This is
+  DISPLAY-only and must never feed the forecast. Do NOT raise FORECAST_PROB_CEILING toward
+  1.0 to "avoid" the cap (hard rail). The `≥` + caveat only appear when `meta.at_ceiling`.
+
 ## 2026-06-20 — honesty/legibility — I&W board flags a STALE read instead of a frozen all-clear
 - Item: roadmap 2.6 follow-up / 2.5 watchdog (completes the board's three caveat states).
 - Change: the header freshness watchdog (2.5) flips to STALE when snapshots stop arriving, and the
