@@ -334,11 +334,56 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         "alleged", "allegedly", "allege", "alleges", "allegation", "allegations",
         "reportedly", "unconfirmed", "unverified", "purported", "purportedly",
         "rumored", "rumoured", "rumor", "rumour", "rumors", "rumours",
+        // Drill / training / wargame / simulation framing — siblings of the
+        // "drill"/"exercise"/"test" tokens above. A firehose surfaces these constantly
+        // (e.g. "North Korea trumpets TRAINING for nuclear strikes", "…SIMULATES …Nuclear
+        // Strikes"): a rehearsed/simulated strike is not a strike. ("simulate"/"simulated"/
+        // "simulation" were present but the third-person "simulates" was not — whole-word
+        // matching needs every inflection.)
+        "train", "trains", "training", "trained", "drilled",
+        "rehearse", "rehearses", "rehearsal", "rehearsals", "rehearsed",
+        "wargame", "wargames", "maneuver", "maneuvers", "manoeuvre", "manoeuvres",
+        "simulates",
+        // Advocacy / call-for framing — someone URGING or PETITIONING for a strike is
+        // describing a demand, not a detonation ("…urges legislature to petition … for
+        // nuclear strike on Ukraine").
+        "urge", "urges", "urged", "urging",
+        "petition", "petitions", "petitioned",
+        "advocate", "advocates", "advocated",
+        // Explainer / authorization-process framing — "the PROCESS the US uses to
+        // AUTHORIZE a nuclear strike" explains the mechanism, it does not report a use.
+        "authorize", "authorizes", "authorized", "authorise", "authorises", "authorised",
+        "authorization", "authorisation", "process",
+        // Prospective two-way framing — a "nuclear exchange" / "strikes' exchange" is the
+        // standard term for a HYPOTHETICAL mutual strike ("…confrontation may escalate into
+        // nuclear strikes' exchange"), a sibling of the "scenario"/"hypothetical"/"brink"
+        // tokens above. (Recall tradeoff accepted: a real exchange spawns cleaner confirming
+        // headlines that `any()` still trips on.)
+        "exchange", "exchanges",
+    ];
+
+    // Whole-word question words that, when they LEAD a headline, mark it as an
+    // explainer/hypothetical rather than a confirmed-use report ("Can the president
+    // launch a nuclear strike on his own?", "How would a nuclear strike unfold?"). A
+    // real detonation is reported in the declarative, never led by an interrogative —
+    // so a leading question word is treated as non-use framing.
+    const INTERROGATIVE_LEAD: &[&str] = &[
+        "can", "could", "should", "would", "will", "might",
+        "is", "are", "do", "does", "did",
+        "how", "what", "why", "who", "when", "where", "which",
     ];
     tev.iter().any(|e| {
         if !e.nuclear_indicator { return false; }
         let t = e.title.to_lowercase();
         if !USE_PHRASES.iter().any(|p| t.contains(p)) { return false; }
+        // A headline that OPENS with a question word is an explainer/hypothetical, not a
+        // confirmed-detonation report — decline before the token scan.
+        if let Some(first) = t
+            .split(|c: char| !c.is_alphanumeric())
+            .find(|w| !w.is_empty())
+        {
+            if INTERROGATIVE_LEAD.contains(&first) { return false; }
+        }
         let non_use_framing = t
             .split(|c: char| !c.is_alphanumeric())
             .any(|w| NON_USE_TOKENS.contains(&w));
@@ -1700,6 +1745,34 @@ mod tests {
         let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
         assert_eq!(t.rung, EscalationRung::Systemic,
             "one clean confirmation in the window must still force the systemic rung");
+    }
+
+    #[test]
+    fn real_world_non_use_headlines_do_not_force_systemic_rung() {
+        // Regression: these are ACTUAL production headlines (logs/events_*.jsonl) that
+        // carried the "nuclear strike" use-phrase, were tagged nuclear_indicator, and
+        // FALSELY tripped the apex Systemic ("nuclear war occurred") rung — pegging the
+        // systemic index at 95 — because the non-use framing slipped through the token
+        // guard (drill/sim inflections, advocacy, explainer/authorization, interrogative
+        // lead). None reports a detonation; each must decline the systemic rung.
+        let cases = [
+            "North Korea trumpets training for ‘tactical’ nuclear strikes",
+            "North Korea Launches 2 Ballistic Missile, Simulates ‘Scorched Earth’ Nuclear Strikes",
+            "This is the process the US uses to authorize a nuclear strike",
+            "Head of dissolved party urges legislature to petition Putin for nuclear strike on Ukraine",
+            "Can the president launch a nuclear strike on his own?",
+            "NATO, Russia direct confrontation may escalate into nuclear strikes’ exchange — Lavrov",
+        ];
+        for title in cases {
+            let mut te = TheaterEngine::new();
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+            e.title = title.to_string();
+            e.nuclear_indicator = true;
+            let out = te.compute(&[e]);
+            let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+            assert_ne!(t.rung, EscalationRung::Systemic,
+                "non-use headline must not force the systemic rung: {title:?}");
+        }
     }
 
     // ── Systemic cross-check invariants (roadmap 1.3) ──────────────────────────

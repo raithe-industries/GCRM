@@ -195,19 +195,30 @@ pub async fn broadcast_snapshots(
             // browser renders `lead→X (was Y)` only when `lead_shifted`, so a stable leader
             // adds no clutter and the bare delta is never overstated as attribution.
             let mut t6 = es.trend_6h(snap.p_wwiii_annual);
+            // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
+            // plain-language reference-class limit and error posture. The interval is computed
+            // server-side from the durable ring (same discipline as trend_6h); the epistemic
+            // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
+            let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
             let lead_now = crate::models::lead_theater(&snap.theaters);
+            // Honesty layer: a frozen "+0.000%" 6h trend is the model PEGGED at the top of its
+            // dynamic range — the hottest theater railed at the heat clamp AND zero empirical
+            // movement across the window — not a calm flat line or a freeze/bug. Judged
+            // server-side from the same durable ring (`empirical_hw_pct`) plus the live theaters,
+            // so the browser only renders the flag. The number itself is unchanged; this just
+            // names WHY it cannot move. See models::systemic_pegged.
+            let empirical_hw_pct = uncertainty.get("empirical_hw_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let samples = t6.get("samples").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let pegged = crate::models::systemic_pegged(&snap.theaters, empirical_hw_pct, samples);
             if let Some(obj) = t6.as_object_mut() {
                 let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;
                 obj.insert("lead".into(), serde_json::Value::String(lead_now));
                 obj.insert("lead_shifted".into(), serde_json::Value::Bool(shifted));
+                obj.insert("pegged".into(), serde_json::Value::Bool(pegged));
             }
             data["trend_6h"] = t6;
-            // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
-            // plain-language reference-class limit and error posture. The interval is computed
-            // server-side from the durable ring (same discipline as trend_6h); the epistemic
-            // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
-            data["uncertainty"] = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
+            data["uncertainty"] = uncertainty;
         }
         data["epistemic"] = serde_json::json!({
             "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
@@ -711,6 +722,24 @@ mod tests {
         assert!(
             DASHBOARD_HTML.contains("lead→"),
             "dashboard dropped the lead-shift readout text"
+        );
+    }
+
+    #[test]
+    fn dashboard_renders_pegged_at_ceiling_honesty_flag() {
+        // Honesty (pillar 1 — never let a frozen number read as calm): the 6h-trend cell must
+        // consume the server-computed `pegged` flag (models::systemic_pegged) so a +0.000%
+        // produced by the model being railed at its dynamic-range ceiling is surfaced as
+        // "pegged at model ceiling", not a reassuring flat line. If a refactor drops the read,
+        // this fails `cargo test`. Pairs with models::systemic_pegged + its unit test.
+        assert!(
+            DASHBOARD_HTML.contains("pegged"),
+            "dashboard no longer consumes the server `pegged` flag — a ceiling-pegged read \
+             would silently revert to looking like a calm flat trend"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("resolution exhausted"),
+            "dashboard dropped the pegged-at-ceiling explanation text"
         );
     }
 
