@@ -433,6 +433,11 @@ impl EpochStore {
         let cutoff = now - chrono::Duration::seconds(window_secs);
         let mut baseline: Option<f64> = None;
         let mut oldest: Option<DateTime<Utc>> = None;
+        // Lead theater of the oldest in-window entry — the WHERE the read was concentrated
+        // at the start of the window, so the caller can tell whether the locus of risk
+        // RELOCATED across the 6h (a shift the bare delta can't show). Overwrites alongside
+        // `baseline`, so it ends at the same oldest-in-window tick.
+        let mut baseline_lead: Option<String> = None;
         let mut samples = 0usize;
         for e in self.ring.iter().rev() {
             let t = match e
@@ -449,6 +454,9 @@ impl EpochStore {
             if let Some(p) = e.get("p_annual").and_then(|v| v.as_f64()) {
                 baseline = Some(p); // overwrite each step → ends at the oldest in-window
                 oldest = Some(t);
+                baseline_lead = Some(
+                    e.get("lead").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                );
                 samples += 1;
             }
         }
@@ -459,6 +467,7 @@ impl EpochStore {
                 "baseline":  b,
                 "samples":   samples,
                 "span_secs": (now - o).num_seconds().max(0),
+                "lead_then": baseline_lead.unwrap_or_default(),
             }),
             _ => serde_json::json!({
                 "available": false,
@@ -1730,6 +1739,36 @@ mod tests {
         // 0.835 − 0.80 baseline
         assert!((tr["delta"].as_f64().unwrap() - 0.035).abs() < 1e-9);
         assert!((tr["baseline"].as_f64().unwrap() - 0.80).abs() < 1e-9);
+    }
+
+    fn epoch_at_lead(secs_ago: i64, now: DateTime<Utc>, p: f64, lead: &str) -> serde_json::Value {
+        serde_json::json!({
+            "t": (now - chrono::Duration::seconds(secs_ago)).to_rfc3339(),
+            "p_annual": p,
+            "lead": lead,
+        })
+    }
+
+    #[test]
+    fn epoch_store_trend_reports_the_baseline_lead_theater() {
+        // The trend window must surface the lead theater of the OLDEST in-window entry
+        // (`lead_then`) — the WHERE the read concentrated at the start of the window — so the
+        // server can tell whether the locus of risk relocated over the 6h. It tracks the same
+        // oldest-in-window tick as `baseline`/`delta`, and an out-of-window entry can't supply it.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(epoch_at_lead(10 * 3600, now, 0.50, "China-Taiwan")); // outside window — ignored
+        es.push(epoch_at_lead(5 * 3600, now, 0.70, "NATO-Russia"));   // oldest IN window → baseline
+        es.push(epoch_at_lead(60, now, 0.72, "US/Israel-Iran"));
+        let tr = es.trend_window(0.75, now, 6 * 3600, 2);
+        assert_eq!(tr["available"], true);
+        assert_eq!(tr["lead_then"], "NATO-Russia", "lead_then must be the oldest in-window lead");
+        // A pre-field entry (no `lead`) yields an empty baseline lead rather than panicking.
+        let mut es2 = EpochStore::new();
+        es2.push(epoch_at(5 * 3600, now, 0.70));
+        es2.push(epoch_at(60, now, 0.72));
+        let tr2 = es2.trend_window(0.75, now, 6 * 3600, 2);
+        assert_eq!(tr2["lead_then"], "");
     }
 
     #[test]
