@@ -188,7 +188,21 @@ pub async fn broadcast_snapshots(
         // reset the "6h Trend" readout to "—". The browser only renders it.
         {
             let es = server_state.app_state.epoch_store.lock().await;
-            data["trend_6h"] = es.trend_6h(snap.p_wwiii_annual);
+            // Awareness layer: alongside the trend MAGNITUDE, report whether the locus of
+            // risk relocated over the window. `lead_then` (the hottest theater 6h ago) comes
+            // from the durable ring; `lead` (now) is read from the live snapshot via the same
+            // `lead_theater` single source of truth, so a shift is judged consistently. The
+            // browser renders `lead→X (was Y)` only when `lead_shifted`, so a stable leader
+            // adds no clutter and the bare delta is never overstated as attribution.
+            let mut t6 = es.trend_6h(snap.p_wwiii_annual);
+            let lead_now = crate::models::lead_theater(&snap.theaters);
+            if let Some(obj) = t6.as_object_mut() {
+                let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;
+                obj.insert("lead".into(), serde_json::Value::String(lead_now));
+                obj.insert("lead_shifted".into(), serde_json::Value::Bool(shifted));
+            }
+            data["trend_6h"] = t6;
             // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
             // plain-language reference-class limit and error posture. The interval is computed
             // server-side from the durable ring (same discipline as trend_6h); the epistemic
@@ -680,6 +694,23 @@ mod tests {
             DASHBOARD_HTML.contains("trend_6h"),
             "dashboard no longer reads the server-computed trend_6h field — \
              the 6h Trend would silently revert to the broken client-buffer path"
+        );
+    }
+
+    #[test]
+    fn dashboard_renders_6h_trend_lead_shift() {
+        // Awareness (pillar 3 — show WHERE): the 6h-trend sub-line must surface a relocation
+        // of the hottest theater (`lead→X (was Y)`) when the server flags `lead_shifted`. The
+        // magnitude alone can't show a net-flat headline hiding one theater cooling as another
+        // heats. If a refactor drops the client read of the server flag, this fails the suite.
+        assert!(
+            DASHBOARD_HTML.contains("lead_shifted"),
+            "dashboard no longer consumes the server-computed trend lead_shifted flag — \
+             the locus-of-risk relocation would silently stop showing"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("lead→"),
+            "dashboard dropped the lead-shift readout text"
         );
     }
 

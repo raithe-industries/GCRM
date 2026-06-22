@@ -860,7 +860,8 @@ const INFO={
     <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
   trend:{title:'6h Trend',html:`
     <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, computed server-side from the durable timeline history — so a page reload or UI change can't reset it.</p>
-    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison actually reaches and how many samples it spans.</p>`},
+    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison actually reaches and how many samples it spans.</p>
+    <p>If the <b>hottest theater</b> changed over the window, the sub-line also names the relocation (<b>lead→X (was Y)</b>) — <i>where</i> the risk concentrated, which the magnitude alone can't tell. A net-flat headline can still hide one theater cooling as another heats; the lead shift surfaces it.</p>`},
   w30:{title:'30-Day Window',html:`
     <p><b>30-Day Window</b> re-expresses the same model over a rolling 30-day horizon — a nearer-term read than the headline annual figure.</p>
     <p>It moves faster than the annual number, so it's the better gauge of short-run escalation. It's a derived view of one model, not a separate forecast.</p>`},
@@ -964,11 +965,15 @@ function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0]
 // the backend epoch ring) so the readout can't be broken by a dashboard refactor;
 // fall back to this tab's session buffer only if the field is absent (older
 // backend / pre-warmup). Returns {delta, samples, span} (span in s, may be null).
-function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
+function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null,lead:s.lead||'',leadThen:s.lead_then||'',leadShifted:s.lead_shifted===true};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
 function fmtTrend(v){return(v>=0?'+':'')+(v*100).toFixed(3)+'%';}
 function trendColor(v){return v>0.0005?'#E24B4A':v<-0.0005?'#1D9E75':'var(--t2)';}
 // Honest sub-label: state the ACTUAL span when we don't yet hold a full ~6h.
-function trendSub(t){if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';return'vs '+lbl+' ago ('+t.samples+' samples)';}return'vs 6 hrs ago ('+t.samples+' samples)';}
+function trendSub(t){let base;if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';base='vs '+lbl+' ago ('+t.samples+' samples)';}else{base='vs 6 hrs ago ('+t.samples+' samples)';}
+// Awareness: when the hottest theater changed over the window, name the relocation of risk
+// (lead→X (was Y)) — the WHERE the bare delta can't show. Only on an actual shift, so a
+// stable leader adds no clutter. Server-judged (lead_shifted) from the lead_theater SoT.
+if(t.leadShifted&&t.lead){base+=' · lead→'+t.lead+(t.leadThen?' (was '+t.leadThen+')':'');}return base;}
 async function pollNuclear(){try{const r=await fetch(BASE_PATH+'/api/nuclear');const d=await r.json();const status=document.getElementById('nuc-status');if(d.status==='alert'){status.style.color='#c0392b';status.textContent='● USGS ALERT';}else if(d.status==='monitoring'){status.style.color='#1D9E75';status.textContent='● USGS ✓';}else{status.style.color='#404040';status.textContent='● USGS off';}const sig=(d.alerts||[]).filter(a=>a.level!=='anomaly'||a.confidence>=0.5);if(sig.length>0){const top=sig.reduce((m,a)=>a.confidence>m.confidence?a:m,sig[0]);document.getElementById('nuke-banner-text').textContent=top.level+' | M'+top.magnitude?.toFixed(1)+' depth='+top.depth_km?.toFixed(1)+'km near '+top.nearest_site_name+' ('+Math.round(top.distance_km)+'km) | score='+Math.round(top.confidence*100)+'%';document.getElementById('nuke-banner').style.display='block';document.getElementById('nuke-overlay').style.display='block';addLog('⚠ SEISMIC ANOMALY: '+top.description,'#c0392b');}else{document.getElementById('nuke-banner').style.display='none';document.getElementById('nuke-overlay').style.display='none';}}catch(e){document.getElementById('nuc-status').style.color='#404040';document.getElementById('nuc-status').textContent='● USGS off';}}
 // The apex warning conditions (a great-power kinetic war; a direct ≥2-power
 // nuclear-brink standoff) light red; every other tripped condition lights amber.

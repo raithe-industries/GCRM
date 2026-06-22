@@ -16,6 +16,37 @@ Format per entry:
 
 ---
 
+## 2026-06-22 — awareness — the 6h trend names a RELOCATION of the lead theater, not just a magnitude
+- Item: roadmap 3.14 (now checked) — a new pillar-3 (show WHERE) capability on the 6h-trend surface.
+- Change: the "6h Trend" cell reported only HOW MUCH P(WWIII) moved over the trailing 6h — never WHERE.
+  A net-flat headline can hide one theater cooling while another heats (the locus of risk relocating with
+  little net change), and the operator had no signal for it. Named the locus at its source —
+  `models::lead_theater(theaters)` = the hottest theater above Stable (empty in a quiet world), the SINGLE
+  source of truth — persisted it on each `TimelineEntry` (`lead`, `#[serde(default)]` so older ring entries
+  still load) so the durable history carries each window's STARTING locus. `EpochStore::trend_window` now
+  also emits `lead_then` (the oldest-in-window lead, tracked on the same oldest tick as `baseline`/`delta`);
+  `server.rs` reads the CURRENT lead from the live snapshot via the same `lead_theater` SoT and attaches
+  `lead` + `lead_shifted` to the trend payload. The dashboard sub-line renders `lead→X (was Y)` ONLY when
+  the lead actually shifted (a stable leader adds no clutter, so no small-viewport clipping risk; `.cmd-sub`
+  wraps, never clips), and the trend info modal documents it. The bare delta is never overstated as
+  attribution — a leadership change is a stated FACT (the hottest theater changed), not an inferred cause.
+- Metric moved: Test count 439 → 443 (+4); NEW capability (the 6h trend now shows WHERE the risk relocated,
+  not just the magnitude). DISPLAY/awareness-only — no engine path touched: calibration evidence
+  Brier=0.00000 / RMSE=0.14pp / in-band 4/4 bit-identical, bands_{quiet,ukraine,current_full,cuba} green.
+- Proof: `cargo build --release` green; `cargo test --release` 443 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings. New locks:
+  `lead_theater_is_the_hottest_non_stable_theater` + `timeline_entry_records_the_lead_theater` (models —
+  hottest-non-Stable rule, quiet world has no lead, entry records it), 
+  `epoch_store_trend_reports_the_baseline_lead_theater` (aggregator — `lead_then` = oldest in-window lead,
+  out-of-window entry can't supply it, pre-field entry yields "" not a panic),
+  `dashboard_renders_6h_trend_lead_shift` (server render-hook — the page consumes `lead_shifted` + renders
+  `lead→`).
+- Notes / decisions future runs must respect: `lead_theater` is the single source of truth for the lead —
+  the timeline ring (`lead_then`) and the live read (`lead`) both go through it, so do NOT re-derive a
+  "lead" heuristic client-side or in the aggregator. The sub-line suffix is shift-only on purpose (clutter
+  + clipping); do not show it for a stable leader. DISPLAY-only — `lead`/`lead_shifted` must never feed the
+  forecast. Final visual is the deploy-time eyes gate.
+
 ## 2026-06-22 — awareness/honesty — a held chip names HOW FAR the read decayed (fresh-evidence rung)
 - Item: roadmap 3.13 (now checked) — the quantitative completion of the 3.11/3.12 held-read flagging.
 - Change: 3.11/3.12 tell the operator THAT a read is held by the persistence floor, but not how much of

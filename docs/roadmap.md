@@ -355,6 +355,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.14 The 6h trend names a RELOCATION of the lead theater, not just a magnitude** — **DONE 2026-06-22.**
+  The "6h Trend" cell reported only HOW MUCH P(WWIII) moved; it could not show WHERE — and a net-flat
+  headline can hide one theater cooling as another heats (the locus of risk relocating with little net
+  change). Named the lead theater at its source — `models::lead_theater(theaters)` = the hottest theater
+  above Stable (single source of truth) — persisted it on each `TimelineEntry` (`lead`, `#[serde(default)]`)
+  so the durable ring carries the window's STARTING locus; `EpochStore::trend_window` now emits `lead_then`
+  (the oldest-in-window lead), and `server.rs` attaches `lead` (read from the live snapshot via the same
+  SoT) + `lead_shifted`. The trend sub-line renders `lead→X (was Y)` ONLY on an actual shift (a stable
+  leader adds no clutter / no clipping risk), and the trend info modal documents it. DISPLAY/awareness only
+  — no engine path touched (calibration evidence Brier/RMSE/in-band bit-identical, bands 4/4). Locked by
+  `lead_theater_is_the_hottest_non_stable_theater` + `timeline_entry_records_the_lead_theater` (models),
+  `epoch_store_trend_reports_the_baseline_lead_theater` (aggregator), and
+  `dashboard_renders_6h_trend_lead_shift` (server render-hook). See improvement-log 2026-06-22.
 - [x] **3.13 A held chip names HOW FAR the read has decayed (fresh-evidence rung)** — **DONE 2026-06-22.**
   3.11/3.12 flag THAT a read is floor-held; they don't say how much memory vs measurement it is. A war
   held at "Limited War" whose fresh evidence alone reads "Crisis" is far more suspect than one whose fresh

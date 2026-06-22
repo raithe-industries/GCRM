@@ -728,6 +728,20 @@ pub struct TheaterState {
     pub fresh_rung_label: String,
 }
 
+/// The label of the hottest theater that has risen above Stable — *where* the systemic
+/// read is concentrated right now. Empty when every theater is Stable (a quiet world has
+/// no lead). This is the SINGLE source of truth for the "lead theater", used by both the
+/// durable timeline entry (`TimelineEntry::lead`, the historical baseline) and the live
+/// 6h-trend payload (the current read), so a trend window can honestly report whether the
+/// locus of risk RELOCATED — a shift the bare headline delta cannot show.
+pub fn lead_theater(theaters: &[TheaterState]) -> String {
+    theaters.iter()
+        .filter(|t| t.rung != EscalationRung::Stable)
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|t| t.label.clone())
+        .unwrap_or_default()
+}
+
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────
 //
 // The factors that turn a regional war into a *world* war. These replace the flat
@@ -881,6 +895,11 @@ pub struct TimelineEntry {
     pub regime:    f64,
     pub events:    usize,
     pub delta:     f64,
+    /// Lead theater label at this tick (`lead_theater`) — the WHERE, stored in the durable
+    /// ring so the 6h-trend window can report whether the locus of risk shifted. Empty in a
+    /// quiet world. `#[serde(default)]` keeps older persisted entries (pre-field) loadable.
+    #[serde(default)]
+    pub lead:      String,
 }
 
 impl TimelineEntry {
@@ -894,6 +913,7 @@ impl TimelineEntry {
             regime:   (snap.regime_multiplier * 1e4).round() / 1e4,
             events:   snap.events_in_window,
             delta:    (snap.delta_annual * 1e8).round() / 1e8,
+            lead:     lead_theater(&snap.theaters),
         }
     }
 }
@@ -1027,6 +1047,57 @@ impl Default for DashboardSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn theater_st(label: &str, rung: EscalationRung, heat: f64) -> TheaterState {
+        TheaterState {
+            theater_id: label.into(), label: label.into(), rung,
+            rung_label: rung.label().into(), heat,
+            modality_scores: std::collections::HashMap::new(),
+            trend: "stable".into(), delta: 0.0, event_count: 0, gp_involved: false,
+            alliance_invoked: false, top_actors: vec![], top_driver: String::new(),
+            rising_driver: String::new(), secondary_driver: String::new(),
+            held_by_floor: false, fresh_rung_label: rung.label().into(),
+        }
+    }
+
+    #[test]
+    fn lead_theater_is_the_hottest_non_stable_theater() {
+        // The lead is WHERE the systemic read concentrates: the hottest theater that has
+        // risen above Stable. A quiet world (all Stable) has no lead, even if one theater
+        // has marginally more (sub-threshold) heat — otherwise the trend would name a "lead"
+        // for noise. The single source of truth shared by the timeline ring and the live
+        // 6h-trend payload, so the historical and current reads are judged identically.
+        assert_eq!(lead_theater(&[]), "");
+        // All Stable → no lead, regardless of relative heat.
+        let quiet = [
+            theater_st("NATO-Russia", EscalationRung::Stable, 0.05),
+            theater_st("China-Taiwan", EscalationRung::Stable, 0.04),
+        ];
+        assert_eq!(lead_theater(&quiet), "");
+        // Hottest non-Stable wins (Crisis at higher heat beats a cooler Tension).
+        let hot = [
+            theater_st("NATO-Russia", EscalationRung::Tension, 0.15),
+            theater_st("US/Israel-Iran", EscalationRung::Crisis, 0.40),
+            theater_st("China-Taiwan", EscalationRung::Stable, 0.30), // Stable excluded even if "hot"
+        ];
+        assert_eq!(lead_theater(&hot), "US/Israel-Iran");
+    }
+
+    #[test]
+    fn timeline_entry_records_the_lead_theater() {
+        // The durable ring entry must carry the lead, so a later trend window can read the
+        // window's STARTING locus of risk (`lead_then`) off the persisted history.
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater_st("NATO-Russia", EscalationRung::Tension, 0.15),
+                theater_st("US/Israel-Iran", EscalationRung::Crisis, 0.40),
+            ],
+            ..RiskSnapshot::default()
+        };
+        assert_eq!(TimelineEntry::from_snapshot(&snap).lead, "US/Israel-Iran");
+        // A quiet snapshot records an empty lead (round-trips through serde default).
+        assert_eq!(TimelineEntry::from_snapshot(&RiskSnapshot::default()).lead, "");
+    }
 
     #[test]
     fn baseline_annual_is_modern_not_2_over_2026() {
