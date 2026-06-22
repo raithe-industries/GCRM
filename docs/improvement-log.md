@@ -16,6 +16,33 @@ Format per entry:
 
 ---
 
+## 2026-06-22 — honesty/awareness — the HEADLINE flags a memory-held read, not just the theater chip
+- Item: roadmap 3.12 (now checked) — the headline analog of the 2026-06-21 per-theater `⏸ held` chip (3.11).
+- Change: the persistence floor lifts the lead theater's heat, and the systemic index is monotone in heat,
+  so the floor lifts the HERO P(WWIII) too (the `persistence_floor_holds_a_silent_war_through_a_multiday_gap`
+  backtest proves a 4-day-silent war reads ~elevated). The chip said "held" but the big number — the
+  operator's at-a-glance read — said nothing, so a headline resting on a *remembered* war-state with no
+  fresh fighting was indistinguishable from live escalation (pillar-1: the number must mean what it says).
+  Named the aggregate state at its source — `theater::systemic_read_is_floor_held(&theaters)` = the
+  highest-heat theater (the monotone index's dominant contributor) is `held_by_floor` (single source of
+  truth) — served as `meta.read_held_by_floor`, and the hero now shows an amber `⏸ held by persistence ·
+  no fresh escalation in the lead theater` caveat, hidden in every normal state and sitting beside the
+  existing `▲ capped at ceiling` caveat.
+- Metric moved: Test count 435 → 438 (+3); NEW capability — the at-a-glance headline now distinguishes a
+  live-escalating read from one the model is holding through a news gap. DISPLAY-only: no calibration
+  constant touched; all four `bands_*` + Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 438 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; `bands_{quiet,ukraine,current_full,cuba}` green.
+  New locks: `systemic_read_is_floor_held_when_the_lead_theater_is_held` (theater.rs — fresh→false,
+  4-day-silent→true, de-escalation-released→false, quiet→false),
+  `meta_read_held_by_floor_flags_a_memory_held_headline` (aggregator — lead-held→true, a cooler held
+  theater alone→false, quiet→false) + `dashboard_flags_a_floor_held_headline_not_a_live_read` (server).
+- Notes / decisions future runs must respect: `systemic_read_is_floor_held` keys off the LEAD (max-heat)
+  theater, the dominant driver of the monotone index — do NOT re-derive a "held headline" heuristic
+  client-side or from a different theater. DISPLAY-only; it must never feed the forecast. The amber caveat's
+  final visual is the deploy-time eyes gate; do NOT remove it to "clean up" the hero — a memory-held P(WWIII)
+  presented as live fighting is the exact pillar-1 failure it guards.
+
 ## 2026-06-21 — honesty/awareness — a theater HELD by the persistence floor is flagged, not shown as a live read
 - Item: roadmap 3.11 (now checked) — the awareness/honesty completion of the same-day persistence-floor
   model change (silence ≠ peace).

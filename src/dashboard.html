@@ -435,6 +435,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            epistemic humility — the model has no ground truth). Hidden in every normal
            state. Driven by meta.at_ceiling (bayesian::is_at_forecast_ceiling). -->
       <div class="gauge-cap" id="gauge-cap" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">▲ capped at ceiling · true read may be higher</div>
+      <!-- Honesty caveat: shown only when the headline's LEAD theater is being HELD by the
+           persistence floor (a remembered war-state carried through a multi-day news gap) rather
+           than fresh fighting — the number rests on memory, not a live measurement, and it releases
+           on de-escalation evidence. The headline analog of the per-theater "⏸ held" chip. Hidden in
+           every normal state. Driven by meta.read_held_by_floor (theater::systemic_read_is_floor_held). -->
+      <div class="gauge-held" id="gauge-held" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">⏸ held by persistence · no fresh escalation in the lead theater</div>
       <!-- Error posture (honesty layer): names which mistake the model is tuned to prefer, so a
            reader knows how to weigh the number. Every choice has consequences; this makes ours
            legible. Server-driven from models::ERROR_POSTURE_NOTE (single source of truth); the
@@ -1041,6 +1047,9 @@ function applyData(d){
   const _atCeiling=!!(d.meta&&d.meta.at_ceiling);
   const gv=document.getElementById('gauge-val');gv.textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(1)+'%';gv.style.color=pCol;
   const _gc=document.getElementById('gauge-cap');if(_gc)_gc.style.display=_atCeiling?'block':'none';
+  // A headline whose lead theater is held by the persistence floor rests on a remembered
+  // war-state, not fresh fighting — say so (pillar-1). Driven by meta.read_held_by_floor.
+  const _gh=document.getElementById('gauge-held');if(_gh)_gh.style.display=(d.meta&&d.meta.read_held_by_floor)?'block':'none';
   // Honesty layer: render the headline INTERVAL (a range, not a point) and the error posture.
   const _u=d.uncertainty,_gi=document.getElementById('gauge-interval');
   if(_gi){
