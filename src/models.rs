@@ -716,6 +716,16 @@ pub struct TheaterState {
     /// keeps older persisted snapshots loadable.
     #[serde(default)]
     pub held_by_floor:    bool,
+    /// The escalation rung computed from the FRESH read alone (`fast_heat`, current
+    /// evidence) rather than the displayed `heat` (which the persistence floor may be
+    /// holding up). When `held_by_floor`, comparing this to `rung_label` shows the
+    /// operator HOW FAR the live read has fallen below the held value — in the same
+    /// rung vocabulary they already read ("held at Limited War · fresh evidence: Crisis").
+    /// Equal to `rung_label` whenever the theater is not floor-held. Honest by
+    /// construction (the model's own `rung_for(fast_heat, …)`). `#[serde(default)]`
+    /// keeps older persisted snapshots loadable.
+    #[serde(default)]
+    pub fresh_rung_label: String,
 }
 
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────

@@ -1116,8 +1116,14 @@ function applyData(d){
       // live read, and it releases on de-escalation evidence. Amber "held" tag, distinct from a
       // live-hot chip, so an operator doesn't mistake sustained silence for live fighting.
       const held=!!t.held_by_floor;
-      const heldTag=held?'<span class="tl-held" style="color:#EF9F27" title="heat held by the persistence floor — no fresh escalation; a remembered war-state, released on de-escalation evidence">⏸ held</span>':'';
-      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(held?' · held by persistence floor (no fresh escalation)':'')+(t.gp_involved?' · great power engaged':'')+'">'
+      // When the floor is holding the rung ABOVE what the fresh read alone supports, name the
+      // fresh-evidence rung — the operator sees how far the live read has decayed below the held
+      // value, in the same rung words they already read. fresh_rung_label==rung_label unless held.
+      const freshR=t.fresh_rung_label||'';
+      const demoted=held&&freshR&&freshR!==t.rung_label;
+      const heldTip='heat held by the persistence floor — no fresh escalation; a remembered war-state, released on de-escalation evidence'+(demoted?'. Fresh evidence alone reads '+freshR:'');
+      const heldTag=held?'<span class="tl-held" style="color:#EF9F27" title="'+heldTip+'">⏸ held'+(demoted?' · fresh: '+freshR:'')+'</span>':'';
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(held?' · held by persistence floor (no fresh escalation'+(demoted?', fresh evidence: '+freshR:'')+')':'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
         +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
         +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+(heldTag?' '+heldTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'

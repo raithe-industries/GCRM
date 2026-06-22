@@ -355,6 +355,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.13 A held chip names HOW FAR the read has decayed (fresh-evidence rung)** — **DONE 2026-06-22.**
+  3.11/3.12 flag THAT a read is floor-held; they don't say how much memory vs measurement it is. A war
+  held at "Limited War" whose fresh evidence alone reads "Crisis" is far more suspect than one whose fresh
+  read is still "Limited War", but the chip showed both identically. Added `TheaterState.fresh_rung_label`
+  = `rung_for(fast_heat, …)` (the rung the LIVE evidence supports, vs the displayed rung the floor may be
+  lifting) — honest by construction and ≤ the displayed rung always (heat ≥ fast_heat). The ladder chip
+  now appends `· fresh: <rung>` to the `⏸ held` tag when the floor strictly demotes the rung, in the same
+  vocabulary the operator already reads. DISPLAY-only; bands/Brier bit-identical. Locked by
+  `fresh_rung_label_shows_how_far_a_held_read_decayed_below_the_floor` (theater.rs: live→equal, never higher
+  than displayed, strict demotion at some age across a silence) + extended
+  `dashboard_flags_a_floor_held_theater_instead_of_a_live_read` (server render lock). See improvement-log 2026-06-22.
 - [x] **3.12 The HEADLINE flags a memory-held read, not just the theater chip** — **DONE 2026-06-22.**
   3.11 flagged a floor-held theater on the ladder chip, but the operator's at-a-glance read is the hero
   P(WWIII) — and because the persistence floor lifts the lead theater's heat, it lifts the headline too

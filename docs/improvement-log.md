@@ -16,6 +16,31 @@ Format per entry:
 
 ---
 
+## 2026-06-22 — awareness/honesty — a held chip names HOW FAR the read decayed (fresh-evidence rung)
+- Item: roadmap 3.13 (now checked) — the quantitative completion of the 3.11/3.12 held-read flagging.
+- Change: 3.11/3.12 tell the operator THAT a read is held by the persistence floor, but not how much of
+  it is memory vs live measurement. A war held at "Limited War" whose fresh evidence alone reads "Crisis"
+  is far more suspect than one whose fresh read is still "Limited War" — yet the chip presented both
+  identically (pillar-3: show how far, not just that). Added `TheaterState.fresh_rung_label` =
+  `rung_for(fast_heat, gp, wmd, nuclear)` — the rung the LIVE evidence alone supports, vs the displayed
+  `rung_label` the floor may be holding up. Honest by construction (the model's own `rung_for`) and ≤ the
+  displayed rung always (heat = max(fast_heat, floor) ≥ fast_heat; identical flags). The ladder chip now
+  appends `· fresh: <rung>` to the amber `⏸ held` tag (and to the chip tooltip) ONLY when the floor
+  strictly demotes the rung — equal rungs add nothing, so a live read is unchanged.
+- Metric moved: Test count 438 → 439 (+1); NEW capability — the operator now reads how far a held theater's
+  live evidence has decayed below the remembered war-state, in the same rung vocabulary. DISPLAY-only: no
+  calibration constant touched; all four `bands_*` + Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 438 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; `bands_{quiet,ukraine,current_full,cuba}` green.
+  New lock: `fresh_rung_label_shows_how_far_a_held_read_decayed_below_the_floor` (theater.rs — live→fresh==
+  displayed; fresh rung NEVER higher than displayed across a 24–240h silence sweep; floor strictly demotes
+  at some age) + extended `dashboard_flags_a_floor_held_theater_instead_of_a_live_read` (server: chip reads
+  `fresh_rung_label` and renders `fresh: `).
+- Notes / decisions future runs must respect: `fresh_rung_label` is `rung_for(fast_heat, …)`, the single
+  source of truth — do NOT re-derive a "fresh rung" client-side. DISPLAY-only; it must never feed the
+  forecast. It equals `rung_label` whenever the theater is not floor-held (no floor lift), so the `· fresh:`
+  note appears ONLY on a genuine floor-held demotion. The amber tag's final visual is the deploy eyes gate.
+
 ## 2026-06-22 — honesty/awareness — the HEADLINE flags a memory-held read, not just the theater chip
 - Item: roadmap 3.12 (now checked) — the headline analog of the 2026-06-21 per-theater `⏸ held` chip (3.11).
 - Change: the persistence floor lifts the lead theater's heat, and the systemic index is monotone in heat,

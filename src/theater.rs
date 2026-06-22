@@ -561,6 +561,7 @@ impl TheaterEngine {
                 gp_involved: false, alliance_invoked: false, top_actors: vec![],
                 top_driver: String::new(), rising_driver: String::new(),
                 secondary_driver: String::new(), held_by_floor: false,
+                fresh_rung_label: EscalationRung::Stable.label().to_string(),
             };
         }
 
@@ -599,6 +600,11 @@ impl TheaterEngine {
         let wmd_used         = tev.iter().any(|e| e.wmd_indicator && e.severity > 0.6);
         let nuclear_used     = nuclear_use_in(tev);
         let rung = rung_for(heat, gp_involved, wmd_used, nuclear_used);
+        // The rung the FRESH evidence alone supports (fast_heat, not the held floor). When the
+        // floor is holding the read up (`held_by_floor`), this is ≤ the displayed rung and shows
+        // the operator how far the live read has decayed below the remembered war-state. Equal to
+        // `rung` whenever the floor is not lifting the displayed heat. Honest by construction.
+        let fresh_rung = rung_for(fast_heat, gp_involved, wmd_used, nuclear_used);
 
         let delta = heat - prev;
         let trend = if delta > 0.005 { "rising" } else if delta < -0.005 { "falling" } else { "stable" };
@@ -692,6 +698,7 @@ impl TheaterEngine {
             gp_involved, alliance_invoked, top_actors,
             top_driver, rising_driver, secondary_driver,
             held_by_floor,
+            fresh_rung_label: fresh_rung.label().to_string(),
         }
     }
 }
@@ -814,6 +821,56 @@ mod tests {
         let quiet = TheaterEngine::new().compute(&[]);
         assert!(quiet.theaters.iter().all(|s| !s.held_by_floor),
             "a quiet world must never flag a held read");
+    }
+
+    #[test]
+    fn fresh_rung_label_shows_how_far_a_held_read_decayed_below_the_floor() {
+        use chrono::Duration;
+        // The persistence floor can hold a theater's displayed rung ABOVE what the fresh evidence
+        // alone supports. `fresh_rung_label` names the live-evidence rung so an operator sees how
+        // far the held read has decayed — in the same rung vocabulary. Honest by construction:
+        //   * the fresh rung can NEVER read higher than the displayed rung (heat >= fast_heat), and
+        //   * a live (not-held) read shows them equal, while a multi-day-silent war shows the floor
+        //     strictly holding the rung above the fresh read at some age.
+        let make = |age_h: i64| -> Vec<GeopoliticalEvent> {
+            let mut v = Vec::new();
+            for _ in 0..8 {
+                let mut a = ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true);
+                let mut b = ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false);
+                a.published_at = Utc::now() - Duration::hours(age_h);
+                b.published_at = Utc::now() - Duration::hours(age_h);
+                a.escalation_step = 0.2; b.escalation_step = 0.2;
+                v.push(a); v.push(b);
+            }
+            v
+        };
+        let gulf = |out: &TheaterOutput| out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap().clone();
+        // Map a displayed rung label back to its level for the never-higher invariant.
+        let lvl = |label: &str| -> u8 {
+            [EscalationRung::Stable, EscalationRung::Tension, EscalationRung::Crisis,
+             EscalationRung::LimitedWar, EscalationRung::GreatPowerWar, EscalationRung::Systemic]
+                .iter().find(|r| r.label() == label).map(|r| r.level())
+                .unwrap_or_else(|| panic!("unknown rung label {label:?}"))
+        };
+
+        // (1) Fresh (age 0): not held, fresh rung == displayed rung (no floor lift).
+        let fresh = gulf(&TheaterEngine::new().compute(&make(0)));
+        assert!(!fresh.held_by_floor);
+        assert_eq!(fresh.fresh_rung_label, fresh.rung_label,
+            "a live read's fresh rung must equal its displayed rung");
+
+        // (2) Across a multi-day silence the fresh rung never exceeds the displayed rung, and at
+        //     some age the floor strictly holds the rung above the fresh read (a real demotion).
+        let mut saw_strict_demotion = false;
+        for age in [24, 48, 72, 96, 120, 168, 240] {
+            let s = gulf(&TheaterEngine::new().compute(&make(age)));
+            assert!(lvl(&s.fresh_rung_label) <= lvl(&s.rung_label),
+                "fresh rung must never read higher than the displayed rung (age {age}h): fresh={} disp={}",
+                s.fresh_rung_label, s.rung_label);
+            if s.held_by_floor && lvl(&s.fresh_rung_label) < lvl(&s.rung_label) { saw_strict_demotion = true; }
+        }
+        assert!(saw_strict_demotion,
+            "a multi-day-silent war must, at some age, show the floor holding the rung above the fresh read");
     }
 
     #[test]
