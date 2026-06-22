@@ -861,7 +861,8 @@ const INFO={
   trend:{title:'6h Trend',html:`
     <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, computed server-side from the durable timeline history — so a page reload or UI change can't reset it.</p>
     <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison actually reaches and how many samples it spans.</p>
-    <p>If the <b>hottest theater</b> changed over the window, the sub-line also names the relocation (<b>lead→X (was Y)</b>) — <i>where</i> the risk concentrated, which the magnitude alone can't tell. A net-flat headline can still hide one theater cooling as another heats; the lead shift surfaces it.</p>`},
+    <p>If the <b>hottest theater</b> changed over the window, the sub-line also names the relocation (<b>lead→X (was Y)</b>) — <i>where</i> the risk concentrated, which the magnitude alone can't tell. A net-flat headline can still hide one theater cooling as another heats; the lead shift surfaces it.</p>
+    <p><span style="color:#E0922E"><b>Pegged at model ceiling</b></span> (amber): a frozen <b>+0.000%</b> is not always calm. When the hottest theater is railed at the model's maximum heat <i>and</i> the read has not moved all window, the number <i>can't</i> move — not because the world is quiet but because the model has run out of resolution above this point. We surface that honestly rather than letting a flat line read as reassurance.</p>`},
   w30:{title:'30-Day Window',html:`
     <p><b>30-Day Window</b> re-expresses the same model over a rolling 30-day horizon — a nearer-term read than the headline annual figure.</p>
     <p>It moves faster than the annual number, so it's the better gauge of short-run escalation. It's a derived view of one model, not a separate forecast.</p>`},
@@ -965,11 +966,19 @@ function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0]
 // the backend epoch ring) so the readout can't be broken by a dashboard refactor;
 // fall back to this tab's session buffer only if the field is absent (older
 // backend / pre-warmup). Returns {delta, samples, span} (span in s, may be null).
-function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null,lead:s.lead||'',leadThen:s.lead_then||'',leadShifted:s.lead_shifted===true};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
+function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null,lead:s.lead||'',leadThen:s.lead_then||'',leadShifted:s.lead_shifted===true,pegged:s.pegged===true};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
+// Amber, not the neutral ~0 grey: a PEGGED read is the model railed at its ceiling, the
+// opposite of a reassuring flat line.
+const PEGGED_COLOR='#E0922E';
 function fmtTrend(v){return(v>=0?'+':'')+(v*100).toFixed(3)+'%';}
 function trendColor(v){return v>0.0005?'#E24B4A':v<-0.0005?'#1D9E75':'var(--t2)';}
 // Honest sub-label: state the ACTUAL span when we don't yet hold a full ~6h.
-function trendSub(t){let base;if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';base='vs '+lbl+' ago ('+t.samples+' samples)';}else{base='vs 6 hrs ago ('+t.samples+' samples)';}
+function trendSub(t){
+// Pegged at the model ceiling: say so plainly. A frozen +0.000% here is not calm — the
+// hottest theater is railed at maximum heat and the read has not moved, so the model is
+// out of resolution above this point. This short-circuits the normal "vs N hrs ago" copy.
+if(t.pegged){return 'pegged at model ceiling · resolution exhausted ('+t.samples+' samples)';}
+let base;if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';base='vs '+lbl+' ago ('+t.samples+' samples)';}else{base='vs 6 hrs ago ('+t.samples+' samples)';}
 // Awareness: when the hottest theater changed over the window, name the relocation of risk
 // (lead→X (was Y)) — the WHERE the bare delta can't show. Only on an actual shift, so a
 // stable leader adds no clutter. Server-judged (lead_shifted) from the lead_theater SoT.
@@ -1036,7 +1045,7 @@ function applyData(d){
   if(pA>sessionPeak)sessionPeak=pA;if(pA<sessionLow)sessionLow=pA;update6hBuffer(pA);
   document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
-  const _t6=trend6h(d,pA);const d6el=document.getElementById('ca-6h');if(d6el){if(!_t6){d6el.textContent='—';d6el.style.color='var(--t4)';}else{d6el.textContent=fmtTrend(_t6.delta);d6el.style.color=trendColor(_t6.delta);}}
+  const _t6=trend6h(d,pA);const d6el=document.getElementById('ca-6h');if(d6el){if(!_t6){d6el.textContent='—';d6el.style.color='var(--t4)';}else{d6el.textContent=fmtTrend(_t6.delta);d6el.style.color=_t6.pegged?PEGGED_COLOR:trendColor(_t6.delta);}}
   // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
   // secondary = present escalation severity (systemic index 0–100 + hottest rung).
   const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
@@ -1140,7 +1149,7 @@ function applyData(d){
   const confL=confLabel(conf);document.getElementById('cmd-conf').textContent=confL;document.getElementById('cmd-conf').style.color=conf>=.8?'#1D9E75':conf>=.5?'#EF9F27':'#7070a0';
   document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality';
   const _ct=trend6h(d,pA);const trendEl=document.getElementById('cmd-trend');
-  if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
+  if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=_ct.pegged?PEGGED_COLOR:trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
   // Rail shows the 30/90-day windows. The annual reading is the hero gauge; the live
   // Bayesian chain (P₀ × regime × coupling → P(WWIII)) is in the LIVE COMPUTE panel.

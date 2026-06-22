@@ -742,6 +742,29 @@ pub fn lead_theater(theaters: &[TheaterState]) -> String {
         .unwrap_or_default()
 }
 
+/// The heat at which a theater is RAILED against the model's hard clamp
+/// (`theater::heat_from_scores` ends in `.min(1.0)`): once the hottest theater reaches it,
+/// further escalation THERE can no longer raise the systemic likelihood, because it is the
+/// dominant `max_heat` term in `l_sys`. Anything `>=` this (modulo float noise) is "at the
+/// ceiling".
+pub const HEAT_CLAMP: f64 = 1.0;
+
+/// Whether the systemic read is **pegged at the top of the model's dynamic range**: the
+/// hottest theater is railed at the heat clamp AND the trailing-window reads have shown
+/// *zero* empirical movement (`empirical_hw_pct == 0`, i.e. every read in the window was
+/// identical). In that state the headline genuinely cannot move — not because the world is
+/// calm, but because the model has run out of resolution above this point — so the "6h
+/// Trend = +0.000%" must be surfaced as PEGGED, never read as a freeze/bug or a reassuring
+/// flat line. Pure honesty layer: it names the state, it never changes the math.
+///
+/// `samples >= 2` guards against declaring "pegged" on a cold ring with no real window yet.
+/// Mirrors the discipline of [`lead_theater`] — a small, unit-tested, single-source-of-truth
+/// read off the snapshot that the durable payload and the browser both consume.
+pub fn systemic_pegged(theaters: &[TheaterState], empirical_hw_pct: f64, samples: usize) -> bool {
+    let max_heat = theaters.iter().map(|t| t.heat).fold(0.0_f64, f64::max);
+    max_heat >= HEAT_CLAMP && empirical_hw_pct <= 0.0 && samples >= 2
+}
+
 // ── Systemic couplers (v2) ──────────────────────────────────────────────────────
 //
 // The factors that turn a regional war into a *world* war. These replace the flat
@@ -1081,6 +1104,28 @@ mod tests {
             theater_st("China-Taiwan", EscalationRung::Stable, 0.30), // Stable excluded even if "hot"
         ];
         assert_eq!(lead_theater(&hot), "US/Israel-Iran");
+    }
+
+    #[test]
+    fn systemic_pegged_only_when_railed_and_flat() {
+        // Pegged = hottest theater at the heat clamp AND zero empirical movement over the
+        // window. This is the honest "the model is out of resolution" state behind a frozen
+        // +0.000% trend — distinct from a genuinely calm or still-warming world.
+        let railed = [
+            theater_st("NATO-Russia", EscalationRung::GreatPowerWar, HEAT_CLAMP),
+            theater_st("US/Israel-Iran", EscalationRung::Crisis, 0.62),
+        ];
+        // Railed + flat + a real window → pegged.
+        assert!(systemic_pegged(&railed, 0.0, 21505));
+        // Railed but the read is still MOVING (empirical spread > 0) → not pegged, the trend
+        // is informative.
+        assert!(!systemic_pegged(&railed, 0.42, 21505));
+        // Flat but the hottest theater is below the clamp → a genuine plateau with headroom,
+        // not a ceiling peg.
+        let warm = [theater_st("NATO-Russia", EscalationRung::Crisis, 0.61)];
+        assert!(!systemic_pegged(&warm, 0.0, 21505));
+        // Cold ring (no real window yet) must never read as pegged.
+        assert!(!systemic_pegged(&railed, 0.0, 1));
     }
 
     #[test]
