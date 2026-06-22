@@ -355,6 +355,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     is now fully addressed.**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.12 The HEADLINE flags a memory-held read, not just the theater chip** — **DONE 2026-06-22.**
+  3.11 flagged a floor-held theater on the ladder chip, but the operator's at-a-glance read is the hero
+  P(WWIII) — and because the persistence floor lifts the lead theater's heat, it lifts the headline too
+  (the `persistence_floor_holds_a_silent_war_through_a_multiday_gap` backtest proves a 4-day-silent war
+  stays ~elevated). So the big number could rest on a *remembered* war-state with no fresh fighting while
+  the hero said nothing (pillar-1). Named the aggregate state at its source —
+  `theater::systemic_read_is_floor_held(&theaters)` = the highest-heat theater (the monotone index's
+  dominant driver) is `held_by_floor` — served as `meta.read_held_by_floor`, and the hero now shows an
+  amber `⏸ held by persistence · no fresh escalation in the lead theater` caveat (hidden in every normal
+  state; sits beside the `▲ capped at ceiling` caveat). DISPLAY-only — P(WWIII) untouched, all four bands
+  + Brier bit-identical. Locked by `systemic_read_is_floor_held_when_the_lead_theater_is_held` (theater.rs:
+  fresh→false, 4-day-silent→true, de-escalation-released→false, quiet→false),
+  `meta_read_held_by_floor_flags_a_memory_held_headline` (aggregator: lead-held→true, cooler-held→false,
+  quiet→false) + `dashboard_flags_a_floor_held_headline_not_a_live_read` (server render lock). See
+  improvement-log 2026-06-22.
 - [x] **3.11 A floor-held theater is flagged, not shown as a live read** — **DONE 2026-06-21.**
   The persistence floor (2026-06-21 model change) holds a hot theater's heat up through a multi-day
   news gap (silence ≠ peace), so the displayed heat can be a *remembered* war-state rather than a

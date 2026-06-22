@@ -204,6 +204,22 @@ pub fn theater_is_nuclear_brink(t: &TheaterState) -> bool {
         && distinct_great_powers(&t.top_actors) >= BRINK_MIN_GREAT_POWERS
 }
 
+/// Whether the SYSTEMIC read's leading driver is a remembered war-state rather than fresh
+/// fighting. The systemic index is monotone in theater heat, so the highest-heat theater is its
+/// dominant contributor; this returns true when that lead theater's `heat` is `held_by_floor` —
+/// i.e. the persistence floor is propping the headline up through a multi-day news gap (silence ≠
+/// peace) with no fresh escalation driving the lead. False for a quiet world (no theater is
+/// floor-held) and the moment de-escalation evidence releases the floor. The headline analog of
+/// the per-theater `⏸ held` chip: a headline that rests on memory must say so (pillar-1). Single
+/// source of truth for `meta.read_held_by_floor`, so the dashboard caveat can't drift from the model.
+pub fn systemic_read_is_floor_held(theaters: &[TheaterState]) -> bool {
+    theaters
+        .iter()
+        // heat is clamped finite in [0,1]; unwrap_or(Equal) keeps a stray NaN from panicking.
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal))
+        .is_some_and(|lead| lead.held_by_floor)
+}
+
 fn smoothstep(x: f64, lo: f64, hi: f64) -> f64 {
     if x <= lo { return 0.0; }
     if x >= hi { return 1.0; }
@@ -798,6 +814,47 @@ mod tests {
         let quiet = TheaterEngine::new().compute(&[]);
         assert!(quiet.theaters.iter().all(|s| !s.held_by_floor),
             "a quiet world must never flag a held read");
+    }
+
+    #[test]
+    fn systemic_read_is_floor_held_when_the_lead_theater_is_held() {
+        use chrono::Duration;
+        // The headline analog of the per-theater held flag: the systemic index is monotone in
+        // theater heat, so its lead (highest-heat) theater is its dominant driver. The aggregate
+        // flag must trip exactly when that lead is being HELD by the persistence floor — the
+        // headline rests on a remembered war-state, not fresh fighting.
+        let make = |age_h: i64, step: f64| -> Vec<GeopoliticalEvent> {
+            let mut v = Vec::new();
+            for _ in 0..8 {
+                let mut a = ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true);
+                let mut b = ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false);
+                a.published_at = Utc::now() - Duration::hours(age_h);
+                b.published_at = Utc::now() - Duration::hours(age_h);
+                a.escalation_step = step; b.escalation_step = step;
+                v.push(a); v.push(b);
+            }
+            v
+        };
+
+        // (1) Fresh war → the lead reads live, headline not held.
+        let fresh = TheaterEngine::new().compute(&make(0, 0.2));
+        assert!(!systemic_read_is_floor_held(&fresh.theaters),
+            "a fresh-hot lead theater is a live headline, not floor-held");
+
+        // (2) 4-day-silent war, no de-escalation → the lead is held by the floor, so is the headline.
+        let aged = TheaterEngine::new().compute(&make(96, 0.2));
+        assert!(systemic_read_is_floor_held(&aged.theaters),
+            "a headline led by a floor-held war must flag as held");
+
+        // (3) Same gap WITH de-escalation evidence → the floor releases, headline not held.
+        let deesc = TheaterEngine::new().compute(&make(96, -0.7));
+        assert!(!systemic_read_is_floor_held(&deesc.theaters),
+            "a de-escalating lead releases the floor — headline not held");
+
+        // (4) A quiet world never manufactures a held headline.
+        let quiet = TheaterEngine::new().compute(&[]);
+        assert!(!systemic_read_is_floor_held(&quiet.theaters),
+            "a quiet world must never flag a held headline");
     }
 
     #[test]

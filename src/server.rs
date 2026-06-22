@@ -639,6 +639,18 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_floor_held_headline_not_a_live_read() {
+        // Honesty/awareness at the HEADLINE (the at-a-glance read): when the lead theater driving
+        // the systemic index is HELD by the persistence floor, the hero must carry a caveat so a
+        // memory-held P(WWIII) can't masquerade as fresh fighting. Lock the render hooks so a UI
+        // refactor can't silently drop it. Driven by meta.read_held_by_floor.
+        assert!(DASHBOARD_HTML.contains("gauge-held"),
+            "hero must carry the floor-held caveat element");
+        assert!(DASHBOARD_HTML.contains("read_held_by_floor"),
+            "hero caveat must read the server-provided read_held_by_floor flag");
+    }
+
+    #[test]
     fn dashboard_html_uses_live_endpoints() {
         // The cockpit is WebSocket-driven with the live article feed + sources + epoch.
         assert!(DASHBOARD_HTML.contains("/ws"));

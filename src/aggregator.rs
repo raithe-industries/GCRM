@@ -168,6 +168,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "data_blind":               crate::bayesian::is_data_blind(snap.events_in_window),
             "thinly_sourced":           crate::bayesian::is_thinly_sourced(snap.events_in_window, snap.sources_active),
             "at_ceiling":               crate::bayesian::is_at_forecast_ceiling(snap.p_wwiii_annual),
+            "read_held_by_floor":       crate::theater::systemic_read_is_floor_held(&snap.theaters),
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
             "regions_active":           snap.regions_active,
@@ -1345,6 +1346,36 @@ mod tests {
         let v = snapshot_to_json(&capped);
         assert_eq!(v["meta"]["at_ceiling"], serde_json::json!(true));
         assert!(crate::bayesian::is_at_forecast_ceiling(crate::models::FORECAST_PROB_CEILING));
+    }
+
+    #[test]
+    fn meta_read_held_by_floor_flags_a_memory_held_headline() {
+        use crate::models::{EscalationRung, TheaterState};
+        let theater = |id: &str, heat: f64, held: bool| TheaterState {
+            theater_id: id.into(), label: id.into(),
+            rung: EscalationRung::LimitedWar, rung_label: "Limited War".into(),
+            heat, modality_scores: Default::default(), trend: "stable".into(),
+            delta: 0.0, event_count: 6, gp_involved: false, alliance_invoked: false,
+            top_actors: vec![], top_driver: String::new(), rising_driver: String::new(),
+            secondary_driver: String::new(), held_by_floor: held,
+        };
+
+        // A headline whose LEAD (highest-heat) theater reads live → not held, even if a cooler
+        // theater happens to be floor-held.
+        let mut live = make_snapshot(0.40, 0.0, 3);
+        live.theaters = vec![theater("us_iran", 0.62, false), theater("nato_russia", 0.30, true)];
+        assert_eq!(snapshot_to_json(&live)["meta"]["read_held_by_floor"], serde_json::json!(false));
+
+        // A headline led by a floor-held war (the model is holding it through a news gap) → the
+        // served contract says so, so the hero "held by persistence" caveat can't drift from the
+        // model. Single source of truth: theater::systemic_read_is_floor_held.
+        let mut held = make_snapshot(0.40, 0.0, 3);
+        held.theaters = vec![theater("us_iran", 0.62, true), theater("nato_russia", 0.30, false)];
+        assert_eq!(snapshot_to_json(&held)["meta"]["read_held_by_floor"], serde_json::json!(true));
+
+        // A quiet world (no theaters) never manufactures a held headline.
+        let quiet = make_snapshot(0.015, 0.0, 0);
+        assert_eq!(snapshot_to_json(&quiet)["meta"]["read_held_by_floor"], serde_json::json!(false));
     }
 
     #[test]
