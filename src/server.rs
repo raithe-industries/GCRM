@@ -636,6 +636,12 @@ mod tests {
             "ladder chip must read the server-provided held_by_floor flag");
         assert!(DASHBOARD_HTML.contains("tl-held"),
             "ladder chip must render the held tag");
+        // And when the floor holds the rung above what fresh evidence supports, the chip must name
+        // the fresh-evidence rung so the operator sees how far the live read has decayed.
+        assert!(DASHBOARD_HTML.contains("fresh_rung_label"),
+            "ladder chip must read the server-provided fresh_rung_label");
+        assert!(DASHBOARD_HTML.contains("fresh: "),
+            "held chip must surface the fresh-evidence rung when the floor lifts it");
     }
 
     #[test]

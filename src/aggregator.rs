@@ -1358,6 +1358,7 @@ mod tests {
             delta: 0.0, event_count: 6, gp_involved: false, alliance_invoked: false,
             top_actors: vec![], top_driver: String::new(), rising_driver: String::new(),
             secondary_driver: String::new(), held_by_floor: held,
+            fresh_rung_label: "Limited War".into(),
         };
 
         // A headline whose LEAD (highest-heat) theater reads live → not held, even if a cooler
