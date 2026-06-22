@@ -139,6 +139,29 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-22** (second run) — environmental block a **SEVENTEENTH** consecutive session; honest
+  **NO-OP**. Re-probed fresh (did not trust the prior sixteen lines). **WebFetch positive control**
+  on `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`, no
+  `name`); **NHC `CurrentStorms.json` and `api.open-meteo.com`** (Ottawa current-temp) **both 403**
+  → egress-wide WebFetch block unchanged, **Path A still structurally impossible** (owner-side
+  network policy). **Path B re-hunted via WebSearch + the GitHub MCP** on the open gaps. (1)
+  AIS-beyond-Baltic: chased **BarentsWatch / Kystverket** (Norwegian Coastal Admin open AIS, NLOD,
+  free) — but live access is **OAuth client-credentials keyed** (register an API client on MyPage),
+  so it would ship **DORMANT**, and `developer.barentswatch.no` is unreachable in-sandbox to verify
+  shape/fields → not a clean Path-A win this run. (2) GitHub code search for `ais.geojson`/
+  `vessels.geojson` (pushed >2026-05) → **0 hits**; repo search `conflict events fatalities geojson
+  auto-update pushed:>2026-05` → **0 hits**; authoritative-org code search (`"FeatureCollection"`
+  geojson in `noaa-onms`/`GlobalFishingWatch`) → only **static boundary polygons** (NOAA sanctuary
+  outlines, GFW survey AOIs) — no lat/lon *events*, no freshness, no risk signal (fails the
+  freshness + signal-meaningfulness bars). No authoritative body self-publishes a fresh geocoded
+  event feed to `raw.githubusercontent.com`. **Chip lever re-audited independently** (read
+  `feed_detail` end-to-end, lines 164–298): all 22 LIVE map feeds carry a meaningful, unit-bearing
+  arm; the `_ => None` tail is reached only by the non-geo catalog `cisa_kev`/`cccs` and
+  finance-panel `yahoo` — no honest offline chip edit remains, and no live data to verify a new band
+  against. No code change; tree left clean; ledger run-log only. **Did NOT re-send a push
+  notification**: the env-network block is unchanged and owner-side, already escalated 6+ times — a
+  17th identical alert is noise. Standing first pick the moment WebFetch reaches gov hosts: **NHC
+  tropical cyclones** (Path A, storm-domain win).
 - **2026-06-22** — environmental block a **SIXTEENTH** consecutive session; honest **NO-OP**.
   Re-probed fresh (did not trust the prior fifteen lines). **WebFetch positive control** on
   `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`, no
