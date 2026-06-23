@@ -47,7 +47,7 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 
 <div class="toc">
   <a href="#what">What it is</a><a href="#pipeline">Pipeline</a><a href="#baseline">Baseline prior</a>
-  <a href="#modalities">Modalities</a><a href="#theaters">Theaters &amp; ladder</a><a href="#couplers">Couplers</a>
+  <a href="#modalities">Modalities</a><a href="#theaters">Theaters &amp; ladder</a><a href="#persistence">Persistence</a><a href="#couplers">Couplers</a>
   <a href="#likelihood">Likelihood</a><a href="#index">Systemic index</a><a href="#alerts">Alert bands</a><a href="#calibration">Calibration</a>
   <a href="#ai">AI layer</a><a href="#confidence">Confidence</a><a href="#nuclear">Nuclear detector</a><a href="#limits">Limits</a>
 </div>
@@ -87,6 +87,12 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 <p>Each theater is placed on a Kahn / CrisisWatch-style discrete <b>escalation ladder</b> with a trend arrow:</p>
 <pre>Stable → Tension → Crisis → Limited War → Great-Power War → Systemic War</pre>
 <p>A direct great power in a war forces Great-Power War; a chemical/biological attack floors a theater at Limited War; confirmed nuclear <i>use</i> forces the Systemic rung.</p>
+
+<h2 id="persistence">Persistence — a silent war is not a peace</h2>
+<p>The escalation half-lives keep a theater steady across an overnight lull, but an active war is a sustained <b>state</b>, not a news pulse: a multi-day gap in coverage — a feed outage, a weekend, an information blackout over the front — must not be read as the fighting having stopped. A <b>persistence floor</b> handles this <i>asymmetrically</i> — fast to rise on fresh fighting, slow to fall, and only on <i>earned</i> de-escalation.</p>
+<p>The floor holds a theater's heat at <code>{{FLOOR_FRACTION_PCT}}</code> of its <b>slow war-state heat</b> — the same intra-theater heat recomputed with the escalation half-lives stretched <code>{{WAR_STATE_HALF_LIFE_SCALE}}</code>, so a silent war fades over weeks rather than days. The displayed heat is <code>max(fresh, floor)</code>: at peak freshness the floor sits below the fresh read, so it never moves a live reading — the calibration bands, all scored at full freshness, are untouched.</p>
+<p>Two honesty gates keep the floor from manufacturing risk. It engages <b>only</b> for a theater that reached at least the <b>Limited-War</b> rung — a crisis or tension spike never earns a multi-week floor, and a quiet world (slow heat ≈ 0) never gets phantom heat. And it is <b>released</b> the moment de-escalation evidence (ceasefires, deals, withdrawals) dominates the theater's recent signal, so a real peace process cools the read quickly instead of being propped up by memory. The chosen posture deliberately errs toward holding (a false "still hot") over premature stand-down (a false "all clear").</p>
+<p>When the floor is propping a reading up — the displayed heat exceeds what fresh evidence alone supports — the dashboard <b>says so</b>: the theater chip, the headline gauge, and the map flashpoint each carry a <code>⏸ held by persistence</code> caveat, alongside the rung that fresh evidence alone would show. A number resting on memory can never masquerade as live fighting. These figures are rendered from the engine's own <code>FLOOR_FRACTION</code> / <code>WAR_STATE_HALF_LIFE_SCALE</code> constants, so this page cannot drift from the running model.</p>
 
 <h2 id="couplers">Systemic couplers</h2>
 <p>The factors that turn a regional war into a world war — each is a bounded multiplier on the systemic likelihood. The maximum lift each can add is shown; the figures are rendered from the engine's own coupler constants, so this page cannot drift from the running model.</p>
