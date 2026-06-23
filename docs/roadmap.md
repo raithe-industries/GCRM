@@ -407,6 +407,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   fresh→false, 4-day-silent→true, de-escalation-released→false, quiet-world→false) +
   `dashboard_flags_a_floor_held_theater_instead_of_a_live_read` (server.rs render lock). See
   improvement-log 2026-06-21.
+  - PROGRESS 2026-06-23: extended the floor-held honesty to the **world-map flashpoint popup** —
+    the LAST operator surface still painting a floor-held theater (a remembered war-state carried
+    through a news gap) identical to a live-hot one (the chip had 3.11, the hero 3.12; the map
+    popup had neither). `osint::build_theater_features` now carries the engine's `held_by_floor` +
+    `fresh_rung_label` onto each theater feature (minimal 2-property add to the shared file), and
+    the dashboard popup renders an amber `⏸ held by persistence · no fresh escalation · fresh: <rung>`
+    line — same vocabulary/contract as the ladder chip. DISPLAY-only; bands 4/4, Brier 0.00000
+    bit-identical. Locked by `theater_feature_carries_the_persistence_floor_flags` (osint — flags
+    pass through; pre-floor snapshot defaults to not-held, no panic) +
+    `dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read` (server render lock). Map,
+    chip, and hero now agree on the floor-held caveat.
 - [x] **3.10 Seismic test-consistency reaches the I&W board** — **DONE 2026-06-18.** The
   strongest PHYSICAL nuclear indicator — a shallow event at a known test site that has cleared
   the natural-earthquake discriminator (no aftershock sequence, or a CTBTO statement) — lived
