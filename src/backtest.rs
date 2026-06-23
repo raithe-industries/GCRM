@@ -132,6 +132,59 @@ fn live_hot_2026() -> (f64, Vec<GeopoliticalEvent>) {
     (5.46, ev)
 }
 
+#[cfg(test)] // watch/measurement analog (no hard band) — reproduces the LIVE railed peg
+fn live_pegged_2026() -> (f64, Vec<GeopoliticalEvent>) {
+    // Reproduces the LIVE 2026-06 RAILED operating point that the four band analogs miss:
+    // FIVE concurrent hot theaters, great powers entangled across ≥3, a live Article-5 /
+    // alliance invocation, and the seeded acute regime (≈5.46×) — so EVERY l_sys input sits
+    // at its rail (top-theater heat clamped at 1.0, concurrency≈5, gp_entanglement=1,
+    // alliance_activation=1, guardrail_collapse=1) and P pegs ~83% with ~zero local slope.
+    // Still NO single direct US–Russia nuclear brink (that apex stays Cuba's). This is the
+    // state the de-saturation recalibration must give resolution back to; bands_* never
+    // exercise it (they all sit in the resolved region, L_sys ≤ 2.32). Measurement only.
+    let mut ev = evset("us_china_taiwan",
+        &[("military_escalation", 0.95, 0.92), ("economic_warfare", 0.88, 0.80),
+          ("nuclear_posture", 0.62, 0.65),     ("diplomatic_breakdown", 0.88, 0.78)],
+        &["china", "united_states", "taiwan"], true, 10);
+    // NATO–Russia carries a live alliance (Article-5) signal → alliance_activation = 1.0.
+    let mut nr = evset("nato_russia",
+        &[("military_escalation", 0.90, 0.88), ("nuclear_posture", 0.72, 0.72),
+          ("diplomatic_breakdown", 0.85, 0.75), ("economic_warfare", 0.78, 0.66)],
+        &["russia", "ukraine", "nato", "united_states"], true, 9);
+    for e in &mut nr { e.alliance_indicator = true; }
+    ev.extend(nr);
+    ev.extend(evset("us_iran",
+        &[("military_escalation", 0.92, 0.90), ("economic_warfare", 0.85, 0.72),
+          ("diplomatic_breakdown", 0.85, 0.72), ("nuclear_posture", 0.55, 0.60)],
+        &["united_states", "iran", "israel"], true, 8));
+    ev.extend(evset("india_pakistan",
+        &[("military_escalation", 0.80, 0.76), ("diplomatic_breakdown", 0.66, 0.60)],
+        &["india", "pakistan"], false, 6));
+    ev.extend(evset("korea",
+        &[("military_escalation", 0.70, 0.66), ("diplomatic_breakdown", 0.58, 0.52)],
+        &["north_korea", "united_states"], true, 5));
+    (5.46, ev)
+}
+
+/// A copy of [`live_pegged_2026`] with ONE theater's conventional intensity nudged by `d`
+/// (severity + signal), staying in the no-brink breadth regime. Used to MEASURE local slope
+/// at the railed operating point: a de-saturated model must move P between `nudged(+)` and
+/// `nudged(−)`; the saturated model does not. Never adds a nuclear brink (that is a separate
+/// apex lever), so this isolates top-end RESOLUTION, not the brink jump.
+#[cfg(test)]
+fn live_pegged_nudged(d: f64) -> (f64, Vec<GeopoliticalEvent>) {
+    let (rm, mut ev) = live_pegged_2026();
+    for e in &mut ev {
+        if e.theater.as_deref() == Some("us_iran") && e.domain_tags.iter().any(|t| t == "military_escalation") {
+            e.severity = (e.severity + d).clamp(0.0, 1.0);
+            if let Some(s) = e.domain_signals.get_mut("military_escalation") {
+                *s = (*s + d).clamp(0.0, 1.0);
+            }
+        }
+    }
+    (rm, ev)
+}
+
 fn cuba_1962() -> (f64, Vec<GeopoliticalEvent>) {
     // Direct US–USSR nuclear brink in ONE theater: extreme nuclear signaling + naval
     // blockade + ultimatum, both superpowers head-to-head → nuclear-brink apex.
@@ -175,12 +228,13 @@ fn deescalated(scn: (f64, Vec<GeopoliticalEvent>)) -> (f64, Vec<GeopoliticalEven
 /// Readout of the calibrated bands. Run with `cargo test calibration_readout -- --nocapture`.
 #[test]
 fn calibration_readout() {
-    let scenarios: [(&str, (f64, Vec<GeopoliticalEvent>)); 5] = [
-        ("quiet",         quiet()),
-        ("ukraine_2022",  ukraine_2022()),
-        ("current_2026",  current_2026()),
-        ("live_hot_2026", live_hot_2026()),
-        ("cuba_1962",     cuba_1962()),
+    let scenarios: [(&str, (f64, Vec<GeopoliticalEvent>)); 6] = [
+        ("quiet",          quiet()),
+        ("ukraine_2022",   ukraine_2022()),
+        ("current_2026",   current_2026()),
+        ("live_hot_2026",  live_hot_2026()),
+        ("live_pegged_26", live_pegged_2026()),
+        ("cuba_1962",      cuba_1962()),
     ];
     eprintln!("\n── GCRM v2 calibration backtest ──");
     for (name, scn) in scenarios {
@@ -193,6 +247,35 @@ fn calibration_readout() {
             c.gp_entanglement, c.guardrail_collapse, snap.driver);
     }
     eprintln!();
+}
+
+/// Measured readout of the LIVE railed peg and its local slope. Run:
+///   cargo test pegged_resolution_readout -- --nocapture
+/// Shows the saturation directly: at the railed operating point a ±intensity nudge moves P by
+/// ~nothing (Δ≈0pp) even though the underlying world changed — the loss-of-resolution the
+/// de-saturation recalibration must repair. Pure measurement; no assertion.
+#[test]
+fn pegged_resolution_readout() {
+    let base = run(live_pegged_2026().0, &live_pegged_2026().1);
+    let c = &base.couplers;
+    eprintln!("\n── GCRM live railed-peg resolution probe ──");
+    eprintln!("pegged       P={:6.2}%  idx={:5.1}  L_sys={:.3}  | coupling×{:.2} conc={:.2} gp={:.2} alliance={:.2} guard={:.2}  topHeat={:.4}  [{}]",
+        base.p_wwiii_annual * 100.0, base.systemic_index, base.likelihood_ratio,
+        c.coupling_multiplier, c.concurrency, c.gp_entanglement, c.alliance_activation,
+        c.guardrail_collapse,
+        base.theaters.iter().map(|t| t.heat).fold(0.0_f64, f64::max),
+        base.driver);
+    for d in [-0.30_f64, -0.15, 0.0, 0.15, 0.30] {
+        let s = live_pegged_nudged(d);
+        let snap = run(s.0, &s.1);
+        eprintln!("nudge {:+.2}   P={:6.2}%  L_sys={:.3}   ΔP_vs_base={:+.3}pp",
+            d, snap.p_wwiii_annual * 100.0, snap.likelihood_ratio,
+            (snap.p_wwiii_annual - base.p_wwiii_annual) * 100.0);
+    }
+    let hot  = { let s = live_pegged_nudged(0.30);  run(s.0, &s.1).p_wwiii_annual };
+    let cool = { let s = live_pegged_nudged(-0.30); run(s.0, &s.1).p_wwiii_annual };
+    eprintln!("→ resolution (P[+0.30] − P[−0.30]) = {:+.3}pp  (de-saturated target: ≥ 1.0pp)\n",
+        (hot - cool) * 100.0);
 }
 
 /// Measured readout of the news-lull behavior. Run:
@@ -356,6 +439,50 @@ fn bands_current_full() {
 fn bands_cuba() {
     let k = p_of(cuba_1962());
     assert!(k > 0.70 && k < 0.90, "cuba (nuclear-brink apex) should be ~80%, got {:.3}%", k * 100.0);
+}
+
+#[test]
+fn live_pegged_analog_reaches_the_railed_operating_point() {
+    // The de-saturation work needs the harness to EXERCISE the live railed state the four band
+    // analogs miss (they top out at L_sys≈2.32, in the resolved region). This locks that
+    // live_pegged_2026 reproduces it: five concurrent hot theaters with great powers entangled
+    // and an alliance engaged, near-apex P off the ceiling — and crucially a BREADTH peg, NOT
+    // the single-theater nuclear brink (that apex is Cuba's). Intent-level bounds only, so a
+    // future de-saturation that retunes the exact rail values does not trip this.
+    let snap = run(live_pegged_2026().0, &live_pegged_2026().1);
+    let c = &snap.couplers;
+    assert!(snap.p_wwiii_annual > 0.78 && snap.p_wwiii_annual < crate::models::FORECAST_PROB_CEILING,
+        "pegged analog must sit near-apex but off the {:.0}% ceiling, got {:.2}%",
+        crate::models::FORECAST_PROB_CEILING * 100.0, snap.p_wwiii_annual * 100.0);
+    assert!(c.concurrency >= 4.5, "breadth must be near-maximal (~5 hot theaters), got conc={:.2}", c.concurrency);
+    assert!(c.gp_entanglement > 0.5 && c.alliance_activation > 0.0,
+        "great-power entanglement + alliance must be live (gp={:.2} alliance={:.2})",
+        c.gp_entanglement, c.alliance_activation);
+    assert!(!snap.driver.to_lowercase().contains("brink"),
+        "the live peg is a BREADTH state, not the nuclear-brink apex (that is Cuba's): {}", snap.driver);
+}
+
+#[test]
+#[ignore = "acceptance bar for the de-saturation recalibration: the live railed peg is flat \
+            (~0.0pp) today; un-ignore once the recalibration lands to lock top-end resolution"]
+fn resolution_restored_at_the_railed_peg() {
+    // The OPERATIONAL definition of "de-saturated": at the live railed operating point, a real
+    // ±0.30 swing in one theater's conventional intensity (no brink added) must move the headline
+    // by at least 1pp. Today it is ~0.0pp (see pegged_resolution_readout) because max_heat and
+    // every coupler are clamped, so this is #[ignore]d to not block the gate before the fix. When
+    // the recalibration restores resolution, delete the #[ignore] and this becomes the regression
+    // lock that keeps the top of the scale from re-saturating. The four bands_* + ordering_holds +
+    // calibration_evidence locks remain the guardrails the recalibration must not break.
+    //
+    // NOTE (do not auto-implement): the recalibration that makes this pass moves FITTED constants
+    // and reshapes the top of the probability scale — a value-laden, false-alarm/false-calm
+    // decision reserved for Robert (see the honest-forecasting principle). This harness only makes
+    // the saturation MEASURABLE; an automated self-improve pass must NOT tune constants to clear
+    // this bar without his sign-off.
+    let hot  = { let s = live_pegged_nudged(0.30);  run(s.0, &s.1).p_wwiii_annual };
+    let cool = { let s = live_pegged_nudged(-0.30); run(s.0, &s.1).p_wwiii_annual };
+    assert!((hot - cool) * 100.0 >= 1.0,
+        "railed-peg resolution must be ≥1.0pp after de-saturation, got {:+.3}pp", (hot - cool) * 100.0);
 }
 
 // ── Calibration evidence harness (roadmap 1.1) ─────────────────────────────────────
