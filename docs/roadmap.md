@@ -406,6 +406,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `meta_read_held_by_floor_flags_a_memory_held_headline` (aggregator: lead-held→true, cooler-held→false,
   quiet→false) + `dashboard_flags_a_floor_held_headline_not_a_live_read` (server render lock). See
   improvement-log 2026-06-22.
+  - PROGRESS 2026-06-23: the held caveat said THAT the headline is held; the published **uncertainty
+    interval** still didn't reflect it. A floor-held read is stable across the 6h window precisely
+    because no fresh signal is arriving, so its empirical spread is narrow and the band advertised a
+    misleadingly TIGHT read on a remembered war-state (a pillar-1 gap: stability-through-silence read
+    as confidence). `uncertainty_window` now widens the band by the named `models::HELD_READ_WIDENING`
+    (0.5 → +50%) when `theater::systemic_read_is_floor_held` — the SAME source of truth the hero
+    `⏸ held` caveat reads — and publishes a `held_widened` flag. DISPLAY-only: widens the band, never
+    the point estimate; calibration bands (scored at full freshness, never held) + Brier 0.00000
+    bit-identical. Locked by `uncertainty_band_widens_when_the_read_is_floor_held` (same ring/confidence,
+    held=true → strictly wider by exactly 1+HELD_READ_WIDENING; point estimate straddled, never moved).
+    See improvement-log 2026-06-23.
 - [x] **3.11 A floor-held theater is flagged, not shown as a live read** — **DONE 2026-06-21.**
   The persistence floor (2026-06-21 model change) holds a hot theater's heat up through a multi-day
   news gap (silence ≠ peace), so the displayed heat can be a *remembered* war-state rather than a

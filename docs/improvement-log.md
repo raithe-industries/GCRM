@@ -16,6 +16,35 @@ Format per entry:
 
 ---
 
+## 2026-06-23 — honesty — the published uncertainty band WIDENS when the headline is held through a news gap
+- Item: roadmap 3.12 PROGRESS — completes the floor-held honesty line on the headline INTERVAL (chip 3.11
+  / hero 3.12 / map 3.23 flagged THAT it's held; the band still didn't reflect it).
+- Change: when the persistence floor is holding the lead theater's read up through a multi-day news gap,
+  the recent 6h reads are stable precisely because no fresh signal is arriving — so the empirical spread is
+  narrow and `uncertainty_window` published a misleadingly TIGHT band on a remembered war-state (pillar-1:
+  stability-through-silence read as confidence about the present). Added `models::HELD_READ_WIDENING = 0.5`
+  (a held read widens the half-width by +50%, bounded well below the zero-data `DATA_QUALITY_WIDENING=1.0`
+  because the war is genuinely ongoing per the floor's gate, just unconfirmed this window). `server.rs`
+  computes `read_held` from `theater::systemic_read_is_floor_held(&snap.theaters)` — the SAME single source
+  of truth the hero `⏸ held by persistence` caveat reads — and threads it through `uncertainty_6h` →
+  `uncertainty_window`, which multiplies the half-width by `1 + HELD_READ_WIDENING` and publishes a
+  `held_widened` flag (for a future tooltip) + an updated `basis` string.
+- Metric moved: Test count 448 → 449 (+1, the held-widening lock); NEW capability — a floor-held headline now
+  advertises wider uncertainty instead of a tight band, so the interval can't overstate a memory-held read.
+  DISPLAY-only: widens the band, never the point estimate. Calibration evidence bit-identical
+  (Brier=0.00000 / RMSE=0.14pp / in-band 4/4); bands_{quiet,ukraine,current_full,cuba} green (Hold held).
+- Proof: `cargo build --release` green; `cargo test --release` = 449 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings. New lock:
+  `uncertainty_band_widens_when_the_read_is_floor_held` (same ring + same full-confidence, held=true →
+  half-width strictly wider by exactly `1+HELD_READ_WIDENING`; `held_widened` flag set; point estimate
+  straddled, never moved). Existing four `uncertainty_window` tests updated to pass `held=false` (behaviour
+  on the live path unchanged).
+- Notes / decisions future runs must respect: `HELD_READ_WIDENING` is the single source of truth for the
+  held-band widening — do NOT hand-tune the band elsewhere. The held flag MUST stay sourced from
+  `systemic_read_is_floor_held` (no parallel "held" heuristic). DISPLAY-only — the widening must never feed
+  the forecast/point estimate or the calibration backtests (those score at full freshness, where held=false).
+  Provisional, paired with the persistence floor (PROTOTYPE).
+
 ## 2026-06-23 — legibility/honesty — methodology documents the persistence floor behind the "held" caveat
 - Item: roadmap 2.3 PROGRESS (methodology completeness — the model evolved, the whitepaper fell behind).
 - Change: the persistence floor (theater.rs, added 2026-06-21) is a MATERIAL model mechanism — it holds

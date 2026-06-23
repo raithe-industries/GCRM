@@ -481,24 +481,30 @@ impl EpochStore {
     /// Honest headline interval around the current P(WWIII), computed server-side from the durable
     /// ring (like [`trend_6h`]). The dashboard renders the BAND, never a bare point. See
     /// [`Self::uncertainty_window`] for the construction.
-    pub fn uncertainty_6h(&self, current_p: f64, confidence: f64) -> serde_json::Value {
-        self.uncertainty_window(current_p, confidence, Utc::now(), 6 * 3600)
+    pub fn uncertainty_6h(&self, current_p: f64, confidence: f64, held: bool) -> serde_json::Value {
+        self.uncertainty_window(current_p, confidence, Utc::now(), 6 * 3600, held)
     }
 
     /// Testable core of [`uncertainty_6h`]. The interval half-width is:
-    ///   hw = max(empirical, HUMILITY_FLOOR_HW) × (1 + DATA_QUALITY_WIDENING × (1 − confidence))
+    ///   hw = max(empirical, HUMILITY_FLOOR_HW)
+    ///        × (1 + DATA_QUALITY_WIDENING × (1 − confidence))
+    ///        × (1 + HELD_READ_WIDENING when `held`)
     /// where `empirical` is half the central-80% (P10..P90) spread of the last-window reads — how
     /// much the model itself has actually been moving. The humility floor means a momentarily
-    /// stable read still publishes an honest band (stability ≠ being right about the future), and
-    /// thin/stale data widens it further. Clamped to [0, FORECAST_PROB_CEILING] so the band never
-    /// claims a value above the engineering ceiling. `floored` flags that the irreducible humility
-    /// floor — not observed volatility — is what set the width.
+    /// stable read still publishes an honest band (stability ≠ being right about the future);
+    /// thin/stale data widens it further; and a persistence-floor-HELD read (`held`) widens it
+    /// again, because a war-state carried through a multi-day news gap is stable precisely from the
+    /// ABSENCE of fresh signal — that narrow empirical spread must not read as confidence. Clamped
+    /// to [0, FORECAST_PROB_CEILING] so the band never claims a value above the engineering ceiling.
+    /// `floored` flags that the irreducible humility floor — not observed volatility — is what set
+    /// the width.
     pub fn uncertainty_window(
         &self,
         current_p: f64,
         confidence: f64,
         now: DateTime<Utc>,
         window_secs: i64,
+        held: bool,
     ) -> serde_json::Value {
         let cutoff = now - chrono::Duration::seconds(window_secs);
         let mut ps: Vec<f64> = Vec::new();
@@ -527,8 +533,10 @@ impl EpochStore {
         };
         let conf = confidence.clamp(0.0, 1.0);
         let floored = empirical_hw < crate::models::HUMILITY_FLOOR_HW;
+        let held_widen = if held { crate::models::HELD_READ_WIDENING } else { 0.0 };
         let hw = empirical_hw.max(crate::models::HUMILITY_FLOOR_HW)
-            * (1.0 + crate::models::DATA_QUALITY_WIDENING * (1.0 - conf));
+            * (1.0 + crate::models::DATA_QUALITY_WIDENING * (1.0 - conf))
+            * (1.0 + held_widen);
         let low = (current_p - hw).max(0.0);
         let high = (current_p + hw).min(crate::models::FORECAST_PROB_CEILING);
         let r6 = |x: f64| (x * 1e6).round() / 1e6;
@@ -541,8 +549,10 @@ impl EpochStore {
             "empirical_hw_pct":(empirical_hw * 100.0 * 1e2).round() / 1e2,
             "floored":         floored,
             "samples":         ps.len(),
+            "held_widened":    held,
             "basis": "central-80% of the last 6h of model reads, floored at the humility minimum \
-                      for irreducible forecast uncertainty, widened when data quality is low",
+                      for irreducible forecast uncertainty, widened when data quality is low or the \
+                      lead read is held through a news gap by the persistence floor",
         })
     }
 }
@@ -1804,7 +1814,7 @@ mod tests {
         let now = Utc::now();
         let mut es = EpochStore::new();
         for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.72)); }
-        let u = es.uncertainty_window(0.72, 1.0, now, 6 * 3600); // confidence 1.0 → no widening
+        let u = es.uncertainty_window(0.72, 1.0, now, 6 * 3600, false); // confidence 1.0 → no widening
         assert_eq!(u["floored"], true, "a flat series must be floored at the humility minimum");
         let hw = (u["half_width_pct"].as_f64().unwrap()) / 100.0;
         assert!((hw - crate::models::HUMILITY_FLOOR_HW).abs() < 1e-6,
@@ -1822,7 +1832,7 @@ mod tests {
         for (i, p) in [0.50, 0.62, 0.55, 0.70, 0.58, 0.66, 0.52, 0.68].iter().enumerate() {
             es.push(epoch_at(300 - i as i64 * 30, now, *p));
         }
-        let u = es.uncertainty_window(0.60, 1.0, now, 6 * 3600);
+        let u = es.uncertainty_window(0.60, 1.0, now, 6 * 3600, false);
         assert_eq!(u["floored"], false, "a volatile series must exceed the humility floor");
         assert!((u["half_width_pct"].as_f64().unwrap()) / 100.0 > crate::models::HUMILITY_FLOOR_HW);
     }
@@ -1832,10 +1842,35 @@ mod tests {
         let now = Utc::now();
         let mut es = EpochStore::new();
         for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.40)); }
-        let full = es.uncertainty_window(0.40, 1.0, now, 6 * 3600);
-        let thin = es.uncertainty_window(0.40, 0.5, now, 6 * 3600); // half confidence
+        let full = es.uncertainty_window(0.40, 1.0, now, 6 * 3600, false);
+        let thin = es.uncertainty_window(0.40, 0.5, now, 6 * 3600, false); // half confidence
         assert!(thin["half_width_pct"].as_f64().unwrap() > full["half_width_pct"].as_f64().unwrap(),
             "lower data-quality must widen the interval");
+    }
+
+    #[test]
+    fn uncertainty_band_widens_when_the_read_is_floor_held() {
+        // A persistence-floor-HELD headline rests on a remembered war-state, not fresh signal —
+        // its stable recent series is the ABSENCE of new evidence, so the published band must widen
+        // rather than advertise that stability as confidence. Same ring + same (full) data-quality
+        // confidence: the only difference is `held`, which must strictly widen the interval by the
+        // named HELD_READ_WIDENING factor. DISPLAY-only: the point estimate (current_p) is unchanged.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.72)); }
+        let live = es.uncertainty_window(0.72, 1.0, now, 6 * 3600, false);
+        let held = es.uncertainty_window(0.72, 1.0, now, 6 * 3600, true);
+        let hw_live = live["half_width_pct"].as_f64().unwrap();
+        let hw_held = held["half_width_pct"].as_f64().unwrap();
+        assert!(hw_held > hw_live, "a floor-held read must publish a WIDER band ({hw_held} ≤ {hw_live})");
+        // The widening is exactly the named factor (full confidence → data-quality term is 1.0).
+        let expected = hw_live * (1.0 + crate::models::HELD_READ_WIDENING);
+        assert!((hw_held - expected).abs() < 1e-6, "held widening must be 1+HELD_READ_WIDENING: {hw_held} vs {expected}");
+        // The flag is published so the dashboard tooltip can explain WHY the band is wider, and the
+        // point estimate is untouched (band straddles it, never moves it).
+        assert_eq!(held["held_widened"], true);
+        assert_eq!(live["held_widened"], false);
+        assert!(held["low"].as_f64().unwrap() < 0.72 && held["high"].as_f64().unwrap() > 0.72);
     }
 
     #[test]
@@ -1844,7 +1879,7 @@ mod tests {
         let mut es = EpochStore::new();
         for s in [300, 240, 180, 120, 60] { es.push(epoch_at(s, now, 0.89)); }
         // Near the ceiling with low confidence: high must clamp at FORECAST_PROB_CEILING, low ≥ 0.
-        let u = es.uncertainty_window(0.89, 0.2, now, 6 * 3600);
+        let u = es.uncertainty_window(0.89, 0.2, now, 6 * 3600, false);
         assert!(u["high"].as_f64().unwrap() <= crate::models::FORECAST_PROB_CEILING + 1e-12);
         assert!(u["low"].as_f64().unwrap() >= 0.0);
     }

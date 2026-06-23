@@ -206,7 +206,12 @@ pub async fn broadcast_snapshots(
             // plain-language reference-class limit and error posture. The interval is computed
             // server-side from the durable ring (same discipline as trend_6h); the epistemic
             // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
-            let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
+            // Honesty: a headline the persistence floor is HOLDING through a news gap rests on a
+            // remembered war-state, not fresh observation — its narrow recent spread is the absence
+            // of new signal, not confidence. Widen the published band when held, using the SAME
+            // single source of truth the hero "⏸ held by persistence" caveat reads.
+            let read_held = crate::theater::systemic_read_is_floor_held(&snap.theaters);
+            let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence, read_held);
             let lead_now = crate::models::lead_theater(&snap.theaters);
             // Honesty layer: a frozen "+0.000%" 6h trend is the model PEGGED at the top of its
             // dynamic range — the hottest theater railed at the heat clamp AND zero empirical

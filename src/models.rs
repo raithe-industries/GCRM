@@ -68,6 +68,17 @@ pub const HUMILITY_FLOOR_HW: f64 = 0.07;
 /// Thin/stale coverage should make the band visibly wider, not silently keep its apparent precision.
 pub const DATA_QUALITY_WIDENING: f64 = 1.0;
 
+/// How much a persistence-floor-HELD headline widens the interval: half-width ×= 1 + this when the
+/// lead theater's read is being carried through a multi-day news gap (theater::systemic_read_is_floor_held).
+/// A held read rests on a REMEMBERED war-state, not fresh observation: the recent 6h reads are stable
+/// (narrow empirical spread) precisely because nothing new is arriving, so the band would otherwise
+/// advertise a misleadingly tight read. Stability-through-silence is not certainty about the present, so
+/// the published interval must widen. Bounded well below the zero-data case (DATA_QUALITY_WIDENING): the
+/// war is genuinely ongoing per the floor's gate, just unconfirmed this window. Provisional — paired with
+/// the persistence floor (PROTOTYPE). DISPLAY-only: widens the band, never the point estimate, so the
+/// calibration bands (scored at full freshness, where the read is never held) are untouched.
+pub const HELD_READ_WIDENING: f64 = 0.5;
+
 /// Plain-language reference-class limit — what the calibration is anchored to and what it may miss.
 pub const EPISTEMIC_REFERENCE_CLASS: &str =
     "Forecast under deep uncertainty, calibrated to historical analogs (Cuba 1962, Ukraine 2022, a quiet year). \
