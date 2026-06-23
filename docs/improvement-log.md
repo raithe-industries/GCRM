@@ -16,6 +16,34 @@ Format per entry:
 
 ---
 
+## 2026-06-23 — legibility/honesty — methodology documents the persistence floor behind the "held" caveat
+- Item: roadmap 2.3 PROGRESS (methodology completeness — the model evolved, the whitepaper fell behind).
+- Change: the persistence floor (theater.rs, added 2026-06-21) is a MATERIAL model mechanism — it holds
+  an active war's heat through a multi-day news gap (silence ≠ peace) and surfaces to the operator as the
+  `⏸ held by persistence` caveat on the chip (3.11), headline (3.12) and map flashpoint (3.23) — but the
+  authoritative methodology page never documented it. An operator seeing a held read had nowhere to learn
+  what it means, how long a silent war is held, or when it releases (pillar-1 gap: a number-affecting
+  mechanism behind a caveat, unexplained). Added a new `#persistence` whitepaper section (+ TOC link)
+  explaining the asymmetric fast-rise/slow-earned-fall floor, `heat = max(fresh, floor)`, the two honesty
+  gates (engages only ≥ Limited-War rung; released on de-escalation evidence), the deliberate err-toward-
+  holding posture, and that at peak freshness the floor sits below the fresh read so it never moves a live
+  reading (the calibration bands, scored at full freshness, are untouched). The two figures are TEMPLATED
+  from theater.rs's own `FLOOR_FRACTION` (85%) / `WAR_STATE_HALF_LIFE_SCALE` (5×) and substituted in
+  `server.rs::ServerState::new` — same anti-drift pattern as the couplers/guardrail figures, so the prose
+  can never disagree with the running model. DOC-only: no model/calibration constant touched.
+- Metric moved: Test count 447 → 448 (+1, the render lock); methodology now covers the persistence floor
+  (completeness frontier). Calibration evidence bit-identical (Brier=0.00000 / RMSE=0.14pp / in-band 4/4);
+  bands_{quiet,ukraine,current_full,cuba} green (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 448 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings. New lock:
+  `methodology_renders_the_persistence_floor_from_the_model_constants` (placeholders substituted; the
+  hold fraction + half-life stretch render from the constants; the held-by-persistence caveat is named;
+  the bands-untouched honesty point is stated; raw template carries placeholders not hardcoded numbers).
+  `methodology_html_is_substantial_and_complete` now also requires the `#persistence` section.
+- Notes / decisions future runs must respect: `FLOOR_FRACTION` / `WAR_STATE_HALF_LIFE_SCALE` are the
+  single source of truth for these figures — do NOT hand-type 85%/5× into the prose. The floor is still
+  PROTOTYPE/provisional; keep this section current as it evolves. DOC-only — touches no engine path.
+
 ## 2026-06-23 — honesty/awareness — the MAP flashpoint popup flags a floor-held theater, not a live read
 - Item: roadmap 3.11 PROGRESS — the map-surface completion of the persistence-floor honesty line
   (3.11 chip / 3.12 hero). The world map was the only operator surface still missing it.

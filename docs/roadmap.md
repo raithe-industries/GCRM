@@ -353,6 +353,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `breadth_never_swamps_the_nuclear_brink`). No model constant value changed; backtest 9/9, calibration
     evidence identical. Locked by `methodology_renders_coupler_magnitudes_from_the_model_constants`. **2.3
     is now fully addressed.**
+  - PROGRESS 2026-06-23: the model EVOLVED — the **persistence floor** (theater.rs, added 2026-06-21)
+    holds an active war's heat through a multi-day news gap and is surfaced to the operator as the
+    `⏸ held by persistence` caveat (chip 3.11 / hero 3.12 / map 3.23) — yet the methodology never
+    documented it, so an operator seeing a held read had nowhere to learn what it means, how long a
+    silent war is held, or when it releases (a pillar-1 gap: a material model mechanism behind a caveat,
+    unexplained). Added a new `#persistence` section explaining the asymmetric fast-rise/slow-earned-fall
+    floor, its two honesty gates (Limited-War rung; release on de-escalation), and that it never moves a
+    full-freshness reading (calibration bands untouched). The two figures (`{{FLOOR_FRACTION_PCT}}` 85% /
+    `{{WAR_STATE_HALF_LIFE_SCALE}}` 5×) are TEMPLATED from `theater.rs`'s own `FLOOR_FRACTION` /
+    `WAR_STATE_HALF_LIFE_SCALE` — same anti-drift pattern as the couplers/guardrail figures. Locked by
+    `methodology_renders_the_persistence_floor_from_the_model_constants`. **Keep this current as the floor
+    evolves (it is still PROTOTYPE/provisional).**
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.14 The 6h trend names a RELOCATION of the lead theater, not just a magnitude** — **DONE 2026-06-22.**

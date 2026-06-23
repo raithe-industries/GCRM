@@ -102,7 +102,14 @@ impl ServerState {
                 .replace("{{BREADTH_ASYMPTOTE_PCT}}",
                          &format!("{:.0}%", crate::theater::BREADTH_ASYMPTOTE * 100.0))
                 .replace("{{BRINK_AMPLIFIER_PCT}}",
-                         &format!("{:.0}%", crate::theater::BRINK_AMPLIFIER * 100.0)),
+                         &format!("{:.0}%", crate::theater::BRINK_AMPLIFIER * 100.0))
+                // Persistence floor (#persistence): the fraction of slow war-state heat the
+                // floor holds, and the half-life stretch that turns the kinetic decay into a
+                // multi-week one — rendered from theater.rs so the prose can't drift.
+                .replace("{{FLOOR_FRACTION_PCT}}",
+                         &format!("{:.0}%", crate::theater::FLOOR_FRACTION * 100.0))
+                .replace("{{WAR_STATE_HALF_LIFE_SCALE}}",
+                         &format!("{:.0}×", crate::theater::WAR_STATE_HALF_LIFE_SCALE)),
         );
         let state = Self {
             app_state,
@@ -1151,7 +1158,7 @@ mod tests {
     fn methodology_html_is_substantial_and_complete() {
         // Page must exist and cover every section the v2 engine implements.
         assert!(METHODOLOGY_HTML.len() > 8000, "methodology page should be a real whitepaper");
-        for anchor in ["#baseline", "#modalities", "#theaters", "#couplers",
+        for anchor in ["#baseline", "#modalities", "#theaters", "#persistence", "#couplers",
                        "#likelihood", "#index", "#alerts", "#calibration", "#ai",
                        "#confidence", "#nuclear"] {
             assert!(METHODOLOGY_HTML.contains(anchor), "methodology missing section {anchor}");
@@ -1246,6 +1253,38 @@ mod tests {
         // hardcoded value fails this.
         assert!(METHODOLOGY_HTML.contains("{{GUARDRAIL_AMPLIFIER_PCT}}"),
             "guardrail internals must be templated, not hardcoded");
+    }
+
+    #[test]
+    fn methodology_renders_the_persistence_floor_from_the_model_constants() {
+        // 2.3 (model evolution): the persistence floor (theater.rs, 2026-06-21) holds an
+        // active war's heat through a multi-day news gap and is surfaced to the operator as
+        // the "⏸ held by persistence" caveat — but the whitepaper never documented it, so an
+        // operator had nowhere to learn what a held read means. The new #persistence section
+        // explains it, and its two figures (the hold fraction and the half-life stretch) are
+        // rendered from theater.rs's own FLOOR_FRACTION / WAR_STATE_HALF_LIFE_SCALE (single
+        // source of truth), so the prose can never disagree with the running model.
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let m = &*state.methodology_html;
+        for tok in ["{{FLOOR_FRACTION_PCT}}", "{{WAR_STATE_HALF_LIFE_SCALE}}"] {
+            assert!(!m.contains(tok), "persistence placeholder {tok} must be substituted at startup");
+        }
+        let frac = format!("{:.0}%", crate::theater::FLOOR_FRACTION * 100.0);
+        assert!(m.contains(&frac),
+            "methodology must render the floor hold fraction ({frac}) from FLOOR_FRACTION");
+        let scale = format!("{:.0}×", crate::theater::WAR_STATE_HALF_LIFE_SCALE);
+        assert!(m.contains(&scale),
+            "methodology must render the half-life stretch ({scale}) from WAR_STATE_HALF_LIFE_SCALE");
+        // The honesty point must be stated: the floor never moves a live (peak-freshness)
+        // reading, and it surfaces the held caveat the dashboard shows.
+        assert!(m.contains("held by persistence"),
+            "methodology must name the held-by-persistence caveat the operator sees");
+        assert!(m.contains("calibration bands"),
+            "methodology must state the floor leaves the (full-freshness) calibration bands untouched");
+        // Raw template carries placeholders, not hand-typed numbers — a revert to a
+        // hardcoded value fails this.
+        assert!(METHODOLOGY_HTML.contains("{{FLOOR_FRACTION_PCT}}"),
+            "the persistence-floor figures must be templated, not hardcoded");
     }
 
     #[test]
