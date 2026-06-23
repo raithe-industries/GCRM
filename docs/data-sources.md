@@ -139,6 +139,31 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-23** (second run) — environmental block a **NINETEENTH** consecutive session; honest
+  **NO-OP**. Re-probed fresh and **wider** (did not trust the prior eighteen lines). **WebFetch
+  positive control** on `raw.githubusercontent.com` correct (`facebook/react` `package.json` →
+  `private:true`, no `name`); a four-host batch on distinct CDNs — **NHC `CurrentStorms.json`**,
+  **USGS `significant_week.geojson`**, **Wikipedia REST** (`en.wikipedia.org/api/rest_v1`), and
+  **GDACS `xml/rss.xml`** — plus normally-bot-friendly **`api.open-meteo.com`** (Ottawa current-temp)
+  **all 403**. The breadth (even Wikipedia/open-meteo, which don't bot-block) re-confirms the
+  restriction is **egress-wide on WebFetch**, not per-host bot-protection → **Path A still
+  structurally impossible** (owner-side network policy). **WebSearch works** (Anthropic-routed) and
+  re-mapped the AIS gap: authoritative gov AIS (NOAA/USCG `marinecadastre`) is **historical
+  GeoParquet bulk on GitHub, no live feed**; every real-time AIS GeoJSON is **commercial**
+  (aisstream/vesselfinder/aishub) — no free authoritative live AIS exists, confirming the standing
+  finding. **Path B re-hunted via the GitHub MCP** (the one reachable channel) on the open gaps —
+  AIS/vessel, conflict, non-NA geography: code searches (`extension:geojson FeatureCollection
+  vessel|ais|conflict pushed:>2026-05`, `filename:latest.geojson FeatureCollection pushed:>2026-05`)
+  and repo searches (`live AIS vessel positions geojson github actions`, `copernicus emergency|
+  meteoalarm|floodlist geojson alerts`, `JMA|BoM|geoscience australia geojson realtime`, `ACLED
+  weekly aggregated conflict fatalities csv mirror`) all returned **0 hits** — no authoritative body
+  self-publishes a fresh geocoded event feed to `raw.githubusercontent.com`. **Chip lever** stays
+  exhausted (all 22 LIVE map feeds carry a meaningful unit-bearing `feed_detail` arm; `_ => None`
+  reached only by non-geo `cisa_kev`/`cccs` and finance-panel `yahoo`) — no honest offline edit and
+  no live data to verify a new band against. No code change; tree left clean; ledger run-log only.
+  **Did NOT re-send a push notification**: the env-network block is unchanged and owner-side, already
+  escalated 6+ times — a 19th identical alert is noise. Standing first pick the moment WebFetch
+  reaches gov hosts: **NHC tropical cyclones** (Path A, storm-domain win).
 - **2026-06-23** — environmental block an **EIGHTEENTH** consecutive session; honest **NO-OP**.
   Re-probed fresh (did not trust the prior seventeen lines). **WebFetch positive control** on
   `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`, no `name`);
