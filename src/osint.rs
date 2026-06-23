@@ -140,6 +140,12 @@ fn build_theater_features(snapshot: &Option<Value>) -> Vec<Value> {
                 "heat": heat,
                 "trend": t.get("trend").and_then(|v| v.as_str()).unwrap_or(""),
                 "event_count": t.get("event_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                // Persistence-floor honesty: the marker must not paint a remembered war-state
+                // (held through a multi-day news gap) identical to a live-hot flashpoint. Carry
+                // the engine's own flags so the popup can flag a held read + how far the fresh
+                // read has decayed below it (same contract as the ladder chip / hero caveat).
+                "held_by_floor": t.get("held_by_floor").and_then(|v| v.as_bool()).unwrap_or(false),
+                "fresh_rung_label": t.get("fresh_rung_label").and_then(|v| v.as_str()).unwrap_or(""),
                 "color": rung_color(rung),
                 "layer": "theaters",
             }
@@ -783,6 +789,37 @@ mod tests {
         // The apex Systemic rung (nuclear use) gets its own colour, not GP-War red.
         assert_eq!(f[1]["properties"]["color"], "#b5179e");
         assert_ne!(f[1]["properties"]["color"], f[0]["properties"]["color"]);
+    }
+
+    #[test]
+    fn theater_feature_carries_the_persistence_floor_flags() {
+        // The map marker is the only operator surface that must not paint a floor-held
+        // theater (a remembered war-state carried through a news gap) identical to a
+        // live-hot one — the persistence-floor honesty contract the ladder chip and hero
+        // already enforce. The engine's `held_by_floor` + `fresh_rung_label` must reach the
+        // feature so the popup can flag it; a future edit dropping them fails this.
+        let snap = json!({"theaters": [
+            // Held: heat held above the fresh read; fresh evidence has decayed to Crisis.
+            {"theater_id": "us_iran", "label": "US/Iran", "rung": "limited_war",
+             "rung_label": "Limited War", "heat": 0.45, "trend": "stable", "event_count": 4,
+             "held_by_floor": true, "fresh_rung_label": "Crisis"},
+            // Live-hot: not floor-held, fresh read equals the displayed rung.
+            {"theater_id": "korea", "label": "Korea", "rung": "crisis",
+             "rung_label": "Crisis", "heat": 0.30, "trend": "rising", "event_count": 9,
+             "held_by_floor": false, "fresh_rung_label": "Crisis"}
+        ]});
+        let f = build_theater_features(&Some(snap));
+        assert_eq!(f[0]["properties"]["held_by_floor"], true);
+        assert_eq!(f[0]["properties"]["fresh_rung_label"], "Crisis");
+        assert_eq!(f[1]["properties"]["held_by_floor"], false);
+        // A pre-floor snapshot (no flags) must default to not-held, never panic.
+        let old = json!({"theaters": [
+            {"theater_id": "korea", "label": "Korea", "rung": "tension",
+             "rung_label": "Tension", "heat": 0.10}
+        ]});
+        let g = build_theater_features(&Some(old));
+        assert_eq!(g[0]["properties"]["held_by_floor"], false);
+        assert_eq!(g[0]["properties"]["fresh_rung_label"], "");
     }
 
     #[tokio::test]

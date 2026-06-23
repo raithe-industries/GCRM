@@ -1585,8 +1585,15 @@ function wireMapClicks(){
       let html;
       if(p.rung_label){ // GCRM theater flashpoint — escalation read
         const ec=(p.event_count!=null&&p.event_count!=='')?`<div class="pop-meta">${esc(String(p.event_count))} events feeding this read</div>`:'';
+        // Persistence-floor honesty (pillar-1): a marker held up by the floor (a remembered
+        // war-state carried through a news gap) must not read identical to a live-hot one.
+        // freshR<rung_label only when the floor lifts the rung above what fresh evidence supports.
+        const heldF=(p.held_by_floor===true||p.held_by_floor==='true');
+        const freshF=p.fresh_rung_label||'';
+        const demF=heldF&&freshF&&freshF!==p.rung_label;
+        const heldLine=heldF?`<div class="pop-sub" style="color:var(--amber)">⏸ held by persistence · no fresh escalation${demF?' · fresh: '+esc(freshF):''}</div>`:'';
         html=`<div class="pop-h"><span class="pop-dot" style="background:${p.color||'#e74c3c'}"></span><b style="font-size:10px;color:#fff">${esc(p.label||p.id||'Theater')}</b></div>`+
-          `<div class="pop-sub">Escalation: ${esc(p.rung_label)}${p.trend?' ('+esc(p.trend)+')':''}</div>`+ec;
+          `<div class="pop-sub">Escalation: ${esc(p.rung_label)}${p.trend?' ('+esc(p.trend)+')':''}</div>`+heldLine+ec;
       } else { // live feed signal — a meaningful card: type · real value, what, when, who, link
         const kind=p.kind||'other';
         const detail=p.detail?`<span class="pop-val">${esc(p.detail)}</span>`:'';

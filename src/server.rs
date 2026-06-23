@@ -670,6 +670,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read() {
+        // Honesty/awareness on the MAP surface: the world-map flashpoint popup is the only
+        // operator surface that must not paint a floor-held theater (a remembered war-state
+        // carried through a news gap) identical to a live-hot one — the same persistence-floor
+        // contract the ladder chip (above) and hero already enforce. Lock the popup render hooks
+        // so a UI refactor can't silently drop the caveat. The flags reach the popup via the
+        // theater GeoJSON feature (osint::build_theater_features), locked separately there.
+        assert!(DASHBOARD_HTML.contains("heldLine"),
+            "map popup must build a held caveat line for a floor-held theater");
+        assert!(DASHBOARD_HTML.contains("p.held_by_floor"),
+            "map popup must read the feature's held_by_floor flag");
+        assert!(DASHBOARD_HTML.contains("p.fresh_rung_label"),
+            "map popup must read the feature's fresh_rung_label to show how far the read decayed");
+    }
+
+    #[test]
     fn dashboard_flags_a_floor_held_headline_not_a_live_read() {
         // Honesty/awareness at the HEADLINE (the at-a-glance read): when the lead theater driving
         // the systemic index is HELD by the persistence floor, the hero must carry a caveat so a

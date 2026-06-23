@@ -16,6 +16,35 @@ Format per entry:
 
 ---
 
+## 2026-06-23 — honesty/awareness — the MAP flashpoint popup flags a floor-held theater, not a live read
+- Item: roadmap 3.11 PROGRESS — the map-surface completion of the persistence-floor honesty line
+  (3.11 chip / 3.12 hero). The world map was the only operator surface still missing it.
+- Change: the persistence floor holds a hot theater's heat up through a multi-day news gap, so a
+  marker's escalation can be a REMEMBERED war-state, not fresh fighting — yet the map flashpoint
+  popup showed only the rung/trend, painting a floor-held theater identical to a live-hot one (the
+  exact pillar-1/3 gap the ladder chip closed in 3.11 and the hero in 3.12). The engine already
+  carries `held_by_floor` + `fresh_rung_label` on each `TheaterState`; `osint::build_theater_features`
+  now forwards both onto the GeoJSON feature properties (minimal 2-property add to the shared file),
+  and the dashboard popup renders an amber `⏸ held by persistence · no fresh escalation` line, with
+  `· fresh: <rung>` when the floor lifts the rung above what fresh evidence supports — the same
+  vocabulary/contract the chip already uses. Honest by construction (the engine's own flags); the
+  map, chip, and hero now agree on the floor-held caveat.
+- Metric moved: Test count 446 → 448 (+2); NEW capability — the map surface now distinguishes a
+  live-hot flashpoint from one the model is holding through silence. DISPLAY-only: no calibration
+  constant touched; all four `bands_*` + Brier/RMSE bit-identical (Hold invariants held).
+- Proof: `cargo build --release` green; `cargo test --release` = 447 passed / 0 failed / 3 ignored;
+  `cargo clippy --release --all-targets` 0 warnings; `calibration_evidence_report` Brier=0.00000 /
+  RMSE=0.14pp / in-band 4/4; bands_{quiet,ukraine,current_full,cuba} green. New locks:
+  `theater_feature_carries_the_persistence_floor_flags` (osint.rs — held_by_floor + fresh_rung_label
+  pass through to the feature; a pre-floor snapshot defaults to not-held / "" and never panics) +
+  `dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read` (server.rs render lock — popup
+  reads p.held_by_floor / p.fresh_rung_label and builds the held caveat line).
+- Notes / decisions future runs must respect: the floor-held flags are the engine's
+  (`TheaterState.held_by_floor` / `fresh_rung_label`, single source of truth) — do NOT re-derive a
+  "held" heuristic in osint.rs or the popup. DISPLAY-only; must never feed the forecast. The osint.rs
+  edit is the SHARED signal-hunter file — kept to a 2-property pass-through; do not expand it. Final
+  visual is the deploy-time eyes gate.
+
 ## 2026-06-22 — awareness — the 6h trend names a RELOCATION of the lead theater, not just a magnitude
 - Item: roadmap 3.14 (now checked) — a new pillar-3 (show WHERE) capability on the 6h-trend surface.
 - Change: the "6h Trend" cell reported only HOW MUCH P(WWIII) moved over the trailing 6h — never WHERE.
