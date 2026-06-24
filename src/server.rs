@@ -1318,8 +1318,20 @@ mod tests {
         // greater than the rendered concurrency ceiling.
         const { assert!(crate::theater::BRINK_AMPLIFIER > crate::theater::BREADTH_ASYMPTOTE,
             "design invariant: the brink amplifier must exceed the concurrency asymptote") };
-        assert!(m.contains("never swamp"),
-            "methodology must state breadth never swamps a single nuclear brink");
+        // Pillar-1 honesty: that invariant is MULTIPLIER-level (brink amplifier > breadth
+        // ceiling), NOT an absolute headline guarantee. The model's own live behaviour
+        // contradicts the absolute reading — a no-brink multi-theater peg with great powers
+        // entangled, alliances invoked and guardrails collapsed reads ABOVE the single-theater
+        // Cuba brink apex, because the systemic couplers compound multiplicatively (see
+        // backtest::pegged_resolution_readout ≈83.6% vs cuba_1962 ≈79.8%). So the page must
+        // state the QUALIFIED relationship (equal coupling) and must NOT make the over-broad
+        // "breadth can never swamp a brink" claim that would falsely reassure on a flat read.
+        assert!(!m.contains("never swamp"),
+            "methodology must not make the false absolute 'breadth can never swamp a brink' claim");
+        assert!(m.contains("at equal great-power"),
+            "the brink-vs-breadth claim must be qualified to equal great-power coupling (multiplier-level)");
+        assert!(m.contains("compound multiplicatively"),
+            "the page must disclose that the systemic couplers compound — a broad, interlocked world can exceed an isolated brink");
         // Raw template carries placeholders, not hand-typed numbers — a revert to a
         // hardcoded magnitude fails this.
         assert!(METHODOLOGY_HTML.contains("{{BRINK_AMPLIFIER_PCT}}"),
