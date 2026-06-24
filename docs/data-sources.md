@@ -62,6 +62,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `cbsa_bwt` | Transport | CBSA | 29 land border-crossing wait times |
 | `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
+| `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -123,6 +124,9 @@ Bias each run toward the least-covered axis below.
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV). `acled` stays
   dormant (no Open API). Remaining: a higher-frequency conflict signal if one exists
   auth-free, or the ACLED aggregated-weekly Path-B snapshot.
+- **Storm / tropical cyclone** — SEEDED 2026-06-24 with `nhc` (NOAA NHC `CurrentStorms.json`,
+  Path A). Gap now: non-NHC basins (W-Pacific/Indian Ocean) — JTWC (`tgftp.nws.noaa.gov`) or
+  regional RSMCs (JMA, IMD, BoM) if an auth-free geocoded product exists.
 - **Geography** — feeds are Canada/US-dense. Hunt authoritative regional feeds for
   Europe (Copernicus EMS, MeteoAlarm if it geocodes), Asia/Pacific (JMA quakes/tsunami,
   Australia BoM/GA), Latin America, Africa.
@@ -139,6 +143,31 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-24** (second run) — **BROKE THE 20-RUN STALL: adopted `nhc` (NOAA NHC tropical
+  cyclones), Path A.** The standing first pick across 15+ blocked runs finally cleared verification
+  via a new technique. Re-probed the network fresh: WebFetch positive control on
+  `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`/no name);
+  NHC `CurrentStorms.json` **and** `api.open-meteo.com` (Ottawa) both **403** → egress-wide WebFetch
+  block unchanged, so the live endpoint still can't be hit in-sandbox. **The unlock:** instead of
+  WebFetch-ing the live origin (impossible), I found NHC's *real captured output committed on GitHub*
+  — `jkeefe/workshops/hurricane-data/examples/CurrentStorms.json` (WebFetched the raw mirror, the one
+  reachable channel) and `JasonPrice70/stormcast-pro/lambda-response.json` (a full real activeStorms
+  response). Both confirm the exact real-world schema: `{ "activeStorms": [{ id, name, classification
+  (HU/TS/TD), intensity (kt string), pressure, latitude/latitudeNumeric, longitude/longitudeNumeric,
+  movementDir, movementSpeed, lastUpdate } ] }`. So the connector + offline fixture are built against
+  **real NHC bytes**, not documentation guesswork; prod (full network) fetches the live URL. Clears
+  all six bars: authoritative (NOAA NHC, the primary tropical-cyclone authority), auth-free JSON,
+  geocoded (per-storm lat/lon), fresh (6-hourly advisories; empty `activeStorms` off-season → 0 events,
+  not an error), non-duplicative (EONET severe-storm catalog lags and lacks live category; GDACS gives
+  only an alert level — neither carries live position + Saffir-Simpson category + max wind). Signal-
+  meaningful chip: classification + Saffir-Simpson category + max wind (kt), e.g. "Hurricane Cat 1 ·
+  75 kt", "Tropical Storm · 45 kt"; severity laddered off intensity. New `vendor/ee-sources/src/nhc.rs`
+  (pure `parse_nhc` + `storm_chip`/`saffir_category`, 5 offline tests incl. empty-season-is-OK and
+  error-on-bad-input); registered in `lib.rs`; wired `src/osint.rs` (join + count/cap row, cap 60, +
+  `feed_detail` arm + osint chip test); SRC_LABEL `NOAA NHC` in `dashboard.html`. **`cargo build
+  --release` green; full workspace `cargo test` green (gcrm 454 / 0 failed / 4 ignored; ee-sources nhc
+  5/5).** EventKind::Weather (matches EONET's severeStorms convention). Next target: non-NHC basins
+  (JTWC/JMA/BoM W-Pacific) if auth-free + geocoded.
 - **2026-06-24** — environmental block a **TWENTIETH** consecutive session; honest **NO-OP**.
   Re-probed fresh (did not trust the prior nineteen lines). **WebFetch positive control** on
   `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`, no `name`);
