@@ -139,6 +139,27 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-24** — environmental block a **TWENTIETH** consecutive session; honest **NO-OP**.
+  Re-probed fresh (did not trust the prior nineteen lines). **web fetch positive control** on
+  `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`, no `name`);
+  **NHC `CurrentStorms.json`** and the normally bot-friendly **`api.open-meteo.com`** (Ottawa
+  current-temp) **both 403** → egress-wide web fetch block unchanged, **Path A still structurally
+  impossible** (owner-side network policy). **Path B re-hunted via the GitHub MCP** (the one reachable
+  channel) on the open gaps with fresh queries — AIS/vessel (`vessel AIS positions geojson
+  pushed:>2026-05`), non-NA geography (`copernicus emergency meteoalarm flood alerts geojson
+  pushed:>2026-04`; code `FeatureCollection org:eea`), conflict (`ACLED weekly aggregated conflict
+  fatalities csv pushed:>2026-03`), storms (`tropical cyclone hurricane geojson github actions hourly
+  pushed:>2026-05 stars:>2`), and a generic auto-refreshed feed probe (`FeatureCollection
+  filename:latest.geojson pushed:>2026-06`) — **all returned 0 hits**. No authoritative body
+  self-publishes a fresh geocoded event feed to `raw.githubusercontent.com`. **Chip lever re-audited
+  independently** (read `feed_detail` end-to-end, lines 170–304): all 22 LIVE map feeds carry a
+  meaningful, unit-bearing arm; the `_ => None` tail is reached only by the non-geo catalog
+  `cisa_kev`/`cccs` and finance-panel `yahoo` — no honest offline chip edit remains, and no live data
+  to verify a new band against. No code change; build green + full suite green (gcrm 450 / 0 failed /
+  4 ignored); tree left clean; ledger run-log only. **Did NOT re-send a push notification**: the
+  env-network block is unchanged and owner-side, already escalated 6+ times — a 20th identical alert
+  is noise. Standing first pick the moment web fetch reaches gov hosts: **NHC tropical cyclones**
+  (Path A, storm-domain win).
 - **2026-06-23** (second run) — environmental block a **NINETEENTH** consecutive session; honest
   **NO-OP**. Re-probed fresh and **wider** (did not trust the prior eighteen lines). **web fetch
   positive control** on `raw.githubusercontent.com` correct (`facebook/react` `package.json` →
