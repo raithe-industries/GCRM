@@ -169,6 +169,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   Systemic rung pegging the index at exactly FORECAST_INDEX_CEILING (95), never 100. These pin
   RELATIONSHIPS the model must always satisfy, not fitted magnitudes — they don't freeze the
   calibration. See improvement-log 2026-06-09.
+- [x] **1.4 Honest disclosure of the breadth-saturated read** — **DONE 2026-06-24.** The
+  de-saturation thread (`backtest::live_pegged_*`, `52a657d`) measured that the live railed peg
+  reads ~83.6% with ~0.0pp resolution: every breadth amplifier of `l_sys` is at its rail, so
+  intensifying the current crises can't move the number. But that peg sits BELOW the 0.90 forecast
+  ceiling, so `meta.at_ceiling` stays false and the operator saw a bare 83.6% that read as a
+  still-climbing point estimate (a pillar-1 overstatement of precision). The de-saturation
+  RECALIBRATION is Robert-gated (value-laden, moves fitted constants) — but the honest DISCLOSURE
+  is not. Added `couplers.breadth_saturated` (theater.rs): a purely-structural flag — hottest heat
+  clamped at the model max, gp-entanglement + alliance both railed, ≥2 hot theaters, no live
+  nuclear brink. Surfaced in `meta.breadth_saturated` (sibling to `at_ceiling`) and the analyst
+  brief (deterministic prose + LLM context), which now names it a structural-maximum read whose
+  only remaining lever is a direct nuclear brink. NO fitted constant touched, P unchanged. Locked
+  by `breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_bands`,
+  `meta_mirrors_the_breadth_saturation_flag_from_the_couplers`, and
+  `templated_brief_discloses_a_breadth_saturated_read_as_a_structural_maximum`. See
+  improvement-log 2026-06-24.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

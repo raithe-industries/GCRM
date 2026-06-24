@@ -119,6 +119,14 @@ fn build_context(snap: &Value) -> String {
         f(snap, "/couplers/guardrail_collapse"),
         if coupling_driver.is_empty() { "none (regional, not yet systemically coupled)" } else { coupling_driver },
     );
+    if snap.pointer("/couplers/breadth_saturated").and_then(Value::as_bool).unwrap_or(false) {
+        out.push_str(
+            "NOTE: the read is BREADTH-SATURATED — every systemic breadth amplifier is railed \
+             (top-theater heat clamped at the model maximum, great-power entanglement and \
+             alliance activation both maxed) and no single-theater nuclear brink is live. The \
+             estimate has no headroom left from intensification of the current crises; the only \
+             lever that would raise it is a direct nuclear brink.\n");
+    }
     for t in theaters_sorted(snap) {
         let actors = t.get("top_actors").and_then(|v| v.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
@@ -161,6 +169,16 @@ fn templated_brief(snap: &Value) -> String {
             None => p.push_str(
                 " No coupling channel yet links them into a systemic risk; the elevation \
                  remains regionally contained."),
+        }
+        // Honesty: when every breadth amplifier is railed, the estimate is a structural MAX,
+        // not a precise point estimate that will keep climbing as the current crises worsen.
+        // Say so plainly so the operator does not read a saturated breadth peg (which sits
+        // below the forecast ceiling, so the "capped" caveat never fires) as still-rising.
+        if snap.pointer("/couplers/breadth_saturated").and_then(Value::as_bool).unwrap_or(false) {
+            p.push_str(
+                " The breadth amplifiers are railed: this is a structural-maximum read with no \
+                 headroom left from the current crises intensifying — only a direct nuclear brink \
+                 would raise it further.");
         }
     } else {
         p.push_str(" No theater is currently above the crisis threshold; the reading sits near the structural baseline.");
@@ -247,5 +265,25 @@ mod tests {
         let b4 = templated_brief(&snap4);
         assert!(b4.contains("structural guardrail collapse"),
             "a guardrail-led world must name the structural channel, got:\n{b4}");
+    }
+
+    #[test]
+    fn templated_brief_discloses_a_breadth_saturated_read_as_a_structural_maximum() {
+        // Honesty lock: a railed breadth peg (couplers.breadth_saturated) sits BELOW the
+        // forecast ceiling, so the "capped" caveat never fires. The brief must still warn the
+        // operator that the number is a structural maximum with no headroom from the current
+        // crises worsening — otherwise a saturated 83% reads as a still-climbing point estimate.
+        let mut snap = sample();
+        assert!(!templated_brief(&snap).contains("structural-maximum read"),
+            "a resolved read must NOT carry the saturation caveat");
+        snap["couplers"]["breadth_saturated"] = json!(true);
+        let b = templated_brief(&snap);
+        assert!(b.contains("structural-maximum read") && b.contains("nuclear brink"),
+            "a breadth-saturated read must disclose the structural maximum + the only remaining \
+             lever (a nuclear brink), got:\n{b}");
+        // The LLM context must carry the same fact so the generated brief can't omit it.
+        snap["couplers"]["breadth_saturated"] = json!(true);
+        assert!(build_context(&snap).contains("BREADTH-SATURATED"),
+            "the LLM context must surface the breadth-saturation state");
     }
 }

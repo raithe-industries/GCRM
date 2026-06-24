@@ -562,6 +562,26 @@ impl TheaterEngine {
         );
         let coupling_driver = coupling_driver.to_string();
 
+        // Breadth saturation (HONESTY): every BREADTH/coupling amplifier of `l_sys` is at its
+        // structural rail and no single-theater nuclear brink is live — so the read has run out
+        // of resolution to further escalation of the crises ALREADY on the board. The hottest
+        // theater's heat is clamped at the model maximum (`max_heat == 1.0`, so intensifying it
+        // does nothing), great-power entanglement and alliance activation are both maxed, and
+        // ≥2 theaters are hot (a genuine breadth peg, not a single maxed crisis). The only lever
+        // left that can raise the read is a direct nuclear brink (`brink_mult`). This is the
+        // saturated operating point the de-saturation backtest thread measured — a ~83% breadth
+        // peg that sits BELOW the 0.90 forecast ceiling, so the existing `at_ceiling` caveat does
+        // NOT fire and a bare number would read as a still-climbing point estimate. Surfaced so it
+        // can't. Computed purely from the rails (`RAIL_EPS` absorbs float noise) — no fitted
+        // constant touched, P unchanged.
+        const RAIL_EPS: f64 = 1e-3;
+        let breadth_saturated =
+            hot_count >= 2
+            && brink == 0.0
+            && max_heat >= 1.0 - RAIL_EPS
+            && gp_entanglement >= 1.0 - RAIL_EPS
+            && alliance_activation >= 1.0 - RAIL_EPS;
+
         let couplers = SystemicCouplers {
             gp_entanglement,
             alliance_activation,
@@ -569,6 +589,7 @@ impl TheaterEngine {
             guardrail_collapse: 0.0, // set by the caller from the regime multiplier
             coupling_multiplier: (coupling_multiplier * concurrency_mult * brink_mult * 1e4).round() / 1e4,
             coupling_driver,
+            breadth_saturated,
         };
 
         TheaterOutput {

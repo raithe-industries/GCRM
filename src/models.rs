@@ -790,6 +790,17 @@ pub struct SystemicCouplers {
     // `coupling_multiplier`, never a new lever.
     #[serde(default)]
     pub coupling_driver:     String,
+    // HONESTY flag — every BREADTH/coupling amplifier of the systemic likelihood is at its
+    // structural rail (hottest theater's heat clamped at the model maximum, great-power
+    // entanglement and alliance activation both maxed, ≥2 theaters hot) AND no single-theater
+    // nuclear brink is live. In that state the read has run out of resolution to further
+    // escalation of the crises already on the board — intensifying them cannot raise it; the
+    // only remaining lever is a direct nuclear brink. Names the ceiling-saturation the
+    // de-saturation backtest thread measured (`backtest::live_pegged_*`), so a ~83% breadth
+    // peg below the 0.90 forecast ceiling can't read as a precise, still-climbing point
+    // estimate. Computed purely from the rails — touches no fitted constant, never changes P.
+    #[serde(default)]
+    pub breadth_saturated:   bool,
 }
 
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
