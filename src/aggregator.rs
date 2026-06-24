@@ -168,6 +168,7 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "data_blind":               crate::bayesian::is_data_blind(snap.events_in_window),
             "thinly_sourced":           crate::bayesian::is_thinly_sourced(snap.events_in_window, snap.sources_active),
             "at_ceiling":               crate::bayesian::is_at_forecast_ceiling(snap.p_wwiii_annual),
+            "breadth_saturated":        snap.couplers.breadth_saturated,
             "read_held_by_floor":       crate::theater::systemic_read_is_floor_held(&snap.theaters),
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
@@ -1355,6 +1356,18 @@ mod tests {
         let v = snapshot_to_json(&capped);
         assert_eq!(v["meta"]["at_ceiling"], serde_json::json!(true));
         assert!(crate::bayesian::is_at_forecast_ceiling(crate::models::FORECAST_PROB_CEILING));
+    }
+
+    #[test]
+    fn meta_mirrors_the_breadth_saturation_flag_from_the_couplers() {
+        // The served contract must carry the model's own breadth-saturation flag so the
+        // operator surface can disclose a railed read (a structural maximum that sits BELOW
+        // the forecast ceiling, where `at_ceiling` stays false) without recomputing the
+        // rails. Single source of truth: theater compute → couplers.breadth_saturated.
+        let mut snap = make_snapshot(0.83, 0.0, 5);
+        assert_eq!(snapshot_to_json(&snap)["meta"]["breadth_saturated"], serde_json::json!(false));
+        snap.couplers.breadth_saturated = true;
+        assert_eq!(snapshot_to_json(&snap)["meta"]["breadth_saturated"], serde_json::json!(true));
     }
 
     #[test]

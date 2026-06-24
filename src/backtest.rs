@@ -463,6 +463,33 @@ fn live_pegged_analog_reaches_the_railed_operating_point() {
 }
 
 #[test]
+fn breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_bands() {
+    // HONESTY lock for the `couplers.breadth_saturated` disclosure. The railed live peg
+    // (where the de-saturation thread measured ~0.0pp resolution) must SET the flag — every
+    // breadth amplifier railed, no brink — so an operator reading the ~83% breadth peg (which
+    // sits below the 0.90 forecast ceiling, so `at_ceiling` stays false) is told the number is
+    // a structural maximum, not a still-climbing point estimate.
+    let pegged = run(live_pegged_2026().0, &live_pegged_2026().1);
+    assert!(pegged.couplers.breadth_saturated,
+        "the live railed peg rails every breadth amplifier with no brink → breadth_saturated");
+    assert!(pegged.p_wwiii_annual < crate::models::FORECAST_PROB_CEILING,
+        "precondition: the saturated peg is BELOW the forecast ceiling (so at_ceiling does not \
+         fire and this flag is the only honest signal), got {:.2}%", pegged.p_wwiii_annual * 100.0);
+
+    // Every analog with genuine top-end resolution must NOT flag saturation: quiet/ukraine/
+    // current are not railed (heat or alliance below the rail), and Cuba is a SINGLE-theater
+    // brink apex (hot_count 1 + brink live), not a breadth peg. A false positive here would
+    // slap a "structural maximum" caveat on a read that can still climb — a worse lie than none.
+    for (name, scn) in [("quiet", quiet()), ("ukraine_2022", ukraine_2022()),
+                        ("current_2026", current_2026()), ("cuba_1962", cuba_1962())] {
+        let s = run(scn.0, &scn.1);
+        assert!(!s.couplers.breadth_saturated,
+            "{name} retains resolution (not all breadth amplifiers railed, or it is the \
+             single-theater brink apex) and must NOT read breadth_saturated");
+    }
+}
+
+#[test]
 #[ignore = "acceptance bar for the de-saturation recalibration: the live railed peg is flat \
             (~0.0pp) today; un-ignore once the recalibration lands to lock top-end resolution"]
 fn resolution_restored_at_the_railed_peg() {

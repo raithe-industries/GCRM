@@ -16,6 +16,34 @@ Format per entry:
 
 ---
 
+## 2026-06-24 — honesty/awareness — disclose the BREADTH-SATURATED read (a ~83% railed peg is a structural max, not a still-climbing estimate)
+- Item: roadmap 1.4 (new, checked). Honest interim posture for the de-saturation thread (`52a657d`).
+- Defect: the de-saturation backtest (`live_pegged_*`) measured that the live railed peg reads ~83.6%
+  with ~0.0pp resolution — every breadth amplifier of `l_sys` is at its rail (top heat clamped at 1.0,
+  gp-entanglement + alliance both maxed, 5 hot theaters), so worsening the current crises can't move the
+  number. But that peg is BELOW the 0.90 forecast ceiling, so `meta.at_ceiling` stays false and nothing
+  told the operator: a bare 83.6% read as a precise, still-rising point estimate. Pillar-1 overstatement
+  of precision. The de-saturation RECALIBRATION is Robert-gated (moves fitted constants); the DISCLOSURE
+  is not.
+- Change: added `SystemicCouplers.breadth_saturated` (models.rs), computed in `theater.rs::compute` from a
+  purely-structural predicate — `hot_count ≥ 2 && brink == 0 && max_heat ≥ 1−ε && gp_entanglement ≥ 1−ε &&
+  alliance_activation ≥ 1−ε`. Surfaced in `meta.breadth_saturated` (aggregator.rs, sibling to `at_ceiling`)
+  and the analyst brief (brief.rs — deterministic prose + LLM context), which now names a railed read a
+  "structural-maximum read" whose only remaining lever is a direct nuclear brink. NO fitted constant
+  touched; P, the four bands, and the calibration evidence (Brier ~2e-6) are all unchanged.
+- Metric: NEW honesty/awareness capability (not a +1 nit) — the served contract + operator brief now flag
+  a saturated read instead of letting it pass as a precise number. Test count 450 → 453.
+- Green: `cargo build --release` clean; `cargo test --release` 453 passed / 0 failed / 4 ignored; backtest
+  bands + calibration evidence green; clippy 0 warnings. Locks:
+  `breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_bands` (peg → true; quiet/
+  ukraine/current/cuba → false, so no false "structural max" on a still-climbing read),
+  `meta_mirrors_the_breadth_saturation_flag_from_the_couplers`,
+  `templated_brief_discloses_a_breadth_saturated_read_as_a_structural_maximum`.
+- Notes future runs MUST respect: this is the HONEST DISCLOSURE only. It does NOT restore top-end
+  resolution — the recalibration that makes `resolution_restored_at_the_railed_peg` pass moves FITTED
+  constants and is reserved for Robert. Do not auto-tune to clear that #[ignore]d bar. A natural follow-up
+  is a dashboard hero caveat reading `meta.breadth_saturated` (eyes-gated — left to a local run).
+
 ## 2026-06-24 — honesty — methodology stops claiming "breadth can never swamp a brink" (the live read contradicts it)
 - Item: roadmap 2.3 PROGRESS (keep the methodology honest as the model evolves) — pillar-1 correction.
 - Defect: the `#couplers` section told the operator "breadth can never swamp a single nuclear brink." That
