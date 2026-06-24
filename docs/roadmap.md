@@ -365,6 +365,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `WAR_STATE_HALF_LIFE_SCALE` — same anti-drift pattern as the couplers/guardrail figures. Locked by
     `methodology_renders_the_persistence_floor_from_the_model_constants`. **Keep this current as the floor
     evolves (it is still PROTOTYPE/provisional).**
+  - PROGRESS 2026-06-24: corrected a **pillar-1 false reassurance** the 2026-06-15 note introduced. The
+    `#couplers` bullets told the operator "breadth can never swamp a single nuclear brink" — but that is
+    only the MULTIPLIER-level invariant (`BRINK_AMPLIFIER +70% > BREADTH_ASYMPTOTE +26%`,
+    `breadth_never_swamps_the_nuclear_brink`), NOT a headline guarantee. The model's own live behaviour
+    contradicts the absolute reading: yesterday's de-saturation measurement (`52a657d`) showed the
+    no-brink live peg — 5 hot theaters, great powers entangled, alliance invoked, guardrails collapsed —
+    reads **≈83.6% vs Cuba's single-theater brink apex ≈79.8%**, because the systemic couplers compound
+    multiplicatively (the 1914 signature). Reworded both bullets to the honest, precise claim: the brink
+    amplifier outranks pure breadth *at equal great-power coupling*, and disclosed that a broad,
+    interlocked world can still out-read an isolated brink. Updated the test that ENSHRINED the falsehood
+    (`methodology_renders_coupler_magnitudes_from_the_model_constants` asserted `contains("never swamp")`)
+    to instead reject the absolute claim and require the qualified one. No model/calibration constant
+    touched; backtest bands green, calibration evidence identical (Brier ~2e-6, in-band 4/4); suite 450
+    green, clippy clean. (Does NOT touch the Robert-gated de-saturation recalibration — only stops the
+    page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.14 The 6h trend names a RELOCATION of the lead theater, not just a magnitude** — **DONE 2026-06-22.**

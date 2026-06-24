@@ -16,6 +16,28 @@ Format per entry:
 
 ---
 
+## 2026-06-24 — honesty — methodology stops claiming "breadth can never swamp a brink" (the live read contradicts it)
+- Item: roadmap 2.3 PROGRESS (keep the methodology honest as the model evolves) — pillar-1 correction.
+- Defect: the `#couplers` section told the operator "breadth can never swamp a single nuclear brink." That
+  is only the MULTIPLIER-level invariant (`BRINK_AMPLIFIER +70% > BREADTH_ASYMPTOTE +26%`, locked by
+  `breadth_never_swamps_the_nuclear_brink`) — NOT a headline guarantee. Yesterday's de-saturation
+  measurement (52a657d) surfaced that the no-brink live peg (5 hot theaters, great powers entangled,
+  alliance invoked, guardrails collapsed) reads **≈83.6% vs Cuba's single-theater brink apex ≈79.8%** —
+  the systemic couplers compound multiplicatively (the 1914 signature). A flat reading at that peg would
+  falsely reassure against a claim the model itself violates.
+- Change: reworded both `#couplers` bullets to the precise, honest property — the brink amplifier outranks
+  pure breadth *at equal great-power coupling*, and a broad+interlocked world can still out-read an
+  isolated brink (couplers compound). Updated the test that ENSHRINED the falsehood
+  (`methodology_renders_coupler_magnitudes_from_the_model_constants` asserted `contains("never swamp")`)
+  to reject the absolute claim and require the qualified one + the compounding disclosure. The templated
+  `+70% > +26%` figures stay (true, anti-drift). No model/calibration constant touched — does NOT touch
+  the Robert-gated de-saturation recalibration; only stops the operator page asserting its opposite.
+- Metric: pillar-1 honesty — a false reassurance removed from the operator-facing whitepaper and the
+  regression guard inverted to lock the honest version. Test count 450 (unchanged: modified an existing
+  test, not a +1 nit). Calibration evidence identical (Brier ~2e-6, RMSE 0.14pp, in-band 4/4).
+- Green: `cargo build --release` ok; `cargo test --release` 450 passed / 0 failed / 4 ignored; backtest
+  bands green; `methodology_renders_coupler_magnitudes_from_the_model_constants` green; clippy 0 warnings.
+
 ## 2026-06-23 — legibility/honesty — methodology documents the persistence floor behind the "held" caveat
 - Item: roadmap 2.3 PROGRESS (methodology completeness — the model evolved, the whitepaper fell behind).
 - Change: the persistence floor (theater.rs, added 2026-06-21) is a MATERIAL model mechanism — it holds
