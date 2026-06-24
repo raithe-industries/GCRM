@@ -253,6 +253,9 @@ fn feed_detail(e: &Event) -> Option<String> {
                 None => head,
             })
         }
+        // Tropical-cyclone classification + Saffir–Simpson category + max wind (kt),
+        // e.g. "Hurricane Cat 1 · 75 kt" — the operational read behind the storm dot.
+        "nhc" => ee_sources::nhc::storm_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -363,7 +366,7 @@ async fn feeds_payload() -> Value {
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano,
-        healthmap::HealthMap, navcanada::NavCanada, nws::Nws, ontario511::Ontario511,
+        healthmap::HealthMap, navcanada::NavCanada, nhc::Nhc, nws::Nws, ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
     };
 
@@ -373,7 +376,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -420,6 +423,8 @@ async fn feeds_payload() -> Value {
         fetch_one("digitraffic_ais", DigitrafficAis, 15),
         // UCDP candidate GED — georeferenced conflict events (fills the Conflict layer).
         fetch_one("ucdp_ged", UcdpGed, 15),
+        // NOAA NHC — active tropical cyclones (Atlantic/E-Pacific), live position + category.
+        fetch_one("nhc", Nhc, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -459,6 +464,7 @@ async fn feeds_payload() -> Value {
         (ca_notams.0, ca_notams.1, "navcanada", 600),
         (vessels.0, vessels.1, "digitraffic_ais", 800),
         (conflict.0, conflict.1, "ucdp_ged", 800),
+        (storms.0, storms.1, "nhc", 60),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -742,6 +748,28 @@ mod tests {
         // On the ground (index 8 = true): no airborne figures to surface.
         let e = mk(json!(["ghi","TAXI","US",1,1,-80.0,25.0,0.0,true,5.0,0.0,0,null,0.0,"1200",false,0]));
         assert_eq!(feed_detail(&e).as_deref(), Some("On ground"));
+    }
+
+    #[test]
+    fn nhc_chip_surfaces_classification_category_and_wind() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "nhc-x".into(),
+            source_id: "nhc".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.6),
+            url: None,
+            raw,
+        };
+        // Hurricane carries its Saffir–Simpson category; tropical storm just the wind.
+        let e = mk(json!({"classification": "HU", "intensity": 75.0}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Hurricane Cat 1 · 75 kt"));
+        let e = mk(json!({"classification": "TS", "intensity": 45.0}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Tropical Storm · 45 kt"));
     }
 
     #[test]

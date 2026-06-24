@@ -17,6 +17,7 @@ pub mod cwfis_activefires;
 pub mod digitraffic_ais;
 pub mod drivebc;
 pub mod navcanada;
+pub mod nhc;
 pub mod ucdp_ged;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
@@ -67,6 +68,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
+        Box::new(nhc::Nhc::default()),             // Tropical cyclones (NOAA NHC)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),
