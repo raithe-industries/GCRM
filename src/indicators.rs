@@ -167,6 +167,35 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             theater: None, detail: "No theater data".into() },
     };
 
+    // 3c. Cyber / critical-infrastructure attack — the `cyber_info_ops` modality elevated
+    //     in ANY theater (attacks on power grids, financial systems, military C2, undersea
+    //     cables, or a coordinated info-ops campaign). This is the modern leading edge of
+    //     great-power conflict: cyber strikes on critical infrastructure routinely PRECEDE
+    //     kinetic action (degrade the adversary's command-and-control before the first shot).
+    //     `cyber_info_ops` is a tracked modality (weight 0.9 in DOMAIN_WEIGHTS that feeds the
+    //     headline) and the cross-domain light COUNTS it, but — unlike the other four
+    //     modalities (military→gp_kinetic, nuclear→nuclear_signaling, economic→energy_chokepoint,
+    //     diplomatic→diplomatic_breakdown) — no board light NAMED it, so a cyber/infrastructure
+    //     escalation short of a 3-modality cross-domain trip went dark on the operator's
+    //     at-a-glance board. Same global-max idiom and 0.45 "meaningfully elevated" bar as the
+    //     nuclear/energy/diplomatic lights, naming the hottest theater and a near-miss on a clear
+    //     read. Not apex (the apex set is reserved for great-power-WAR configurations).
+    let cyber = theaters.iter().map(|t| (t, modality(t, "cyber_info_ops")))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let ind_cyber = match cyber {
+        Some((t, v)) if v >= 0.45 => Indicator {
+            id: "cyber_infrastructure", label: "Cyber / critical-infrastructure attack", tripped: true,
+            theater: Some(t.label.clone()),
+            detail: format!("{} cyber / info-ops {:.2}", t.label, v) },
+        Some((t, v)) => Indicator {
+            id: "cyber_infrastructure", label: "Cyber / critical-infrastructure attack", tripped: false,
+            theater: None,
+            detail: format!("Below threshold (max {} {:.2})", t.label, v) },
+        None => Indicator {
+            id: "cyber_infrastructure", label: "Cyber / critical-infrastructure attack", tripped: false,
+            theater: None, detail: "No theater data".into() },
+    };
+
     // 4. Multiple theaters concurrently hot.
     let ind_concurrency = Indicator {
         id: "multi_theater", label: "Multiple theaters concurrently hot",
@@ -324,8 +353,9 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         }
     };
 
-    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_diplomatic, ind_concurrency, ind_escalating,
-         ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink, ind_seismic]
+    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_diplomatic, ind_cyber, ind_concurrency,
+         ind_escalating, ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink,
+         ind_seismic]
 }
 
 #[cfg(test)]
@@ -378,7 +408,7 @@ mod tests {
     fn empty_snapshot_trips_nothing() {
         let snap = RiskSnapshot::default();
         let inds = evaluate(&snap);
-        assert_eq!(inds.len(), 12);
+        assert_eq!(inds.len(), 13);
         assert!(inds.iter().all(|i| !i.tripped));
     }
 
@@ -546,6 +576,55 @@ mod tests {
         assert!(!diplo.tripped, "no theater at/above 0.45 must read clear");
         assert!(diplo.detail.contains("0.41"),
             "clear detail should surface the hottest near-miss value, got {:?}", diplo.detail);
+    }
+
+    #[test]
+    fn cyber_infrastructure_light_trips_and_names_the_hottest_theater() {
+        // `cyber_info_ops` is the 5th tracked modality but was the only one with no named
+        // board light (military→gp_kinetic, nuclear→nuclear_signaling, economic→energy_chokepoint,
+        // diplomatic→diplomatic_breakdown all had one). A cyber/critical-infrastructure attack —
+        // the modern opening move of great-power conflict — short of a 3-modality cross-domain
+        // trip went dark. This light closes that gap: it scans ALL theaters (global-max idiom)
+        // and names the hottest above the 0.45 signaling bar.
+        let snap = RiskSnapshot {
+            theaters: vec![
+                // Low-grade probing in one theater.
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("cyber_info_ops", 0.20)], &["iran"]),
+                // Grid / C2 attack in another, above the 0.45 bar.
+                theater("nato_russia", EscalationRung::Crisis, true,
+                    &[("cyber_info_ops", 0.71)], &["russia", "united_states"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let cyber = inds.iter().find(|i| i.id == "cyber_infrastructure").unwrap();
+        assert!(cyber.tripped, "cyber/info-ops at 0.71 must trip the light");
+        assert_eq!(cyber.theater.as_deref(), Some("nato_russia"),
+            "the tripped light must name the theater carrying the infrastructure attack");
+        // It is NOT apex (the apex set is reserved for great-power-WAR configurations).
+        assert!(!cyber.is_apex(), "a cyber-infrastructure light must not light red (apex)");
+    }
+
+    #[test]
+    fn cyber_infrastructure_clear_surfaces_hottest_near_miss() {
+        // Below-threshold cyber/info-ops everywhere → clear, and the detail reports the hottest
+        // near-miss so the operator sees how close the cyber axis is to tripping (same
+        // legibility contract as the energy/nuclear/diplomatic lights).
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("cyber_info_ops", 0.15)], &["iran"]),
+                theater("nato_russia", EscalationRung::Tension, false,
+                    &[("cyber_info_ops", 0.42)], &["russia"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let cyber = inds.iter().find(|i| i.id == "cyber_infrastructure").unwrap();
+        assert!(!cyber.tripped, "no theater at/above 0.45 must read clear");
+        assert!(cyber.detail.contains("0.42"),
+            "clear detail should surface the hottest near-miss value, got {:?}", cyber.detail);
     }
 
     #[test]
