@@ -27,6 +27,7 @@ pub mod eonet;
 pub mod firms;
 pub mod eqcanada;
 pub mod gdacs;
+pub mod geonet_volcano;
 pub mod gvp_volcano;
 pub mod healthmap;
 pub mod jma_typhoon;
@@ -66,6 +67,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         // Global feeds to densify the whole map (not just North America).
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),
+        Box::new(geonet_volcano::GeonetVolcano), // NZ volcanic alert levels (GeoNet/GNS)
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)

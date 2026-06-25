@@ -64,6 +64,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
+| `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -131,9 +132,14 @@ Bias each run toward the least-covered axis below.
   (`bom.gov.au`), Météo-France La Réunion, or Fiji RSMC, if an auth-free geocoded product
   exists. JTWC (`metoc.navy.mil`) publishes HTML/RSS only — no clean auth-free JSON/GeoJSON
   (confirmed 2026-06-25; the JSON wrappers found are all keyed third parties: Xweather/DTN).
-- **Geography** — feeds are Canada/US-dense. Hunt authoritative regional feeds for
-  Europe (Copernicus EMS, MeteoAlarm if it geocodes), Asia/Pacific (JMA quakes/tsunami,
-  Australia BoM/GA), Latin America, Africa.
+- **Volcano** — SEEDED globally with `gvp_volcano` (Smithsonian eruption catalogue) + EONET,
+  and EXTENDED 2026-06-25 with `geonet_volcano` (GeoNet/GNS NZ **Volcanic Alert Levels** —
+  the operational alert state, not an eruption record). Next: **USGS HANS / VolcanoesByStatus**
+  (US/Alaska volcano alert levels + aviation colour) if it web fetch-verifies as auth-free JSON,
+  and Italian INGV (Etna/Stromboli) if an auth-free geocoded product exists.
+- **Geography** — feeds are Canada/US-dense; SW-Pacific now seeded via `geonet_volcano` (NZ).
+  Hunt authoritative regional feeds for Europe (Copernicus EMS, MeteoAlarm if it geocodes),
+  Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America, Africa.
 - **Domains under-covered** — power-grid stress (other ISOs), rail/pipeline incidents
   (TSB Canada, NTSB), dam/reservoir, drought, flood-WITH-baselines, lightning (if a geocoded
   near-real-time product exists), methane/industrial (GHGSat/Sentinel).
@@ -147,6 +153,38 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-25** (second run) — **adopted `geonet_volcano` (GeoNet NZ Volcanic Alert Levels)** —
+  a new authoritative geocoded layer that adds the **operational volcanic-alert modality** (official
+  VAL 0–5 + ICAO aviation colour code) and **NZ / SW-Pacific** geography the global GVP eruption
+  catalogue and EONET don't carry. Re-probed the network fresh (did not trust the 20-run block
+  history): **web fetch positive control** on `raw.githubusercontent.com` correct (`facebook/react`
+  `package.json` → `private:true`/no `name`); **JTWC** best-track (`metoc.navy.mil`) and **GeoNet's own
+  live `api.geonet.org.nz/volcano/val`** both **403** → the egress-wide web fetch block on non-GitHub
+  hosts is unchanged, so Path-A *live* verification stays impossible in-sandbox. Storm-basin extension
+  ruled out this run: **IMD** (North Indian Ocean RSMC) is **auth-gated** (`api.imd.gov.in` requires
+  onboarding) and **BoM** (Australian region) publishes cyclone tracks as GIS shapefiles/IDW text, not
+  auth-free JSON — neither a clean fit, and the SH/IO basins are off-season anyway. **The unlock (same
+  technique that landed NHC + JMA):** confirmed via **web search** that GeoNet's API is open/no-auth,
+  then pulled the **real captured schema off GitHub** — `clemensv/real-time-sources`
+  (`tools/candidates/volcanic/geonet-nz-volcanic.md`) carries a real `volcano/val` FeatureCollection
+  example (White Island, level 2 / Orange), and `carolinaisslaying/geonet` independently asserts the
+  same shape (`feature.properties.volcanoID:string`, `level:number`). So the connector + offline fixture
+  are built against **real GeoNet bytes**, not docs guesswork; prod (full network) fetches the live
+  `volcano/val` URL with the `Accept: application/vnd.geo+json;version=2` header. Clears all six bars:
+  **authoritative** (GeoNet = GNS Science, NZ's official geological-hazard monitor); **auth-free** GeoJSON;
+  **machine-readable**; **geocoded** (per-volcano Point); **fresh** (operational VAL state; an all-quiet
+  network → 0 events, not an error); **non-duplicative** (GVP = a weekly *eruption* catalogue, EONET =
+  *events*; neither carries NZ's standardized alert level + aviation colour). **Signal-meaningful:** drops
+  VAL 0 ("no volcanic unrest", the all-clear) so only volcanoes at minor-unrest-or-above plot; severity
+  ladders VAL 1→5 (0.35→1.0); chip = "Alert Level {n} · Aviation {colour}". New
+  `vendor/ee-sources/src/geonet_volcano.rs` (pure `parse_geonet_val` + `val_chip` + `severity_for_level`,
+  4 offline tests: real-fixture parse drops the level-0 entry, all-quiet-is-OK, error-on-bad-input,
+  severity ladder). Registered in `lib.rs`; wired `src/osint.rs` (join + count/cap row cap 60 + `feed_detail`
+  arm + osint chip test); SRC_LABEL `GeoNet · GNS Science` in `dashboard.html`. **`cargo build --release`
+  green; full workspace `cargo test` green (gcrm 462 / 0 failed / 4 ignored; ee-sources 80 incl.
+  geonet_volcano 4/4; ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Volcano. Next volcano target:
+  USGS HANS / VolcanoesByStatus (US/Alaska alert levels) if auth-free JSON; next storm basin still
+  Indian Ocean / Southern Hemisphere if an auth-free geocoded product surfaces.
 - **2026-06-25** — **adopted `jma_typhoon` (JMA RSMC Tokyo typhoons), Path A** — extends the
   storm domain from NHC's Atlantic/E-Pacific to the **Western North Pacific + South China Sea**,
   the world's most active TC basin and the one NHC structurally does not cover. Re-probed the
