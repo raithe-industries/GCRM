@@ -68,7 +68,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
-        Box::new(nhc::Nhc::default()),             // Tropical cyclones (NOAA NHC)
+        Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

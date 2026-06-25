@@ -110,8 +110,8 @@ pub fn storm_chip(raw: &Value) -> Option<String> {
     let class = raw.get("classification").and_then(Value::as_str).unwrap_or("");
     let kt = raw.get("intensity").and_then(Value::as_f64);
     let mut label = classification_label(class).to_string();
-    if (class == "HU" || class == "MH") && kt.is_some() {
-        if let Some(cat) = saffir_category(kt.unwrap()) {
+    if class == "HU" || class == "MH" {
+        if let Some(cat) = kt.and_then(saffir_category) {
             label = format!("{label} Cat {cat}");
         }
     }
