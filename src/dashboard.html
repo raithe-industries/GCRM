@@ -441,6 +441,15 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            on de-escalation evidence. The headline analog of the per-theater "⏸ held" chip. Hidden in
            every normal state. Driven by meta.read_held_by_floor (theater::systemic_read_is_floor_held). -->
       <div class="gauge-held" id="gauge-held" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">⏸ held by persistence · no fresh escalation in the lead theater</div>
+      <!-- Honesty caveat (awareness layer): shown only when every systemic BREADTH amplifier is
+           railed (top-theater heat clamped at the model maximum, great-power entanglement and
+           alliance activation both maxed) with no single-theater nuclear brink live. The read is
+           then a STRUCTURAL MAXIMUM, not a still-climbing point estimate — the current crises
+           intensifying can no longer move it; only a direct nuclear brink would. This peg sits
+           BELOW the forecast ceiling, so the "capped" caveat never fires here and a bare % would
+           read as a precise number that could still rise. Hidden in every normal state. Driven by
+           meta.breadth_saturated (theater::compute → couplers.breadth_saturated). -->
+      <div class="gauge-saturated" id="gauge-saturated" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">◆ structural max · breadth railed, only a nuclear brink raises it</div>
       <!-- Error posture (honesty layer): names which mistake the model is tuned to prefer, so a
            reader knows how to weigh the number. Every choice has consequences; this makes ours
            legible. Server-driven from models::ERROR_POSTURE_NOTE (single source of truth); the
@@ -1064,6 +1073,10 @@ function applyData(d){
   // A headline whose lead theater is held by the persistence floor rests on a remembered
   // war-state, not fresh fighting — say so (pillar-1). Driven by meta.read_held_by_floor.
   const _gh=document.getElementById('gauge-held');if(_gh)_gh.style.display=(d.meta&&d.meta.read_held_by_floor)?'block':'none';
+  // A railed breadth peg is a STRUCTURAL MAXIMUM, not a still-climbing estimate — and it sits
+  // below the forecast ceiling so the "capped" caveat never fires. Say so (pillar-1 honesty /
+  // awareness). Driven by meta.breadth_saturated.
+  const _gs=document.getElementById('gauge-saturated');if(_gs)_gs.style.display=(d.meta&&d.meta.breadth_saturated)?'block':'none';
   // Honesty layer: render the headline INTERVAL (a range, not a point) and the error posture.
   const _u=d.uncertainty,_gi=document.getElementById('gauge-interval');
   if(_gi){

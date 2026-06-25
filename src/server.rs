@@ -831,6 +831,26 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_flags_a_breadth_saturated_read_as_a_structural_max() {
+        // Pillar-1 honesty + awareness: when every systemic breadth amplifier is railed (top
+        // heat at the model max, gp-entanglement + alliance both maxed, no live nuclear brink),
+        // the read is a STRUCTURAL MAXIMUM that the current crises intensifying can no longer
+        // move. That peg sits BELOW FORECAST_PROB_CEILING, so the `at_ceiling`/`gauge-cap`
+        // caveat never fires — a bare % would masquerade as a still-climbing point estimate.
+        // The hero must carry a caveat gated on the server-computed `breadth_saturated` flag
+        // (single source of truth: theater::compute → couplers.breadth_saturated, mirrored to
+        // meta.breadth_saturated in aggregator.rs and disclosed in the analyst brief).
+        assert!(
+            DASHBOARD_HTML.contains("breadth_saturated"),
+            "dashboard no longer reads the server breadth_saturated flag — a railed structural-max read would masquerade as a still-climbing number"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("gauge-saturated") && DASHBOARD_HTML.contains("structural max"),
+            "dashboard dropped the breadth-saturated caveat — a railed peg would read as a precise point estimate that could still rise"
+        );
+    }
+
+    #[test]
     fn dashboard_flags_a_blind_read_instead_of_claiming_live() {
         // Pillar-1 honesty: snapshots can keep arriving (connection Live, watchdog quiet)
         // while the window holds ZERO live events — a feed outage / cold start. Then the

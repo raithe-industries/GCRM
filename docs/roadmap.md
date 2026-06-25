@@ -185,6 +185,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `meta_mirrors_the_breadth_saturation_flag_from_the_couplers`, and
   `templated_brief_discloses_a_breadth_saturated_read_as_a_structural_maximum`. See
   improvement-log 2026-06-24.
+  - PROGRESS 2026-06-25: completed the flagged follow-up — surfaced `meta.breadth_saturated`
+    on the OPERATOR DASHBOARD hero (it was previously only in the analyst brief / served meta).
+    A new `#gauge-saturated` caveat ("◆ structural max · breadth railed, only a nuclear brink
+    raises it") shows beside the `gauge-cap`/`gauge-held` caveats, gated on `d.meta.breadth_saturated`
+    — so a railed peg below the forecast ceiling no longer reads as a still-climbing point estimate
+    at a glance. HTML/CSS done in-sandbox; final visual verdict is the local eyes gate. Locked by
+    `dashboard_flags_a_breadth_saturated_read_as_a_structural_max` (server.rs). No model constant
+    touched. See improvement-log 2026-06-25.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

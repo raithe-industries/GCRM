@@ -16,6 +16,28 @@ Format per entry:
 
 ---
 
+## 2026-06-25 — awareness/legibility — surface the BREADTH-SATURATED read on the operator dashboard hero
+- Item: roadmap 1.4 PROGRESS (the flagged dashboard follow-up to the 2026-06-24 disclosure).
+- Defect: `meta.breadth_saturated` (added 2026-06-24) flags a railed structural-maximum read — every
+  systemic breadth amplifier maxed, no live nuclear brink, so intensifying the current crises can no
+  longer move the number. It was disclosed in the analyst brief and the served `meta`, but the OPERATOR
+  DASHBOARD showed none of it: the hero `gauge-cap` caveat is gated on `at_ceiling`, which stays false
+  here because the peg (~83.6%) sits BELOW the 0.90 forecast ceiling. So a glance at the hero read a
+  railed structural max as a precise, still-climbing point estimate (pillar-1 overstatement of precision
+  on the primary surface).
+- Change: added a hero caveat `#gauge-saturated` ("◆ structural max · breadth railed, only a nuclear
+  brink raises it") in `dashboard.html`, sibling to `gauge-cap`/`gauge-held`, shown/hidden purely from
+  `d.meta.breadth_saturated`. No model/calibration constant touched; P and the four bands unchanged.
+- Metric: awareness/legibility capability — the structural-max read is now legible at a glance, not only
+  in the brief. Test count 456 → 457 (`dashboard_flags_a_breadth_saturated_read_as_a_structural_max`).
+- Green: `cargo build --release` clean; `cargo test --release` 455 passed / 0 failed / 4 ignored (network
+  feed/OSINT tests ignored as designed); `cargo clippy` clean in src/ (the 2 remaining warnings are in
+  vendored `ee-sources`, the signal-hunter's lane — untouched). Calibration bands + evidence unchanged.
+- Notes future runs MUST respect: this is the awareness DISCLOSURE on the dashboard. The de-saturation
+  RECALIBRATION (restoring top-end resolution, the `#[ignore]d` `resolution_restored_at_the_railed_peg`
+  bar) moves fitted constants and remains Robert-gated — do not auto-tune to clear it. Final visual
+  verdict for this hero caveat is the local eyes gate.
+
 ## 2026-06-24 — honesty/awareness — disclose the BREADTH-SATURATED read (a ~83% railed peg is a structural max, not a still-climbing estimate)
 - Item: roadmap 1.4 (new, checked). Honest interim posture for the de-saturation thread (`52a657d`).
 - Defect: the de-saturation backtest (`live_pegged_*`) measured that the live railed peg reads ~83.6%
