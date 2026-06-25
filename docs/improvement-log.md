@@ -16,6 +16,30 @@ Format per entry:
 
 ---
 
+## 2026-06-25 — awareness — I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning light (completes modality coverage)
+- Item: roadmap 3.16 (new, checked). Sibling of 3.15 (diplomatic) — the last unnamed modality.
+- Defect: after 3.15, four of the five tracked modalities had a NAMED board light; `cyber_info_ops`
+  (weight 0.9 in `DOMAIN_WEIGHTS`, feeds the headline) was the ONLY one with none — COUNTED by
+  `cross_domain` but never NAMED, so a cyber / critical-infrastructure attack (grid / C2 / financial /
+  undersea cable — the modern opening move of great-power conflict, routinely PRECEDING kinetic action)
+  short of a 3-modality cross-domain trip went dark on the operator's at-a-glance board.
+- Change: added `ind_cyber` → light id `cyber_infrastructure` (indicators.rs), label "Cyber /
+  critical-infrastructure attack" — global-max over theaters of `cyber_info_ops`, 0.45 signaling bar
+  (same per-modality "meaningfully elevated" tier as the nuclear/energy/diplomatic lights), names the
+  hottest theater, near-miss on a clear read, NOT apex. Board serializes generically and the dashboard
+  loops `data.indicators`, so no frontend change. Methodology advertised count "twelve"→"thirteen"
+  (locked to the live `evaluate().len()`).
+- Metric moved: new capability (Awareness frontier — all five modalities now named on the board);
+  test count 461 → 463; calibration evidence invariant held (display-only path, no `compute` touched).
+- Proof: `cargo build --release` green; full suite 461 passed / 0 failed / 4 ignored; `cargo test backtest`
+  20/0 (bands quiet/Ukraine/current/Cuba green); clippy clean. New: `cyber_infrastructure_light_trips_and_names_the_hottest_theater`,
+  `cyber_infrastructure_clear_surfaces_hottest_near_miss`; updated `empty_snapshot_trips_nothing` (len 12→13)
+  + `methodology_advertises_the_live_iw_board_count` (now "thirteen").
+- Notes / decisions future runs must respect: the board is now 13 lights (3-col grid → 4 full rows + 1).
+  All five `DOMAIN_WEIGHTS` modalities have a named light — the next board light should be a genuinely NEW
+  observable (velocity/physical/coupler class), not another per-modality level read. Display-only; never let
+  a board light enter `compute`.
+
 ## 2026-06-25 — awareness/legibility — I&W board gains a DIPLOMATIC-BREAKDOWN warning light (closes a modality blind spot)
 - Item: roadmap 3.15 (new, checked). Sibling of 3.8 (velocity) / 3.10 (seismic) — extends board coverage.
 - Defect: the I&W board scored five modalities (`DOMAIN_WEIGHTS`) but NAMED only three —

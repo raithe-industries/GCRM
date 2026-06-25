@@ -406,6 +406,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.16 The I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning condition** — **DONE 2026-06-25.**
+  With 3.15 (diplomatic) added, four of the five tracked modalities had a NAMED board light
+  (military→`gp_kinetic`, nuclear→`nuclear_signaling`, economic→`energy_chokepoint`,
+  diplomatic→`diplomatic_breakdown`) — `cyber_info_ops` (a weight-0.9 modality that feeds the headline)
+  was the ONLY one left unnamed, COUNTED by `cross_domain` but with no dedicated light, so a cyber /
+  critical-infrastructure escalation (grid / C2 / financial / undersea-cable attack — the modern opening
+  move of great-power conflict, routinely PRECEDING kinetic action) short of a 3-modality cross-domain
+  trip went dark on the operator's at-a-glance board. Added `cyber_infrastructure` (indicators.rs), same
+  global-max-over-theaters idiom and 0.45 signaling bar as the nuclear/energy/diplomatic lights, naming
+  the hottest theater and a near-miss on a clear read; NOT apex. The board renders generically off
+  `data.indicators`, so no frontend edit; the methodology advertised count is LOCKED to the live
+  `evaluate().len()` (now "thirteen"). No engine/calibration path touched (bands 20/20 green, evidence
+  bit-identical). Locked by `cyber_infrastructure_light_trips_and_names_the_hottest_theater` +
+  `cyber_infrastructure_clear_surfaces_hottest_near_miss` (indicators) and the updated
+  `empty_snapshot_trips_nothing` / `methodology_advertises_the_live_iw_board_count`. **All five tracked
+  modalities now have a named I&W light.** See improvement-log 2026-06-25.
 - [x] **3.15 The I&W board gains a DIPLOMATIC-BREAKDOWN warning condition** — **DONE 2026-06-25.**
   The board scored five modalities but NAMED only three (military via `gp_kinetic`, nuclear via
   `nuclear_signaling`, economic via `energy_chokepoint`); `diplomatic_breakdown` — the classic 1914
