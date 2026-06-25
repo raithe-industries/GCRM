@@ -16,6 +16,31 @@ Format per entry:
 
 ---
 
+## 2026-06-25 — awareness/legibility — I&W board gains a DIPLOMATIC-BREAKDOWN warning light (closes a modality blind spot)
+- Item: roadmap 3.15 (new, checked). Sibling of 3.8 (velocity) / 3.10 (seismic) — extends board coverage.
+- Defect: the I&W board scored five modalities (`DOMAIN_WEIGHTS`) but NAMED only three —
+  `military_escalation` (via `gp_kinetic`), `nuclear_posture` (`nuclear_signaling`), `economic_warfare`
+  (`energy_chokepoint`). `diplomatic_breakdown` — the classic 1914 "off-ramps closing" leading warning —
+  had no dedicated light; the `cross_domain` light only COUNTED it, so a diplomatic collapse short of a
+  3-modality cross-domain trip went dark on the operator's at-a-glance board (an awareness gap: the model
+  scores it and it feeds the headline, but the board couldn't show WHERE/that it was happening).
+- Change: added `ind_diplomatic` (indicators.rs) — global-max over theaters of the `diplomatic_breakdown`
+  modality, 0.45 signaling bar (same per-modality "meaningfully elevated" tier as the nuclear/energy
+  lights), names the hottest theater, near-miss on a clear read, NOT apex. The board serializes generically
+  and the dashboard renders `data.indicators` in a loop, so no frontend change (12 lights = clean 4×3 grid).
+  Also fixed a pre-existing legibility drift: methodology said the board "tracks ten" while it had eleven —
+  corrected to "twelve" and LOCKED to the live `evaluate().len()`.
+- Metric: NEW awareness capability (the 4th of 5 modalities is now a named board light, not just counted);
+  closed a doc-vs-engine drift. Test count 455 → 458. NO engine/calibration constant touched.
+- Green: `cargo build --release` clean; `cargo test --release` 458 passed / 0 failed / 4 ignored (network
+  feed/OSINT tests ignored as designed); `cargo test backtest` 20/20 (bands 4/4 intact); `cargo clippy`
+  clean in src/. Locks: `diplomatic_breakdown_light_trips_and_names_the_hottest_theater`,
+  `diplomatic_breakdown_clear_surfaces_hottest_near_miss` (indicators),
+  `methodology_advertises_the_live_iw_board_count` (server — ties the advertised count to the board length).
+- Notes future runs: the 5th modality, `cyber_info_ops` (weight 0.9), is still only COUNTED, not named — a
+  natural sibling follow-up if a cyber/infrastructure-attack light is judged worth a board slot. Final
+  visual verdict for the 12-light grid is the local eyes gate.
+
 ## 2026-06-25 — awareness/legibility — surface the BREADTH-SATURATED read on the operator dashboard hero
 - Item: roadmap 1.4 PROGRESS (the flagged dashboard follow-up to the 2026-06-24 disclosure).
 - Defect: `meta.breadth_saturated` (added 2026-06-24) flags a railed structural-maximum read — every

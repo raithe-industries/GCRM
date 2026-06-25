@@ -916,7 +916,7 @@ mod tests {
     fn dashboard_iw_board_flags_a_blind_read_instead_of_a_calm_all_clear() {
         // Pillar-1 honesty, board surface: during a blind read (zero live events) every
         // theater/coupler I&W light derives from NO signal, so the lights all read "clear"
-        // and the board summary would say a reassuring grey "0 / 11 tripped" — a calm
+        // and the board summary would say a reassuring grey "0 / 12 tripped" — a calm
         // all-clear indistinguishable from a genuinely quiet world. The board is its own
         // operator surface (its own summary line), so it must carry the same blind-read
         // honesty the header watchdog (2.6) added, gated on the SAME `_dataBlind` flag.
@@ -1196,6 +1196,26 @@ mod tests {
         assert!(METHODOLOGY_HTML.contains("sigmoid"),  "missing logistic model");
         assert!(METHODOLOGY_HTML.contains("backtest"), "missing calibration backtest");
         assert!(!METHODOLOGY_HTML.contains("2 / 2026"), "must not describe the removed 2/2026 anchor");
+    }
+
+    #[test]
+    fn methodology_advertises_the_live_iw_board_count() {
+        // The methodology page states how many warning conditions the I&W board tracks
+        // ("tracks <N> deterministic observable warning conditions"). That word was found
+        // STALE once already ("ten" while the board had eleven), and again when a twelfth
+        // light was added — a quiet legibility drift between the engine and what the
+        // operator is told. Tie the advertised count to the live board length so the two
+        // can never silently disagree again.
+        let n = crate::indicators::evaluate(&crate::models::RiskSnapshot::default()).len();
+        let word = match n {
+            9 => "nine", 10 => "ten", 11 => "eleven", 12 => "twelve",
+            13 => "thirteen", 14 => "fourteen", 15 => "fifteen",
+            _ => panic!("add the number-word for an I&W board of {n} lights"),
+        };
+        assert!(
+            METHODOLOGY_HTML.contains(&format!("{word} deterministic observable warning conditions")),
+            "methodology must advertise the live board count ({n} → \"{word}\")"
+        );
     }
 
     #[test]
@@ -1583,7 +1603,7 @@ mod tests {
     fn dashboard_renders_iw_board() {
         // The I&W board (indicators::evaluate) is computed and served at
         // data.indicators, and the methodology page advertises it ("an I&W board
-        // tracks eleven deterministic observable warning conditions"). It must
+        // tracks twelve deterministic observable warning conditions"). It must
         // actually be rendered, so the operator can see WHICH danger conditions
         // have tripped — the "why" behind the headline, not just how high.
         assert!(DASHBOARD_HTML.contains("id=\"iw-board\""), "I&W board container missing");

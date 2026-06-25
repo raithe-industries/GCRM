@@ -406,6 +406,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.15 The I&W board gains a DIPLOMATIC-BREAKDOWN warning condition** — **DONE 2026-06-25.**
+  The board scored five modalities but NAMED only three (military via `gp_kinetic`, nuclear via
+  `nuclear_signaling`, economic via `energy_chokepoint`); `diplomatic_breakdown` — the classic 1914
+  "off-ramps closing" leading warning (recalled ambassadors, walked-out talks, severed crisis comms) —
+  had no dedicated light. The `cross_domain` light merely COUNTED it, so a diplomatic collapse short of a
+  3-modality cross-domain trip went dark on the operator's at-a-glance board. Added `ind_diplomatic`
+  (indicators.rs), same global-max-over-theaters idiom and 0.45 signaling bar as the nuclear/energy lights,
+  naming the hottest theater and a near-miss on a clear read; NOT apex. The board renders generically off
+  `data.indicators`, so no frontend edit (12 lights = a clean 4×3 grid). Also corrected a pre-existing
+  legibility drift: the methodology page said the board "tracks ten" conditions while it had eleven — now
+  "twelve", LOCKED to the live `evaluate().len()` so the advertised count can never silently drift again.
+  No engine/calibration path touched (bands 4/4, evidence bit-identical). Locked by
+  `diplomatic_breakdown_light_trips_and_names_the_hottest_theater` +
+  `diplomatic_breakdown_clear_surfaces_hottest_near_miss` (indicators) and
+  `methodology_advertises_the_live_iw_board_count` (server). See improvement-log 2026-06-25.
 - [x] **3.14 The 6h trend names a RELOCATION of the lead theater, not just a magnitude** — **DONE 2026-06-22.**
   The "6h Trend" cell reported only HOW MUCH P(WWIII) moved; it could not show WHERE — and a net-flat
   headline can hide one theater cooling as another heats (the locus of risk relocating with little net
