@@ -256,6 +256,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // Tropical-cyclone classification + Saffir–Simpson category + max wind (kt),
         // e.g. "Hurricane Cat 1 · 75 kt" — the operational read behind the storm dot.
         "nhc" => ee_sources::nhc::storm_chip(&e.raw),
+        // JMA typhoon category (with intensity grade) + max wind (kt) + central
+        // pressure (hPa), e.g. "Strong Typhoon · 80 kt · 950 hPa".
+        "jma_typhoon" => ee_sources::jma_typhoon::typhoon_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -366,7 +369,8 @@ async fn feeds_payload() -> Value {
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs, gvp_volcano::GvpVolcano,
-        healthmap::HealthMap, navcanada::NavCanada, nhc::Nhc, nws::Nws, ontario511::Ontario511,
+        healthmap::HealthMap, jma_typhoon::JmaTyphoon, navcanada::NavCanada, nhc::Nhc, nws::Nws,
+        ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
     };
 
@@ -376,7 +380,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -425,6 +429,9 @@ async fn feeds_payload() -> Value {
         fetch_one("ucdp_ged", UcdpGed, 15),
         // NOAA NHC — active tropical cyclones (Atlantic/E-Pacific), live position + category.
         fetch_one("nhc", Nhc, 10),
+        // JMA RSMC Tokyo — active typhoons (W-Pacific/South China Sea), the basin NHC
+        // doesn't cover; index + per-system forecast, so allow a little more time.
+        fetch_one("jma_typhoon", JmaTyphoon, 14),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -465,6 +472,7 @@ async fn feeds_payload() -> Value {
         (vessels.0, vessels.1, "digitraffic_ais", 800),
         (conflict.0, conflict.1, "ucdp_ged", 800),
         (storms.0, storms.1, "nhc", 60),
+        (typhoons.0, typhoons.1, "jma_typhoon", 60),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -770,6 +778,29 @@ mod tests {
         assert_eq!(feed_detail(&e).as_deref(), Some("Hurricane Cat 1 · 75 kt"));
         let e = mk(json!({"classification": "TS", "intensity": 45.0}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Tropical Storm · 45 kt"));
+    }
+
+    #[test]
+    fn jma_typhoon_chip_surfaces_grade_wind_and_pressure() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "jma-x".into(),
+            source_id: "jma_typhoon".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.7),
+            url: None,
+            raw,
+        };
+        // Typhoon carries its JMA intensity grade plus wind + central pressure.
+        let e = mk(json!({"category": "TY", "knots": 80.0, "pressure": 950.0}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Strong Typhoon · 80 kt · 950 hPa"));
+        // Sub-typhoon system: label + wind, no grade.
+        let e = mk(json!({"category": "TS", "knots": 40.0}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Tropical Storm · 40 kt"));
     }
 
     #[test]

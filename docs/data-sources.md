@@ -63,6 +63,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
+| `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -124,9 +125,12 @@ Bias each run toward the least-covered axis below.
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV). `acled` stays
   dormant (no Open API). Remaining: a higher-frequency conflict signal if one exists
   auth-free, or the ACLED aggregated-weekly Path-B snapshot.
-- **Storm / tropical cyclone** — SEEDED 2026-06-24 with `nhc` (NOAA NHC `CurrentStorms.json`,
-  Path A). Gap now: non-NHC basins (W-Pacific/Indian Ocean) — JTWC (`tgftp.nws.noaa.gov`) or
-  regional RSMCs (JMA, IMD, BoM) if an auth-free geocoded product exists.
+- **Storm / tropical cyclone** — SEEDED 2026-06-24 with `nhc` (NOAA NHC, Atlantic/E-Pacific)
+  and EXTENDED 2026-06-25 with `jma_typhoon` (JMA RSMC Tokyo, W-Pacific/South China Sea, Path A).
+  Gap now: **Indian Ocean + Southern Hemisphere** basins — IMD (`mausam.imd.gov.in`), BoM
+  (`bom.gov.au`), Météo-France La Réunion, or Fiji RSMC, if an auth-free geocoded product
+  exists. JTWC (`metoc.navy.mil`) publishes HTML/RSS only — no clean auth-free JSON/GeoJSON
+  (confirmed 2026-06-25; the JSON wrappers found are all keyed third parties: Xweather/DTN).
 - **Geography** — feeds are Canada/US-dense. Hunt authoritative regional feeds for
   Europe (Copernicus EMS, MeteoAlarm if it geocodes), Asia/Pacific (JMA quakes/tsunami,
   Australia BoM/GA), Latin America, Africa.
@@ -143,6 +147,39 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-25** — **adopted `jma_typhoon` (JMA RSMC Tokyo typhoons), Path A** — extends the
+  storm domain from NHC's Atlantic/E-Pacific to the **Western North Pacific + South China Sea**,
+  the world's most active TC basin and the one NHC structurally does not cover. Re-probed the
+  network fresh (did not trust the 20-run "egress block" history): **WebFetch positive control**
+  on `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`/no
+  `name`); a four-host batch — `api.weather.gov`, `api.open-meteo.com`, USGS
+  `significant_week.geojson`, GDACS `xml/rss.xml` — **all 403**, so the egress-wide WebFetch
+  block on non-GitHub hosts is unchanged and Path-A *live* verification stays impossible
+  in-sandbox. **The unlock (same technique that landed NHC):** verified via **WebSearch**
+  (Anthropic-routed, works) that the JMA `bosai` typhoon JSON is auth-free and widely consumed,
+  then pulled the **real captured schema off GitHub** — `silenthooligan/localsky`
+  `src/api/tropical.rs` carries a real archived `forecast.json` payload (typhoon IN-FA/TC2105,
+  2021) plus `targetTc.json`/`pastTracks.json`, and 6+ independent repos (`skotm/wis-viewer`,
+  `kumi0708/typhoon-croquette`, `aki0429/tool.yql.jp`, …) confirm the same endpoint shape. So the
+  connector + offline fixtures are built against **real JMA bytes**, not docs guesswork; prod
+  (full network) fetches the live `bosai` URLs. Clears all six bars: **authoritative** (JMA =
+  Japan's national met service + the WMO-designated RSMC for NW-Pacific TCs); **auth-free** JSON;
+  **machine-readable**; **geocoded** (per-system analysis `center` [lat,lon]); **fresh** (advisory
+  cadence; empty `targetTc.json` off-season → 0 events, not an error); **non-duplicative** (NHC
+  covers disjoint basins; EONET lags + lacks live category; GDACS gives only an alert level).
+  **Signal-meaningful chip:** category + JMA intensity grade + max wind (kt) + central pressure
+  (hPa), e.g. "Strong Typhoon · 80 kt · 950 hPa"; severity laddered off 10-min sustained wind.
+  Multi-fetch handled in `Source::fetch` (index → per-TC forecast, capped at 12, a bad per-system
+  fetch skipped not fatal); pure parsers `parse_targets` + `parse_jma` are offline-tested (6 tests:
+  real-fixture parse picks the analysis fix over the +12/+24h forecast centres, plain-string index
+  form, empty-index-is-OK, no-analysis-yields-nothing, chip grading, error-on-bad-input). Registered
+  in `lib.rs`; wired `src/osint.rs` (join + count/cap row cap 60 + `feed_detail` arm + osint chip
+  test); SRC_LABEL `JMA · RSMC Tokyo` in `dashboard.html`. **`cargo build --release` green; full
+  workspace `cargo test` green (gcrm 459 / 0 failed / 4 ignored; ee-sources 76 incl. jma_typhoon
+  6/6; ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Weather (matches the NHC convention).
+  Next storm target: Indian Ocean / Southern Hemisphere basins (IMD / BoM / La Réunion / Fiji RSMC)
+  if auth-free + geocoded. JTWC ruled out this run (HTML/RSS only; the JSON wrappers are keyed
+  third parties — Xweather, DTN).
 - **2026-06-24** (second run) — **BROKE THE 20-RUN STALL: adopted `nhc` (NOAA NHC tropical
   cyclones), Path A.** The standing first pick across 15+ blocked runs finally cleared verification
   via a new technique. Re-probed the network fresh: WebFetch positive control on
