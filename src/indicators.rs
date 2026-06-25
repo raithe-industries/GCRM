@@ -141,6 +141,32 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             theater: None, detail: "No theater data".into() },
     };
 
+    // 3b. Crisis diplomacy breaking down — the `diplomatic_breakdown` modality elevated in
+    //     ANY theater (recalled ambassadors, walked-out talks, severed crisis-communication
+    //     channels). This is the classic 1914 leading warning: when the off-ramps close, a
+    //     crisis loses its brakes. The model already scores it (a weight-1.0 modality in
+    //     DOMAIN_WEIGHTS that feeds the headline) and the cross-domain light COUNTS it, but
+    //     no board light NAMED it — so a diplomatic collapse short of a 3-modality
+    //     cross-domain trip went dark on the operator's at-a-glance board. Same global-max
+    //     idiom and 0.45 "meaningfully elevated" bar as the nuclear/energy lights (the
+    //     per-modality signaling tier, above the model's faint 0.32 elevation line), naming
+    //     the hottest theater and a near-miss on a clear read.
+    let diplo = theaters.iter().map(|t| (t, modality(t, "diplomatic_breakdown")))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let ind_diplomatic = match diplo {
+        Some((t, v)) if v >= 0.45 => Indicator {
+            id: "diplomatic_breakdown", label: "Crisis diplomacy breaking down", tripped: true,
+            theater: Some(t.label.clone()),
+            detail: format!("{} diplomatic breakdown {:.2}", t.label, v) },
+        Some((t, v)) => Indicator {
+            id: "diplomatic_breakdown", label: "Crisis diplomacy breaking down", tripped: false,
+            theater: None,
+            detail: format!("Below threshold (max {} {:.2})", t.label, v) },
+        None => Indicator {
+            id: "diplomatic_breakdown", label: "Crisis diplomacy breaking down", tripped: false,
+            theater: None, detail: "No theater data".into() },
+    };
+
     // 4. Multiple theaters concurrently hot.
     let ind_concurrency = Indicator {
         id: "multi_theater", label: "Multiple theaters concurrently hot",
@@ -298,7 +324,7 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         }
     };
 
-    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_concurrency, ind_escalating,
+    vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_diplomatic, ind_concurrency, ind_escalating,
          ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink, ind_seismic]
 }
 
@@ -352,7 +378,7 @@ mod tests {
     fn empty_snapshot_trips_nothing() {
         let snap = RiskSnapshot::default();
         let inds = evaluate(&snap);
-        assert_eq!(inds.len(), 11);
+        assert_eq!(inds.len(), 12);
         assert!(inds.iter().all(|i| !i.tripped));
     }
 
@@ -472,6 +498,54 @@ mod tests {
         assert!(!energy.tripped, "no theater above 0.45 must read clear");
         assert!(energy.detail.contains("0.30"),
             "clear detail should surface the hottest near-miss value, got {:?}", energy.detail);
+    }
+
+    #[test]
+    fn diplomatic_breakdown_light_trips_and_names_the_hottest_theater() {
+        // The board scores 5 modalities but only NAMED 3 (military via gp_kinetic, nuclear,
+        // economic/chokepoint). `diplomatic_breakdown` — the 1914 "off-ramps closing"
+        // warning — had no dedicated light, so a diplomatic collapse short of a 3-modality
+        // cross-domain trip went dark. This light closes that gap: it scans ALL theaters
+        // (global-max idiom) and names the hottest above the 0.45 signaling bar.
+        let snap = RiskSnapshot {
+            theaters: vec![
+                // Talks intact in one theater.
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("diplomatic_breakdown", 0.20)], &["iran"]),
+                // Crisis communication severed in another, above the 0.45 bar.
+                theater("nato_russia", EscalationRung::Crisis, true,
+                    &[("diplomatic_breakdown", 0.66)], &["russia", "united_states"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let diplo = inds.iter().find(|i| i.id == "diplomatic_breakdown").unwrap();
+        assert!(diplo.tripped, "diplomatic breakdown at 0.66 must trip the light");
+        assert_eq!(diplo.theater.as_deref(), Some("nato_russia"),
+            "the tripped light must name the theater whose off-ramps actually closed");
+        // It is NOT apex (the apex set is reserved for great-power-WAR configurations).
+        assert!(!diplo.is_apex(), "a diplomatic-breakdown light must not light red (apex)");
+    }
+
+    #[test]
+    fn diplomatic_breakdown_clear_surfaces_hottest_near_miss() {
+        // Below-threshold diplomatic breakdown everywhere → clear, and the detail reports
+        // the hottest near-miss so the operator sees how close the off-ramps are to closing
+        // (same legibility contract as the energy/nuclear lights).
+        let snap = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::Tension, false,
+                    &[("diplomatic_breakdown", 0.15)], &["iran"]),
+                theater("nato_russia", EscalationRung::Tension, false,
+                    &[("diplomatic_breakdown", 0.41)], &["russia"]),
+            ],
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        let diplo = inds.iter().find(|i| i.id == "diplomatic_breakdown").unwrap();
+        assert!(!diplo.tripped, "no theater at/above 0.45 must read clear");
+        assert!(diplo.detail.contains("0.41"),
+            "clear detail should surface the hottest near-miss value, got {:?}", diplo.detail);
     }
 
     #[test]
