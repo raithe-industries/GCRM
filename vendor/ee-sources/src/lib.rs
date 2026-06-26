@@ -19,6 +19,7 @@ pub mod drivebc;
 pub mod navcanada;
 pub mod nhc;
 pub mod ucdp_ged;
+pub mod usgs_volcano;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
 pub mod eccc_marine;
@@ -68,6 +69,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(emsc::Emsc::default()),
         Box::new(gvp_volcano::GvpVolcano::default()),
         Box::new(geonet_volcano::GeonetVolcano), // NZ volcanic alert levels (GeoNet/GNS)
+        Box::new(usgs_volcano::UsgsVolcano), // US/Alaska volcanic alert levels (USGS HANS)
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)

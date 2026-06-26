@@ -262,6 +262,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // NZ Volcanic Alert Level (0–5) + ICAO aviation colour code, e.g.
         // "Alert Level 2 · Aviation Orange" — the official operational read.
         "geonet_volcano" => ee_sources::geonet_volcano::val_chip(&e.raw),
+        // USGS Volcano Alert Level + ICAO aviation colour code, e.g.
+        // "Alert Watch · Aviation Orange" — the operational read for US volcanoes.
+        "usgs_volcano" => ee_sources::usgs_volcano::alert_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -376,6 +379,7 @@ async fn feeds_payload() -> Value {
         healthmap::HealthMap, jma_typhoon::JmaTyphoon, navcanada::NavCanada, nhc::Nhc, nws::Nws,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
+        usgs_volcano::UsgsVolcano,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
@@ -384,7 +388,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -439,6 +443,9 @@ async fn feeds_payload() -> Value {
         // GeoNet (GNS Science) — NZ Volcanic Alert Levels; official alert state for the
         // SW-Pacific volcanoes the global GVP eruption catalogue doesn't operationally cover.
         fetch_one("geonet_volcano", GeonetVolcano, 9),
+        // USGS HANS — US/Alaska volcanic alert levels (joins elevated notices to the
+        // US volcano catalogue for coords), the operational state GVP/EONET don't carry.
+        fetch_one("usgs_volcano", UsgsVolcano, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -481,6 +488,7 @@ async fn feeds_payload() -> Value {
         (storms.0, storms.1, "nhc", 60),
         (typhoons.0, typhoons.1, "jma_typhoon", 60),
         (nz_volc.0, nz_volc.1, "geonet_volcano", 60),
+        (us_volc.0, us_volc.1, "usgs_volcano", 60),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -832,6 +840,29 @@ mod tests {
         // No aviation colour assigned -> the alert level stands alone.
         let e = mk(json!({"level": 1, "acc": ""}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Alert Level 1"));
+    }
+
+    #[test]
+    fn usgs_volcano_chip_surfaces_alert_level_and_aviation_colour() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "usgs-volcano-x".into(),
+            source_id: "usgs_volcano".into(),
+            kind: EventKind::Volcano,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.8),
+            url: None,
+            raw,
+        };
+        // `raw` is the HANS elevated notice: ground alert level + aviation colour.
+        let e = mk(json!({"alert_level": "WATCH", "color_code": "ORANGE"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Alert Watch · Aviation Orange"));
+        // Unassigned ground level -> the aviation colour stands alone.
+        let e = mk(json!({"alert_level": "UNASSIGNED", "color_code": "YELLOW"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Aviation Yellow"));
     }
 
     #[test]
