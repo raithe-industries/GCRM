@@ -15,6 +15,17 @@ The mission, against which every item is judged: give an operator ONE honest, le
 real-time read on how close the world is to systemic / great-power war, and *where* it's
 concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 
+> **Read `scorecard.md` first — work is ranked by VALUE TIER, not provability.** Pick the highest
+> tier you can do well today (T1 new source / gauge / theater / calibration / monitor-rung > T2
+> first-time honesty surface > T3 annotation) and prove it with that tier's falsifiable gate.
+>
+> **CLOSED VEINS — forbidden to mine, no credit at any tier:** the per-modality I&W indicator-light
+> family (13 lights, 5/5 modalities — military / nuclear / economic / diplomatic / cyber, complete as
+> of 3.16) and the blind / thin / stale / capped / held caveat family (complete across header / board /
+> hero / map / chip). These are DONE. Adding the Nth light or mirroring a caveat onto another surface
+> is annotation inflation, not improvement. The open frontier is **§6 new signal · §7 platform · §8
+> monitors** below.
+
 ---
 
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
@@ -708,12 +719,48 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 - [ ] **5.1** Sensible standalone steps toward theaters × orthogonal modalities × couplers,
   each shippable and test-locked on its own. See the v2 plan; don't land half-states.
 
+## 6. New signal — wire the ee-sources catalog into the read  (highest-value open frontier)
+GCRM ingests news + OSINT, but the vendored `ee-sources` catalog (~35 connectors) does NOT yet feed
+the headline. Each item ADDS a term to its modality with a pre-registered, grounded weight rationale —
+it NEVER retunes a firewall constant (anchors / asymptote / ceilings / `DOMAIN_WEIGHTS` are
+Robert-gated). Every source: parser test on a checked-in REAL-RESPONSE fixture + an `#[ignore]`d
+`feed_roster_liveness` probe + a synthetic test proving its presence CHANGES an output; mark **STAGED**
+(the local deploy promotes to DONE after the live leg). One source per run is a clean T1 that moves the
+**Live signal sources** metric — the anti-nit lever.
+- [ ] **6.1** markets / yahoo → `economic_warfare` (commodity / energy / financial-stress term).
+- [ ] **6.2** cisa_kev / cve_delta / ransomwatch → `cyber_info_ops`.
+- [ ] **6.3** ofac → sanctions / economic-coercion term.
+- [ ] **6.4** cables / ports / powerplants → critical-infrastructure exposure.
+- [ ] **6.5** nuclear / nuclear_tests → nuclear-posture corroboration (keep DISPLAY/seismic-cross-check
+  unless a calibration pass is Robert-approved).
+
+## 7. Unified platform — the RAITHE Global Monitor surface
+Full plan: `the platform plan (local)`. GCRM's engine/runtime stay UNTOUCHED;
+the platform is product-unified, runtime-federated (each monitor its own binary/port/deploy-gate).
+- [ ] **7.1** Freeze GCRM's `/api/latest` JSON as documented "headline-read contract v1" + a contract
+  test, so sibling monitors and the portal clone a SPEC, not a forked SPA. (T1, GCRM-side, low risk.)
+- [ ] **7.2** Coordinate the read-only `/intel` portal tile contract (the portal lives in raisearch,
+  not this repo) — keep GCRM a pure read-only data source.
+
+## 8. New monitors — GCRM-class siblings on the ee substrate
+Each is its own federated binary (NOT in this repo), but its DEFINITION-OF-DONE ladder lives here so a
+"monitor" can't be claimed by scaffolding. +1 **Monitors shipped** only at the final rung. Order
+(Robert, 2026-06-25): Markets → Hotzones → Resources → Climate. DoD ladder per monitor:
+(a) scaffold + health endpoint → (b) ≥1 LIVE connector → (c) honest headline index from real input →
+(d) named ladder rungs → (e) where/why map or theater view → (f) uncertainty posture (blind/thin/stale
++ interval) → (g) renders under an eyes gate.
+- [ ] **8.1** Global Markets Monitor — SFSI on OFR FSI (build first; engine `ee-correlate::finance` exists).
+- [ ] **8.2** Global Hotzones Monitor — GIL on GDELT 2.0 (fills GCRM's sub-national blind spot).
+- [ ] **8.3** Global Resource Monitor — GRSI on IMF PortWatch chokepoint map (keyless, live-verified).
+- [ ] **8.4** Global Climate Monitor — PCSI (build last; needs shared epoch store + areal Geo first).
+
 ---
 
 ## How to use / maintain this file
 1. Read this + `improvement-log.md` + `scorecard.md` + recent `git log`.
-2. Pick ONE unchecked item (highest mission value you can do well + prove today), biasing to
-   the least-recently-touched axis. Re-verify it's still open against the code.
+2. Pick ONE unchecked item — the highest VALUE TIER (T1 > T2 > T3 per `scorecard.md`) you can do well
+   + prove today, biasing toward new signal / platform / monitors (§6–8) and the least-recently-touched
+   axis. Re-verify it's still open against the code. The CLOSED VEINS above are off-limits.
 3. Implement; get `cargo build --release` + `cargo test` green; add/strengthen a test.
 4. Check the box, append to `improvement-log.md` (what + metric moved + proof), commit, push.
 5. If you discover a better item, add it under the right axis with a `[candidate]` tag and a
