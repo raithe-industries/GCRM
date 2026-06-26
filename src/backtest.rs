@@ -139,9 +139,13 @@ fn live_pegged_2026() -> (f64, Vec<GeopoliticalEvent>) {
     // alliance invocation, and the seeded acute regime (≈5.46×) — so EVERY l_sys input sits
     // at its rail (top-theater heat clamped at 1.0, concurrency≈5, gp_entanglement=1,
     // alliance_activation=1, guardrail_collapse=1) and P pegs ~83% with ~zero local slope.
-    // Still NO single direct US–Russia nuclear brink (that apex stays Cuba's). This is the
-    // state the de-saturation recalibration must give resolution back to; bands_* never
-    // exercise it (they all sit in the resolved region, L_sys ≤ 2.32). Measurement only.
+    // Still NO single direct US–Russia nuclear brink (that apex stays Cuba's). DECISION
+    // 2026-06-25 (Robert): this railed read is an ACCEPTED structural maximum, NOT a defect to
+    // de-saturate — empirically it still responds to decay (−20pp by 72h) and to a brink emerging
+    // (→ the 0.90 apex); it is only flat to incremental escalation while already maxed-without-a-
+    // brink, which is honest. The treatment is the `couplers.breadth_saturated` disclosure, not a
+    // recalibration. This analog DOCUMENTS that operating point; bands_* never exercise it
+    // (resolved region, L_sys ≤ 2.32). Measurement only.
     let mut ev = evset("us_china_taiwan",
         &[("military_escalation", 0.95, 0.92), ("economic_warfare", 0.88, 0.80),
           ("nuclear_posture", 0.62, 0.65),     ("diplomatic_breakdown", 0.88, 0.78)],
@@ -167,10 +171,11 @@ fn live_pegged_2026() -> (f64, Vec<GeopoliticalEvent>) {
 }
 
 /// A copy of [`live_pegged_2026`] with ONE theater's conventional intensity nudged by `d`
-/// (severity + signal), staying in the no-brink breadth regime. Used to MEASURE local slope
-/// at the railed operating point: a de-saturated model must move P between `nudged(+)` and
-/// `nudged(−)`; the saturated model does not. Never adds a nuclear brink (that is a separate
-/// apex lever), so this isolates top-end RESOLUTION, not the brink jump.
+/// (severity + signal), staying in the no-brink breadth regime. DOCUMENTS the accepted
+/// structural-max behaviour: P does not move between `nudged(+)` and `nudged(−)` because the
+/// world is already maxed-without-a-brink (per the 2026-06-25 decision that flatness is honest,
+/// surfaced via `breadth_saturated`, not a defect). Never adds a nuclear brink (a separate apex
+/// lever), so it isolates incremental-escalation response, not the brink jump.
 #[cfg(test)]
 fn live_pegged_nudged(d: f64) -> (f64, Vec<GeopoliticalEvent>) {
     let (rm, mut ev) = live_pegged_2026();
@@ -251,9 +256,10 @@ fn calibration_readout() {
 
 /// Measured readout of the LIVE railed peg and its local slope. Run:
 ///   cargo test pegged_resolution_readout -- --nocapture
-/// Shows the saturation directly: at the railed operating point a ±intensity nudge moves P by
-/// ~nothing (Δ≈0pp) even though the underlying world changed — the loss-of-resolution the
-/// de-saturation recalibration must repair. Pure measurement; no assertion.
+/// Documents the accepted structural max: at the railed operating point a ±intensity nudge moves
+/// P by ~nothing (Δ≈0pp) because the world is already maxed-without-a-brink. Per the 2026-06-25
+/// decision this is honest (surfaced via `couplers.breadth_saturated`), not a defect to fix.
+/// Pure measurement; no assertion.
 #[test]
 fn pegged_resolution_readout() {
     let base = run(live_pegged_2026().0, &live_pegged_2026().1);
@@ -274,7 +280,7 @@ fn pegged_resolution_readout() {
     }
     let hot  = { let s = live_pegged_nudged(0.30);  run(s.0, &s.1).p_wwiii_annual };
     let cool = { let s = live_pegged_nudged(-0.30); run(s.0, &s.1).p_wwiii_annual };
-    eprintln!("→ resolution (P[+0.30] − P[−0.30]) = {:+.3}pp  (de-saturated target: ≥ 1.0pp)\n",
+    eprintln!("→ incremental-escalation response (P[+0.30] − P[−0.30]) = {:+.3}pp  (≈0 = accepted structural max)\n",
         (hot - cool) * 100.0);
 }
 
@@ -443,12 +449,12 @@ fn bands_cuba() {
 
 #[test]
 fn live_pegged_analog_reaches_the_railed_operating_point() {
-    // The de-saturation work needs the harness to EXERCISE the live railed state the four band
-    // analogs miss (they top out at L_sys≈2.32, in the resolved region). This locks that
-    // live_pegged_2026 reproduces it: five concurrent hot theaters with great powers entangled
-    // and an alliance engaged, near-apex P off the ceiling — and crucially a BREADTH peg, NOT
-    // the single-theater nuclear brink (that apex is Cuba's). Intent-level bounds only, so a
-    // future de-saturation that retunes the exact rail values does not trip this.
+    // Guards that the harness keeps EXERCISING the live railed state the four band analogs miss
+    // (they top out at L_sys≈2.32, in the resolved region), so the `breadth_saturated` structural-
+    // max disclosure is always tested at the real operating point. Locks that live_pegged_2026
+    // reproduces it: five concurrent hot theaters with great powers entangled and an alliance
+    // engaged, near-apex P off the ceiling — and crucially a BREADTH peg, NOT the single-theater
+    // nuclear brink (that apex is Cuba's). Intent-level bounds only.
     let snap = run(live_pegged_2026().0, &live_pegged_2026().1);
     let c = &snap.couplers;
     assert!(snap.p_wwiii_annual > 0.78 && snap.p_wwiii_annual < crate::models::FORECAST_PROB_CEILING,
@@ -490,26 +496,21 @@ fn breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_b
 }
 
 #[test]
-#[ignore = "acceptance bar for the de-saturation recalibration: the live railed peg is flat \
-            (~0.0pp) today; un-ignore once the recalibration lands to lock top-end resolution"]
-fn resolution_restored_at_the_railed_peg() {
-    // The OPERATIONAL definition of "de-saturated": at the live railed operating point, a real
-    // ±0.30 swing in one theater's conventional intensity (no brink added) must move the headline
-    // by at least 1pp. Today it is ~0.0pp (see pegged_resolution_readout) because max_heat and
-    // every coupler are clamped, so this is #[ignore]d to not block the gate before the fix. When
-    // the recalibration restores resolution, delete the #[ignore] and this becomes the regression
-    // lock that keeps the top of the scale from re-saturating. The four bands_* + ordering_holds +
-    // calibration_evidence locks remain the guardrails the recalibration must not break.
-    //
-    // NOTE (do not auto-implement): the recalibration that makes this pass moves FITTED constants
-    // and reshapes the top of the probability scale — a value-laden, false-alarm/false-calm
-    // decision reserved for Robert (see the honest-forecasting principle). This harness only makes
-    // the saturation MEASURABLE; an automated self-improve pass must NOT tune constants to clear
-    // this bar without his sign-off.
+fn railed_peg_is_an_accepted_flat_structural_max() {
+    // DECIDED 2026-06-25 (Robert): the railed live peg is an ACCEPTED structural maximum, NOT a
+    // defect to de-saturate. Empirically it still responds to what matters — decay (−20pp by 72h)
+    // and a nuclear brink emerging (→ the 0.90 apex) — and is flat ONLY to incremental escalation
+    // while already maxed-without-a-brink. The honest treatment is the `couplers.breadth_saturated`
+    // disclosure (locked by `breadth_saturation_is_flagged_*`), NOT a recalibration. This test locks
+    // the flatness as DELIBERATE: a ±0.30 no-brink intensity swing moves the headline <0.5pp. If it
+    // ever fails (the peg starts moving), the model was de-saturated — revisit the 2026-06-25
+    // decision. A self-improve pass must NOT change FITTED calibration constants to alter this
+    // without Robert's sign-off (value-laden, his call per the honest-forecasting principle).
     let hot  = { let s = live_pegged_nudged(0.30);  run(s.0, &s.1).p_wwiii_annual };
     let cool = { let s = live_pegged_nudged(-0.30); run(s.0, &s.1).p_wwiii_annual };
-    assert!((hot - cool) * 100.0 >= 1.0,
-        "railed-peg resolution must be ≥1.0pp after de-saturation, got {:+.3}pp", (hot - cool) * 100.0);
+    assert!((hot - cool).abs() * 100.0 < 0.5,
+        "the railed peg is a DELIBERATE flat structural max (got {:+.3}pp); if it moved, the model \
+         de-saturated — revisit the 2026-06-25 decision, do not silently re-fit", (hot - cool) * 100.0);
 }
 
 // ── Calibration evidence harness (roadmap 1.1) ─────────────────────────────────────
