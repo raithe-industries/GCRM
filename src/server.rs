@@ -1620,6 +1620,25 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_headline_colour_follows_the_rung_not_a_rounded_index() {
+        // HONESTY/LEGIBILITY: the headline rung WORD (`cmd-threat`, `cc-rung`) must be
+        // coloured by the hottest theater's actual rung — the same rungColor()/RUNG_LVL
+        // the theater chips use — so the word and its colour can never contradict each
+        // other. The old `idxCol` re-derived the band from the ROUNDED systemic index
+        // with integer cuts (`sysIdx>=34`/`sysIdx>=67`); because the Crisis-rung floor is
+        // index 33.33 (rounds to 33, below the >=34 amber cut), a real Crisis read showed
+        // the moderate-indigo colour while the word said "Crisis" and its chip showed
+        // amber. Lock the rung-derived derivation and forbid a regression to the
+        // rounded-index integer thresholds.
+        assert!(DASHBOARD_HTML.contains("const idxCol=rungColor(RUNG_LVL[_top.rung]"),
+            "headline colour must be derived from the hottest theater's rung via rungColor()/RUNG_LVL");
+        assert!(!DASHBOARD_HTML.contains("sysIdx>=67"),
+            "headline colour must not re-derive the band from the rounded systemic index (>=67 cut)");
+        assert!(!DASHBOARD_HTML.contains("sysIdx>=34"),
+            "headline colour must not re-derive the band from the rounded systemic index (>=34 cut)");
+    }
+
+    #[test]
     fn dashboard_renders_iw_board() {
         // The I&W board (indicators::evaluate) is computed and served at
         // data.indicators, and the methodology page advertises it ("an I&W board

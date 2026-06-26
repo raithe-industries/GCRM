@@ -22,6 +22,36 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-26 — honesty/legibility — headline rung colour now follows the rung, not a rounded index (kills a Crisis-shown-moderate contradiction)
+- Item: ad-hoc (closes a colour-vs-rung-word contradiction on the headline).
+- Defect: the headline rung WORD (`cmd-threat`, `cc-rung`) and the Primary Driver cell were
+  coloured by `idxCol`, which re-derived the severity band from the ROUNDED systemic index via
+  integer cuts (`sysIdx>=34` amber / `>=67` red) — a SECOND, parallel colour scheme to the
+  `rungColor(RUNG_LVL[...])` the theater chips use. The systemic index is `100*(rung.level+within)/6`,
+  so the Crisis-rung FLOOR is index 33.33, which `Math.round`s to 33 — below the `>=34` amber cut.
+  So a genuine Crisis read printed the word "Crisis" in the moderate-INDIGO colour while that same
+  theater's own chip showed it AMBER: the headline colour contradicted both the rung word it tinted
+  and the chip for the identical theater (an operator glancing at colour would under-read a Crisis as
+  moderate).
+- Change: `dashboard.html` — `idxCol` now derives from the hottest theater's actual rung,
+  `rungColor(RUNG_LVL[_top.rung]??0)` (the single colour source of truth the chips already use), so
+  the rung word and its colour can never disagree and the duplicate integer-threshold scheme is gone.
+  DISPLAY-only: no engine/calibration/served-number path touched (the index NUMBER and its 0–100
+  legend are unchanged; only which colour tints the word).
+- Metric moved: legibility/honesty (pillars 1–2) — headline colour can no longer contradict the
+  model's own rung classification. Test count 466 → 467. No engine/calibration path touched.
+- Proof: `cargo build --release` clean; `cargo test --release` 467 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 21/0 (bands quiet/Ukraine/current/Cuba intact); `cargo clippy --release` 0
+  warnings. Lock: `dashboard_headline_colour_follows_the_rung_not_a_rounded_index` (server) — asserts
+  `idxCol=rungColor(RUNG_LVL[_top.rung]` and forbids the `sysIdx>=34`/`>=67` integer cuts; reverting
+  ONLY dashboard.html (test kept) FAILS it (verified). Final visual verdict is the local eyes gate.
+- Tier: T3 · Touched: display-only · Lock-fails-without-change: yes (revert-dashboard-only → test
+  FAILED, verified) · Counts: fixes a colour-vs-rung contradiction (not a caveat/light — a behaviour
+  change to the rendered colour) · consecutive_display_only=1 · display_only_in_last_7=2
+- Notes future runs MUST respect: there is now ONE headline/chip colour source —
+  `rungColor(RUNG_LVL[...])`. Do NOT reintroduce a parallel index-threshold `idxCol`; colour follows
+  the rung the engine assigned, never a rounded number.
+
 ## 2026-06-26 — honesty — 30-/90-day horizons now mean exactly 30/90 days, not 1/12 & 1/4 year
 - Item: ad-hoc (closes a label-vs-number mismatch on a served forecast field).
 - Defect: `bayesian.rs` converted the annual read to the nearer horizons with the exponents
