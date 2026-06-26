@@ -16,6 +16,36 @@ Format per entry:
 
 ---
 
+## 2026-06-26 — awareness/legibility — Primary Driver cell now names the systemic "why" (coupling mechanism), fulfilling its own help text
+- Item: ad-hoc (closes a doc-vs-behavior gap on the headline command strip).
+- Defect: the `#cmd-driver` "Primary Driver" cell's help popup promises it names "the dominant
+  force-domain or **coupling** pushing the risk right now", but the cell delivered only GEOGRAPHY
+  (`systemic.driver` = "X at Y; N theaters hot") and a redundant `hottest: X` sub-line. The actual
+  systemic mechanism — `couplers.coupling_driver` (single-theater nuclear brink / great-power
+  entanglement / multi-theater concurrency / alliance activation, the dominant amplifier of `l_sys`)
+  — was computed and served but surfaced ONLY in the buried model-state footer, never in the cell it
+  is documented to live in. So the operator's at-a-glance Primary Driver couldn't answer WHY the
+  number was high: a railed breadth read ("US–Iran at Crisis; 5 theaters hot") looked driven by one
+  theater when the real driver is great-power entanglement across all five (the 1914 signature).
+- Change: `dashboard.html` — the `#cmd-driver-sub` sub-line now reads the LIVE `coupling_driver`
+  coupler and renders it as `via <channel>` (falls back to `hottest: <theater>` when no coupling
+  channel dominates). DISPLAY-only: no model/calibration constant touched; `coupling_driver` is the
+  same engine field the footer already shows (single source of truth, anti-drift). The cell now
+  delivers the "dominant … coupling" its help text promises — geography in the main line, mechanism
+  in the sub-line.
+- Metric moved: awareness/legibility capability — the systemic "why" (pillar 3) is now on the
+  headline command strip, not just the footer; closed a doc-vs-behavior promise gap. Test count
+  462 → 463. NO engine/calibration path touched.
+- Proof: `cargo build --release` clean; `cargo test --release` 463 passed / 0 failed / 4 ignored;
+  `cargo test backtest` 20/0 (bands quiet/Ukraine/current/Cuba intact); calibration evidence
+  unchanged (display-only); `cargo clippy --release` 0 warnings. Lock:
+  `dashboard_primary_driver_subline_names_the_coupling_mechanism` (server) — asserts the sub-line
+  sources `d.couplers.coupling_driver` and renders the `via <channel>` mechanism prefix; a revert to
+  the geography-only/`hottest:`-only sub-line fails it. Final visual verdict is the local eyes gate
+  (textual change to an existing sub-cell, no layout change).
+- Notes future runs MUST respect: the Primary Driver main line stays GEOGRAPHY (lead theater + rung
+  + count); the sub-line stays the MECHANISM. Both read live engine fields — never hand-type either.
+
 ## 2026-06-25 — awareness — I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning light (completes modality coverage)
 - Item: roadmap 3.16 (new, checked). Sibling of 3.15 (diplomatic) — the last unnamed modality.
 - Defect: after 3.15, four of the five tracked modalities had a NAMED board light; `cyber_info_ops`

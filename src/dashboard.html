@@ -1117,7 +1117,15 @@ function applyData(d){
   document.getElementById('cmd-risk-delta').textContent=dA>0?'▲ +'+(dA*100).toFixed(4)+'% last snap':dA<0?'▼ '+(dA*100).toFixed(4)+'% last snap':'─ stable';
   document.getElementById('cmd-risk-delta').style.color=dA>0?'#E24B4A':dA<0?'#1D9E75':'var(--t4)';
   document.getElementById('cmd-driver').textContent=(d.systemic&&d.systemic.driver)||'—';document.getElementById('cmd-driver').style.color=idxCol;
-  document.getElementById('cmd-driver-sub').textContent=topTh.label?('hottest: '+topTh.label):'no theater elevated';
+  // Sub-line names the dominant systemic COUPLING mechanism (the "why" this Primary Driver
+  // cell's help text promises — "the dominant force-domain or coupling pushing the risk").
+  // The geography (lead theater) is already in the main line above and on the ladder strip;
+  // the mechanism — is the number railed by a single-theater nuclear brink, great powers
+  // entangled across theaters, many theaters hot at once, or an alliance invocation — is the
+  // higher-value disambiguation a glance can't otherwise get. Falls back to the hottest
+  // theater when no coupling channel dominates (quiet / single weak theater).
+  const _cdrv=d.couplers&&d.couplers.coupling_driver;
+  document.getElementById('cmd-driver-sub').textContent=_cdrv?('via '+_cdrv):(topTh.label?('hottest: '+topTh.label):'no theater elevated');
   // Theater-ladder strip: full flashpoint board, hottest first (ths is pre-sorted).
   const tl=document.getElementById('theater-ladder');
   if(tl){
