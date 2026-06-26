@@ -1058,8 +1058,15 @@ function applyData(d){
   // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
   // secondary = present escalation severity (systemic index 0–100 + hottest rung).
   const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
-  const idxCol=sysIdx>=67?'#E24B4A':sysIdx>=34?'#EF9F27':sysIdx>=17?'#7F77DD':'#1D9E75';
   const _ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const _top=_ths[0]||{};
+  // Colour the headline rung WORD by its OWN rung — the same rungColor()/RUNG_LVL the
+  // theater chips already use — so the word and its colour can never disagree. The old
+  // idxCol re-derived the band from the ROUNDED systemic index via integer cuts
+  // (>=34 amber / >=67 red); but the Crisis-rung FLOOR is index 33.33, which rounds to
+  // 33 (below the >=34 cut), so a genuine Crisis read was painted moderate-indigo while
+  // the word said "Crisis" — and its own theater chip showed amber. Single source of
+  // truth = the rung the engine assigned the hottest theater, not a rounded number.
+  const idxCol=rungColor(RUNG_LVL[_top.rung]??0);
   checkSpike(pA);
   // Hero dial: P(WWIII) as a fraction of 1.0, coloured by probability severity.
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
