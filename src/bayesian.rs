@@ -889,8 +889,15 @@ impl BayesianRiskEngine {
             .min(FORECAST_PROB_CEILING); // Engineering ceiling — epistemic humility, not a prior (see models::FORECAST_PROB_CEILING)
         snap.p_wwiii_annual = (raw * 1e8).round() / 1e8;
 
-        snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(1.0 / 12.0)) * 1e8).round() / 1e8;
-        snap.p_wwiii_90day  = ((1.0 - (1.0 - raw).powf(3.0 / 12.0)) * 1e8).round() / 1e8;
+        // Re-express the annual read over the nearer horizons under a constant-hazard
+        // assumption: P(window) = 1 − (1 − P_annual)^(window_days/365). The fields are
+        // named — and the dashboard labels them — "30-day"/"90-day", so the exponent must
+        // be the day fraction of the SAME 365-day year the annual figure uses. The old
+        // 1/12 and 3/12 silently switched the year to 12 equal months (30.4 / 91.25 days),
+        // so the served number meant a slightly different horizon than its label claimed.
+        const DAYS_PER_YEAR: f64 = 365.0;
+        snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(30.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
+        snap.p_wwiii_90day  = ((1.0 - (1.0 - raw).powf(90.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
 
         // ── Step 8: Delta ──
         snap.delta_annual = ((snap.p_wwiii_annual - self.prev_annual) * 1e8).round() / 1e8;
@@ -1629,6 +1636,32 @@ mod tests {
         let events = vec![make_event("nuclear_posture", 0.7, 1.0, SourceTier::Tier1)];
         let snap = engine.compute(&events);
         assert!(snap.p_wwiii_30day < snap.p_wwiii_annual);
+    }
+
+    #[test]
+    fn horizon_windows_use_exact_day_fraction_of_the_year() {
+        // The 30-/90-day fields must mean exactly what their labels say: the day fraction
+        // of the SAME 365-day year the annual read uses, under constant hazard
+        // P(window) = 1 − (1 − P_annual)^(days/365). Locks against the old 1/12 & 3/12
+        // (= 30.4 / 91.25-day) convention, which mislabeled the served horizon.
+        let mut engine = minimal_engine();
+        let events = vec![make_event("nuclear_posture", 0.7, 1.0, SourceTier::Tier1)];
+        let snap = engine.compute(&events);
+        // Compare against the annual read with a tolerance well above the 1e-8 rounding of
+        // p_annual (the engine converts from the unrounded raw) yet far below the ~3e-5
+        // gap to the old month convention.
+        const EPS: f64 = 1e-6;
+        let p = snap.p_wwiii_annual;
+        let day_30 = 1.0 - (1.0 - p).powf(30.0 / 365.0);
+        let day_90 = 1.0 - (1.0 - p).powf(90.0 / 365.0);
+        let mon_30 = 1.0 - (1.0 - p).powf(1.0 / 12.0);
+        assert!((snap.p_wwiii_30day - day_30).abs() < EPS,
+            "30-day must be the 30/365 horizon of the annual read");
+        assert!((snap.p_wwiii_90day - day_90).abs() < EPS,
+            "90-day must be the 90/365 horizon of the annual read");
+        // Regression guard: it must NOT match the old 1/12-year (30.4-day) convention.
+        assert!((snap.p_wwiii_30day - mon_30).abs() > EPS,
+            "30-day must not revert to the 1/12-year (30.4-day) convention");
     }
 
     #[test]

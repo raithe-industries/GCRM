@@ -22,6 +22,33 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-26 — honesty — 30-/90-day horizons now mean exactly 30/90 days, not 1/12 & 1/4 year
+- Item: ad-hoc (closes a label-vs-number mismatch on a served forecast field).
+- Defect: `bayesian.rs` converted the annual read to the nearer horizons with the exponents
+  `1/12` and `3/12` of a year. But the fields are named `p_wwiii_30day`/`p_wwiii_90day` and the
+  dashboard help (dashboard.html:876/879) tells the operator they are "rolling 30-day"/"rolling
+  90-day" horizons. `1/12 yr = 30.42 days` and `3/12 yr = 91.25 days`, computed off a 365-day
+  annual base — so the served number silently meant a slightly different horizon than its label
+  claimed (an internal inconsistency: annual is 365 days, but the windows assumed a 12-equal-month
+  year). At the live read (~0.83) this is a visible ~0.2pp (30-day) / ~0.4pp (90-day) error.
+- Change: exponents → `30.0/365.0` and `90.0/365.0` under the same constant-hazard law
+  `P(window)=1−(1−P_annual)^(days/365)`, so the window now uses the day fraction of the SAME year
+  the annual read uses. No firewall constant touched; no calibration/backtest path touched (bands
+  are on `p_annual`, unchanged).
+- Metric moved: honesty (pillar 1) — the served 30-/90-day numbers now mean exactly what their
+  labels say. Calibration evidence invariant held; test count +1.
+- Proof: `cargo build --release` clean; full suite 465 passed / 0 failed / 3 ignored; `cargo test
+  backtest` 21/0 (quiet/Ukraine/current/Cuba bands intact); `cargo clippy --release` 0 warnings.
+- Tier: T1 · Touched: engine-behavior · Lock-fails-without-change: yes (the lock asserts the served
+  30-/90-day equal the 30/365 & 90/365 horizon within 1e-6 AND differ from the old 1/12 value by
+  >1e-6; reverting the exponents makes the served value the 1/12 number, failing both asserts) ·
+  Counts: honesty correction to a served number (not a +1-test nit — the number changes) ·
+  consecutive_display_only=0 · display_only_in_last_7=1
+- Lock: `bayesian::tests::horizon_windows_use_exact_day_fraction_of_the_year`.
+- Notes future runs MUST respect: the horizon windows are DAY-based off a 365-day year; do NOT
+  revert to `1/12`/`3/12`. If a leap-year (365.25) refinement is ever wanted, change `DAYS_PER_YEAR`
+  in one place — but keep the window numerators the literal day counts (30, 90).
+
 ## 2026-06-26 — awareness/legibility — Primary Driver cell now names the systemic "why" (coupling mechanism), fulfilling its own help text
 - Item: ad-hoc (closes a doc-vs-behavior gap on the headline command strip).
 - Defect: the `#cmd-driver` "Primary Driver" cell's help popup promises it names "the dominant
