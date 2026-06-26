@@ -18,6 +18,7 @@ pub mod digitraffic_ais;
 pub mod drivebc;
 pub mod navcanada;
 pub mod nhc;
+pub mod nwps_flood;
 pub mod ucdp_ged;
 pub mod usgs_volcano;
 pub mod eccc_alerts;
@@ -75,6 +76,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
         Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC, Atlantic/E-Pacific)
         Box::new(jma_typhoon::JmaTyphoon),         // Typhoons (JMA RSMC Tokyo, W-Pacific)
+        Box::new(nwps_flood::NwpsFlood),           // River flooding (NOAA NWPS, observed flood category)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

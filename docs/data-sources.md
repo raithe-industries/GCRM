@@ -66,6 +66,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
 | `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
 | `usgs_volcano` | Volcano | USGS VHP / HANS | **US + Alaska Volcanic Alert Levels** — the HANS `getElevatedVolcanoes` notice product (ground alert level NORMAL/ADVISORY/WATCH/WARNING + ICAO aviation colour GREEN/YELLOW/ORANGE/RED) **joined by `vnum`** to the `getUSVolcanoes` catalogue for coordinates (the elevated notice carries no lat/lon). Drops the all-clear state (NORMAL/GREEN/UNASSIGNED) so only volcanoes above background plot; all-quiet network = 0 events, not an error. Auth-free JSON, US-Gov public domain. Chip = "Alert {level} · Aviation {colour}". Fills the **US/Alaska** operational alert-level geography GeoNet (NZ) doesn't cover and that the GVP eruption catalogue / EONET (event-based) don't carry as a live alert state. AVO (most active US volcanoes), HVO (Kīlauea/Mauna Loa), Cascades, Yellowstone. |
+| `nwps_flood` | Weather | NOAA / NWS NWPS | **river flooding** — the NWS `water/riv_gauges` "Observed River Stages" GeoJSON layer (id 0), one Point per AHPS gauge with its observed **flood category** in `status`. Connector keeps only gauges **at/above action stage** (`action`/`minor`/`moderate`/`major`); drops the all-clear `no_flooding` + undefined states, so a no-flood network = 0 events, not an error. Auth-free GeoJSON, US-Gov public domain. **Signal-meaningful where a raw gauge level isn't:** `status` is the *baseline-relative* category (NWS already compared live stage to that gauge's own thresholds) — resolves the `ECCC hydrometric` "nonsense number" rejection at its root. Severity major 1.0→action 0.35; chip = "Major flooding" / "Near flood stage". Fills the river-flooding hazard no current feed carries. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -89,6 +90,10 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   station's flood-stage baseline (which the API doesn't provide). A plotted "2.79 m" dot is
   exactly the "nonsense number" the signal-meaningfulness rule forbids. Revisit ONLY if a
   per-station historical-quantile baseline is precomputed (turns level→anomaly). v2-scale.
+  **Superseded for the flood domain (2026-06-26) by `nwps_flood`** — NOAA's NWS already ships
+  the baseline-relative *flood category* (`status`), so the river-flooding hazard now plots
+  meaningfully without precomputing a baseline. (ECCC hydrometric itself stays rejected: it's
+  Canadian raw level with no category; reconsider only via the precomputed-quantile route above.)
 - **NTWC tsunami messages (tsunami.gov)** — usable + geocoded, but US-NOAA-authoritative,
   not a Canadian agency (fails bar 1 for the Canada focus). Reconsider only if the program
   scope broadens to "official-issuer-for-Canada" sources.
@@ -144,8 +149,11 @@ Bias each run toward the least-covered axis below.
   Hunt authoritative regional feeds for Europe (Copernicus EMS, MeteoAlarm if it geocodes),
   Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America, Africa.
 - **Domains under-covered** — power-grid stress (other ISOs), rail/pipeline incidents
-  (TSB Canada, NTSB), dam/reservoir, drought, flood-WITH-baselines, lightning (if a geocoded
-  near-real-time product exists), methane/industrial (GHGSat/Sentinel).
+  (TSB Canada, NTSB), dam/reservoir, drought, lightning (if a geocoded near-real-time
+  product exists), methane/industrial (GHGSat/Sentinel). **flood-WITH-baselines SEEDED
+  2026-06-26** with `nwps_flood` (NOAA NWPS observed flood category, US/CONUS). Gap now:
+  flood-with-baselines OUTSIDE the US — a Canadian/European product that ships a category
+  (not a raw level); ECCC hydrometric stays rejected for lacking one.
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -156,6 +164,39 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-26** (second run) — **adopted `nwps_flood` (NOAA NWPS observed river flooding)** — a new
+  authoritative geocoded layer opening the **river-flooding domain** no current feed carries, AND the
+  source that **resolves the long-standing `ECCC hydrometric` rejection at its root**: the connector
+  plots the NWS *observed flood category* (`status`), not a raw gauge level, so every dot is the
+  baseline-relative read ("Major flooding") the signal-meaningfulness rule demands — NWS has already
+  compared the live stage to that gauge's own action/minor/moderate/major thresholds. Per the
+  SUSTAINED-BLOCK DIRECTIVE I did NOT lead with a no-op: I converted the ledger-flagged
+  "flood-WITH-baselines" coverage gap into a working connector using the **GitHub-verified-schema
+  technique** that broke the 20-run stall. Re-probed the network fresh: **WebFetch positive control**
+  on `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`/no `name`);
+  the egress-wide WebFetch 403 on non-GitHub hosts is unchanged (so the live NWS map service still
+  can't be hit in-sandbox; prod's full network fetches it). **The unlock:** confirmed via **WebSearch**
+  that the NWS `water/riv_gauges` MapServer (layer 0, "Observed River Stages") + the NWPS API are
+  open/no-auth/JSON+GeoJSON, and pulled the **confirmed field schema off NOAA's own service metadata**
+  — Point features with `properties.{gaugelid, status, location, waterbody, obstime, units, wfo, url}`,
+  `status` being the AHPS flood-category legend (`major`/`moderate`/`minor`/`action`/`no_flooding`/…),
+  the standardized enum every NWS AHPS map has used for 15+ years. The offline fixture is built to that
+  exact shape (Red River at Fargo `major`, Mississippi at St. Louis `moderate`, Arkansas at Tulsa
+  `action`, Potomac `no_flooding`→dropped). Clears all six bars: **authoritative** (NOAA OWP, the U.S.
+  flood-forecast body); **auth-free** GeoJSON; **machine-readable**; **geocoded** (per-gauge Point);
+  **fresh** (observed real-time state; a no-flood network → 0 events, not an error); **non-duplicative**
+  (no existing feed carries river-stage flooding — GDACS gives only an alert level for major events).
+  **Signal-meaningful:** drops the all-clear/undefined states; severity major 1.0 → action 0.35; chip =
+  "Major flooding"/"Moderate flooding"/"Minor flooding"/"Near flood stage". New
+  `vendor/ee-sources/src/nwps_flood.rs` (pure `parse_nwps_flood` + `flood_chip` + `severity_for_status`/
+  `status_label`/case-insensitive `prop_str`; the `where`-clause filter is re-applied in the parser so a
+  mirror that ignores it still drops non-flood gauges; 5 offline tests: parse+drop-all-clear,
+  no-flood-is-OK, error-on-bad-input, status/field casing tolerated, severity ladder). Registered in
+  `lib.rs`; wired `src/osint.rs` (`fetch_one("nwps_flood", …, 12)` + count/cap row cap 400 + `feed_detail`
+  arm + osint chip test); SRC_LABEL `NOAA NWPS` in `dashboard.html`. **`cargo build --release` green; full
+  workspace `cargo test` green (gcrm 468 / 0 failed / 3 ignored; ee-sources 89 incl. nwps_flood 5/5;
+  ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Weather (the hydromet convention NHC/JMA follow).
+  Next flood target: a Canadian/European product that ships a flood *category* (not a raw level).
 - **2026-06-26** — **adopted `usgs_volcano` (USGS HANS US/Alaska Volcanic Alert Levels)** — a new
   authoritative geocoded layer extending the **operational volcanic-alert modality** from NZ
   (`geonet_volcano`) to **US + Alaska** geography, where most US active volcanoes sit (Alaska
