@@ -11,8 +11,14 @@ Format per entry:
 - Change: <what changed and why it advances honesty/legibility/awareness>
 - Metric moved: <metric: before → after>  (or: invariant held / new test added)
 - Proof: <cargo test summary / counts / key output>
+- Tier: T1|T2|T3 · Touched: new-source|engine-behavior|calibration|display-only|noop · Lock-fails-without-change: yes/no (+proof) · Counts: <frontier metric/streak this run moved> · consecutive_display_only=<n> · display_only_in_last_7=<n>
 - Notes / decisions future runs must respect: <…>
 ```
+
+The `Tier:` line is MANDATORY (scorecard "Recording") and is AUDITED out-of-band by
+`raithe-watchdog.sh` against the commit diff — `engine-behavior` requires a test that FAILS when the
+change is `git stash`ed; `new-source` requires a real-response fixture + a `feed_roster_liveness`
+probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing 7). See `scorecard.md`.
 
 ---
 
