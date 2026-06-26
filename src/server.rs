@@ -1159,6 +1159,26 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_primary_driver_subline_names_the_coupling_mechanism() {
+        // The Primary Driver cell's help text promises it names "the dominant force-domain
+        // or coupling pushing the risk right now", but the cell historically showed only the
+        // geography (lead theater + rung + count) — the WHY mechanism lived only in the
+        // model-state footer. The sub-line must read the LIVE engine coupler so the headline
+        // command strip actually delivers the systemic "why" it documents (pillar 3 — show
+        // WHERE & WHY). If a refactor drops this, the cell silently breaks its own promise.
+        // Sources the sub-line value from the LIVE engine coupler (never a hand-typed label).
+        assert!(
+            DASHBOARD_HTML.contains("_cdrv=d.couplers&&d.couplers.coupling_driver"),
+            "Primary Driver sub-line no longer reads the live coupling_driver mechanism"
+        );
+        // Assigns that mechanism to the #cmd-driver-sub readout with the 'via <channel>' prefix.
+        assert!(
+            DASHBOARD_HTML.contains("cmd-driver-sub').textContent=_cdrv?('via '+_cdrv)"),
+            "Primary Driver sub-line must render the coupling mechanism as 'via <channel>'"
+        );
+    }
+
+    #[test]
     fn dashboard_html_has_raithe_branding() {
         assert!(DASHBOARD_HTML.contains("RAITHE INDUSTRIES INC."));
         assert!(DASHBOARD_HTML.contains("raithe-footer"));
