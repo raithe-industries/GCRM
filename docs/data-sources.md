@@ -65,6 +65,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
 | `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
+| `usgs_volcano` | Volcano | USGS VHP / HANS | **US + Alaska Volcanic Alert Levels** — the HANS `getElevatedVolcanoes` notice product (ground alert level NORMAL/ADVISORY/WATCH/WARNING + ICAO aviation colour GREEN/YELLOW/ORANGE/RED) **joined by `vnum`** to the `getUSVolcanoes` catalogue for coordinates (the elevated notice carries no lat/lon). Drops the all-clear state (NORMAL/GREEN/UNASSIGNED) so only volcanoes above background plot; all-quiet network = 0 events, not an error. Auth-free JSON, US-Gov public domain. Chip = "Alert {level} · Aviation {colour}". Fills the **US/Alaska** operational alert-level geography GeoNet (NZ) doesn't cover and that the GVP eruption catalogue / EONET (event-based) don't carry as a live alert state. AVO (most active US volcanoes), HVO (Kīlauea/Mauna Loa), Cascades, Yellowstone. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -134,9 +135,11 @@ Bias each run toward the least-covered axis below.
   (confirmed 2026-06-25; the JSON wrappers found are all keyed third parties: Xweather/DTN).
 - **Volcano** — SEEDED globally with `gvp_volcano` (Smithsonian eruption catalogue) + EONET,
   and EXTENDED 2026-06-25 with `geonet_volcano` (GeoNet/GNS NZ **Volcanic Alert Levels** —
-  the operational alert state, not an eruption record). Next: **USGS HANS / VolcanoesByStatus**
-  (US/Alaska volcano alert levels + aviation colour) if it web fetch-verifies as auth-free JSON,
-  and Italian INGV (Etna/Stromboli) if an auth-free geocoded product exists.
+  the operational alert state, not an eruption record), and EXTENDED 2026-06-26 with
+  `usgs_volcano` (**USGS HANS** US/Alaska Volcanic Alert Levels + aviation colour, Path A via the
+  GitHub-verified schema technique). Next: **Italian INGV** (Etna/Stromboli) or **PHIVOLCS**
+  (Philippines) if an auth-free geocoded product exists; **Icelandic Met Office** (IMO) volcano
+  alerts for the N-Atlantic.
 - **Geography** — feeds are Canada/US-dense; SW-Pacific now seeded via `geonet_volcano` (NZ).
   Hunt authoritative regional feeds for Europe (Copernicus EMS, MeteoAlarm if it geocodes),
   Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America, Africa.
@@ -153,6 +156,42 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-26** — **adopted `usgs_volcano` (USGS HANS US/Alaska Volcanic Alert Levels)** — a new
+  authoritative geocoded layer extending the **operational volcanic-alert modality** from NZ
+  (`geonet_volcano`) to **US + Alaska** geography, where most US active volcanoes sit (Alaska
+  Volcano Observatory) plus Hawaii (Kīlauea/Mauna Loa), the Cascades and Yellowstone. Per the
+  SUSTAINED-BLOCK DIRECTIVE I did NOT lead with a no-op block record: I converted the explicitly
+  ledger-flagged next volcano target into a working connector using the **same GitHub-verified-schema
+  technique that broke the 20-run stall** (NHC → JMA → GeoNet). Re-probed the network fresh:
+  **web fetch positive control** on `raw.githubusercontent.com` correct (`facebook/react`
+  `package.json` → `private:true`/no `name`); the egress-wide web fetch 403 on non-GitHub hosts is
+  unchanged (so the live HANS origin still can't be hit in-sandbox; prod's full network fetches it).
+  **The unlock:** confirmed via **web search** that HANS `getElevatedVolcanoes` is open/no-auth/JSON,
+  then pulled the **real captured schema + bytes off GitHub** (the one reachable channel): the
+  endpoint returns notice records `{vnum, volcano_name, alert_level, color_code, obs_abbr, sent_utc,
+  notice_url}` with **NO coordinates** (confirmed by `jeffrwatts/GeoMonitor`'s
+  `USGSVolcanoesElevated` Gson data class + multiple independent consumers), so coords must be
+  **joined by `vnum`** against `getUSVolcanoes` (`{vnum, volcano_name, latitude, longitude}`) — the
+  exact pattern in 3+ independent repos (`kotaronishiwaki/earthquake-globe`,
+  `OUTCOMELLC/Pacific-Ring-of-Fire-Hazard-Map`). Real values anchoring the offline fixture came from
+  `MN755/11Writer`'s committed `usgs_volcano_status_fixture.json`: **Great Sitkin** vnum 311120
+  WATCH/ORANGE @ 52.0764,-176.1317 (AVO) and **Kīlauea** vnum 332010 ADVISORY/YELLOW (HVO). Clears
+  all six bars: **authoritative** (USGS VHP, the US volcano monitor); **auth-free** JSON;
+  **machine-readable**; **geocoded** (via the vnum→catalogue join); **fresh** (operational alert
+  state; an all-clear network → 0 events, not an error); **non-duplicative** (GVP = weekly *eruption*
+  catalogue, EONET = *events*, GeoNet = NZ only — none carries the US standardized VAL + aviation
+  colour as a live alert state). **Signal-meaningful:** drops NORMAL/GREEN/UNASSIGNED (all-clear);
+  severity = max(alert-level rank, colour rank) laddered WARNING/RED 1.0 → ADVISORY/YELLOW 0.55;
+  chip = "Alert {level} · Aviation {colour}" (or colour alone when the ground level is unassigned).
+  New `vendor/ee-sources/src/usgs_volcano.rs` (pure `parse_usgs_volcano(elevated, catalog)` +
+  `alert_chip` + rank/titlecase helpers; tolerates number-or-string `vnum`/lat/lon and bare-array vs
+  `{items}`/`{data}` wrappers; 4 offline tests: join+drop-all-clear+drop-no-coords, all-clear-is-OK,
+  error-on-bad-input, severity/colour-only chip). Registered in `lib.rs`; wired `src/osint.rs`
+  (two-fetch `Source::fetch`, join + count/cap row cap 60 + `feed_detail` arm + osint chip test);
+  SRC_LABEL `USGS Volcano Hazards` in `dashboard.html`. **`cargo build --release` green; full
+  workspace `cargo test` green (gcrm 466 / 0 failed / 3 ignored; ee-sources 84 incl. usgs_volcano
+  4/4; ee-correlate / ee-view / ee-core unchanged).** EventKind::Volcano. Next volcano target:
+  Italian INGV (Etna/Stromboli) or PHIVOLCS (Philippines) if auth-free + geocoded.
 - **2026-06-25** (second run) — **adopted `geonet_volcano` (GeoNet NZ Volcanic Alert Levels)** —
   a new authoritative geocoded layer that adds the **operational volcanic-alert modality** (official
   VAL 0–5 + ICAO aviation colour code) and **NZ / SW-Pacific** geography the global GVP eruption
