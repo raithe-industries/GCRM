@@ -22,6 +22,30 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-27 — honesty — first-tick delta no longer differences the cold-start seed (kills a phantom "▲ +N% last snap" on restart)
+- Item: roadmap 1.5 (now checked).
+- Defect: `BayesianRiskEngine::compute` Step 8 set `delta_annual = p_annual − prev_annual` and
+  `delta_30day = p_30day − prev_30day` unconditionally. After construction `prev_annual` is seeded
+  to `HISTORICAL_ANCHOR` and `prev_30day` to `0.0`, so the FIRST snapshot after every (re)start
+  differenced the seed, not a real prior tick — the dashboard (`#cmd-risk-delta` "▲ +N% last snap",
+  the ▲/▼ per-second rate at dashboard.html:1106-1124, the event log) then showed a fabricated
+  jump (~+1.5pp annual, the full 30-day value) that never occurred. A pillar-1 HONESTY defect: the
+  delta means "change since the previous snapshot," but on tick 1 there is no previous snapshot.
+- Change: added a `has_prev_snapshot` flag (init false). The first tick reports delta 0 (stable
+  "─") and seeds `prev_*` from its own read; tick 2 onward is a true inter-snapshot move. One file
+  (`bayesian.rs`); no calibration constant, prior, ceiling, or served-field type touched.
+- Metric moved: HONESTY (engine-behavior) — restart no longer publishes a phantom delta. Test
+  count 470→471. Backtest bands (quiet/Ukraine/current/Cuba) + Brier identical.
+- Proof: `cargo build --release` clean; `cargo test --release` 471 passed / 0 failed / 3 ignored;
+  `cargo test backtest` green. Fail-without-change verified by temporarily reverting the gate with
+  the test in place: first `delta_annual` = 0.01498869 ≠ 0 → assert FAILS.
+- Tier: T1 · Touched: engine-behavior · Lock-fails-without-change: yes (reverted-gate run above) ·
+  Counts: no frontier-metric, an engine-honesty fix (not a caveat/+1-nit) ·
+  consecutive_display_only=0 · display_only_in_last_7=2
+- Notes future runs MUST respect: do NOT revert Step 8 to a bare unconditional difference — the
+  `has_prev_snapshot` gate is the honesty fix. The `prev_annual = HISTORICAL_ANCHOR` seed is now
+  inert on tick 1 (kept only to document intent).
+
 ## 2026-06-27 — platform — froze the `/api/latest` headline-read contract v1 (RAITHE Global Monitor §7.1)
 - Item: roadmap 7.1 (now checked) — first concrete platform rung.
 - Change: the served headline read (`/api/latest` + the WS `snapshot`) is the federation
