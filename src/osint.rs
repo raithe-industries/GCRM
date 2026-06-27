@@ -265,6 +265,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // USGS Volcano Alert Level + ICAO aviation colour code, e.g.
         // "Alert Watch · Aviation Orange" — the operational read for US volcanoes.
         "usgs_volcano" => ee_sources::usgs_volcano::alert_chip(&e.raw),
+        // PVMBG alert level (Waspada/Siaga/Awas) + latest VONA aviation colour, e.g.
+        // "Alert Siaga (Watch) · Aviation Yellow" — the operational read for Indonesia.
+        "magma_volcano" => ee_sources::magma_volcano::alert_chip(&e.raw),
         // NWS observed flood category, e.g. "Major flooding" / "Near flood stage" —
         // the baseline-relative read (stage already compared to the gauge's thresholds).
         "nwps_flood" => ee_sources::nwps_flood::flood_chip(&e.raw),
@@ -379,7 +382,8 @@ async fn feeds_payload() -> Value {
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
         geonet_volcano::GeonetVolcano, gvp_volcano::GvpVolcano,
-        healthmap::HealthMap, jma_typhoon::JmaTyphoon, navcanada::NavCanada, nhc::Nhc,
+        healthmap::HealthMap, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
+        navcanada::NavCanada, nhc::Nhc,
         nwps_flood::NwpsFlood, nws::Nws,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
@@ -392,7 +396,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc, floods) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc, id_volc, floods) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -450,6 +454,10 @@ async fn feeds_payload() -> Value {
         // USGS HANS — US/Alaska volcanic alert levels (joins elevated notices to the
         // US volcano catalogue for coords), the operational state GVP/EONET don't carry.
         fetch_one("usgs_volcano", UsgsVolcano, 12),
+        // PVMBG / MAGMA Indonesia — Indonesian volcano alert levels (status ≥ Waspada)
+        // + latest VONA aviation colour, the operational state for the world's most
+        // volcanically active country (Path-B committed snapshot; refresh re-captures).
+        fetch_one("magma_volcano", MagmaVolcano, 9),
         // NOAA NWPS — river gauges at/above flood stage (observed flood category, the
         // baseline-relative read), filling the river-flooding hazard no other feed carries.
         fetch_one("nwps_flood", NwpsFlood, 12),
@@ -496,6 +504,7 @@ async fn feeds_payload() -> Value {
         (typhoons.0, typhoons.1, "jma_typhoon", 60),
         (nz_volc.0, nz_volc.1, "geonet_volcano", 60),
         (us_volc.0, us_volc.1, "usgs_volcano", 60),
+        (id_volc.0, id_volc.1, "magma_volcano", 150),
         (floods.0, floods.1, "nwps_flood", 400),
     ] {
         evs.truncate(cap);
@@ -871,6 +880,29 @@ mod tests {
         // Unassigned ground level -> the aviation colour stands alone.
         let e = mk(json!({"alert_level": "UNASSIGNED", "color_code": "YELLOW"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Aviation Yellow"));
+    }
+
+    #[test]
+    fn magma_volcano_chip_surfaces_alert_level_and_aviation_colour() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "magma-volcano-x".into(),
+            source_id: "magma_volcano".into(),
+            kind: EventKind::Volcano,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.8),
+            url: None,
+            raw,
+        };
+        // `raw` is the MAGMA volcano record: PVMBG alert level (ga_status) + VONA colour.
+        let e = mk(json!({"ga_status": 3, "vona": [{"no": 1, "cu_avcode": "YELLOW"}]}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Alert Siaga (Watch) · Aviation Yellow"));
+        // Waspada with no VONA -> the alert level stands alone.
+        let e = mk(json!({"ga_status": 2, "vona": []}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Alert Waspada (Advisory)"));
     }
 
     #[test]

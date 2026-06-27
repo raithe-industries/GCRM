@@ -67,6 +67,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
 | `usgs_volcano` | Volcano | USGS VHP / HANS | **US + Alaska Volcanic Alert Levels** — the HANS `getElevatedVolcanoes` notice product (ground alert level NORMAL/ADVISORY/WATCH/WARNING + ICAO aviation colour GREEN/YELLOW/ORANGE/RED) **joined by `vnum`** to the `getUSVolcanoes` catalogue for coordinates (the elevated notice carries no lat/lon). Drops the all-clear state (NORMAL/GREEN/UNASSIGNED) so only volcanoes above background plot; all-quiet network = 0 events, not an error. Auth-free JSON, US-Gov public domain. Chip = "Alert {level} · Aviation {colour}". Fills the **US/Alaska** operational alert-level geography GeoNet (NZ) doesn't cover and that the GVP eruption catalogue / EONET (event-based) don't carry as a live alert state. AVO (most active US volcanoes), HVO (Kīlauea/Mauna Loa), Cascades, Yellowstone. |
 | `nwps_flood` | Weather | NOAA / NWS NWPS | **river flooding** — the NWS `water/riv_gauges` "Observed River Stages" GeoJSON layer (id 0), one Point per AHPS gauge with its observed **flood category** in `status`. Connector keeps only gauges **at/above action stage** (`action`/`minor`/`moderate`/`major`); drops the all-clear `no_flooding` + undefined states, so a no-flood network = 0 events, not an error. Auth-free GeoJSON, US-Gov public domain. **Signal-meaningful where a raw gauge level isn't:** `status` is the *baseline-relative* category (NWS already compared live stage to that gauge's own thresholds) — resolves the `ECCC hydrometric` "nonsense number" rejection at its root. Severity major 1.0→action 0.35; chip = "Major flooding" / "Near flood stage". Fills the river-flooding hazard no current feed carries. |
+| `magma_volcano` | Volcano | PVMBG / MAGMA Indonesia | **Indonesian volcano operational alert levels** — PVMBG (Geological Agency, Ministry of Energy & Mineral Resources) is the authoritative national monitor for the world's most volcanically active country (~127 monitored volcanoes). Each volcano carries a ground alert level `ga_status` on the 4-step scale (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) plus the latest VONA aviation colour (`vona[].cu_avcode` GREEN/YELLOW/ORANGE/RED). Connector emits one event per volcano **above background** (status ≥ 2); Normal (1) dropped, so an all-quiet snapshot = 0 events. Severity = max(status rank, aviation-colour rank) — an ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55. Chip = "Alert Siaga (Watch) · Aviation Yellow". **Path B (committed snapshot):** MAGMA's home-map volcano list is embedded server-side (no clean public full-list JSON endpoint) and the host 403s in-sandbox, so a real captured PVMBG payload ships `include_str!`-embedded (`magma_volcano_snapshot.json`), refreshed by a local/manual re-capture job. Schema confirmed against PVMBG's own `magma-indonesia/magma-indonesia` source (`HomeController::gunungApi()` + `VonaApiService`). Fills the **Indonesia / SE-Asia** volcano geography GeoNet (NZ) and USGS (US/Alaska) don't cover. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -142,12 +143,19 @@ Bias each run toward the least-covered axis below.
   and EXTENDED 2026-06-25 with `geonet_volcano` (GeoNet/GNS NZ **Volcanic Alert Levels** —
   the operational alert state, not an eruption record), and EXTENDED 2026-06-26 with
   `usgs_volcano` (**USGS HANS** US/Alaska Volcanic Alert Levels + aviation colour, Path A via the
-  GitHub-verified schema technique). Next: **Italian INGV** (Etna/Stromboli) or **PHIVOLCS**
-  (Philippines) if an auth-free geocoded product exists; **Icelandic Met Office** (IMO) volcano
-  alerts for the N-Atlantic.
-- **Geography** — feeds are Canada/US-dense; SW-Pacific now seeded via `geonet_volcano` (NZ).
+  GitHub-verified schema technique), and EXTENDED 2026-06-27 with `magma_volcano` (**PVMBG / MAGMA
+  Indonesia** alert levels Waspada/Siaga/Awas + VONA aviation colour, Path-B committed snapshot) —
+  the modality now covers the world's most active volcanic region (Indonesia, ~127 volcanoes).
+  Next: **Italian INGV** (Etna/Stromboli) or **PHIVOLCS** (Philippines) if an auth-free geocoded
+  product exists (neither exposed a clean machine-readable alert API on 2026-06-27 recon — INGV
+  publishes bulletins/webcams only, PHIVOLCS only HTML bulletins + a third-party GeoJSON);
+  **Icelandic Met Office** (IMO) volcano alerts for the N-Atlantic. **MAGMA snapshot refresh** is a
+  local re-capture job (origin host unreachable in-sandbox).
+- **Geography** — feeds are Canada/US-dense; SW-Pacific seeded via `geonet_volcano` (NZ),
+  W-Pacific via `jma_typhoon`, and **SE-Asia / Indonesia** now seeded via `magma_volcano` (PVMBG).
   Hunt authoritative regional feeds for Europe (Copernicus EMS, MeteoAlarm if it geocodes),
-  Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America, Africa.
+  Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America (e.g. Chile SERNAGEOMIN
+  volcanoes), Africa.
 - **Domains under-covered** — power-grid stress (other ISOs), rail/pipeline incidents
   (TSB Canada, NTSB), dam/reservoir, drought, lightning (if a geocoded near-real-time
   product exists), methane/industrial (GHGSat/Sentinel). **flood-WITH-baselines SEEDED
@@ -164,6 +172,44 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-27** — **adopted `magma_volcano` (PVMBG / MAGMA Indonesia volcano alert levels), Path B** —
+  a new authoritative geocoded layer extending the **operational volcanic-alert modality** to **Indonesia**,
+  the world's most volcanically active country (~127 monitored volcanoes), the largest single geographic
+  gap the modality had after NZ (`geonet_volcano`) and US/Alaska (`usgs_volcano`). Per the SUSTAINED-BLOCK
+  DIRECTIVE I led with a **Path-B snapshot ingestion**, not a no-op block record. Re-probed the network
+  fresh: **web fetch positive control** on `raw.githubusercontent.com` correct (`facebook/react`
+  `package.json` → `private:true`/no `name`); the live MAGMA host **`magma.esdm.go.id/v1/vona` 403s**
+  (egress-wide web fetch block on non-GitHub hosts unchanged). Volcano targets named in the ledger ruled
+  out this run for lack of a clean auth-free machine-readable alert product: **INGV** (Italy) publishes
+  bulletins/seismograms/webcams, no alert JSON; **PHIVOLCS** (Philippines) only HTML bulletins + a
+  third-party GeoJSON (fails bar 1). **The unlock (same GitHub-captured-schema technique that landed
+  NHC→JMA→GeoNet→USGS-volcano→NWPS):** confirmed via **web search** that PVMBG/MAGMA is auth-free, then
+  pulled the **real schema + bytes off GitHub** — PVMBG's **own** source repo `magma-indonesia/magma-indonesia`
+  (`HomeController::gunungApi()` selects `ga_code/ga_nama_gapi/ga_lat_gapi/ga_lon_gapi/ga_status…`;
+  `VonaApiService` maps the VONA colour code), plus a captured copy of the home-map feed in
+  `mandalateknologi/demo-peta` (`public/data/vsi-gunung-api.json`) giving real records with coords +
+  `ga_status` (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) + `vona[].cu_avcode` (GREEN/YELLOW/ORANGE/RED).
+  Because MAGMA's full-list volcano data is embedded server-side (no clean public JSON endpoint) and the
+  host 403s in-sandbox, this is a **Path-B committed snapshot**: 17 real captured records (16 elevated +
+  Agung at Normal to exercise the drop) ship `include_str!`-embedded as `magma_volcano_snapshot.json`,
+  refreshed by a documented local re-capture job; prod serves the refreshed state. Clears all six bars:
+  **authoritative** (PVMBG, Indonesia's national volcano monitor); **auth-free**; **machine-readable** JSON;
+  **geocoded** (per-volcano `ga_lat_gapi/lon`); **fresh** (operational alert state; an all-Normal snapshot →
+  0 events, not an error; refresh cadence documented per Path B); **non-duplicative** (GVP = weekly
+  *eruption* catalogue, EONET = *events*, GeoNet = NZ, USGS = US/Alaska — none carries Indonesia's
+  standardized PVMBG alert level + VONA colour as a live state). **Signal-meaningful:** drops Normal (1);
+  severity = max(status rank Awas 1.0→Waspada 0.55, aviation-colour rank RED 1.0→YELLOW 0.55) — an
+  ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55; chip = "Alert {Waspada/Siaga/Awas}
+  (gloss) · Aviation {colour}". New `vendor/ee-sources/src/magma_volcano.rs` (pure `parse_magma_volcano` +
+  `alert_chip` + status/colour rank + latest-VONA-by-`no` helpers; tolerates number-or-string `ga_status`,
+  bare-array vs `{volcanoes}`/`{data}` wrappers; 5 offline tests incl. drop-Normal/no-coords, colour raises
+  severity above ground level, all-Normal-is-OK, error-on-bad-input, and the committed snapshot parses).
+  Registered in `lib.rs`; wired `src/osint.rs` (`fetch_one("magma_volcano", …, 9)` + count/cap row cap 150
+  + `feed_detail` arm + osint chip test); SRC_LABEL `PVMBG · MAGMA Indonesia` in `dashboard.html`.
+  **`cargo build --release` green; full workspace `cargo test` green (gcrm 470 / 0 failed / 3 ignored;
+  ee-sources 94 incl. magma_volcano 5/5; ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Volcano.
+  Next volcano target: Italian INGV / PHIVOLCS / Icelandic IMO if an auth-free geocoded product surfaces;
+  next geography: Latin America (Chile SERNAGEOMIN).
 - **2026-06-26** (second run) — **adopted `nwps_flood` (NOAA NWPS observed river flooding)** — a new
   authoritative geocoded layer opening the **river-flooding domain** no current feed carries, AND the
   source that **resolves the long-standing `ECCC hydrometric` rejection at its root**: the connector

@@ -33,6 +33,7 @@ pub mod geonet_volcano;
 pub mod gvp_volcano;
 pub mod healthmap;
 pub mod jma_typhoon;
+pub mod magma_volcano;
 pub mod nws;
 pub mod ontario511;
 pub mod opensky;
@@ -71,6 +72,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(gvp_volcano::GvpVolcano::default()),
         Box::new(geonet_volcano::GeonetVolcano), // NZ volcanic alert levels (GeoNet/GNS)
         Box::new(usgs_volcano::UsgsVolcano), // US/Alaska volcanic alert levels (USGS HANS)
+        Box::new(magma_volcano::MagmaVolcano), // Indonesia volcanic alert levels (PVMBG/MAGMA, Path-B snapshot)
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
