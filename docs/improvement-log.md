@@ -22,6 +22,33 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-27 — platform — froze the `/api/latest` headline-read contract v1 (RAITHE Global Monitor §7.1)
+- Item: roadmap 7.1 (now checked) — first concrete platform rung.
+- Change: the served headline read (`/api/latest` + the WS `snapshot`) is the federation
+  contract sibling monitors and the read-only `/intel` portal must clone as a SPEC, but it
+  carried NO version handle — a consumer could only fork the dashboard SPA and silently mis-read
+  a future schema bump. Added a top-level `contract: "gcrm.headline-read/v1"` negotiation field
+  (`HEADLINE_READ_CONTRACT` const in `aggregator.rs`, emitted by `snapshot_to_json` as the FIRST
+  field so a consumer reads it before trusting the rest), documented the frozen schema + version
+  policy (add-a-field = compatible, no bump; remove/retype = breaking, bump `/vN`) in
+  `docs/headline-read-contract-v1.md`, and locked the full core shape + v1 cross-field invariants
+  (annual_pct = annual·100 @6dp; 30d ≤ 90d ≤ annual; delta.direction enum; honesty flags are
+  booleans) with `snapshot_to_json_honours_contract_v1`. GCRM engine/runtime untouched — purely a
+  new served field + spec + guard.
+- Metric moved: platform — established the headline-read contract (versioned, documented, guarded)
+  the federation clones; "Monitors shipped" platform-rung progress (§7.1 DoD). Test count 467→469.
+  No engine/calibration path touched (backtest bands + Brier identical).
+- Proof: `cargo build --release` clean; `cargo test --release` 469 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 21/0 (quiet/Ukraine/current/Cuba intact); `cargo clippy --release` 0 warnings.
+- Tier: T1 · Touched: engine-behavior (new served field, behaviour-changing) · Lock-fails-without-change:
+  yes (the lock asserts `v["contract"]=="gcrm.headline-read/v1"`; removing the field → `v["contract"]`
+  is Null → assert FAILS) · Counts: platform rung §7.1 — a versioned contract + spec, not a caveat/+1-nit ·
+  consecutive_display_only=0 · display_only_in_last_7=2
+- Notes future runs MUST respect: the served `contract` string is the version handle — `HEADLINE_READ_CONTRACT`
+  in `aggregator.rs` is the single source of truth. A backward-INCOMPATIBLE schema change (remove/retype a
+  documented field) MUST bump `/vN` and update `docs/headline-read-contract-v1.md`; do NOT silently delete the
+  contract assert to make a red go green. Adding a new optional field is compatible (no bump).
+
 ## 2026-06-26 — honesty/legibility — headline rung colour now follows the rung, not a rounded index (kills a Crisis-shown-moderate contradiction)
 - Item: ad-hoc (closes a colour-vs-rung-word contradiction on the headline).
 - Defect: the headline rung WORD (`cmd-threat`, `cc-rung`) and the Primary Driver cell were

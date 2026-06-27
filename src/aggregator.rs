@@ -52,6 +52,18 @@ use crate::models::{
 // true age-based eviction boundary; this cap is a volume-burst safeguard.
 pub const MAX_WINDOW_EVENTS: usize = 500_000;
 
+// ── Headline-read contract (RAITHE Global Monitor platform, §7.1) ──────────────
+// The /api/latest (and WS `snapshot`) payload is the federation's "headline-read
+// contract": sibling monitors and the read-only portal consume this SPEC, they do
+// not fork the dashboard SPA. The payload carries this identifier as a top-level
+// `contract` field so a consumer can negotiate the version it understands and fail
+// loudly (rather than silently mis-reading) if the schema is bumped. The string is
+// namespaced + versioned (`<monitor>.<surface>/v<N>`); a backward-INCOMPATIBLE
+// change (removing/retyping a documented field) MUST bump the `/vN` suffix. Adding
+// a new optional field is compatible and does NOT bump it. Spec:
+// docs/headline-read-contract-v1.md, locked by `snapshot_to_json_honours_contract_v1`.
+pub const HEADLINE_READ_CONTRACT: &str = "gcrm.headline-read/v1";
+
 // ── Timeline path helpers ────────────────────────────────────────────────────────
 //
 // Returns the rotated JSONL path for a given date: logs/timeline_YYYY-MM-DD.jsonl
@@ -114,6 +126,9 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         .collect();
 
     serde_json::json!({
+        // Federation contract handle (RAITHE Global Monitor §7.1). A consumer reads
+        // this FIRST to confirm it understands the schema before trusting any field.
+        "contract":     HEADLINE_READ_CONTRACT,
         "snapshot_id":  snap.snapshot_id,
         "computed_at":  snap.computed_at.to_rfc3339(),
         "prior": {
@@ -1306,6 +1321,75 @@ mod tests {
         assert!(v["co_occurrence"]["elevated_count"].is_number());
         assert!(v["alert"]["level"].is_string());
         assert!(v["meta"]["events_in_window"].is_number());
+    }
+
+    // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────
+    // Locks the FROZEN schema sibling monitors + the /intel portal clone from a
+    // spec (docs/headline-read-contract-v1.md) instead of forking the dashboard.
+    // A red here means a BREAKING change to the served headline read — bump the
+    // `/vN` handle on purpose, never delete the assert.
+    #[test]
+    fn snapshot_to_json_honours_contract_v1() {
+        let mut snap = make_snapshot(0.30, 0.001, 2);
+        // Fill the two horizon fields the helper leaves at Default so the v1
+        // monotonicity invariant (30d ≤ 90d ≤ annual) is exercised honestly.
+        snap.p_wwiii_30day = 1.0 - (1.0 - 0.30_f64).powf(30.0 / 365.0);
+        snap.p_wwiii_90day = 1.0 - (1.0 - 0.30_f64).powf(90.0 / 365.0);
+        let v = snapshot_to_json(&snap);
+
+        // 1. The version handle is present and is the v1 string (the negotiation
+        //    field a consumer reads FIRST). Bumping it is a deliberate breaking act.
+        assert_eq!(v["contract"], serde_json::json!(HEADLINE_READ_CONTRACT));
+        assert_eq!(v["contract"], serde_json::json!("gcrm.headline-read/v1"));
+
+        // 2. Every documented top-level key is present with its documented type.
+        assert!(v["snapshot_id"].is_string());
+        assert!(v["computed_at"].is_string());
+        assert!(v["prior"].is_object());
+        assert!(v["prior"]["historical_anchor"].is_number());
+        assert!(v["prior"]["regime_multiplier"].is_number());
+        assert!(v["prior"]["regime_role"].is_string());
+        assert!(v["domains"].is_object());
+        assert!(v["co_occurrence"]["elevated_count"].is_number());
+        assert!(v["co_occurrence"]["boost"].is_number());
+        assert!(v["probabilities"]["annual"].is_number());
+        assert!(v["probabilities"]["annual_pct"].is_number());
+        assert!(v["probabilities"]["thirty_day"].is_number());
+        assert!(v["probabilities"]["ninety_day"].is_number());
+        assert!(v["delta"]["annual"].is_number());
+        assert!(v["delta"]["direction"].is_string());
+        assert!(v["confidence"].is_number());
+        assert!(v["alert"]["level"].is_string());
+        assert!(v["alert"]["elevated_threshold"].is_number());
+        assert!(v["alert"]["critical_threshold"].is_number());
+        assert!(v["systemic"]["index"].is_number());
+        assert!(v["systemic"]["driver"].is_string());
+        assert!(v["theaters"].is_array());
+        assert!(v["couplers"].is_object());
+        assert!(v["indicators"].is_array());
+        assert!(v["meta"].is_object());
+        for k in ["events_in_window", "data_blind", "thinly_sourced", "at_ceiling",
+                  "breadth_saturated", "read_held_by_floor", "sources_active",
+                  "regions_active", "aggregation_window_hours", "max_window_events"] {
+            assert!(!v["meta"][k].is_null(), "contract v1 meta key missing: {k}");
+        }
+
+        // 3. v1 cross-field invariants a consumer is entitled to rely on.
+        let annual = v["probabilities"]["annual"].as_f64().unwrap();
+        let pct    = v["probabilities"]["annual_pct"].as_f64().unwrap();
+        assert!((pct - (annual * 100.0 * 1e6).round() / 1e6).abs() < 1e-12,
+                "annual_pct must be annual·100 rounded to 6dp");
+        let d30 = v["probabilities"]["thirty_day"].as_f64().unwrap();
+        let d90 = v["probabilities"]["ninety_day"].as_f64().unwrap();
+        assert!(d30 <= d90 + 1e-12 && d90 <= annual + 1e-12,
+                "horizons must satisfy 30d ≤ 90d ≤ annual (got {d30} {d90} {annual})");
+        let dir = v["delta"]["direction"].as_str().unwrap();
+        assert!(matches!(dir, "rising" | "falling" | "stable"),
+                "delta.direction must be one of the v1 enum values, got {dir}");
+        // honesty-posture flags are booleans the consumer must respect, not numbers
+        assert!(v["meta"]["data_blind"].is_boolean());
+        assert!(v["meta"]["at_ceiling"].is_boolean());
+        assert!(v["meta"]["read_held_by_floor"].is_boolean());
     }
 
     #[test]
