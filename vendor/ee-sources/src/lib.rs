@@ -9,6 +9,7 @@
 
 pub mod acled;
 pub mod alberta511;
+pub mod avalanche_ca;
 pub mod cbsa_bwt;
 pub mod cccs;
 pub mod cisa_kev;
@@ -79,6 +80,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC, Atlantic/E-Pacific)
         Box::new(jma_typhoon::JmaTyphoon),         // Typhoons (JMA RSMC Tokyo, W-Pacific)
         Box::new(nwps_flood::NwpsFlood),           // River flooding (NOAA NWPS, observed flood category)
+        Box::new(avalanche_ca::AvalancheCa),       // Avalanche danger ratings (Avalanche Canada, seasonal)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

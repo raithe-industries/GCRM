@@ -68,6 +68,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `usgs_volcano` | Volcano | USGS VHP / HANS | **US + Alaska Volcanic Alert Levels** — the HANS `getElevatedVolcanoes` notice product (ground alert level NORMAL/ADVISORY/WATCH/WARNING + ICAO aviation colour GREEN/YELLOW/ORANGE/RED) **joined by `vnum`** to the `getUSVolcanoes` catalogue for coordinates (the elevated notice carries no lat/lon). Drops the all-clear state (NORMAL/GREEN/UNASSIGNED) so only volcanoes above background plot; all-quiet network = 0 events, not an error. Auth-free JSON, US-Gov public domain. Chip = "Alert {level} · Aviation {colour}". Fills the **US/Alaska** operational alert-level geography GeoNet (NZ) doesn't cover and that the GVP eruption catalogue / EONET (event-based) don't carry as a live alert state. AVO (most active US volcanoes), HVO (Kīlauea/Mauna Loa), Cascades, Yellowstone. |
 | `nwps_flood` | Weather | NOAA / NWS NWPS | **river flooding** — the NWS `water/riv_gauges` "Observed River Stages" GeoJSON layer (id 0), one Point per AHPS gauge with its observed **flood category** in `status`. Connector keeps only gauges **at/above action stage** (`action`/`minor`/`moderate`/`major`); drops the all-clear `no_flooding` + undefined states, so a no-flood network = 0 events, not an error. Auth-free GeoJSON, US-Gov public domain. **Signal-meaningful where a raw gauge level isn't:** `status` is the *baseline-relative* category (NWS already compared live stage to that gauge's own thresholds) — resolves the `ECCC hydrometric` "nonsense number" rejection at its root. Severity major 1.0→action 0.35; chip = "Major flooding" / "Near flood stage". Fills the river-flooding hazard no current feed carries. |
 | `magma_volcano` | Volcano | PVMBG / MAGMA Indonesia | **Indonesian volcano operational alert levels** — PVMBG (Geological Agency, Ministry of Energy & Mineral Resources) is the authoritative national monitor for the world's most volcanically active country (~127 monitored volcanoes). Each volcano carries a ground alert level `ga_status` on the 4-step scale (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) plus the latest VONA aviation colour (`vona[].cu_avcode` GREEN/YELLOW/ORANGE/RED). Connector emits one event per volcano **above background** (status ≥ 2); Normal (1) dropped, so an all-quiet snapshot = 0 events. Severity = max(status rank, aviation-colour rank) — an ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55. Chip = "Alert Siaga (Watch) · Aviation Yellow". **Path B (committed snapshot):** MAGMA's home-map volcano list is embedded server-side (no clean public full-list JSON endpoint) and the host 403s in-sandbox, so a real captured PVMBG payload ships `include_str!`-embedded (`magma_volcano_snapshot.json`), refreshed by a local/manual re-capture job. Schema confirmed against PVMBG's own `magma-indonesia/magma-indonesia` source (`HomeController::gunungApi()` + `VonaApiService`). Fills the **Indonesia / SE-Asia** volcano geography GeoNet (NZ) and USGS (US/Alaska) don't cover. |
+| `avalanche_ca` | Weather | Avalanche Canada | **snow-avalanche danger ratings** — Canada's national public-avalanche body. Joins `/forecasts/en/products` (bulletins, by `area.id`) to `/forecasts/en/areas` (region polygons, GeoJSON, same id) and plots one dot per region **with a numeric rating today**, at the polygon centroid. Severity = peak elevation-band rating on the North American scale (Low 0.2 → Extreme 1.0). **Signal-meaningful** (the danger scale is baseline-relative — each level a defined likelihood/size, not a raw number). **Seasonal, handled honestly:** off-season bands read `norating`/spring → dropped, so summer = 0 events not an error (layer lights up ~late-Nov→Apr). Resolves the source's deferral via an off-season-tolerant parser. Auth-free JSON+GeoJSON. Chip = "Alpine Considerable · Treeline Moderate · Below Low". Fills the snow-avalanche hazard no other feed carries. |
 | `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -109,10 +110,9 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   — live + authoritative, but a single province-wide scalar (no per-record lat/lon). Only
   fits as ONE static Ontario marker; marginal map value. Adopt only if a single grid-load
   marker is explicitly wanted.
-- **Avalanche Canada** (`api.avalanche.ca/forecasts/en/{products,areas}`) — authoritative,
-  geocoded (join product.area.id↔areas feature.id, centroid). **Seasonal**: off-season
-  returns "spring"/"norating" (0 plottable). Implement with an off-season-tolerant parser
-  and gate the layer to light up ~late-Nov→Apr.
+- ~~**Avalanche Canada**~~ — **ADOPTED 2026-06-27** as `avalanche_ca` (LIVE). The deferral
+  caveat is resolved: the connector is off-season-tolerant (drops `norating`/spring → 0 events
+  in summer; lights up ~late-Nov→Apr). Joins product `area.id` ↔ areas feature `id`, centroid.
 - **CCCS cyber** (`cccs`) — already a registry connector; lift onto a UI surface (a cyber
   panel), not the map.
 
@@ -161,7 +161,10 @@ Bias each run toward the least-covered axis below.
   product exists), methane/industrial (GHGSat/Sentinel). **flood-WITH-baselines SEEDED
   2026-06-26** with `nwps_flood` (NOAA NWPS observed flood category, US/CONUS). Gap now:
   flood-with-baselines OUTSIDE the US — a Canadian/European product that ships a category
-  (not a raw level); ECCC hydrometric stays rejected for lacking one.
+  (not a raw level); ECCC hydrometric stays rejected for lacking one. **snow-avalanche
+  hazard SEEDED 2026-06-27** with `avalanche_ca` (Avalanche Canada danger ratings, Canadian
+  mountains, seasonal). Gap now: avalanche/mountain hazard outside Canada (e.g. US NWAC/CAIC,
+  the European EAWS/`avalanche.report` if an auth-free geocoded product ships a danger level).
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -172,6 +175,51 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-27** (second run) — **adopted `avalanche_ca` (Avalanche Canada danger ratings), Path A** —
+  a new authoritative geocoded layer opening the **snow-avalanche hazard domain** no current feed
+  carries, AND the conversion of a long-standing **DEFERRED** source into a working connector (the
+  directive prioritizes converting a deferred source over another block record). The deferral caveat —
+  "seasonal: off-season returns spring/norating; implement an off-season-tolerant parser" — is resolved
+  exactly as specified. Per the SUSTAINED-BLOCK DIRECTIVE I did NOT lead with a no-op. **Network
+  re-probed fresh:** WebFetch positive control on `raw.githubusercontent.com` correct (`facebook/react`
+  `package.json` → `private:true`/no `name`); the egress-wide WebFetch 403 on non-GitHub hosts is
+  unchanged (geoportal.cl ArcGIS + sernageomin both 403), so live verification stays via the
+  GitHub-captured-schema technique. **Ruled out this run before landing avalanche:** **SERNAGEOMIN**
+  (Chile volcano alerts, the Latin-America geography gap) — authoritative but NO clean auth-free
+  machine-readable alert endpoint surfaced and NO real captured bytes on GitHub to anchor a schema
+  (only a static ArcGIS volcano-locations MapServer + an ArcGIS-Hub dataset page, neither WebFetch-able);
+  building on guessed fields would risk a fabricated connector, so deferred. **Météo-France La Réunion**
+  (SW-Indian-Ocean RSMC) — HTML/bulletins only, no auth-free JSON (consistent with the standing
+  storm-basin finding). **The avalanche unlock:** confirmed via **WebSearch** that the Avalanche Canada
+  API is open/no-auth (`docs.avalanche.ca`), then pulled the **real schema + bytes off GitHub** —
+  `bcgov/geobc-bier`'s `avalanche_canada_forecasts.py` (a BC-government consumer) does the exact join I
+  need: fetch `/forecasts/en/areas` (GeoJSON, region polygons keyed by feature `id`) + `/forecasts/en/products`
+  (bulletins with `area.id` + `report.dangerRatings`), match `product.area.id` ↔ areas feature `id`; the
+  dangerRatings shape (`ratings.{alp,tln,btl}.rating.{value,display}`, value like "considerable", display
+  "3 - Considerable") is confirmed by a real sample in `GenerationSoftware/avalanche-canada-sms` plus 6+
+  independent consumers (`rodrigo-barraza/tools-service`, `weberam2/avytext`, …). So the connector +
+  offline fixtures are built against **real Avalanche Canada bytes**, not docs guesswork; prod (full
+  network) fetches the live URLs. Clears all six bars: **authoritative** (Avalanche Canada, the national
+  public-avalanche body); **auth-free** JSON+GeoJSON; **machine-readable**; **geocoded** (region polygon
+  centroid via the area-id join); **fresh** (daily in season; off-season `norating`/spring → 0 events,
+  not an error); **non-duplicative** (no feed carries snow-avalanche hazard). **Signal-meaningful:** the
+  North American danger scale is baseline-relative (each level a defined likelihood/size), so a
+  "Considerable" dot is real signal, not a raw number; severity = peak band Low 0.2 → Extreme 1.0; chip =
+  "Alpine Considerable · Treeline Moderate · Below Low". New `vendor/ee-sources/src/avalanche_ca.rs`
+  (two-fetch `Source::fetch`; pure `parse_avalanche_ca(products, areas)` + `danger_chip` + `danger_rank`/
+  `danger_label`/centroid/`report_of`/`today_ratings`/`band_value` helpers; tolerates value-as-word/
+  numbered-display/bare-number, `report` nesting vs flat, array vs `{products}`/`{data}` wrapper; 4
+  offline tests: parse drops off-season + unplaceable, all-norating-is-OK, error-on-bad-input, danger
+  ladder + chip omits unrated bands). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("avalanche_ca", …, 14)` + count/cap row cap 200 + `feed_detail` arm + osint chip test);
+  SRC_LABEL `Avalanche Canada` in `dashboard.html`. **`cargo build --release` green; full workspace
+  `cargo test` green (gcrm 472 / 0 failed / 3 ignored; ee-sources 98 incl. avalanche_ca 4/4;
+  ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Weather (the hydromet/seasonal-hazard convention
+  NHC/JMA/NWPS follow; adding a dedicated variant is the self-improvement routine's lane). Note: in June
+  this layer is off-season and plots 0 events live — by design; it lights up for the Nov→Apr season.
+  Next avalanche/mountain target: US (NWAC/CAIC) or European EAWS (`avalanche.report`) if an auth-free
+  geocoded danger-level product surfaces; next geography: Latin America (Chile SERNAGEOMIN volcanoes, if
+  a machine-readable alert endpoint or a mirrorable snapshot surfaces).
 - **2026-06-27** — **adopted `magma_volcano` (PVMBG / MAGMA Indonesia volcano alert levels), Path B** —
   a new authoritative geocoded layer extending the **operational volcanic-alert modality** to **Indonesia**,
   the world's most volcanically active country (~127 monitored volcanoes), the largest single geographic

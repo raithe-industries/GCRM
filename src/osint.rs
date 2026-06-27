@@ -271,6 +271,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // NWS observed flood category, e.g. "Major flooding" / "Near flood stage" —
         // the baseline-relative read (stage already compared to the gauge's thresholds).
         "nwps_flood" => ee_sources::nwps_flood::flood_chip(&e.raw),
+        // Avalanche Canada current-day danger rating per elevation band, e.g.
+        // "Alpine Considerable · Treeline Moderate · Below Low" (North American scale).
+        "avalanche_ca" => ee_sources::avalanche_ca::danger_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -377,7 +380,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, alberta511::Alberta511, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled::Acled, alberta511::Alberta511, avalanche_ca::AvalancheCa, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -396,7 +399,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc, id_volc, floods) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -461,6 +464,10 @@ async fn feeds_payload() -> Value {
         // NOAA NWPS — river gauges at/above flood stage (observed flood category, the
         // baseline-relative read), filling the river-flooding hazard no other feed carries.
         fetch_one("nwps_flood", NwpsFlood, 12),
+        // Avalanche Canada — public avalanche-forecast danger ratings (joins bulletins
+        // to region polygons), the snow-avalanche hazard no other feed carries. Seasonal:
+        // off-season regions carry no rating and drop, so summer yields 0 events.
+        fetch_one("avalanche_ca", AvalancheCa, 14),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -506,6 +513,7 @@ async fn feeds_payload() -> Value {
         (us_volc.0, us_volc.1, "usgs_volcano", 60),
         (id_volc.0, id_volc.1, "magma_volcano", 150),
         (floods.0, floods.1, "nwps_flood", 400),
+        (avalanche.0, avalanche.1, "avalanche_ca", 200),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -926,6 +934,32 @@ mod tests {
         // Action stage reads as near-flood; casing is tolerated.
         let e = mk(json!({"gaugelid": "TULO2", "status": "Action"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Near flood stage"));
+    }
+
+    #[test]
+    fn avalanche_ca_chip_surfaces_per_band_danger_rating() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "avalanche-ca-x".into(),
+            source_id: "avalanche_ca".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.65),
+            url: None,
+            raw,
+        };
+        // `raw` is the stored forecast report: today's danger ratings per band.
+        let e = mk(json!({"dangerRatings": [{"ratings": {
+            "alp": {"rating": {"value": "considerable"}},
+            "tln": {"rating": {"value": "moderate"}},
+            "btl": {"rating": {"value": "low"}}}}]}));
+        assert_eq!(
+            feed_detail(&e).as_deref(),
+            Some("Alpine Considerable · Treeline Moderate · Below Low")
+        );
     }
 
     #[test]
