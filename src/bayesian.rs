@@ -748,6 +748,12 @@ pub struct BayesianRiskEngine {
     alert_critical: f64,
     prev_annual:    f64,
     prev_30day:     f64,
+    /// False until the first snapshot is computed. The very first tick after a
+    /// (re)start has NO genuine previous snapshot to diff against, so its delta is
+    /// reported as 0 rather than a cold-start artifact (differencing the seed
+    /// `prev_annual = HISTORICAL_ANCHOR` / `prev_30day = 0.0` would render a
+    /// fabricated "▲ +N% last snap" jump on the dashboard that never happened).
+    has_prev_snapshot: bool,
     theater_engine: TheaterEngine,
 }
 
@@ -765,6 +771,7 @@ impl BayesianRiskEngine {
             alert_critical,
             prev_annual:    HISTORICAL_ANCHOR,
             prev_30day:     0.0,
+            has_prev_snapshot: false,
             theater_engine: TheaterEngine::new(),
         }
     }
@@ -899,9 +906,18 @@ impl BayesianRiskEngine {
         snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(30.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
         snap.p_wwiii_90day  = ((1.0 - (1.0 - raw).powf(90.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
 
-        // ── Step 8: Delta ──
-        snap.delta_annual = ((snap.p_wwiii_annual - self.prev_annual) * 1e8).round() / 1e8;
-        snap.delta_30day  = ((snap.p_wwiii_30day  - self.prev_30day)  * 1e8).round() / 1e8;
+        // ── Step 8: Delta (change since the PREVIOUS snapshot) ──
+        // The first tick after a (re)start has no real previous snapshot, so its delta is
+        // 0 (a stable "─"), not the cold-start seed differenced into a phantom jump. From
+        // the second tick on, the delta is a true inter-snapshot move.
+        if self.has_prev_snapshot {
+            snap.delta_annual = ((snap.p_wwiii_annual - self.prev_annual) * 1e8).round() / 1e8;
+            snap.delta_30day  = ((snap.p_wwiii_30day  - self.prev_30day)  * 1e8).round() / 1e8;
+        } else {
+            snap.delta_annual = 0.0;
+            snap.delta_30day  = 0.0;
+            self.has_prev_snapshot = true;
+        }
         self.prev_annual  = snap.p_wwiii_annual;
         self.prev_30day   = snap.p_wwiii_30day;
 
@@ -1662,6 +1678,30 @@ mod tests {
         // Regression guard: it must NOT match the old 1/12-year (30.4-day) convention.
         assert!((snap.p_wwiii_30day - mon_30).abs() > EPS,
             "30-day must not revert to the 1/12-year (30.4-day) convention");
+    }
+
+    #[test]
+    fn first_snapshot_after_restart_reports_zero_delta_not_a_cold_start_jump() {
+        // The very first compute() after a (re)start has no genuine previous snapshot.
+        // Differencing the cold-start seed (prev_annual = HISTORICAL_ANCHOR, prev_30day =
+        // 0.0) would render a fabricated "▲ +N% last snap" jump on the dashboard. Feed a
+        // HOT window so p_annual lands far above the anchor: the honest first delta is 0.
+        let mut engine = minimal_engine();
+        let events: Vec<_> = (0..10)
+            .map(|_| make_event("nuclear_posture", 0.9, 1.0, SourceTier::Tier1))
+            .collect();
+        let first = engine.compute(&events);
+        assert!(first.p_wwiii_annual > HISTORICAL_ANCHOR + 0.01,
+            "test premise: the hot window must push p_annual well above the seed anchor \
+             (got {})", first.p_wwiii_annual);
+        assert_eq!(first.delta_annual, 0.0,
+            "first snapshot must not difference the cold-start anchor seed");
+        assert_eq!(first.delta_30day, 0.0,
+            "first snapshot must not difference the cold-start 30-day seed");
+        // Second tick (a quiet window after the hot one) IS a real inter-snapshot move.
+        let second = engine.compute(&[]);
+        assert_ne!(second.delta_annual, 0.0,
+            "the second snapshot reports a true delta against the first");
     }
 
     #[test]

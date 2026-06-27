@@ -204,6 +204,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     at a glance. HTML/CSS done in-sandbox; final visual verdict is the local eyes gate. Locked by
     `dashboard_flags_a_breadth_saturated_read_as_a_structural_max` (server.rs). No model constant
     touched. See improvement-log 2026-06-25.
+- [x] **1.5 First-tick delta is a cold-start artifact** — **DONE 2026-06-27.** The per-snapshot
+  `delta_annual`/`delta_30day` (dashboard `#cmd-risk-delta` "▲ +N% last snap", the ▲/▼ rate, the
+  event log) were differenced against the engine's seed values (`prev_annual = HISTORICAL_ANCHOR`,
+  `prev_30day = 0.0`) on the FIRST `compute()` after every (re)start — so the operator saw a
+  fabricated jump (~+1.5pp annual, the full 30-day value) that never happened. Gated Step 8 on a
+  new `has_prev_snapshot` flag: the first tick reports delta 0 (a stable "─"); the second tick on
+  is a true inter-snapshot move. Engine-behavior, no calibration constant touched (P, backtest
+  bands, Brier identical). Locked by
+  `first_snapshot_after_restart_reports_zero_delta_not_a_cold_start_jump` (fails without the gate:
+  first delta = 0.0149… ≠ 0). See improvement-log 2026-06-27.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted
