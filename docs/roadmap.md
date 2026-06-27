@@ -737,8 +737,12 @@ Robert-gated). Every source: parser test on a checked-in REAL-RESPONSE fixture +
 ## 7. Unified platform — the RAITHE Global Monitor surface
 Full plan: `the platform plan (local)`. GCRM's engine/runtime stay UNTOUCHED;
 the platform is product-unified, runtime-federated (each monitor its own binary/port/deploy-gate).
-- [ ] **7.1** Freeze GCRM's `/api/latest` JSON as documented "headline-read contract v1" + a contract
-  test, so sibling monitors and the portal clone a SPEC, not a forked SPA. (T1, GCRM-side, low risk.)
+- [x] **7.1** Freeze GCRM's `/api/latest` JSON as documented "headline-read contract v1" + a contract
+  test, so sibling monitors and the portal clone a SPEC, not a forked SPA. **DONE 2026-06-27.** Added
+  the top-level `contract: "gcrm.headline-read/v1"` negotiation handle (`HEADLINE_READ_CONTRACT` in
+  `aggregator.rs`, served by `snapshot_to_json`), documented the frozen schema +
+  add-is-compatible/retype-is-breaking version policy in `docs/headline-read-contract-v1.md`, and
+  locked the full core shape + v1 cross-field invariants with `snapshot_to_json_honours_contract_v1`.
 - [ ] **7.2** Coordinate the read-only `/intel` portal tile contract (the portal lives in raisearch,
   not this repo) — keep GCRM a pure read-only data source.
 
