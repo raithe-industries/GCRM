@@ -427,6 +427,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.17 Per-theater escalation-MOMENTUM gauge** — **DONE 2026-06-28.** A NEW computed gauge
+  (T1): each theater now reports `escalation_momentum` ∈ [−1,+1], the recency-weighted mean signed
+  `escalation_step` of its events — the Goldstein-style conflict↔cooperation DIRECTION of the news
+  flow. Distinct from `heat` (magnitude) and `delta`/`trend` (the heat SCORE's change): coverage can
+  turn conciliatory (momentum < 0) while heat is still high or floor-held, or escalatory before heat
+  rises — a LEADING signal. The input (`escalation_step`) was already ingested but only ever
+  THRESHOLDED to the de-escalation floor boolean (`theater_is_deescalating`); this surfaces the
+  magnitude behind that gate. Computed in `theater.rs` (`escalation_momentum()`, now the single source
+  for both the gate and the gauge), served as an additive contract-v1 field on each theater, and
+  rendered on the ladder chip as a green "⇩ talks" / red "⇧ escalatory" tag (shown only when |m| ≥
+  0.25). No calibration constant touched — the de-escalation gate is bit-identical. Locked by
+  `escalation_momentum_surfaces_the_signed_news_flow_direction` (theater) +
+  `dashboard_renders_per_theater_escalation_momentum` (server). See improvement-log 2026-06-28.
 - [x] **3.16 The I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning condition** — **DONE 2026-06-25.**
   With 3.15 (diplomatic) added, four of the five tracked modalities had a NAMED board light
   (military→`gp_kinetic`, nuclear→`nuclear_signaling`, economic→`energy_chokepoint`,

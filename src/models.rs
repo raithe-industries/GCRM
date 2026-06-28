@@ -726,6 +726,21 @@ pub struct TheaterState {
     /// keeps older persisted snapshots loadable.
     #[serde(default)]
     pub fresh_rung_label: String,
+    /// Escalation momentum: the recency-weighted mean signed `escalation_step` of this
+    /// theater's recent events, in [−1, +1]. −1 = the news flow is dominated by
+    /// de-escalation (ceasefires, talks, deals); +1 = dominated by escalatory moves;
+    /// 0 = neutral / no qualifying coverage. This is the Goldstein-style
+    /// conflict↔cooperation DIRECTION of the news flow — a LEADING signal distinct from
+    /// `heat` (the magnitude of conflict) and `delta`/`trend` (the change in the heat
+    /// SCORE): a theater can sit at high, flat heat while its momentum turns sharply
+    /// negative (a peace process underway before heat decays) or positive (escalatory
+    /// rhetoric building before it shows up as kinetic heat). It is the same
+    /// recency-weighted mean the persistence floor already thresholds for de-escalation
+    /// (`theater_is_deescalating`), surfaced as a magnitude rather than collapsed to a
+    /// boolean. Honest by construction (the model's own weighted mean of an input it
+    /// already ingests). `#[serde(default)]` keeps older persisted snapshots loadable.
+    #[serde(default)]
+    pub escalation_momentum: f64,
 }
 
 /// The label of the hottest theater that has risen above Stable — *where* the systemic
@@ -1091,6 +1106,7 @@ mod tests {
             alliance_invoked: false, top_actors: vec![], top_driver: String::new(),
             rising_driver: String::new(), secondary_driver: String::new(),
             held_by_floor: false, fresh_rung_label: rung.label().into(),
+            escalation_momentum: 0.0,
         }
     }
 

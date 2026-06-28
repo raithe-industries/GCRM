@@ -372,6 +372,7 @@ mod tests {
             top_driver: String::new(), rising_driver: String::new(),
             secondary_driver: String::new(), held_by_floor: false,
             fresh_rung_label: rung.label().into(),
+            escalation_momentum: 0.0,
         }
     }
 

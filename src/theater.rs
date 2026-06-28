@@ -243,12 +243,15 @@ fn heat_from_scores(scores: &HashMap<String, DomainScore>) -> f64 {
     ((weighted / max_weighted_sum()) * cooc).min(1.0)
 }
 
-/// Whether a theater's recent coverage shows genuine de-escalation — the recency-weighted mean
-/// signed escalation_step (−1 ceasefire/deal … +1 escalatory) is below DEESCALATION_STEP_THRESHOLD.
-/// Recency-weighted (military half-life) so a fresh ceasefire outweighs stale war chatter; a theater
-/// with no qualifying events is NOT de-escalating (silence ≠ peace), which is what makes the floor
-/// hold through a lull but release on real conciliation.
-fn theater_is_deescalating(tev: &[GeopoliticalEvent]) -> bool {
+/// Escalation momentum: the recency-weighted mean signed `escalation_step` of a theater's
+/// events, in [−1, +1] (−1 ceasefire/deal … +1 escalatory). Recency-weighted on the military
+/// half-life so a fresh ceasefire outweighs stale war chatter. Returns `None` when no event
+/// carries non-negligible recency weight — a theater with no qualifying coverage has no news-flow
+/// direction (silence is neither escalation nor de-escalation). This is the single computation
+/// behind BOTH the de-escalation floor gate (`theater_is_deescalating`, a threshold on it) and the
+/// operator-facing `escalation_momentum` gauge (the magnitude itself), so the gate and the readout
+/// can never disagree about which way a theater's coverage is trending.
+fn escalation_momentum(tev: &[GeopoliticalEvent]) -> Option<f64> {
     let (mut wsum, mut w) = (0.0_f64, 0.0_f64);
     for e in tev {
         let rw = recency_weight(&e.published_at, "military_escalation");
@@ -256,8 +259,15 @@ fn theater_is_deescalating(tev: &[GeopoliticalEvent]) -> bool {
         wsum += rw * e.escalation_step;
         w += rw;
     }
-    if w <= 0.0 { return false; }
-    (wsum / w) < DEESCALATION_STEP_THRESHOLD
+    if w <= 0.0 { None } else { Some(wsum / w) }
+}
+
+/// Whether a theater's recent coverage shows genuine de-escalation — its `escalation_momentum`
+/// is below `DEESCALATION_STEP_THRESHOLD`. A theater with no qualifying events is NOT
+/// de-escalating (silence ≠ peace, so `None` → false), which is what makes the floor hold through
+/// a lull but release on real conciliation.
+fn theater_is_deescalating(tev: &[GeopoliticalEvent]) -> bool {
+    escalation_momentum(tev).is_some_and(|m| m < DEESCALATION_STEP_THRESHOLD)
 }
 
 /// Map a theater's heat (+ overrides) to a discrete escalation rung.
@@ -628,6 +638,8 @@ impl TheaterEngine {
                 top_driver: String::new(), rising_driver: String::new(),
                 secondary_driver: String::new(), held_by_floor: false,
                 fresh_rung_label: EscalationRung::Stable.label().to_string(),
+                // No qualifying coverage → no news-flow direction (neutral, not "de-escalating").
+                escalation_momentum: 0.0,
             };
         }
 
@@ -748,6 +760,12 @@ impl TheaterEngine {
             elevated.get(1).map(|(m, _)| m.to_string()).unwrap_or_default()
         };
 
+        // Escalation momentum: the recency-weighted DIRECTION of this theater's news flow
+        // (the same mean the de-escalation floor gate thresholds), surfaced as a magnitude. A
+        // leading signal distinct from `delta`/`trend` (which measure the heat SCORE's change):
+        // talks can dominate the coverage (momentum < 0) while heat is still flat or held high.
+        let momentum = (escalation_momentum(tev).unwrap_or(0.0) * 1e3).round() / 1e3;
+
         // Record this tick's raw modality scores for the next tick's delta-driver.
         let now_scores: HashMap<String, f64> = DOMAIN_WEIGHTS.iter()
             .map(|(m, _)| (m.to_string(), scores.get(*m).map(|d| d.score).unwrap_or(0.0)))
@@ -765,6 +783,7 @@ impl TheaterEngine {
             top_driver, rising_driver, secondary_driver,
             held_by_floor,
             fresh_rung_label: fresh_rung.label().to_string(),
+            escalation_momentum: momentum,
         }
     }
 }
@@ -842,6 +861,63 @@ mod tests {
         e.actor_ids = actors.iter().map(|s| s.to_string()).collect();
         e.great_power_involved = gp;
         e
+    }
+
+    #[test]
+    fn escalation_momentum_surfaces_the_signed_news_flow_direction() {
+        // The recency-weighted mean signed `escalation_step`, surfaced as a per-theater gauge in
+        // [−1,+1] — the same quantity the de-escalation floor gate thresholds, exposed as a
+        // magnitude rather than collapsed to a boolean, and a LEADING signal distinct from
+        // heat/delta. Lock:
+        //   (1)+(2) the SIGN tracks the dominant direction of the recent coverage;
+        //   (3) equal-recency events average to their mean step (the model's own weighted mean);
+        //   (4) a quiet/uncovered theater reports exactly 0.0 (silence has no direction);
+        //   (5) the de-escalation floor gate still equals `momentum < threshold` — proving the
+        //       extraction of `escalation_momentum` left `theater_is_deescalating` identical.
+        let gulf = |out: &TheaterOutput| out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap().clone();
+        let make = |step: f64| -> Vec<GeopoliticalEvent> {
+            // All events fresh (published_at = now) → equal recency weight, so the weighted mean
+            // is exactly `step` regardless of the (near-identical) weights.
+            (0..6).map(|_| {
+                let mut a = ev("us_iran", "military_escalation", 0.8, 0.7, &["united_states", "iran"], true);
+                a.escalation_step = step;
+                a
+            }).collect()
+        };
+
+        // (1)+(2) sign tracks the direction of the news flow.
+        let esc = gulf(&TheaterEngine::new().compute(&make(0.6)));
+        assert!(esc.escalation_momentum > 0.0,
+            "escalatory coverage → positive momentum, got {}", esc.escalation_momentum);
+        let deesc = gulf(&TheaterEngine::new().compute(&make(-0.6)));
+        assert!(deesc.escalation_momentum < 0.0,
+            "de-escalatory coverage → negative momentum, got {}", deesc.escalation_momentum);
+
+        // (3) equal-recency events average to their mean step (within 1e-3 display rounding).
+        assert!((esc.escalation_momentum - 0.6).abs() < 2e-3,
+            "equal-weight events average to the mean step 0.6, got {}", esc.escalation_momentum);
+        assert!((deesc.escalation_momentum + 0.6).abs() < 2e-3,
+            "got {}", deesc.escalation_momentum);
+
+        // (4) a quiet world has no news-flow direction.
+        let quiet = TheaterEngine::new().compute(&[]);
+        assert!(quiet.theaters.iter().all(|s| s.escalation_momentum == 0.0),
+            "a quiet world must report exactly 0.0 momentum (silence has no direction)");
+
+        // The gauge reaches the served snapshot JSON (the operator/federation contract — an
+        // additive, compatible field), as a number carrying the computed value.
+        let j = serde_json::to_value(&esc).unwrap();
+        assert!((j["escalation_momentum"].as_f64().unwrap() - esc.escalation_momentum).abs() < 1e-12,
+            "escalation_momentum must serialize as a number into the snapshot");
+
+        // (5) the de-escalation floor gate is exactly `momentum < DEESCALATION_STEP_THRESHOLD`,
+        //     so the refactor that extracted the gauge kept the gate behaviour-identical.
+        for step in [-0.9, -0.31, -0.30, -0.05, 0.0, 0.3, 0.9] {
+            let evs = make(step);
+            let m = escalation_momentum(&evs).unwrap();
+            assert_eq!(theater_is_deescalating(&evs), m < DEESCALATION_STEP_THRESHOLD,
+                "gate must equal momentum < threshold at step {step} (m={m})");
+        }
     }
 
     #[test]
