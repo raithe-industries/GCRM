@@ -22,6 +22,33 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-28 — awareness — SYSTEMIC escalation-momentum aggregate (which way the WHOLE board is tilting, a leading read)
+- Item: roadmap 3.18 (now checked). T1 new computed gauge.
+- Change: `couplers.systemic_momentum` ∈ [−1,+1] — the HEAT-WEIGHTED mean of the per-theater
+  `escalation_momentum` (3.17) across theaters above baseline. It answers the one question the
+  per-theater chips can't at a glance — *is the overall picture deteriorating or calming right now* —
+  by integrating the board into a single leading read, heat-weighted so a hot flashpoint dominates a
+  cold one and a quiet world reads exactly 0. Genuinely distinct from the headline `delta` (a LAGGING
+  change in the already-realized P): the news flow turns before the probability does, so this leads the
+  delta. Computed in `theater.rs::compute` (a fold over `states`), served on the existing `couplers`
+  object (additive, contract-v1 compatible — no /vN bump), and rendered in the hero as a green
+  "⇩ news flow de-escalating" / red "⇧ news flow escalating" readout (shown only when |m| ≥ 0.25, same
+  one-sidedness gate as the per-theater chip). Display/awareness only — it NEVER feeds `l_sys`/P.
+- Metric moved: AWARENESS — a NEW computed systemic gauge (heat-weighted aggregate newly surfaced).
+  Test count 476 → 478. No calibration constant touched; backtest bands + Brier identical.
+- Proof: `cargo build --release` clean; `cargo test --release` 477 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 22/0 (quiet/Ukraine/current_2026/Cuba intact); `cargo clippy --release
+  --all-targets` 0 warnings. Fails-without-change verified: stubbing `systemic_momentum: 0.0` in the
+  couplers literal makes `systemic_momentum_is_the_heat_weighted_board_direction` panic at the
+  single-theater assertion (>0.3) — re-greened on revert.
+- Tier: T1 · Touched: engine-behavior (new computed+served field) · Lock-fails-without-change: yes
+  (stub-to-0.0 run above) · Counts: new computed gauge (awareness frontier), not a caveat/+1-nit ·
+  consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=0
+- Notes future runs MUST respect: `systemic_momentum` is HEAT-WEIGHTED (the weighting is the point and
+  is locked by the test — an un-weighted mean of the +0.6/−0.6 fixture would read ~0). It is a DIRECTION
+  read of the news flow, NOT a heat trend and NOT the headline delta — keep it distinct. It is
+  display/compute only; it must never feed `l_sys`/P/`heat` without a Robert-gated model-term rationale.
+
 ## 2026-06-28 — awareness — per-theater escalation-MOMENTUM gauge (the direction of the news flow, a leading signal)
 - Item: roadmap 3.17 (now checked). T1 new computed gauge.
 - Change: each theater now reports `escalation_momentum` ∈ [−1,+1] — the recency-weighted mean signed

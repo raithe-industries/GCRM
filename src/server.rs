@@ -692,6 +692,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_systemic_news_flow_direction() {
+        // Awareness (LEADING): the hero must surface the SYSTEMIC news-flow direction — the
+        // heat-weighted aggregate of the per-theater momentum (server field
+        // couplers.systemic_momentum) — so an operator sees which way the WHOLE board is tilting
+        // before the lagging headline delta moves. Lock the render hooks so a UI refactor can't
+        // silently drop the gauge, and so it keeps reading the SERVER field (not a client recompute).
+        assert!(DASHBOARD_HTML.contains("gauge-momentum"),
+            "hero must carry the systemic news-flow direction element");
+        assert!(DASHBOARD_HTML.contains("couplers.systemic_momentum"),
+            "the readout must read the server-provided couplers.systemic_momentum aggregate");
+        assert!(DASHBOARD_HTML.contains("⇩ news flow de-escalating")
+            && DASHBOARD_HTML.contains("⇧ news flow escalating"),
+            "the readout must name both the de-escalation and escalation systemic directions");
+    }
+
+    #[test]
     fn dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read() {
         // Honesty/awareness on the MAP surface: the world-map flashpoint popup is the only
         // operator surface that must not paint a floor-held theater (a remembered war-state

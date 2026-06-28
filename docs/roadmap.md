@@ -440,6 +440,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   0.25). No calibration constant touched — the de-escalation gate is bit-identical. Locked by
   `escalation_momentum_surfaces_the_signed_news_flow_direction` (theater) +
   `dashboard_renders_per_theater_escalation_momentum` (server). See improvement-log 2026-06-28.
+- [x] **3.18 SYSTEMIC escalation-momentum aggregate** — **DONE 2026-06-28.** A NEW computed gauge (T1)
+  building on 3.17: `couplers.systemic_momentum` ∈ [−1,+1] is the HEAT-WEIGHTED mean of the per-theater
+  `escalation_momentum` across theaters above baseline — the single systemic LEADING read of which way
+  the WHOLE board's coverage is tilting RIGHT NOW. Heat-weighting keeps a calming backwater from
+  outvoting a heating flashpoint; a quiet world reads exactly 0. Distinct from the per-theater chips
+  (which the operator must scan + integrate by eye) and from the headline `delta` (a LAGGING change in
+  the already-realized P — the news flow turns before the probability does). Computed in
+  `theater.rs::compute`, served on the existing `couplers` object (additive, contract-v1 compatible),
+  rendered in the hero as a green "⇩ news flow de-escalating" / red "⇧ news flow escalating" readout
+  (shown only when |m| ≥ 0.25). Display/awareness only — never feeds `l_sys`/P; no calibration constant
+  touched. Locked by `systemic_momentum_is_the_heat_weighted_board_direction` (theater, incl. the
+  heat-weighting proof) + `dashboard_renders_systemic_news_flow_direction` (server). See
+  improvement-log 2026-06-28.
 - [x] **3.16 The I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning condition** — **DONE 2026-06-25.**
   With 3.15 (diplomatic) added, four of the five tracked modalities had a NAMED board light
   (military→`gp_kinetic`, nuclear→`nuclear_signaling`, economic→`energy_chokepoint`,

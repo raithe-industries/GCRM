@@ -645,6 +645,24 @@ impl TheaterEngine {
             && gp_entanglement >= 1.0 - RAIL_EPS
             && alliance_activation >= 1.0 - RAIL_EPS;
 
+        // Systemic escalation momentum (AWARENESS, leading): the heat-weighted mean of the
+        // per-theater news-flow direction (`escalation_momentum`) across theaters above
+        // baseline. Weighting by heat keeps a calming backwater from outvoting a heating
+        // flashpoint, and a world with no theater above baseline reads 0 (no news flow → no
+        // direction). It is the single systemic read of which way the WHOLE board is tilting —
+        // a signal that turns BEFORE the realized headline P, unlike the lagging `delta`. Pure
+        // read-out of a gauge the engine already computes per theater; never feeds `l_sys`/P.
+        let (mom_sum, mom_w) = states.iter()
+            .filter(|s| s.heat >= STABLE_HEAT_CEILING)
+            .fold((0.0_f64, 0.0_f64), |(sum, w), s| {
+                (sum + s.heat * s.escalation_momentum, w + s.heat)
+            });
+        let systemic_momentum = if mom_w > 0.0 {
+            ((mom_sum / mom_w) * 1e3).round() / 1e3
+        } else {
+            0.0
+        };
+
         let couplers = SystemicCouplers {
             gp_entanglement,
             alliance_activation,
@@ -653,6 +671,7 @@ impl TheaterEngine {
             coupling_multiplier: (coupling_multiplier * concurrency_mult * brink_mult * 1e4).round() / 1e4,
             coupling_driver,
             breadth_saturated,
+            systemic_momentum,
         };
 
         TheaterOutput {
@@ -958,6 +977,53 @@ mod tests {
             assert_eq!(theater_is_deescalating(&evs), m < DEESCALATION_STEP_THRESHOLD,
                 "gate must equal momentum < threshold at step {step} (m={m})");
         }
+    }
+
+    #[test]
+    fn systemic_momentum_is_the_heat_weighted_board_direction() {
+        // The systemic counterpart of the per-theater gauge: a single read of which way the WHOLE
+        // board's coverage is tilting, heat-weighted so a hot flashpoint dominates a cold one. Lock:
+        //   (1) a single escalatory theater → systemic momentum ≈ that theater's momentum;
+        //   (2) HEAT-WEIGHTING — a HOT escalatory theater + a COOLER de-escalatory one nets POSITIVE
+        //       (the un-weighted mean of +0.6 and −0.6 would be ~0; a positive result proves the
+        //       weighting), i.e. the hotter theater's direction wins;
+        //   (3) a quiet world reports exactly 0.0 (no theater above baseline → no direction);
+        //   (4) the gauge reaches the served `couplers` JSON as a number.
+        let mk = |theater: &str, step: f64, n: usize, sev: f64| -> Vec<GeopoliticalEvent> {
+            (0..n).map(|_| {
+                let mut a = ev(theater, "military_escalation", sev, sev, &["united_states", "russia"], true);
+                a.escalation_step = step;
+                a
+            }).collect()
+        };
+
+        // (1) one escalatory theater drives the systemic read to its own direction.
+        let solo = TheaterEngine::new().compute(&mk("us_iran", 0.6, 6, 0.85));
+        assert!(solo.couplers.systemic_momentum > 0.3,
+            "a single escalatory hot theater → strongly positive systemic momentum, got {}",
+            solo.couplers.systemic_momentum);
+
+        // (2) heat-weighting: a HOT escalatory theater outweighs a COOLER de-escalatory one.
+        let mut evs = mk("us_iran", 0.6, 8, 0.95);          // many strong events → hot
+        evs.extend(mk("nato_russia", -0.6, 2, 0.45));        // fewer, weaker → cooler, above baseline
+        let out = TheaterEngine::new().compute(&evs);
+        let hot  = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        let cool = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert!(hot.heat >= STABLE_HEAT_CEILING && cool.heat >= STABLE_HEAT_CEILING
+            && hot.heat > cool.heat,
+            "precondition: both above baseline, us_iran hotter (hot={}, cool={})", hot.heat, cool.heat);
+        assert!(out.couplers.systemic_momentum > 0.0,
+            "the HOTTER escalatory theater must win the heat-weighted mean over a cooler \
+             de-escalatory one (un-weighted this would be ~0), got {}", out.couplers.systemic_momentum);
+
+        // (3) a quiet world has no systemic news-flow direction.
+        assert_eq!(TheaterEngine::new().compute(&[]).couplers.systemic_momentum, 0.0,
+            "a quiet world must report exactly 0.0 systemic momentum");
+
+        // (4) it reaches the served couplers contract as a number carrying the value.
+        let j = serde_json::to_value(&out.couplers).unwrap();
+        assert!((j["systemic_momentum"].as_f64().unwrap() - out.couplers.systemic_momentum).abs() < 1e-12,
+            "systemic_momentum must serialize as a number into the couplers JSON");
     }
 
     #[test]
