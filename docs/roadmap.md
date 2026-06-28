@@ -737,6 +737,25 @@ Robert-gated). Every source: parser test on a checked-in REAL-RESPONSE fixture +
 `feed_roster_liveness` probe + a synthetic test proving its presence CHANGES an output; mark **STAGED**
 (the local deploy promotes to DONE after the live leg). One source per run is a clean T1 that moves the
 **Live signal sources** metric — the anti-nit lever.
+
+> **ARCHITECTURE PREREQUISITE (found 2026-06-28 — read before attempting any of 6.1–6.5).** "Feed a
+> modality" is NOT a simple source-wire in v2. The headline P(WWIII) is driven ONLY by `theater.rs::compute`,
+> which partitions the window by `e.theater` and **drops every theater-less event** (`if let Some(t) =
+> &e.theater`). The global modality weighted-sum (`bayesian.rs::compute` Step 6, `weighted_domain_sum`) is
+> "compat display only" and does NOT enter `p_wwiii_annual`. So a GLOBAL signal (markets, CISA KEV, OFAC —
+> none of which are theater-located) added as a `domain_signal` moves only a vestigial display field, not the
+> read. The two honest ways to actually move the read are both **Robert-gated**: (a) attribute the global
+> signal to a theater — a modeling claim that risks a crisis→markets→crisis feedback double-count; or (b) add
+> a NEW bounded GLOBAL amplifier on `l_sys`, mirroring the `guardrail_collapse` overlay (`l_sys × (1 +
+> AMP·x)`), gated on `l_sys > COUPLING_AMPLIFIER_FLOOR` so markets corroborate a live crisis but never
+> manufacture risk from calm. (b) is architecturally clean and anchor-safe (the backtests carry no market
+> events, so they stay bit-identical) — but the amplifier MAGNITUDE ("how much should a market panic raise the
+> war read?") is a value-laden calibration decision in the same class as the Robert-gated de-saturation peg
+> (see 1.1a / the honesty firewall), so a cloud run must NOT introduce it unattended. **Next shippable step for
+> 6.1:** propose the `MARKET_STRESS_AMPLIFIER` design (const + gate + the `ee_correlate::finance` composite
+> reused from `osint::finance_payload`, which already runs in prod) to Robert; on approval it ships as a clean
+> STAGED T1. Until then 6.1–6.5 are blocked on this decision, not on code.
+
 - [ ] **6.1** markets / yahoo → `economic_warfare` (commodity / energy / financial-stress term).
 - [ ] **6.2** cisa_kev / cve_delta / ransomwatch → `cyber_info_ops`.
 - [ ] **6.3** ofac → sanctions / economic-coercion term.
