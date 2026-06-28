@@ -229,6 +229,9 @@ fn feed_detail(e: &Event) -> Option<String> {
             let ty = e.raw.get("type").and_then(Value::as_str).unwrap_or("Conflict");
             Some(if best >= 1.0 { format!("{best:.0} killed · {ty}") } else { ty.to_string() })
         }
+        // ACLED Admin-1 trailing-window intensity, e.g. "41 events · 66 fatalities ·
+        // Air/drone strike" — the regional conflict-heat read behind the centroid dot.
+        "acled_aggregated" => ee_sources::acled_aggregated::intensity_chip(&e.raw),
         "gdacs" => {
             // GDACS stores the whole feature in `raw`, so the authoritative read sits in
             // `properties`: the Red/Orange/Green alert level + the hazard type, plus GDACS's
@@ -380,7 +383,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, alberta511::Alberta511, avalanche_ca::AvalancheCa, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -399,7 +402,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -446,6 +449,10 @@ async fn feeds_payload() -> Value {
         fetch_one("digitraffic_ais", DigitrafficAis, 15),
         // UCDP candidate GED — georeferenced conflict events (fills the Conflict layer).
         fetch_one("ucdp_ged", UcdpGed, 15),
+        // ACLED Aggregated — weekly Admin-1 conflict intensity (events + fatalities,
+        // centroid-mapped), ACLED's free no-key product; a regional-heat complement to
+        // UCDP's discrete events (Path-B committed snapshot; refresh re-downloads).
+        fetch_one("acled_aggregated", AcledAggregated, 9),
         // NOAA NHC — active tropical cyclones (Atlantic/E-Pacific), live position + category.
         fetch_one("nhc", Nhc, 10),
         // JMA RSMC Tokyo — active typhoons (W-Pacific/South China Sea), the basin NHC
@@ -507,6 +514,7 @@ async fn feeds_payload() -> Value {
         (ca_notams.0, ca_notams.1, "navcanada", 600),
         (vessels.0, vessels.1, "digitraffic_ais", 800),
         (conflict.0, conflict.1, "ucdp_ged", 800),
+        (conflict_agg.0, conflict_agg.1, "acled_aggregated", 500),
         (storms.0, storms.1, "nhc", 60),
         (typhoons.0, typhoons.1, "jma_typhoon", 60),
         (nz_volc.0, nz_volc.1, "geonet_volcano", 60),
@@ -911,6 +919,29 @@ mod tests {
         // Waspada with no VONA -> the alert level stands alone.
         let e = mk(json!({"ga_status": 2, "vona": []}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Alert Waspada (Advisory)"));
+    }
+
+    #[test]
+    fn acled_aggregated_chip_surfaces_regional_intensity() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "acled-agg-x".into(),
+            source_id: "acled_aggregated".into(),
+            kind: EventKind::Conflict,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.6),
+            url: None,
+            raw,
+        };
+        // `raw` is the aggregated Admin-1 record: events + fatalities + dominant label.
+        let e = mk(json!({"events": 41.0, "fatalities": 66.0, "label": "Air/drone strike"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("41 events · 66 fatalities · Air/drone strike"));
+        // No fatalities -> the fatalities clause is omitted.
+        let e = mk(json!({"events": 7.0, "fatalities": 0.0, "label": "Peaceful protest"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("7 events · Peaceful protest"));
     }
 
     #[test]

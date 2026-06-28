@@ -8,6 +8,7 @@
 //! 3. Add the module below and register a default instance in [`registry`].
 
 pub mod acled;
+pub mod acled_aggregated;
 pub mod alberta511;
 pub mod avalanche_ca;
 pub mod cbsa_bwt;
@@ -77,6 +78,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
+        Box::new(acled_aggregated::AcledAggregated), // Conflict layer (ACLED weekly Admin-1 intensity, Path-B snapshot)
         Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC, Atlantic/E-Pacific)
         Box::new(jma_typhoon::JmaTyphoon),         // Typhoons (JMA RSMC Tokyo, W-Pacific)
         Box::new(nwps_flood::NwpsFlood),           // River flooding (NOAA NWPS, observed flood category)

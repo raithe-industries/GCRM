@@ -61,6 +61,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `quebec511` | Transport | Transports Québec | provincial road events (MTMD WFS) |
 | `cbsa_bwt` | Transport | CBSA | 29 land border-crossing wait times |
 | `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
+| `acled_aggregated` | Conflict | ACLED | **weekly Admin-1 conflict-intensity** — ACLED's free, no-key **Aggregated Data** product (the licensed event API stays dormant; see `acled`). One dot per first-level admin region at its **centroid** (the file ships `CENTROID_LATITUDE/LONGITUDE`, so no external centroid table is needed), coloured by the **trailing-window sum** (~4 weeks ending at the file's latest `WEEK`) of events + fatalities — so a multi-year file plots *current* regional heat, not history. A regional-intensity complement to `ucdp_ged`'s discrete events: weekly cadence + ACLED's broad taxonomy (political violence / explosions-remote / demonstrations / strategic developments). **Path-B committed snapshot** (`acled_aggregated_snapshot.csv`, `include_str!`): `acleddata.com`/HDX 403s in-sandbox and the download is a manual/registered step, so a real ACLED Middle-East weekly aggregate (Jan–Mar 2026; 14 countries, 104 admin1s incl. Iran/Israel/Palestine/Lebanon/Syria/Yemen/Iraq) ships embedded, refreshed by a local re-download job. Canonical 13-col schema (`WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE`) confirmed against 15+ independent public copies. Severity = log(fatalities) (UCDP ladder); zero-fatality-but-active region floors at 0.12. **Signal-meaningful** (event + fatality counts are inherently unit-bearing conflict measures). Chip = "41 events · 66 fatalities · Air/drone strike". |
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
@@ -69,7 +70,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `nwps_flood` | Weather | NOAA / NWS NWPS | **river flooding** — the NWS `water/riv_gauges` "Observed River Stages" GeoJSON layer (id 0), one Point per AHPS gauge with its observed **flood category** in `status`. Connector keeps only gauges **at/above action stage** (`action`/`minor`/`moderate`/`major`); drops the all-clear `no_flooding` + undefined states, so a no-flood network = 0 events, not an error. Auth-free GeoJSON, US-Gov public domain. **Signal-meaningful where a raw gauge level isn't:** `status` is the *baseline-relative* category (NWS already compared live stage to that gauge's own thresholds) — resolves the `ECCC hydrometric` "nonsense number" rejection at its root. Severity major 1.0→action 0.35; chip = "Major flooding" / "Near flood stage". Fills the river-flooding hazard no current feed carries. |
 | `magma_volcano` | Volcano | PVMBG / MAGMA Indonesia | **Indonesian volcano operational alert levels** — PVMBG (Geological Agency, Ministry of Energy & Mineral Resources) is the authoritative national monitor for the world's most volcanically active country (~127 monitored volcanoes). Each volcano carries a ground alert level `ga_status` on the 4-step scale (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) plus the latest VONA aviation colour (`vona[].cu_avcode` GREEN/YELLOW/ORANGE/RED). Connector emits one event per volcano **above background** (status ≥ 2); Normal (1) dropped, so an all-quiet snapshot = 0 events. Severity = max(status rank, aviation-colour rank) — an ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55. Chip = "Alert Siaga (Watch) · Aviation Yellow". **Path B (committed snapshot):** MAGMA's home-map volcano list is embedded server-side (no clean public full-list JSON endpoint) and the host 403s in-sandbox, so a real captured PVMBG payload ships `include_str!`-embedded (`magma_volcano_snapshot.json`), refreshed by a local/manual re-capture job. Schema confirmed against PVMBG's own `magma-indonesia/magma-indonesia` source (`HomeController::gunungApi()` + `VonaApiService`). Fills the **Indonesia / SE-Asia** volcano geography GeoNet (NZ) and USGS (US/Alaska) don't cover. |
 | `avalanche_ca` | Weather | Avalanche Canada | **snow-avalanche danger ratings** — Canada's national public-avalanche body. Joins `/forecasts/en/products` (bulletins, by `area.id`) to `/forecasts/en/areas` (region polygons, GeoJSON, same id) and plots one dot per region **with a numeric rating today**, at the polygon centroid. Severity = peak elevation-band rating on the North American scale (Low 0.2 → Extreme 1.0). **Signal-meaningful** (the danger scale is baseline-relative — each level a defined likelihood/size, not a raw number). **Seasonal, handled honestly:** off-season bands read `norating`/spring → dropped, so summer = 0 events not an error (layer lights up ~late-Nov→Apr). Resolves the source's deferral via an off-season-tolerant parser. Auth-free JSON+GeoJSON. Chip = "Alpine Considerable · Treeline Moderate · Below Low". Fills the snow-avalanche hazard no other feed carries. |
-| `acled` | Conflict | ACLED | global armed conflict — **PERMANENTLY DORMANT as a live feed**: Open access has NO API (confirmed by ACLED 2026-06-14; API needs a paid license). Only *aggregated weekly* data is public → a **Path-B snapshot** candidate, superseded for now by `ucdp_ged` (which gives live georeferenced conflict). |
+| `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
 `cisa_kev` (US CISA known-exploited CVEs, Cyber), `cccs` (Canadian Centre for Cyber
@@ -130,9 +131,15 @@ Bias each run toward the least-covered axis below.
   DKK 1,800–5,600/yr; only historical 2006–2016 bulk CSV is free, on `web.ais.dk` not GitHub;
   the `dma-ais` GitHub org is Java *software* libraries, no data feed). Neither is a Path-A or
   Path-B fit.
-- **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV). `acled` stays
-  dormant (no Open API). Remaining: a higher-frequency conflict signal if one exists
-  auth-free, or the ACLED aggregated-weekly Path-B snapshot.
+- **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV) and EXTENDED
+  2026-06-28 with `acled_aggregated` (**ACLED weekly Admin-1 intensity, Path-B snapshot**) —
+  the ACLED aggregated-weekly product is now LANDED (the licensed event `acled` stays dormant).
+  Two complementary conflict modalities now live: UCDP discrete georeferenced events + ACLED
+  admin-region weekly intensity (events + fatalities). Remaining: (a) **refresh `acled_aggregated`
+  to global** — the shipped seed is the real ACLED Middle-East aggregate; the documented local
+  re-download job should pull all six regional files (Africa, Asia-Pacific, Europe & Central Asia,
+  Latin America & Caribbean, Middle East, US & Canada) for worldwide coverage; (b) a higher-frequency
+  auth-free conflict signal if one surfaces.
 - **Storm / tropical cyclone** — SEEDED 2026-06-24 with `nhc` (NOAA NHC, Atlantic/E-Pacific)
   and EXTENDED 2026-06-25 with `jma_typhoon` (JMA RSMC Tokyo, W-Pacific/South China Sea, Path A).
   Gap now: **Indian Ocean + Southern Hemisphere** basins — IMD (`mausam.imd.gov.in`), BoM
@@ -186,6 +193,42 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-28** (second run) — **adopted `acled_aggregated` (ACLED weekly Admin-1 conflict intensity), Path B** —
+  the ledger's and the SUSTAINED-BLOCK DIRECTIVE's explicitly-named top target (the "ACLED-aggregated weekly
+  conflict snapshot — admin-centroid dots, fatalities→severity"). Per the directive I **led with a Path-B
+  snapshot of a high-value deferred source**, not a block record. **The geocoding problem dissolved on contact
+  with real bytes:** ACLED's free **Aggregated Data** product already ships a per-Admin-1 **centroid lat/lon**
+  in every row (`CENTROID_LATITUDE/LONGITUDE`), so no external centroid table is needed — confirmed first from
+  ACLED's own docs (via WebSearch) and then **anchored to genuine committed bytes**: the canonical 13-column
+  schema (`WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,
+  DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE`) appears verbatim in **15+ independent public copies**
+  (real data rows in `Equipe-003/Hackathon_iSHEEROXDatacamp/data/raw/acled_benin.csv`,
+  `matteogrifone22/Data-Visualization-Project`, `Scala40/DV`, schema dictionaries in `SkyTruth/shared-datasets-1`,
+  `Yitzchak-Holtzberg/scenario-risk-calculator`, etc.). **The shipped snapshot is real recent data:**
+  `acled_aggregated_snapshot.csv` (230 rows, 10 weeks **2026-01-03 → 2026-03-07**, 14 Middle-East countries,
+  104 admin1s incl. Iran/Israel/Palestine/Lebanon/Syria/Yemen/Iraq) built from the real ACLED weekly-aggregate
+  values committed in `Grumpylenard/Iran_EF-TP4_2026_DS4E` (an Iran-theater study), reshaped into the canonical
+  ACLED layout — genuine bytes, not documentation guesswork, on a **live war-risk theater**. **Network re-probed
+  fresh:** `raw.githubusercontent.com` reachable (in-sandbox curl of the snapshot source succeeded); `acleddata.com`
+  **403s even via WebFetch** (its own bot-protection, separate from the egress block) — exactly why this is Path B,
+  not Path A. **Non-duplicative** vs `ucdp_ged`: a different modality (admin-region weekly *intensity* surface, not
+  discrete events), a different source (ACLED vs Uppsala), broader taxonomy (incl. demonstrations/strategic
+  developments), weekly vs monthly cadence. Clears all six bars + signal-meaningfulness (event + fatality counts
+  are inherently unit-bearing conflict measures; severity = log(fatalities), UCDP ladder; an active-but-no-deaths
+  region floors at 0.12). Connector **windows** to the ~4 weeks ending at the file's latest `WEEK` and **aggregates
+  per (country, Admin 1)**, so a multi-year refresh plots current heat not stacked history; dominant ACLED label
+  (most events) names the driver; chip = "41 events · 66 fatalities · Air/drone strike". New
+  `vendor/ee-sources/src/acled_aggregated.rs` (quote-aware CSV parser; pure `parse_acled_aggregated` +
+  `intensity_chip` + window/aggregate; case-insensitive headers; `LATITUDE/LONGITUDE` fallback; 4 offline tests:
+  windows-and-aggregates drops the out-of-window January row, zero-fatality floor + omitted-fatalities chip,
+  errors-on-bad-input + header-only-is-empty, committed-snapshot parses + windowing held). Registered in `lib.rs`;
+  wired `src/osint.rs` (`fetch_one("acled_aggregated", …, 9)` + count/cap row cap 500 + `feed_detail` arm + osint
+  chip test); SRC_LABEL `ACLED Aggregated` in `dashboard.html`; `acled` row updated (the dormant live connector
+  now points to this landed snapshot). **`cargo build --release` green; full workspace `cargo test` green (gcrm
+  478 / 0 failed / 3 ignored; ee-sources 102 incl. acled_aggregated 4/4; ee-correlate 79; ee-view 60; ee-core 5).**
+  EventKind::Conflict. **Path-B refresh (documented):** a local job re-downloads ACLED's six aggregated regional
+  files and re-commits the CSV — extend the seed from Middle-East to **global** that way (the sandbox can't reach
+  the origin). Next conflict target: a higher-frequency auth-free signal if one surfaces.
 - **2026-06-28** — honest **NO-OP** after a wide hunt. Per the SUSTAINED-BLOCK DIRECTIVE I LED with a
   Path-B / new-geography target rather than a block record: the ledger's explicit **next avalanche gap —
   European EAWS / SLF** (extend the snow-avalanche domain from Canada to the Alps/Europe). It clears the
