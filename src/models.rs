@@ -816,6 +816,20 @@ pub struct SystemicCouplers {
     // estimate. Computed purely from the rails — touches no fitted constant, never changes P.
     #[serde(default)]
     pub breadth_saturated:   bool,
+    /// Systemic escalation momentum in [−1, +1] — the heat-weighted mean of the per-theater
+    /// `escalation_momentum` (news-flow direction) across theaters above baseline. Each
+    /// theater's momentum is weighted by its heat, so a calming backwater can't outvote a
+    /// heating flashpoint and a quiet world (no theater above baseline) reads 0. Negative =
+    /// the board's coverage is dominated by de-escalation (ceasefires, talks, deals);
+    /// positive = by escalatory moves. This is the SINGLE systemic LEADING read — which way
+    /// the whole picture is tilting RIGHT NOW — distinct from the headline `delta` (a LAGGING
+    /// change in the already-realized P) and from `coupling_driver`/`breadth_saturated` (which
+    /// describe the level, not its direction of travel): the news flow turns before the
+    /// realized probability does. A heat-weighted mean of a gauge the model already computes —
+    /// it is display/awareness only and NEVER feeds `l_sys` or P. `#[serde(default)]` keeps
+    /// older persisted snapshots loadable.
+    #[serde(default)]
+    pub systemic_momentum:   f64,
 }
 
 // ── Risk snapshot ─────────────────────────────────────────────────────────────

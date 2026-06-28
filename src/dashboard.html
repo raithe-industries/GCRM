@@ -450,6 +450,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            read as a precise number that could still rise. Hidden in every normal state. Driven by
            meta.breadth_saturated (theater::compute → couplers.breadth_saturated). -->
       <div class="gauge-saturated" id="gauge-saturated" style="display:none;font-size:8px;color:var(--amber);text-align:center;margin-top:1px;line-height:1.2">◆ structural max · breadth railed, only a nuclear brink raises it</div>
+      <!-- Systemic news-flow direction (awareness, LEADING): the heat-weighted mean of the
+           per-theater escalation_momentum across active theaters — which way the WHOLE board's
+           coverage is tilting RIGHT NOW. Distinct from the headline delta (a LAGGING change in the
+           already-realized P): the news flow turns before the probability does. Shown only when the
+           board is decisively one-sided (|m| ≥ 0.25); a neutral/quiet world names nothing. Driven by
+           couplers.systemic_momentum (theater::compute — heat-weighted, never feeds P). -->
+      <div class="gauge-momentum" id="gauge-momentum" style="display:none;font-size:8px;text-align:center;margin-top:1px;line-height:1.2"></div>
       <!-- Error posture (honesty layer): names which mistake the model is tuned to prefer, so a
            reader knows how to weigh the number. Every choice has consequences; this makes ours
            legible. Server-driven from models::ERROR_POSTURE_NOTE (single source of truth); the
@@ -1084,6 +1091,16 @@ function applyData(d){
   // below the forecast ceiling so the "capped" caveat never fires. Say so (pillar-1 honesty /
   // awareness). Driven by meta.breadth_saturated.
   const _gs=document.getElementById('gauge-saturated');if(_gs)_gs.style.display=(d.meta&&d.meta.breadth_saturated)?'block':'none';
+  // Systemic news-flow direction (LEADING): which way the whole board's coverage is tilting, the
+  // heat-weighted mean of the per-theater momentum. Turns before the lagging headline delta; shown
+  // only when decisively one-sided (|m| ≥ 0.25). Driven by couplers.systemic_momentum.
+  const _gm=document.getElementById('gauge-momentum');
+  if(_gm){
+    const sm=(d.couplers&&typeof d.couplers.systemic_momentum==='number')?d.couplers.systemic_momentum:0;
+    if(sm<=-0.25){_gm.style.color='#1D9E75';_gm.title='news flow de-escalating — ceasefires/talks dominate recent coverage across active theaters (heat-weighted momentum '+sm.toFixed(2)+'); a leading signal, distinct from the lagging headline delta';_gm.textContent='⇩ news flow de-escalating';_gm.style.display='block';}
+    else if(sm>=0.25){_gm.style.color='#E24B4A';_gm.title='news flow escalating — escalatory moves dominate recent coverage across active theaters (heat-weighted momentum +'+sm.toFixed(2)+'); a leading signal, distinct from the lagging headline delta';_gm.textContent='⇧ news flow escalating';_gm.style.display='block';}
+    else {_gm.style.display='none';_gm.textContent='';}
+  }
   // Honesty layer: render the headline INTERVAL (a range, not a point) and the error posture.
   const _u=d.uncertainty,_gi=document.getElementById('gauge-interval');
   if(_gi){
