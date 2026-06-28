@@ -22,6 +22,33 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-28 — awareness — per-theater escalation-MOMENTUM gauge (the direction of the news flow, a leading signal)
+- Item: roadmap 3.17 (now checked). T1 new computed gauge.
+- Change: each theater now reports `escalation_momentum` ∈ [−1,+1] — the recency-weighted mean signed
+  `escalation_step` of its events (Goldstein-style conflict↔cooperation direction). The input was
+  already ingested but ONLY ever collapsed to a boolean by the de-escalation floor gate
+  (`theater_is_deescalating`); the magnitude was never surfaced. Extracted `escalation_momentum()` in
+  `theater.rs` as the single source for BOTH the gate (`momentum < DEESCALATION_STEP_THRESHOLD`) and the
+  new gauge, added the field to `TheaterState` (additive contract-v1, `#[serde(default)]`), and rendered
+  it on the ladder chip as a green "⇩ talks" / red "⇧ escalatory" tag (only when |m| ≥ 0.25) + tooltip.
+  Genuinely distinct from `heat` (magnitude) and `delta`/`trend` (the heat SCORE's change): coverage can
+  turn conciliatory while heat is still high/floor-held, or escalatory before heat rises — a LEADING
+  read the existing fields can't give.
+- Metric moved: AWARENESS — a NEW computed gauge (a quantity newly surfaced from already-ingested
+  input). Test count 471 → 474. No calibration constant touched; the de-escalation gate is bit-identical.
+- Proof: `cargo build --release` clean; `cargo test --release` 474 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 21/0 (quiet/Ukraine/current_2026/Cuba bands intact); `snapshot_to_json_honours_contract_v1`
+  green (additive field, no /vN bump); `cargo clippy --release --all-targets` 0 warnings.
+- Tier: T1 · Touched: engine-behavior (new computed+served field) · Lock-fails-without-change: yes —
+  reverting `escalation_momentum: momentum` to `: 0.0` makes `escalation_momentum_surfaces_*` fail
+  (asserts the gauge is >0 / ≈0.6 for escalatory coverage); reverting the dashboard render fails
+  `dashboard_renders_per_theater_escalation_momentum` · Counts: new computed gauge (awareness frontier),
+  not a caveat/+1-nit · consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=0
+- Notes future runs MUST respect: `escalation_momentum()` is the SINGLE source for both the de-escalation
+  floor gate and the gauge — do NOT fork them. The gauge is a DIRECTION read (news flow), NOT a heat
+  trend; keep it distinct from `delta`/`trend`. It is display+compute, not a calibration lever — it must
+  never feed `heat`/`l_sys` without a Robert-gated rationale (that would be a new model term).
+
 ## 2026-06-28 — NO-OP (structured) — §6 "wire a source into the read" is blocked on a Robert-gated calibration decision, not on code
 - Item (named T1): roadmap **6.1** markets/yahoo → `economic_warfare` (the catalogued "anti-nit" T1 lever).
 - What I verified this run (so future runs don't re-derive it): the four items the routine prompt flags as

@@ -41,7 +41,7 @@ on purpose," never as "delete the assert."
 | `confidence` | number | Data-quality confidence ∈ [0,1] — evidence the read rests on, NOT part of the forecast. |
 | `alert` | object | `level` (string), `message` (string), `elevated_threshold`, `critical_threshold` (numbers, the live annual-P bands). |
 | `systemic` | object | `index` (number, the 0–`FORECAST_INDEX_CEILING` headline index), `driver` (string, the dominant coupling channel). |
-| `theaters` | array | Per-theater state (heat, rung, why…). |
+| `theaters` | array | Per-theater state (heat, rung, why…), incl. `escalation_momentum` (number ∈ [−1,+1], the recency-weighted direction of the news flow). |
 | `couplers` | object | Systemic amplifiers (gp-entanglement, alliance, concurrency, breadth, guardrail_collapse, breadth_saturated…). |
 | `indicators` | array/object | I&W board lights (`crate::indicators::evaluate`). |
 | `meta` | object | `events_in_window`, `data_blind`, `thinly_sourced`, `at_ceiling`, `breadth_saturated`, `read_held_by_floor`, `sources_active`, `great_power_events`, `regions_active`, `top_actors`, `aggregation_window_hours`, `max_window_events`. The honesty-posture flags an operator/consumer must respect. |

@@ -1165,10 +1165,20 @@ function applyData(d){
       const demoted=held&&freshR&&freshR!==t.rung_label;
       const heldTip='heat held by the persistence floor — no fresh escalation; a remembered war-state, released on de-escalation evidence'+(demoted?'. Fresh evidence alone reads '+freshR:'');
       const heldTag=held?'<span class="tl-held" style="color:#EF9F27" title="'+heldTip+'">⏸ held'+(demoted?' · fresh: '+freshR:'')+'</span>':'';
-      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+(held?' · held by persistence floor (no fresh escalation'+(demoted?', fresh evidence: '+freshR:'')+')':'')+(t.gp_involved?' · great power engaged':'')+'">'
+      // Escalation momentum: the recency-weighted DIRECTION of the news flow (server field
+      // escalation_momentum ∈ [−1,+1]; − = ceasefires/talks dominate recent coverage, + =
+      // escalatory moves dominate). A LEADING signal distinct from the heat trend (▲/▼, which
+      // tracks the heat SCORE): coverage can turn conciliatory while heat is still high or held,
+      // or escalatory before heat rises. Shown only when the flow is decisively one-sided
+      // (|m| ≥ 0.25) so a noisy/neutral theater names nothing.
+      const mom=(typeof t.escalation_momentum==='number')?t.escalation_momentum:0;
+      const momTag=(mom<=-0.25)?'<span class="tl-mom" style="color:#1D9E75" title="news flow de-escalating — ceasefires/talks dominate recent coverage (momentum '+mom.toFixed(2)+'); a leading signal, distinct from the heat trend">⇩ talks</span>'
+        :(mom>=0.25)?'<span class="tl-mom" style="color:#E24B4A" title="news flow escalating — escalatory moves dominate recent coverage (momentum +'+mom.toFixed(2)+'); a leading signal, distinct from the heat trend">⇧ escalatory</span>':'';
+      const momTip=(mom<=-0.25)?' · news flow de-escalating (momentum '+mom.toFixed(2)+')':(mom>=0.25)?' · news flow escalating (momentum +'+mom.toFixed(2)+')':'';
+      return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+momTip+(held?' · held by persistence floor (no fresh escalation'+(demoted?', fresh evidence: '+freshR:'')+')':'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'
         +'<div class="tl-bar"><div class="tl-fill" style="width:'+heatPct+'%;background:'+col+'"></div></div>'
-        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+(heldTag?' '+heldTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
+        +'<div class="tl-sub"><span>'+heatPct+'% heat'+(drv?' · '+drv:'')+(riseTag?' '+riseTag:'')+(momTag?' '+momTag:'')+(heldTag?' '+heldTag:'')+'</span><span>'+ec+' sig'+(t.gp_involved?' · GP':'')+'</span></div>'
         +'</div>';
     }).join('');
   }

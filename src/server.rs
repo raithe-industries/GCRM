@@ -677,6 +677,21 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_per_theater_escalation_momentum() {
+        // Awareness: the ladder chip must surface each theater's escalation MOMENTUM (the
+        // recency-weighted DIRECTION of its news flow, server field `escalation_momentum`) — a
+        // leading signal distinct from the heat trend. Lock the render hooks so a UI refactor
+        // can't silently drop the gauge. Shown only when the flow is decisively one-sided, with
+        // de-escalation (talks) and escalation framed distinctly.
+        assert!(DASHBOARD_HTML.contains("escalation_momentum"),
+            "ladder chip must read the server-provided escalation_momentum gauge");
+        assert!(DASHBOARD_HTML.contains("tl-mom"),
+            "ladder chip must render the momentum tag");
+        assert!(DASHBOARD_HTML.contains("⇩ talks") && DASHBOARD_HTML.contains("⇧ escalatory"),
+            "the momentum tag must name both the de-escalation (talks) and escalation directions");
+    }
+
+    #[test]
     fn dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read() {
         // Honesty/awareness on the MAP surface: the world-map flashpoint popup is the only
         // operator surface that must not paint a floor-held theater (a remembered war-state
