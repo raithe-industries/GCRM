@@ -165,6 +165,17 @@ Bias each run toward the least-covered axis below.
   hazard SEEDED 2026-06-27** with `avalanche_ca` (Avalanche Canada danger ratings, Canadian
   mountains, seasonal). Gap now: avalanche/mountain hazard outside Canada (e.g. US NWAC/CAIC,
   the European EAWS/`avalanche.report` if an auth-free geocoded product ships a danger level).
+  **EAWS / SLF investigated 2026-06-28 — blocked, deferred:** authoritative + auth-free + a
+  documented CAAML-v6 JSON/GeoJSON Open-Data product (the right shape), BUT not anchorable to
+  real bytes in-sandbox this run — the canonical aggregator/model (`pyAvaCore`, `albina-caaml`)
+  live on **GitLab** (egress-blocked), the live hosts (`avalanche.report`, `aws.slf.ch`) **403**
+  in web fetch, and the GitHub geometry/example repos (`eaws/eaws-regions`, `caaml/caaml`,
+  `simon04/eaws-bulletin-map`) **can't be enumerated** (GitHub MCP scoped to `raithe-industries/gcrm`;
+  `github.com` 403s; `raw.githubusercontent.com` serves only known paths) and web search surfaced
+  **no indexed committed sample/geometry path**. Plus June = **off-season** (NH services dormant →
+  0 events even live). Landable when EITHER a search-indexed real CAAML-GeoJSON sample surfaces on
+  `raw.githubusercontent.com` OR external-GitHub read/search scope is granted (then fetch the
+  `eaws-regions` geometry + a winter bulletin); re-attempt in winter regardless.
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -175,6 +186,44 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-28** — honest **NO-OP** after a wide hunt. Per the SUSTAINED-BLOCK DIRECTIVE I LED with a
+  Path-B / new-geography target rather than a block record: the ledger's explicit **next avalanche gap —
+  European EAWS / SLF** (extend the snow-avalanche domain from Canada to the Alps/Europe). It clears the
+  *quality* bars on paper — authoritative (SLF = Swiss federal WSL/SLF; EAWS national services), auth-free,
+  a documented **CAAML v6** JSON/GeoJSON Open-Data product, geocoded, baseline-relative danger scale — but
+  it could **not be anchored to real bytes** in this environment, so building it would be fabrication, not
+  verification, and is refused. **Network re-probed fresh:** web fetch positive control on
+  `raw.githubusercontent.com` correct (`facebook/react` `package.json` → `private:true`/no `name`);
+  `avalanche.report/more/open-data` **and** `aws.slf.ch/api/bulletin/caaml/en/geojson` **both 403**
+  (egress-wide web fetch block on non-GitHub hosts unchanged — only `raw.githubusercontent.com` resolves).
+  **Why no real-bytes anchor (the difference from the last 7 successful runs):** NHC→JMA→GeoNet→USGS-volcano→
+  MAGMA→NWPS→avalanche-CA each had a **search-indexed committed real sample** on `raw.githubusercontent.com`
+  to build the parser+fixture against. For EAWS/SLF there is none reachable: the canonical aggregator + model
+  (`pyAvaCore`, `albina-caaml`) live on **GitLab** (egress-blocked, non-GitHub); the GitHub repos that DO hold
+  the geometry + examples (`eaws/eaws-regions`, `caaml/caaml`, `simon04/eaws-bulletin-map`,
+  `fridlmue/harbour-avarisk`) **cannot be enumerated** — the GitHub MCP is scoped to `raithe-industries/gcrm`
+  (external browse/search denied), `github.com` tree pages 403, and `raw` only serves *known* paths, all of
+  which 404'd on every educated guess (`master`/`main` READMEs, `public/micro-regions/AT-07…`, `caaml/caaml`
+  examples); web search surfaced **no** concrete indexed sample/geometry file URL. The CAAML v6 field shape was
+  confirmable from the standard (`dangerRatings[].mainValue` low→very_high, `elevation`, `validTimePeriod`),
+  but the live-endpoint date-dir/GeoJSON wrapping AND the region polygon geometry could only be **guessed** —
+  the exact SERNAGEOMIN failure mode the program forbids. **Compounding factor:** June is **off-season** in the
+  NH, so every avalanche service is dormant — 0 events live even in prod — meaning no current real data exists
+  anywhere to anchor against, only archived winter samples (none reachable). **Other candidates ruled out this
+  run:** **Iceland IMO** (the named N-Atlantic volcano gap, live year-round, currently active) — no clean
+  machine-readable aviation-colour product (the ACC is a daily-updated *image* map + third-party `apis.is`),
+  fails bar 3; **INGV / PHIVOLCS / SERNAGEOMIN** unchanged (no auth-free geocoded alert API / only HTML/third-party).
+  **DEFERRED list re-checked, none Path-B-viable:** `IESO` Ontario grid = a single province-wide MW scalar with
+  no per-record lat/lon and no baseline → "nonsense number" (signal-meaningfulness fail); `CCCS` cyber = non-geo,
+  belongs on a UI panel = the self-improvement routine's lane, not the map; `avalanche_ca` already LIVE. Non-Baltic
+  **AIS** still has no authoritative auth-free source (NOAA historical-only, BarentsWatch keyed, Danish paid).
+  **No code change**; `cargo build --release` green; full workspace `cargo test` green (gcrm 474 / 0 failed /
+  3 ignored; ee-sources 98; ee-correlate 79; ee-view 60; ee-core 5). Tree left clean; ledger run-log only.
+  **Did NOT send a push notification:** the egress/network block is unchanged and owner-side, already escalated
+  many times — another identical alert is noise. **Next:** EAWS/SLF avalanche is landable the moment EITHER a
+  search-indexed committed real CAAML-GeoJSON sample appears on `raw.githubusercontent.com`, OR external-GitHub
+  read/search scope is granted (then fetch `eaws-regions` geometry + a real winter bulletin); re-attempt in the
+  Nov→Apr season regardless.
 - **2026-06-27** (second run) — **adopted `avalanche_ca` (Avalanche Canada danger ratings), Path A** —
   a new authoritative geocoded layer opening the **snow-avalanche hazard domain** no current feed
   carries, AND the conversion of a long-standing **DEFERRED** source into a working connector (the
