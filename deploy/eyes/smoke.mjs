@@ -32,14 +32,27 @@ page.on('pageerror', (e) => jsErrors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') jsErrors.push('console.error: ' + m.text()); });
 
 try {
-  await page.goto(URL, { waitUntil: 'networkidle', timeout: 20000 });
+  // Wait for `domcontentloaded`, NOT `networkidle`. The dashboard holds a live WebSocket
+  // open and polls feeds, so the network NEVER goes idle — `networkidle` only happened to
+  // settle within 20s on a WARM start, and timed out on every COLD restart (the cold
+  // /api/map fan-out keeps the network busy past the threshold). That false timeout rolled
+  // back this deploy and the 2026-06-16 one alike, before any real check ran.
+  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 } catch (e) {
   console.error(`EYES FAIL: could not load ${URL} — ${e.message}`);
   await browser.close();
   process.exit(1);
 }
-// Let the dashboard JS fetch data and draw the charts.
-await page.waitForTimeout(2500);
+// Wait for the charts/panels to actually RENDER, bounded per element — robust to a heavy
+// cold-start render (prod's full dataset draws slower than an empty warmup), where a fixed
+// sleep checks too early. waitForSelector returns as soon as the element is visible and
+// never hangs (the per-element timeout is the ceiling); a genuinely missing panel still
+// fails, precisely, in the assertions below.
+await Promise.all(
+  ['#timeline-chart', '#domain-chart', '#theater-ladder', '#gauge-canvas'].map((sel) =>
+    page.waitForSelector(sel, { state: 'visible', timeout: 12000 }).catch(() => {})),
+);
+await page.waitForTimeout(1200); // brief settle for canvas draw after the elements attach
 
 const box = async (sel) => { const el = await page.$(sel); return el ? el.boundingBox() : null; };
 
