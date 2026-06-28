@@ -53,7 +53,7 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 </div>
 
 <h2 id="what">What GCRM is — and is not</h2>
-<p>GCRM continuously ingests geopolitical news, codes each item into structured signal, and computes a <b>calibrated risk index</b> of systemic (great-power) war. The headline is a <b>systemic index (0–100)</b> aligned to an escalation ladder; an annualized P(systemic war) is shown as a secondary figure.</p>
+<p>GCRM continuously ingests geopolitical news, codes each item into structured signal, and computes a <b>calibrated risk index</b> of systemic (great-power) war. The headline is a <b>systemic index (0–95)</b> &mdash; a continuous rendering of the annualized P(systemic war) on a friendly scale &mdash; with the escalation-ladder rung shown alongside as a qualitative label.</p>
 <p>It is <b>not</b> a forecast of certainty and <b>not</b> derived from a generative model. "Probability" here means the output of a calibrated index, not a formal Bayesian posterior. Every input is openly available; no classified or restricted sources.</p>
 
 <h2 id="pipeline">Pipeline</h2>
@@ -111,8 +111,9 @@ footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:v
 P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at {{FORECAST_PROB_CEILING}}</pre>
 <p>L = 0 reproduces the baseline; large L saturates toward the ceiling along an S-curve. The <b>{{FORECAST_PROB_CEILING}} ceiling</b> is an engineering choice (epistemic humility, raised from v1's 0.85), not a probabilistic prior — the model has no ground truth and must never emit near-certainty. This value is rendered from the model's own <code>FORECAST_PROB_CEILING</code> constant, so this page cannot drift from the running model.</p>
 
-<h2 id="index">The systemic index (0–100)</h2>
-<p>The public headline is aligned to the escalation ladder so it reads as a rung, not an opaque number: <code>index = 100 · (max_rung_level + within-band heat) / 6</code>. Great-Power War with deep heat reads ~75–83; a quiet world reads near zero.</p>
+<h2 id="index">The systemic index (0–95)</h2>
+<p>The public headline is the forecast itself on a friendly scale &mdash; a <b>continuous</b> rendering of the systemic likelihood, not a discrete rung: <code>index = P(systemic war) / 0.90 · 95</code>. Because it is a one-to-one transform of the same likelihood that produces the probability, the index and P always move together and the index <b>discriminates every world-state</b> (a single-theater war, the present multi-front world, and a direct nuclear brink read as distinctly different numbers). The escalation <b>rung</b> (Tension → Crisis → Limited War → Great-Power War → Systemic) is shown alongside as the qualitative label. The index saturates at <b>95, never 100</b>: the probability is hard-clamped at 0.90 (a model-inferred forecast is &ldquo;very high,&rdquo; never record-certain), and 100 is reserved for an out-of-band, record-verified catastrophe. A quiet world reads near zero.</p>
+<p class="note">Before 2026-06-28 the index was a six-step staircase <code>100 · (rung_level + within-band heat) / 6</code>; because the top rung&rsquo;s heat clamps at its maximum, that read an identical ~83 for a one-theater war, the present world and the Cuban-Missile-Crisis nuclear brink alike &mdash; collapsing a wide spread in the underlying forecast to one frozen number. The continuous form above replaces it.</p>
 
 <h2 id="alerts">Alert bands</h2>
 <p>The annual P(WWIII) is classified into operator alert states by two configured thresholds. The reading is <b>elevated</b> at or above <code>{{ALERT_ELEVATED}}</code> and <b>critical</b> at or above <code>{{ALERT_CRITICAL}}</code> (annual). A separate <b>30-day</b> warning fires when the near-horizon probability crosses <code>{{ALERT_30D}}</code>. These are the same bands that colour the hero readout and draw the dashed reference lines on the timeline; the values shown here and on the dashboard are read from the engine's live <code>AlertSettings</code>, so the prose, the colour, and the chart cannot disagree with the classification.</p>
