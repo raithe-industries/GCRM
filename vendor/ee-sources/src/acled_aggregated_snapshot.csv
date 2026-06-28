@@ -1,0 +1,231 @@
+WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE
+2026-01-03,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,15,4,52029,Political violence,1741,33.2832,35.4971
+2026-01-03,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,2,0,14395,Political violence,1737,34.1673,36.2993
+2026-01-03,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,3,0,12042,Political violence,1739,33.6407,35.8097
+2026-01-03,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,17,2,61408,Political violence,1743,33.3416,35.3035
+2026-01-03,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,45,24,684735,Political violence,2289,31.407,34.3577
+2026-01-03,Middle East,Syria,Al Hasakeh,Explosions/Remote violence,Air/drone strike,1,0,49436,Political violence,3180,36.4131,40.5519
+2026-01-03,Middle East,Syria,Aleppo,Explosions/Remote violence,Air/drone strike,11,13,180222,Political violence,3181,36.1445,37.3978
+2026-01-03,Middle East,Syria,Ar Raqqa,Explosions/Remote violence,Air/drone strike,1,0,406,Political violence,3182,36.0265,38.922
+2026-01-03,Middle East,Syria,As Sweida,Explosions/Remote violence,Air/drone strike,2,0,8861,Political violence,3183,32.7624,36.8919
+2026-01-03,Middle East,Syria,Homs,Explosions/Remote violence,Air/drone strike,1,0,2,Political violence,3188,34.4708,38.2063
+2026-01-03,Middle East,Turkey,Kastamonu,Explosions/Remote violence,Air/drone strike,1,0,6155,Political violence,3392,41.4214,33.7891
+2026-01-03,Middle East,Yemen,Ad Dali,Explosions/Remote violence,Air/drone strike,2,4,61384,Political violence,3675,13.8943,44.7825
+2026-01-03,Middle East,Yemen,Aden,Explosions/Remote violence,Air/drone strike,2,0,20166,Political violence,3676,12.8058,44.788
+2026-01-03,Middle East,Yemen,Al Mahrah,Explosions/Remote violence,Air/drone strike,1,0,45304,Political violence,3680,17.0575,51.8238
+2026-01-03,Middle East,Yemen,Hadramawt,Explosions/Remote violence,Air/drone strike,2,4,28002,Political violence,3685,16.5288,48.6269
+2026-01-03,Middle East,Yemen,Lahij,Explosions/Remote violence,Air/drone strike,1,0,45262,Political violence,3688,13.3204,44.7623
+2026-01-03,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,2,0,11525,Political violence,3689,15.3329,45.4523
+2026-01-03,Middle East,Yemen,Sadah,Explosions/Remote violence,Air/drone strike,1,0,2734,Political violence,3691,17.0883,44.0424
+2026-01-10,Middle East,Iraq,Al Anbar,Explosions/Remote violence,Air/drone strike,1,3,27523,Political violence,1360,33.1774,41.3987
+2026-01-10,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,11,2,38331,Political violence,1741,33.2832,35.4971
+2026-01-10,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,3,0,19909,Political violence,1737,34.1673,36.2993
+2026-01-10,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,2,0,15926,Political violence,1739,33.6407,35.8097
+2026-01-10,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,13,0,16471,Political violence,1743,33.3416,35.3035
+2026-01-10,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,34,25,541202,Political violence,2289,31.407,34.3577
+2026-01-10,Middle East,Syria,Aleppo,Explosions/Remote violence,Air/drone strike,14,11,149575,Political violence,3181,36.1445,37.3978
+2026-01-10,Middle East,Syria,Ar Raqqa,Explosions/Remote violence,Air/drone strike,3,0,1475,Political violence,3182,36.0265,38.922
+2026-01-10,Middle East,Syria,Deir ez Zor,Explosions/Remote violence,Air/drone strike,2,0,5090,Political violence,3186,35.2318,40.2761
+2026-01-10,Middle East,Syria,Hama,Explosions/Remote violence,Air/drone strike,1,0,283,Political violence,3187,35.3165,37.3411
+2026-01-10,Middle East,Syria,Homs,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3188,34.4708,38.2063
+2026-01-10,Middle East,Syria,Idleb,Explosions/Remote violence,Air/drone strike,1,1,48678,Political violence,3189,35.8547,36.5648
+2026-01-10,Middle East,Syria,Rural Damascus,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3192,33.4538,37.4305
+2026-01-10,Middle East,Yemen,Ad Dali,Explosions/Remote violence,Air/drone strike,1,0,2336,Political violence,3675,13.8943,44.7825
+2026-01-10,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,2,3,12782,Political violence,3689,15.3329,45.4523
+2026-01-10,Middle East,Yemen,Shabwah,Explosions/Remote violence,Air/drone strike,1,0,24760,Political violence,3693,14.651,46.62
+2026-01-17,Middle East,Iraq,Erbil,Explosions/Remote violence,Air/drone strike,1,1,506892,Political violence,1370,36.3791,44.2104
+2026-01-17,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,10,0,24544,Political violence,1741,33.2832,35.4971
+2026-01-17,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,3,0,34860,Political violence,1737,34.1673,36.2993
+2026-01-17,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,13,2,28459,Political violence,1743,33.3416,35.3035
+2026-01-17,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,32,5,485671,Political violence,2289,31.407,34.3577
+2026-01-17,Middle East,Syria,Al Hasakeh,Explosions/Remote violence,Air/drone strike,10,26,443438,Political violence,3180,36.4131,40.5519
+2026-01-17,Middle East,Syria,Aleppo,Explosions/Remote violence,Air/drone strike,3,0,44482,Political violence,3181,36.1445,37.3978
+2026-01-17,Middle East,Syria,Ar Raqqa,Explosions/Remote violence,Air/drone strike,4,1,141275,Political violence,3182,36.0265,38.922
+2026-01-17,Middle East,Syria,Deir ez Zor,Explosions/Remote violence,Air/drone strike,2,0,80739,Political violence,3186,35.2318,40.2761
+2026-01-17,Middle East,Yemen,Shabwah,Explosions/Remote violence,Air/drone strike,2,3,25796,Political violence,3693,14.651,46.62
+2026-01-24,Middle East,Iraq,Salah Al Din,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1375,34.6687,43.6316
+2026-01-24,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,17,6,43799,Political violence,1741,33.2832,35.4971
+2026-01-24,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,2,0,760,Political violence,1737,34.1673,36.2993
+2026-01-24,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1739,33.6407,35.8097
+2026-01-24,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,13,4,7513,Political violence,1743,33.3416,35.3035
+2026-01-24,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,37,26,590606,Political violence,2289,31.407,34.3577
+2026-01-24,Middle East,Syria,Al Hasakeh,Explosions/Remote violence,Air/drone strike,10,4,94244,Political violence,3180,36.4131,40.5519
+2026-01-24,Middle East,Syria,Aleppo,Explosions/Remote violence,Air/drone strike,7,5,80324,Political violence,3181,36.1445,37.3978
+2026-01-24,Middle East,Syria,Ar Raqqa,Explosions/Remote violence,Air/drone strike,2,0,17597,Political violence,3182,36.0265,38.922
+2026-01-24,Middle East,Syria,As Sweida,Explosions/Remote violence,Air/drone strike,1,0,6407,Political violence,3183,32.7624,36.8919
+2026-01-24,Middle East,Syria,Deir ez Zor,Explosions/Remote violence,Air/drone strike,1,0,4066,Political violence,3186,35.2318,40.2761
+2026-01-24,Middle East,Syria,Homs,Explosions/Remote violence,Air/drone strike,1,0,46041,Political violence,3188,34.4708,38.2063
+2026-01-24,Middle East,Yemen,Al Hudaydah,Explosions/Remote violence,Air/drone strike,1,1,40932,Political violence,3678,14.7791,43.2181
+2026-01-24,Middle East,Yemen,Al Mahrah,Explosions/Remote violence,Air/drone strike,1,1,45304,Political violence,3680,17.0575,51.8238
+2026-01-24,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,1,3,2427,Political violence,3689,15.3329,45.4523
+2026-01-31,Middle East,Iraq,Ninewa,Explosions/Remote violence,Air/drone strike,1,4,,Political violence,1374,35.9879,42.3496
+2026-01-31,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,6,3,1595,Political violence,1741,33.2832,35.4971
+2026-01-31,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,6,0,,Political violence,1737,34.1673,36.2993
+2026-01-31,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,11,1,,Political violence,1743,33.3416,35.3035
+2026-01-31,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,40,56,160386,Political violence,2289,31.407,34.3577
+2026-01-31,Middle East,Syria,Homs,Explosions/Remote violence,Air/drone strike,5,0,3222,Political violence,3188,34.4708,38.2063
+2026-01-31,Middle East,Yemen,Ad Dali,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3675,13.8943,44.7825
+2026-01-31,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,1,4,,Political violence,3689,15.3329,45.4523
+2026-02-07,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,6,1,,Political violence,1741,33.2832,35.4971
+2026-02-07,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,2,3,,Political violence,1743,33.3416,35.3035
+2026-02-07,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,22,10,,Political violence,2289,31.407,34.3577
+2026-02-07,Middle East,Syria,Hama,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3187,35.3165,37.3411
+2026-02-07,Middle East,Syria,Homs,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,3188,34.4708,38.2063
+2026-02-07,Middle East,Yemen,Al Mahrah,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3680,17.0575,51.8238
+2026-02-07,Middle East,Yemen,Shabwah,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3693,14.651,46.62
+2026-02-07,Middle East,Yemen,Taizz,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3695,13.2949,43.7855
+2026-02-14,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,13,2,,Political violence,1741,33.2832,35.4971
+2026-02-14,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,5,0,,Political violence,1737,34.1673,36.2993
+2026-02-14,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,2,16,,Political violence,1739,33.6407,35.8097
+2026-02-14,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,14,2,,Political violence,1743,33.3416,35.3035
+2026-02-14,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,28,25,,Political violence,2289,31.407,34.3577
+2026-02-14,Middle East,Syria,As Sweida,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3183,32.7624,36.8919
+2026-02-14,Middle East,Yemen,Al Hudaydah,Explosions/Remote violence,Air/drone strike,2,2,,Political violence,3678,14.7791,43.2181
+2026-02-14,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3689,15.3329,45.4523
+2026-02-21,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1741,33.2832,35.4971
+2026-02-21,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,9,2,,Political violence,1737,34.1673,36.2993
+2026-02-21,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1743,33.3416,35.3035
+2026-02-21,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,28,14,,Political violence,2289,31.407,34.3577
+2026-02-21,Middle East,Yemen,Al Bayda,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3677,14.326,45.216
+2026-02-21,Middle East,Yemen,Lahij,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3688,13.3204,44.7623
+2026-02-28,Middle East,Bahrain,Capital,Explosions/Remote violence,Air/drone strike,9,0,9077,Political violence,285,26.1927,50.5508
+2026-02-28,Middle East,Bahrain,Muharraq,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,286,26.2547,50.6428
+2026-02-28,Middle East,Iran,Alborz,Explosions/Remote violence,Air/drone strike,23,1,,Political violence,1329,35.9457,50.906
+2026-02-28,Middle East,Iran,Ardabil,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1330,38.4066,47.9857
+2026-02-28,Middle East,Iran,Bushehr,Explosions/Remote violence,Air/drone strike,15,5,,Political violence,1331,28.7846,51.5038
+2026-02-28,Middle East,Iran,Chaharmahal and Bakhtiari,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1332,31.979,50.8101
+2026-02-28,Middle East,Iran,East Azerbaijan,Explosions/Remote violence,Air/drone strike,16,5,,Political violence,1333,38.0858,46.6924
+2026-02-28,Middle East,Iran,Fars,Explosions/Remote violence,Air/drone strike,16,42,,Political violence,1334,29.3576,53.3176
+2026-02-28,Middle East,Iran,Gilan,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1335,37.5092,49.0189
+2026-02-28,Middle East,Iran,Hamadan,Explosions/Remote violence,Air/drone strike,8,0,,Political violence,1337,34.8698,48.559
+2026-02-28,Middle East,Iran,Hormozgan,Explosions/Remote violence,Air/drone strike,29,182,,Political violence,1338,27.1422,55.0325
+2026-02-28,Middle East,Iran,Ilam,Explosions/Remote violence,Air/drone strike,21,43,,Political violence,1339,33.0433,46.8724
+2026-02-28,Middle East,Iran,Isfahan,Explosions/Remote violence,Air/drone strike,26,5,,Political violence,1340,32.6094,52.0477
+2026-02-28,Middle East,Iran,Kerman,Explosions/Remote violence,Air/drone strike,2,13,,Political violence,1341,29.2326,57.3392
+2026-02-28,Middle East,Iran,Kermanshah,Explosions/Remote violence,Air/drone strike,37,25,,Political violence,1342,34.4871,46.8086
+2026-02-28,Middle East,Iran,Khuzestan,Explosions/Remote violence,Air/drone strike,28,19,,Political violence,1343,31.4636,48.9916
+2026-02-28,Middle East,Iran,Kurdistan,Explosions/Remote violence,Air/drone strike,25,34,,Political violence,1345,35.6014,47.0057
+2026-02-28,Middle East,Iran,Lorestan,Explosions/Remote violence,Air/drone strike,16,5,,Political violence,1346,33.5164,48.3219
+2026-02-28,Middle East,Iran,Markazi,Explosions/Remote violence,Air/drone strike,7,0,,Political violence,1347,34.4772,49.5818
+2026-02-28,Middle East,Iran,Mazandaran,Explosions/Remote violence,Air/drone strike,8,0,,Political violence,1348,36.3633,52.3677
+2026-02-28,Middle East,Iran,Qazvin,Explosions/Remote violence,Air/drone strike,5,4,,Political violence,1350,36.1089,50.0386
+2026-02-28,Middle East,Iran,Qom,Explosions/Remote violence,Air/drone strike,13,7,,Political violence,1351,34.6674,51.002
+2026-02-28,Middle East,Iran,Razavi Khorasan,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1352,35.7792,59.0295
+2026-02-28,Middle East,Iran,Semnan,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1353,35.7868,54.9676
+2026-02-28,Middle East,Iran,Sistan and Baluchestan,Explosions/Remote violence,Air/drone strike,19,20,,Political violence,1354,28.2728,60.8613
+2026-02-28,Middle East,Iran,Tehran,Explosions/Remote violence,Air/drone strike,162,22,,Political violence,1356,35.5022,51.3269
+2026-02-28,Middle East,Iran,West Azerbaijan,Explosions/Remote violence,Air/drone strike,35,8,,Political violence,1357,37.8742,44.7003
+2026-02-28,Middle East,Iran,Yazd,Explosions/Remote violence,Air/drone strike,7,0,,Political violence,1358,31.4825,54.4162
+2026-02-28,Middle East,Iran,Zanjan,Explosions/Remote violence,Air/drone strike,6,0,,Political violence,1359,36.4014,48.422
+2026-02-28,Middle East,Iraq,Al Anbar,Explosions/Remote violence,Air/drone strike,5,5,,Political violence,1360,33.1774,41.3987
+2026-02-28,Middle East,Iraq,Al Basrah,Explosions/Remote violence,Air/drone strike,6,0,,Political violence,1361,30.2047,47.5084
+2026-02-28,Middle East,Iraq,Al Muthanna,Explosions/Remote violence,Air/drone strike,2,1,,Political violence,1362,30.4107,45.3606
+2026-02-28,Middle East,Iraq,Al Sulaymaniyah,Explosions/Remote violence,Air/drone strike,6,0,,Political violence,1365,35.5263,45.379
+2026-02-28,Middle East,Iraq,Babil,Explosions/Remote violence,Air/drone strike,7,6,,Political violence,1366,32.5765,44.6371
+2026-02-28,Middle East,Iraq,Baghdad,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,1367,33.278,44.3783
+2026-02-28,Middle East,Iraq,Diyala,Explosions/Remote violence,Air/drone strike,4,5,,Political violence,1368,34.0711,44.8903
+2026-02-28,Middle East,Iraq,Duhok,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1369,37.0446,43.1386
+2026-02-28,Middle East,Iraq,Erbil,Explosions/Remote violence,Air/drone strike,32,1,,Political violence,1370,36.3791,44.2104
+2026-02-28,Middle East,Iraq,Kirkuk,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1372,35.2858,44.0603
+2026-02-28,Middle East,Iraq,Maysan,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1373,31.999,47.135
+2026-02-28,Middle East,Iraq,Ninewa,Explosions/Remote violence,Air/drone strike,11,0,,Political violence,1374,35.9879,42.3496
+2026-02-28,Middle East,Iraq,Salah Al Din,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1375,34.6687,43.6316
+2026-02-28,Middle East,Iraq,Thi Qar,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1376,31.2876,46.2732
+2026-02-28,Middle East,Israel,HaZafon,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1408,32.839,35.3807
+2026-02-28,Middle East,Kuwait,Al Ahmadi,Explosions/Remote violence,Air/drone strike,3,6,7416,Political violence,1589,28.8688,47.9227
+2026-02-28,Middle East,Kuwait,Al Asimah,Explosions/Remote violence,Air/drone strike,4,2,12662,Political violence,1590,29.3474,47.9688
+2026-02-28,Middle East,Kuwait,Al Farwaniyah,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1591,29.2476,47.9119
+2026-02-28,Middle East,Kuwait,Al Jahra,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,1592,29.4988,47.3671
+2026-02-28,Middle East,Kuwait,Hawalli,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1593,29.3117,48.0552
+2026-02-28,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,175,40,,Political violence,1741,33.2832,35.4971
+2026-02-28,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,27,75,,Political violence,1737,34.1673,36.2993
+2026-02-28,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,7,9,,Political violence,1739,33.6407,35.8097
+2026-02-28,Middle East,Lebanon,Mount Lebanon,Explosions/Remote violence,Air/drone strike,27,12,,Political violence,1740,33.8513,35.6478
+2026-02-28,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,125,28,,Political violence,1743,33.3416,35.3035
+2026-02-28,Middle East,Oman,Al Wusta,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,2276,20.4761,56.9042
+2026-02-28,Middle East,Oman,Gulf of Oman,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,4154,24.5876,58.5161
+2026-02-28,Middle East,Oman,Musandam,Explosions/Remote violence,Air/drone strike,1,4,,Political violence,2280,25.9953,56.303
+2026-02-28,Middle East,Oman,Muscat,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,2281,23.2501,58.7601
+2026-02-28,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,17,4,,Political violence,2289,31.407,34.3577
+2026-02-28,Middle East,Qatar,Ad Dawnah,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,2501,25.2934,51.5014
+2026-02-28,Middle East,Qatar,Al Khor,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3853,25.7618,51.3405
+2026-02-28,Middle East,Qatar,Al Wakrah,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,2503,24.8527,51.2992
+2026-02-28,Middle East,Qatar,Ash Sheehaniya,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,2506,25.4451,51.0111
+2026-02-28,Middle East,Saudi Arabia,Ar Riyadh,Explosions/Remote violence,Air/drone strike,3,1,,Political violence,2719,23.4556,45.232
+2026-02-28,Middle East,Saudi Arabia,Eastern,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,2721,23.1567,50.3153
+2026-02-28,Middle East,Syria,As Sweida,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,3183,32.7624,36.8919
+2026-02-28,Middle East,Syria,Dara,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,3185,32.831,36.1112
+2026-02-28,Middle East,United Arab Emirates,Abu Dhabi,Explosions/Remote violence,Air/drone strike,13,1,,Political violence,3472,23.7727,53.7133
+2026-02-28,Middle East,United Arab Emirates,Al Fujayrah,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,3474,25.4363,56.2301
+2026-02-28,Middle East,United Arab Emirates,Ash Shariqah,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3475,25.1368,55.8094
+2026-02-28,Middle East,United Arab Emirates,Dubai,Explosions/Remote violence,Air/drone strike,5,0,,Political violence,3476,24.9904,55.3711
+2026-02-28,Middle East,United Arab Emirates,Ras Al Khaymah,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3477,25.698,55.9686
+2026-02-28,Middle East,Yemen,Marib,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3689,15.3329,45.4523
+2026-02-28,Middle East,Yemen,Sadah,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,3691,17.0883,44.0424
+2026-03-07,Middle East,Bahrain,Capital,Explosions/Remote violence,Air/drone strike,7,1,,Political violence,285,26.1927,50.5508
+2026-03-07,Middle East,Bahrain,Muharraq,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,286,26.2547,50.6428
+2026-03-07,Middle East,Iran,Alborz,Explosions/Remote violence,Air/drone strike,33,7,,Political violence,1329,35.9457,50.906
+2026-03-07,Middle East,Iran,Bushehr,Explosions/Remote violence,Air/drone strike,19,0,,Political violence,1331,28.7846,51.5038
+2026-03-07,Middle East,Iran,Chaharmahal and Bakhtiari,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1332,31.979,50.8101
+2026-03-07,Middle East,Iran,East Azerbaijan,Explosions/Remote violence,Air/drone strike,14,9,,Political violence,1333,38.0858,46.6924
+2026-03-07,Middle East,Iran,Fars,Explosions/Remote violence,Air/drone strike,25,24,,Political violence,1334,29.3576,53.3176
+2026-03-07,Middle East,Iran,Hamadan,Explosions/Remote violence,Air/drone strike,10,0,,Political violence,1337,34.8698,48.559
+2026-03-07,Middle East,Iran,Hormozgan,Explosions/Remote violence,Air/drone strike,41,3,,Political violence,1338,27.1422,55.0325
+2026-03-07,Middle East,Iran,Ilam,Explosions/Remote violence,Air/drone strike,10,0,,Political violence,1339,33.0433,46.8724
+2026-03-07,Middle East,Iran,Isfahan,Explosions/Remote violence,Air/drone strike,48,22,,Political violence,1340,32.6094,52.0477
+2026-03-07,Middle East,Iran,Kerman,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1341,29.2326,57.3392
+2026-03-07,Middle East,Iran,Kermanshah,Explosions/Remote violence,Air/drone strike,28,1,,Political violence,1342,34.4871,46.8086
+2026-03-07,Middle East,Iran,Khuzestan,Explosions/Remote violence,Air/drone strike,38,0,,Political violence,1343,31.4636,48.9916
+2026-03-07,Middle East,Iran,Kurdistan,Explosions/Remote violence,Air/drone strike,20,14,,Political violence,1345,35.6014,47.0057
+2026-03-07,Middle East,Iran,Lorestan,Explosions/Remote violence,Air/drone strike,15,4,,Political violence,1346,33.5164,48.3219
+2026-03-07,Middle East,Iran,Markazi,Explosions/Remote violence,Air/drone strike,17,14,,Political violence,1347,34.4772,49.5818
+2026-03-07,Middle East,Iran,Mazandaran,Explosions/Remote violence,Air/drone strike,5,0,,Political violence,1348,36.3633,52.3677
+2026-03-07,Middle East,Iran,Persian Gulf,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,4137,27.0645,51.452
+2026-03-07,Middle East,Iran,Qazvin,Explosions/Remote violence,Air/drone strike,4,2,,Political violence,1350,36.1089,50.0386
+2026-03-07,Middle East,Iran,Qom,Explosions/Remote violence,Air/drone strike,8,0,,Political violence,1351,34.6674,51.002
+2026-03-07,Middle East,Iran,Razavi Khorasan,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1352,35.7792,59.0295
+2026-03-07,Middle East,Iran,Semnan,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1353,35.7868,54.9676
+2026-03-07,Middle East,Iran,Sistan and Baluchestan,Explosions/Remote violence,Air/drone strike,16,4,,Political violence,1354,28.2728,60.8613
+2026-03-07,Middle East,Iran,South Khorasan,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1355,32.8019,58.24
+2026-03-07,Middle East,Iran,Strait of Hormuz,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,4138,26.6719,56.4867
+2026-03-07,Middle East,Iran,Tehran,Explosions/Remote violence,Air/drone strike,216,80,,Political violence,1356,35.5022,51.3269
+2026-03-07,Middle East,Iran,West Azerbaijan,Explosions/Remote violence,Air/drone strike,5,12,,Political violence,1357,37.8742,44.7003
+2026-03-07,Middle East,Iran,Yazd,Explosions/Remote violence,Air/drone strike,9,0,,Political violence,1358,31.4825,54.4162
+2026-03-07,Middle East,Iran,Zanjan,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1359,36.4014,48.422
+2026-03-07,Middle East,Iraq,Al Anbar,Explosions/Remote violence,Air/drone strike,7,36,,Political violence,1360,33.1774,41.3987
+2026-03-07,Middle East,Iraq,Al Basrah,Explosions/Remote violence,Air/drone strike,3,0,,Political violence,1361,30.2047,47.5084
+2026-03-07,Middle East,Iraq,Al Qadissiya,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1364,31.8451,45.1666
+2026-03-07,Middle East,Iraq,Al Sulaymaniyah,Explosions/Remote violence,Air/drone strike,8,2,,Political violence,1365,35.5263,45.379
+2026-03-07,Middle East,Iraq,Babil,Explosions/Remote violence,Air/drone strike,4,2,,Political violence,1366,32.5765,44.6371
+2026-03-07,Middle East,Iraq,Baghdad,Explosions/Remote violence,Air/drone strike,8,1,,Political violence,1367,33.278,44.3783
+2026-03-07,Middle East,Iraq,Erbil,Explosions/Remote violence,Air/drone strike,24,2,,Political violence,1370,36.3791,44.2104
+2026-03-07,Middle East,Iraq,Kerbala,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1371,32.49,43.8069
+2026-03-07,Middle East,Iraq,Kirkuk,Explosions/Remote violence,Air/drone strike,6,10,,Political violence,1372,35.2858,44.0603
+2026-03-07,Middle East,Iraq,Maysan,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1373,31.999,47.135
+2026-03-07,Middle East,Iraq,Ninewa,Explosions/Remote violence,Air/drone strike,9,3,,Political violence,1374,35.9879,42.3496
+2026-03-07,Middle East,Iraq,Salah Al Din,Explosions/Remote violence,Air/drone strike,6,0,,Political violence,1375,34.6687,43.6316
+2026-03-07,Middle East,Iraq,Thi Qar,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1376,31.2876,46.2732
+2026-03-07,Middle East,Iraq,Wassit,Explosions/Remote violence,Air/drone strike,1,1,,Political violence,1377,32.7059,45.704
+2026-03-07,Middle East,Israel,HaZafon,Explosions/Remote violence,Air/drone strike,14,0,,Political violence,1408,32.839,35.3807
+2026-03-07,Middle East,Israel,Haifa,Explosions/Remote violence,Air/drone strike,4,0,,Political violence,1406,32.6278,34.9819
+2026-03-07,Middle East,Israel,Jerusalem,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1409,31.7281,34.9945
+2026-03-07,Middle East,Kuwait,Al Ahmadi,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1589,28.8688,47.9227
+2026-03-07,Middle East,Kuwait,Al Asimah,Explosions/Remote violence,Air/drone strike,6,2,,Political violence,1590,29.3474,47.9688
+2026-03-07,Middle East,Kuwait,Al Farwaniyah,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,1591,29.2476,47.9119
+2026-03-07,Middle East,Kuwait,Al Jahra,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,1592,29.4988,47.3671
+2026-03-07,Middle East,Lebanon,Al Nabatieh,Explosions/Remote violence,Air/drone strike,252,164,,Political violence,1741,33.2832,35.4971
+2026-03-07,Middle East,Lebanon,Baalbek-Hermel,Explosions/Remote violence,Air/drone strike,19,27,,Political violence,1737,34.1673,36.2993
+2026-03-07,Middle East,Lebanon,Beirut,Explosions/Remote violence,Air/drone strike,3,12,,Political violence,1738,33.8886,35.5016
+2026-03-07,Middle East,Lebanon,Bekaa,Explosions/Remote violence,Air/drone strike,8,3,,Political violence,1739,33.6407,35.8097
+2026-03-07,Middle East,Lebanon,Mount Lebanon,Explosions/Remote violence,Air/drone strike,34,9,,Political violence,1740,33.8513,35.6478
+2026-03-07,Middle East,Lebanon,South,Explosions/Remote violence,Air/drone strike,142,154,,Political violence,1743,33.3416,35.3035
+2026-03-07,Middle East,Oman,Al Batinah North,Explosions/Remote violence,Air/drone strike,2,2,,Political violence,2273,24.2357,56.5739
+2026-03-07,Middle East,Oman,Al Wusta,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,2276,20.4761,56.9042
+2026-03-07,Middle East,Oman,Dhofar,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,2279,18.8597,54.5566
+2026-03-07,Middle East,Oman,Strait of Hormuz,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,4156,26.6719,56.4867
+2026-03-07,Middle East,Palestine,Gaza Strip,Explosions/Remote violence,Air/drone strike,23,23,,Political violence,2289,31.407,34.3577
+2026-03-07,Middle East,Saudi Arabia,Ar Riyadh,Explosions/Remote violence,Air/drone strike,2,2,,Political violence,2719,23.4556,45.232
+2026-03-07,Middle East,Saudi Arabia,Eastern,Explosions/Remote violence,Air/drone strike,2,0,,Political violence,2721,23.1567,50.3153
+2026-03-07,Middle East,United Arab Emirates,Abu Dhabi,Explosions/Remote violence,Air/drone strike,6,2,,Political violence,3472,23.7727,53.7133
+2026-03-07,Middle East,United Arab Emirates,Al Fujayrah,Explosions/Remote violence,Air/drone strike,1,0,,Political violence,3474,25.4363,56.2301
+2026-03-07,Middle East,United Arab Emirates,Dubai,Explosions/Remote violence,Air/drone strike,8,1,,Political violence,3476,24.9904,55.3711
