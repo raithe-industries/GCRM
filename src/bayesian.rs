@@ -880,7 +880,13 @@ impl BayesianRiskEngine {
         }
         snap.theaters         = tout.theaters;
         snap.couplers         = tout.couplers;
-        snap.systemic_index   = tout.systemic_index;
+        // Authoritative public headline index: a continuous rendering of the SAME final,
+        // guardrail-amplified `l_sys` that produces P(WWIII) below — so the 0..95 index and the
+        // headline probability are one number on two scales and can never disagree. (The theater
+        // engine's own `tout.systemic_index` is the pre-guardrail view used by its unit tests;
+        // the public number applies the guardrail here.) Replaces the retired rung staircase that
+        // read 83.3 for Ukraine-2022, the present world, the live peg and Cuba alike.
+        snap.systemic_index   = (crate::theater::index_from_l_sys(l_sys) * 1e2).round() / 1e2;
         snap.driver           = tout.driver;
         snap.likelihood_ratio = (l_sys * 1e6).round() / 1e6;
 

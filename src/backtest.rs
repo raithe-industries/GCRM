@@ -256,10 +256,12 @@ fn calibration_readout() {
 
 /// Measured readout of the LIVE railed peg and its local slope. Run:
 ///   cargo test pegged_resolution_readout -- --nocapture
-/// Documents the accepted structural max: at the railed operating point a ±intensity nudge moves
-/// P by ~nothing (Δ≈0pp) because the world is already maxed-without-a-brink. Per the 2026-06-25
-/// decision this is honest (surfaced via `couplers.breadth_saturated`), not a defect to fix.
-/// Pure measurement; no assertion.
+/// At the railed operating point a ±CONVENTIONAL-intensity nudge still moves P by ~nothing (Δ≈0pp)
+/// because a maxed conventional war is honestly maxed — that flatness is retained and disclosed via
+/// `couplers.breadth_saturated`. What CHANGED on 2026-06-28 (the de-saturation): the public INDEX
+/// is no longer pegged with it — it is now a continuous rendering of l_sys (`index_from_l_sys`) that
+/// discriminates every state — and rising NUCLEAR posture now lifts the read continuously (the brink
+/// amplifier ramps, no longer a 0.78 cliff). Pure measurement; no assertion.
 #[test]
 fn pegged_resolution_readout() {
     let base = run(live_pegged_2026().0, &live_pegged_2026().1);
@@ -496,21 +498,29 @@ fn breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_b
 }
 
 #[test]
-fn railed_peg_is_an_accepted_flat_structural_max() {
-    // DECIDED 2026-06-25 (Robert): the railed live peg is an ACCEPTED structural maximum, NOT a
-    // defect to de-saturate. Empirically it still responds to what matters — decay (−20pp by 72h)
-    // and a nuclear brink emerging (→ the 0.90 apex) — and is flat ONLY to incremental escalation
-    // while already maxed-without-a-brink. The honest treatment is the `couplers.breadth_saturated`
-    // disclosure (locked by `breadth_saturation_is_flagged_*`), NOT a recalibration. This test locks
-    // the flatness as DELIBERATE: a ±0.30 no-brink intensity swing moves the headline <0.5pp. If it
-    // ever fails (the peg starts moving), the model was de-saturated — revisit the 2026-06-25
-    // decision. A self-improve pass must NOT change FITTED calibration constants to alter this
-    // without Robert's sign-off (value-laden, his call per the honest-forecasting principle).
-    let hot  = { let s = live_pegged_nudged(0.30);  run(s.0, &s.1).p_wwiii_annual };
-    let cool = { let s = live_pegged_nudged(-0.30); run(s.0, &s.1).p_wwiii_annual };
-    assert!((hot - cool).abs() * 100.0 < 0.5,
-        "the railed peg is a DELIBERATE flat structural max (got {:+.3}pp); if it moved, the model \
-         de-saturated — revisit the 2026-06-25 decision, do not silently re-fit", (hot - cool) * 100.0);
+fn railed_peg_index_now_discriminates_states() {
+    // REVERSES the 2026-06-25 deferral. DECIDED 2026-06-28 (Robert, in person — the frozen headline
+    // "seems stale and stupid… fix it"): the railed live peg WAS a defect, and it is de-saturated.
+    //
+    // The defect was never that P is flat to incremental CONVENTIONAL escalation while already
+    // maxed-without-a-brink — a maxed conventional war IS maxed, which stays honest (and is still
+    // disclosed via `couplers.breadth_saturated`). The defect was the PUBLIC INDEX: the retired
+    // `(rung.level + within_band)/6` staircase read an identical 83.3 for Ukraine-2022, the present
+    // world, the live peg AND Cuba-1962 — collapsing a 45-point spread in the underlying forecast to
+    // one frozen number that could not tell a one-theater war from the Cuban Missile Crisis. The
+    // index is now the forecast on a 0..95 scale (`index_from_l_sys` = P / PROB_CEILING ×
+    // INDEX_CEILING), so it DISCRIMINATES every world-state and moves with the read.
+    let idx = |scn: (f64, Vec<GeopoliticalEvent>)| run(scn.0, &scn.1).systemic_index;
+    let (q, u, c, peg, cuba) =
+        (idx(quiet()), idx(ukraine_2022()), idx(current_2026()), idx(live_pegged_2026()), idx(cuba_1962()));
+    // Strict separation where the old staircase pegged everything at 83.3.
+    assert!(q < u && u < c && c < peg,
+        "index must separate quiet<ukraine<current<peg, got {q:.1} {u:.1} {c:.1} {peg:.1}");
+    assert!((cuba - peg).abs() > 1.0,
+        "the nuclear-brink apex and the breadth peg must not read identically (cuba={cuba:.1} peg={peg:.1})");
+    // Lock that the old 83.3 plateau is gone: ukraine and the present world no longer pile onto it.
+    assert!(u < 60.0 && (80.0..95.0).contains(&peg),
+        "ukraine must drop off the old 83.3 plateau and the peg must read near-apex (got u={u:.1} peg={peg:.1})");
 }
 
 // ── Calibration evidence harness (roadmap 1.1) ─────────────────────────────────────
@@ -633,6 +643,37 @@ fn analog_model_pct_reports_the_live_model_output_for_named_analogs() {
     assert!(ukr > 30.0 && ukr < 50.0, "ukraine analog ~39%, got {ukr:.2}%");
     assert!(cuba > 70.0 && cuba < 90.0, "cuba analog ~80%, got {cuba:.2}%");
     assert!(analog_model_pct("nope").is_none(), "unknown analog must be None");
+}
+
+#[test]
+fn nuclear_brink_amplifier_ramps_smoothly_not_a_cliff() {
+    // The brink amplifier used to be BINARY: 0 below 0.78 scored nuclear posture, a full +70%
+    // jump at/above it. That cliff made rising nuclear danger — the most decision-relevant
+    // escalation — invisible until it snapped. It now ramps smoothstep(0.78 → 0.95), so a
+    // direct ≥2-great-power nuclear standoff registers continuously as posture climbs. Bands are
+    // preserved: every calibration analog's brink-eligible theater scores ≤ 0.69 (< threshold →
+    // no brink) and Cuba scores ~0.953 (≥ 0.95 → full apex), so nothing in quiet/ukraine/current/
+    // cuba sits in the (0.78, 0.95) ramp zone and the four `bands_*` are mathematically unchanged.
+    let brink_world = |nuc_signal: f64| {
+        // ONE theater, two great powers head-to-head (US–Russia) → brink-eligible; vary nuclear.
+        let ev = evset("nato_russia",
+            &[("nuclear_posture", nuc_signal, nuc_signal), ("military_escalation", 0.90, 0.90),
+              ("diplomatic_breakdown", 0.90, 0.85)],
+            &["united_states", "russia"], true, 10);
+        run(2.6, &ev).p_wwiii_annual
+    };
+    // Signals chosen so scored posture spans below-threshold → mid-ramp → full apex.
+    let below = brink_world(0.74);   // scores below 0.78 → no brink
+    let mid   = brink_world(0.90);   // scores inside the (0.78, 0.95) ramp → partial brink
+    let full  = brink_world(0.98);   // scores ≥ 0.95 → full apex
+    assert!(mid > below + 0.005,
+        "mid-ramp must exceed the below-threshold read — the cliff is gone: {below:.3} -> {mid:.3}");
+    assert!(full > mid + 0.005,
+        "full apex must exceed mid-ramp — brink scales with posture: {mid:.3} -> {full:.3}");
+    // Cuba (the apex band) still reaches FULL brink, so its calibration is untouched.
+    let cuba = run(cuba_1962().0, &cuba_1962().1);
+    assert!(cuba.driver.to_lowercase().contains("brink"),
+        "Cuba must still read the full nuclear-brink apex: {}", cuba.driver);
 }
 
 #[test]

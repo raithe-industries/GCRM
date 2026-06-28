@@ -14,8 +14,16 @@
 // the events assigned to it (peak-aware, reusing the modality scorer), places each
 // on a discrete escalation rung, and combines them with the systemic couplers into:
 //
-//   systemic_index (0..100, escalation-ladder-aligned)   — the public headline
-//   L_sys          (systemic likelihood)                 — drives the secondary P
+//   L_sys          (systemic likelihood)                 — the continuous driver
+//   systemic_index (0..95, a CONTINUOUS rendering of L_sys via `index_from_l_sys`)
+//                                                         — the public headline
+//
+// The index used to be `(rung.level() + within_band)/6 × 100` — a six-step staircase
+// gated behind the escalation rung. Because the top rung's heat clamps at 1.0, that read
+// an identical 83.3 for Ukraine-2022, the present world, the live peg AND Cuba-1962 alike
+// (a 45-point spread in the underlying forecast, collapsed to one frozen number). It is
+// now the forecast itself on a 0..95 scale (see `index_from_l_sys`), so it discriminates
+// every world-state and moves with the news; the rung is shown alongside as the LABEL.
 //
 // The structural / guardrail component is still carried by the operator-tunable
 // regime multiplier (passed in) until settings migrate to explicit couplers.
@@ -25,7 +33,7 @@ use std::collections::HashMap;
 use crate::bayesian::{co_occurrence_boost, domain_weight, recency_weight, soft_elevation_weight, DomainScorer, DOMAIN_WEIGHTS};
 use crate::models::{
     DomainScore, EscalationRung, GeopoliticalEvent, SystemicCouplers, Theater, TheaterState,
-    ELEVATION_THRESHOLD,
+    ELEVATION_THRESHOLD, FORECAST_PROB_CEILING, HISTORICAL_ANCHOR,
 };
 
 // ── Tuning knobs (provisional — fitted in the Phase-3 backtest harness) ──────────
@@ -54,17 +62,13 @@ const HOT_RAMP: f64 = 0.06;
 const STABLE_HEAT_CEILING: f64 = 0.06;
 
 // ── Escalation-rung heat boundaries ──────────────────────────────────────────
-// The heat→rung band is partitioned by FOUR boundaries, shared as the single
-// source of truth by `rung_for` (which rung a heat lands in) and `within_band`
-// (where inside that rung's band it sits). Both functions MUST read the same
-// boundaries: the systemic index is `(rung.level() + within_band)/6`, so if the
-// two drifted, a heat just inside a rung could report a within-band fraction that
-// no longer matches its band — the index would jump discontinuously at the seam
-// (a heat one ulp either side of a boundary would read wildly different) and
-// silently lie about how far up the rung a theater is. The lower two boundaries
-// already carry semantic names (`STABLE_HEAT_CEILING` = Stable→Tension,
-// `HOT_HEAT` = Tension→Crisis); the upper two are named here so all four live in
-// exactly one place. Locked by `rung_for_and_within_band_share_one_contiguous_partition`.
+// The heat→rung band is partitioned by FOUR boundaries read by `rung_for` (which rung a
+// heat lands in). These set the discrete escalation-ladder LABEL for a theater (Tension /
+// Crisis / Limited War / Great-Power War). The lower two carry semantic names elsewhere
+// (`STABLE_HEAT_CEILING` = Stable→Tension, `HOT_HEAT` = Tension→Crisis); the upper two are
+// named here so all four live in exactly one place. (Until 2026-06-28 these also drove the
+// public index via a `within_band` fraction — a six-step staircase that pegged the headline;
+// the index is now continuous in L_sys via `index_from_l_sys`, and the rung is label-only.)
 /// Crisis → Limited-War heat boundary (sustained kinetic conflict).
 const LIMITED_WAR_HEAT: f64 = 0.38;
 /// Limited-War → Great-Power-War heat boundary (great-power forces directly engaged).
@@ -79,6 +83,16 @@ const GREAT_POWER_WAR_HEAT: f64 = 0.62;
 /// whether the apex configuration is live. Fitted against the Cuba band in
 /// backtest.rs — do not blind-tweak.
 pub const BRINK_NUCLEAR_THRESHOLD: f64 = 0.78;
+
+/// Nuclear-posture score at/above which the brink amplifier is at FULL strength (`brink = 1.0`,
+/// the Cuba-1962 head-to-head). Between `BRINK_NUCLEAR_THRESHOLD` and this, the amplifier ramps
+/// smoothly (`smoothstep`) instead of snapping from 0 to +70% at a single point — so rising
+/// nuclear danger, the most decision-relevant escalation, registers continuously rather than as
+/// an invisible cliff (added 2026-06-28 with the index de-saturation). Set to 0.95: Cuba's scored
+/// nuclear posture is ~0.953 (full apex, unchanged), and every calibration analog's brink-eligible
+/// theater scores ≤ 0.69 (below threshold → brink 0, unchanged), so the four bands are preserved
+/// exactly and the ramp only adds resolution in the (0.78, 0.95) zone no analog occupies.
+pub const BRINK_NUCLEAR_FULL: f64 = 0.95;
 
 /// Distinct great powers that must be directly entangled in ONE theater for a brink.
 pub const BRINK_MIN_GREAT_POWERS: usize = 2;
@@ -225,6 +239,33 @@ fn smoothstep(x: f64, lo: f64, hi: f64) -> f64 {
     if x >= hi { return 1.0; }
     let t = (x - lo) / (hi - lo);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// Logistic (sigmoid). Local copy so the systemic-index transform below is self-contained.
+fn logistic(x: f64) -> f64 { 1.0 / (1.0 + (-x).exp()) }
+
+/// Render the systemic likelihood `l_sys` as the public 0..`FORECAST_INDEX_CEILING` headline
+/// index — a CONTINUOUS Doomsday-Clock / DEFCON-style number, NOT a discrete rung plateau.
+///
+/// It is the forecast itself, on a friendly scale: the same flat-prior logistic the Bayesian
+/// engine applies to `l_sys` to produce P(WWIII), expressed as `index = P / FORECAST_PROB_CEILING
+/// × FORECAST_INDEX_CEILING`. Two consequences, both deliberate:
+///   • Monotone in `l_sys`, exactly like P — so the index can NEVER disagree with the headline
+///     probability about direction (they rise and fall together; single underlying driver).
+///   • It DISCRIMINATES every world-state. The retired `(rung.level() + within_band) / 6`
+///     staircase read an identical 83.3 for Ukraine-2022, the present world, the live peg AND
+///     Cuba-1962 — because the top rung's heat clamps at 1.0 and the 83.3→95 range was gated
+///     behind the news-keyword-only "Systemic" rung. This reads ~41 / ~63 / ~88 / ~84 for those.
+///
+/// Saturates at `FORECAST_INDEX_CEILING` (95, never 100): P is hard-clamped at
+/// `FORECAST_PROB_CEILING`, so the index clamps at 95 — a model-inferred forecast is "very high",
+/// never record-certain. Callers that already know P can equivalently scale it; this keeps the
+/// transform in one place so the index and P can't drift.
+pub fn index_from_l_sys(l_sys: f64) -> f64 {
+    let prior         = HISTORICAL_ANCHOR.clamp(1e-9, 0.5);
+    let prior_logodds = (prior / (1.0 - prior)).ln();
+    let p = logistic(prior_logodds + EVIDENCE_GAIN_SYS * l_sys).min(FORECAST_PROB_CEILING);
+    (p / FORECAST_PROB_CEILING * FORECAST_INDEX_CEILING).clamp(0.0, FORECAST_INDEX_CEILING)
 }
 
 fn max_weighted_sum() -> f64 {
@@ -419,7 +460,12 @@ pub struct TheaterOutput {
     pub couplers:      SystemicCouplers,
     /// Systemic likelihood fed into the log-odds risk computation.
     pub l_sys:         f64,
-    /// 0..100 escalation-ladder-aligned headline index.
+    /// The theater-layer headline index — a continuous rendering of `l_sys` via
+    /// [`index_from_l_sys`], BEFORE the Bayesian engine's regime-guardrail amplifier. Consumed by
+    /// the theater unit tests (which exercise the systemic layer in isolation). The AUTHORITATIVE
+    /// public index is recomputed in `BayesianRiskEngine::compute` from the final, guardrail-
+    /// amplified `l_sys`, so it matches P(WWIII) exactly — hence production reads that one, not this.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub systemic_index: f64,
     pub driver:        String,
     /// Lift magnitude of the dominant *acute* coupler named in `couplers.coupling_driver`
@@ -515,7 +561,14 @@ impl TheaterEngine {
                 let nb = b.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0);
                 na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
             });
-        let brink = if brink_theater.is_some() { 1.0 } else { 0.0 };
+        // Brink strength ramps smoothly from the threshold to full apex (`smoothstep`), so rising
+        // nuclear danger registers continuously instead of snapping 0 → +70% at a single point.
+        // `brink_theater` only exists at/above `BRINK_NUCLEAR_THRESHOLD` (the eligibility gate), so
+        // the ramp starts at 0 there and reaches 1.0 by `BRINK_NUCLEAR_FULL` (Cuba's posture).
+        let brink = brink_theater
+            .map(|t| smoothstep(t.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0),
+                                BRINK_NUCLEAR_THRESHOLD, BRINK_NUCLEAR_FULL))
+            .unwrap_or(0.0);
 
         // Multipliers. Coupling rewards great-power entanglement; concurrency rewards
         // multiple simultaneously-hot theaters with DIMINISHING returns; brink is the
@@ -536,13 +589,13 @@ impl TheaterEngine {
 
         let max_heat = top_heat;
         let l_sys = max_heat * brink_mult * coupling_multiplier * concurrency_mult;
-        let within = within_band(top_heat, max_rung);
-        // Forecast headline: saturate at 95, never 100 (see FORECAST_INDEX_CEILING). The
-        // raw escalation-ladder position can hit 100 at the Systemic rung, but that rung is
-        // news-inferred, not record-verified — so a forecast may read "very high" (95), never
-        // "certain" (100). The scale itself stays 0–100 so 100 remains the visible terminal state.
-        let systemic_index =
-            (100.0 * (max_rung.level() as f64 + within) / 6.0).clamp(0.0, FORECAST_INDEX_CEILING);
+        // Public headline index: a CONTINUOUS rendering of the systemic likelihood (see
+        // `index_from_l_sys`), so it discriminates every world-state and moves with the news
+        // instead of pegging at a rung plateau. `max_rung` is retained as the displayed LADDER
+        // LABEL only. This is the theater-layer view (pre guardrail amplifier); the Bayesian
+        // engine recomputes the authoritative public index from the final, guardrail-amplified
+        // l_sys so the index and P(WWIII) share one number. Saturates at 95, never 100.
+        let systemic_index = index_from_l_sys(l_sys);
 
         let hot_count = states.iter().filter(|s| s.heat >= HOT_HEAT).count();
         let driver = if top_heat < STABLE_HEAT_CEILING {
@@ -587,7 +640,7 @@ impl TheaterEngine {
         const RAIL_EPS: f64 = 1e-3;
         let breadth_saturated =
             hot_count >= 2
-            && brink == 0.0
+            && brink_theater.is_none()   // no nuclear brink live (ramped or not)
             && max_heat >= 1.0 - RAIL_EPS
             && gp_entanglement >= 1.0 - RAIL_EPS
             && alliance_activation >= 1.0 - RAIL_EPS;
@@ -788,19 +841,6 @@ impl TheaterEngine {
     }
 }
 
-/// Fractional position of `heat` within its rung's heat band → [0,1].
-fn within_band(heat: f64, rung: EscalationRung) -> f64 {
-    let (lo, hi) = match rung {
-        EscalationRung::Stable        => (0.0, STABLE_HEAT_CEILING),
-        EscalationRung::Tension       => (STABLE_HEAT_CEILING, HOT_HEAT),
-        EscalationRung::Crisis        => (HOT_HEAT, LIMITED_WAR_HEAT),
-        EscalationRung::LimitedWar    => (LIMITED_WAR_HEAT, GREAT_POWER_WAR_HEAT),
-        EscalationRung::GreatPowerWar => (GREAT_POWER_WAR_HEAT, 1.0),
-        EscalationRung::Systemic      => (1.0, 1.0),
-    };
-    if hi <= lo { return 1.0; }
-    ((heat - lo) / (hi - lo)).clamp(0.0, 1.0)
-}
 
 /// Tiny floor so float dust on an otherwise-uncoupled world doesn't name a phantom
 /// channel; well below the smallest real lift any coupler can produce when engaged.
@@ -1062,7 +1102,8 @@ mod tests {
         let out = te.compute(&[]);
         assert_eq!(out.theaters.len(), 5);
         assert!(out.theaters.iter().all(|s| s.rung == EscalationRung::Stable));
-        assert!(out.systemic_index < 1.0);
+        // l_sys = 0 → index is the baseline-prior floor on the 0..95 scale (~1.6), near zero.
+        assert!(out.systemic_index < 3.0, "empty window must read near zero, got {}", out.systemic_index);
         assert!(out.l_sys.abs() < 1e-9);
     }
 
@@ -1080,7 +1121,11 @@ mod tests {
         assert!(gulf.heat > 0.4, "gulf heat should be high, got {}", gulf.heat);
         assert!(gulf.rung.level() >= EscalationRung::LimitedWar.level(),
             "gulf should be at least Limited War, got {:?}", gulf.rung);
-        assert!(out.systemic_index > 50.0, "index should be high, got {}", out.systemic_index);
+        // The index now tracks the systemic likelihood, not the rung: a SINGLE theater with one
+        // great power and no nuclear brink is clearly elevated above the quiet baseline (~1.6) but
+        // is NOT a maxed multi-theater world — it reads well below the live peg, by design. The old
+        // staircase pegged any Limited-War+ theater at ≥66.7 regardless of coupling; this does not.
+        assert!(out.systemic_index > 12.0, "a hot theater must lift the index above baseline, got {}", out.systemic_index);
         assert!(out.driver.contains("Iran"));
     }
 
@@ -1384,50 +1429,36 @@ mod tests {
     }
 
     #[test]
-    fn rung_for_and_within_band_share_one_contiguous_partition() {
-        // PROVENANCE / HONESTY INVARIANT: `rung_for` (which rung a heat lands in) and
-        // `within_band` (its fractional position inside that rung) MUST read the same
-        // four heat boundaries. The systemic index is `(rung.level() + within)/6`, so the
-        // two functions agreeing is what keeps the index continuous across a rung seam —
-        // if they drifted (the bug this run closed: four bare-literal copies of the
-        // boundaries), `within_band` would compute the fraction against a band that no
-        // longer contains the heat, clamp it to 0/1, and the index would jump.
-
-        // Combined position the index uses, with no escalation overrides so rung_for is
-        // driven purely by heat.
-        let pos = |h: f64| -> f64 {
-            let r = rung_for(h, false, false, false);
-            r.level() as f64 + within_band(h, r)
-        };
-
-        // (1) Continuity + monotonicity in heat across every conventional rung seam.
-        // Contiguous bands make `pos` continuous: just below a boundary the lower rung is
-        // at the TOP of its band (within→1), AT the boundary the next rung starts at the
-        // BOTTOM (within=0), so level jumps +1 while within drops ~1 — net continuous.
-        // A drift between the two functions would make `pos` jump or run backwards here.
-        let mut prev = pos(0.0);
+    fn rung_boundaries_form_one_contiguous_monotone_partition() {
+        // PROVENANCE INVARIANT: the four heat boundaries `rung_for` reads must form a single
+        // contiguous, strictly-ordered partition of [0,1] — so the escalation-ladder LABEL a
+        // theater shows rises monotonically with heat and each boundary separates exactly two
+        // adjacent rungs (no gap, no overlap, no out-of-order copy). (Before 2026-06-28 these
+        // boundaries also drove the public index via a `within_band` fraction; the index is now
+        // continuous in L_sys — `index_from_l_sys` — so this locks only the rung labelling.)
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(STABLE_HEAT_CEILING < HOT_HEAT
+                && HOT_HEAT < LIMITED_WAR_HEAT
+                && LIMITED_WAR_HEAT < GREAT_POWER_WAR_HEAT && GREAT_POWER_WAR_HEAT < 1.0,
+                "rung boundaries must be strictly ordered within (0,1)");
+        }
+        // The rung level is monotone non-decreasing in heat across the whole range.
+        let mut prev = rung_for(0.0, false, false, false).level();
         let mut h = 0.0;
-        while h <= GREAT_POWER_WAR_HEAT {
-            let cur = pos(h);
-            assert!(cur >= prev - 1e-9, "index position ran backwards at heat {h}: {prev} -> {cur}");
-            assert!((cur - prev).abs() < 0.05,
-                "index position jumped at heat {h}: {prev} -> {cur} — rung_for/within_band boundaries drifted");
+        while h <= 1.0 {
+            let cur = rung_for(h, false, false, false).level();
+            assert!(cur >= prev, "rung label ran backwards at heat {h}: {prev} -> {cur}");
             prev = cur;
             h += 0.0005;
         }
-
-        // (2) Each boundary is exactly a shared constant separating adjacent rungs: AT the
-        // boundary the heat sits at the bottom of the upper band (within == 0), and one ulp
-        // below it sits near the top of the lower band (within ≈ 1).
+        // Each boundary separates two adjacent rungs: at the boundary the upper rung starts,
+        // one ulp below it the lower rung still holds.
         for b in [STABLE_HEAT_CEILING, HOT_HEAT, LIMITED_WAR_HEAT, GREAT_POWER_WAR_HEAT] {
             let r_at = rung_for(b, false, false, false);
             let r_below = rung_for(b - 1e-6, false, false, false);
             assert_eq!(r_at.level(), r_below.level() + 1,
                 "boundary {b} must separate two adjacent rungs");
-            assert_eq!(within_band(b, r_at), 0.0,
-                "heat exactly at boundary {b} must sit at the BOTTOM of its band");
-            assert!(within_band(b - 1e-6, r_below) > 0.99,
-                "heat just below boundary {b} must sit near the TOP of the lower band");
         }
     }
 
@@ -1526,15 +1557,18 @@ mod tests {
             "precondition: nuclear posture must clear the 0.78 brink threshold, got {:?}",
             nuc.modality_scores.get("nuclear_posture"));
 
-        // The two worlds differ ONLY by the brink, so the l_sys ratio is brink_mult
-        // (1 + 0.70 = 1.70). Under the old hottest-only logic both would read brink=0
-        // and the ratio would be 1.0 — so this assertion fails on the bug and passes
-        // on the fix.
+        // The two worlds differ ONLY by the brink, so the l_sys ratio IS brink_mult
+        // (1 + 0.70 × brink). Under the old hottest-only logic both would read brink=0 and the
+        // ratio would be 1.0 — so a ratio well above 1.0 fails on the bug and passes on the fix.
+        // The brink amplifier now RAMPS smoothstep(0.78 → 0.95): this nuclear-only cooler theater
+        // scores ~0.88 posture (mid-ramp), so it earns a strong but PARTIAL brink (ratio ~1.5,
+        // not the full 1.70 that a Cuba-strength ~0.95 posture would give). The non-hottest brink
+        // is detected — that is what this locks; the magnitude scaling with posture is the ramp.
         assert!(o_control.l_sys > 0.0 && o_brink.l_sys > 0.0);
         let ratio = o_brink.l_sys / o_control.l_sys;
-        assert!((1.6..=1.8).contains(&ratio),
-            "brink in a non-hottest theater should raise l_sys by ~1.70×, got ratio {ratio} \
-             (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
+        assert!((1.40..=1.71).contains(&ratio),
+            "brink in a non-hottest theater must clearly raise l_sys (≫1.0, ≤ full 1.70×), got ratio \
+             {ratio} (brink l_sys={}, control l_sys={})", o_brink.l_sys, o_control.l_sys);
     }
 
     #[test]
@@ -1995,32 +2029,32 @@ mod tests {
         // cool-off path.)
         let mut te = TheaterEngine::new();
         let o_hot = te.compute(&strong_theater("us_iran", &["united_states", "iran"], true));
-        assert!(o_hot.systemic_index > 50.0,
-            "precondition: hot world index should be high, got {}", o_hot.systemic_index);
+        assert!(o_hot.systemic_index > 12.0,
+            "precondition: hot world index should be clearly elevated, got {}", o_hot.systemic_index);
         let o_calm = te.compute(&[]);
         assert!(o_calm.systemic_index < o_hot.systemic_index,
             "de-escalation must lower the index: {} -> {}", o_hot.systemic_index, o_calm.systemic_index);
-        assert!(o_calm.systemic_index < 1.0, "a quiet world must read near zero, got {}", o_calm.systemic_index);
+        assert!(o_calm.systemic_index < 3.0, "a quiet world must read near zero, got {}", o_calm.systemic_index);
         assert!(o_calm.l_sys < o_hot.l_sys, "de-escalation must lower l_sys");
     }
 
     #[test]
-    fn systemic_rung_pegs_index_at_forecast_ceiling_not_100() {
-        // The apex (nuclear-use) Systemic rung sits at the top of the 0..100 ladder
-        // (level 5, full within-band → raw 100), but a model-INFERRED forecast must read
-        // "very high" (95), never "certain" (100). This locks the FORECAST_INDEX_CEILING
-        // clamp to the actual apex output, so a future change to the index formula can't
-        // silently let the headline print 100 on a news-inferred detonation.
-        let mut te = TheaterEngine::new();
-        let mut e = ev("us_iran", "nuclear_posture", 1.0, 1.0, &["united_states", "russia"], true);
-        e.title = "Nuclear detonation confirmed over military target".into();
-        e.nuclear_indicator = true;
-        let out = te.compute(&[e]);
-        let g = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
-        assert_eq!(g.rung, EscalationRung::Systemic);
-        assert_eq!(out.systemic_index, FORECAST_INDEX_CEILING,
-            "apex Systemic rung must peg the index at the forecast ceiling (95), got {}",
-            out.systemic_index);
-        assert!(out.systemic_index < 100.0, "a forecast must never print certainty (100)");
+    fn index_saturates_at_forecast_ceiling_never_100() {
+        // The index is the forecast on a 0..FORECAST_INDEX_CEILING scale (`index_from_l_sys` =
+        // P / FORECAST_PROB_CEILING × FORECAST_INDEX_CEILING). A model-INFERRED forecast must read
+        // "very high" (95), never "certain" (100): P is hard-clamped at FORECAST_PROB_CEILING
+        // (0.90), so the index clamps at 95 and never prints 100. Unlike the retired rung
+        // staircase — which pegged the index at 95 for ANY Systemic-rung theater (a single
+        // news-inferred detonation auto-maxed the global headline) — reaching 95 now REQUIRES the
+        // systemic likelihood to genuinely saturate P. That is the honest behaviour: a keyword
+        // does not max the world; a maxed systemic likelihood does.
+        assert_eq!(index_from_l_sys(100.0), FORECAST_INDEX_CEILING,
+            "a saturating likelihood must peg the index at the ceiling (95)");
+        assert!(index_from_l_sys(100.0) < 100.0, "a forecast must never print certainty (100)");
+        // Continuous and strictly monotone below the rail — it discriminates, never a flat plateau.
+        assert!(index_from_l_sys(2.4) > index_from_l_sys(1.9),
+            "index must keep climbing with l_sys near the top (no plateau)");
+        assert!(index_from_l_sys(1.9) > index_from_l_sys(1.5));
+        assert!(index_from_l_sys(0.13) < 5.0, "a near-baseline l_sys reads near zero");
     }
 }
