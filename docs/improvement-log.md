@@ -22,6 +22,37 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-28 — NO-OP (structured) — §6 "wire a source into the read" is blocked on a Robert-gated calibration decision, not on code
+- Item (named T1): roadmap **6.1** markets/yahoo → `economic_warfare` (the catalogued "anti-nit" T1 lever).
+- What I verified this run (so future runs don't re-derive it): the four items the routine prompt flags as
+  cloud-provable are all already DONE — **4.2** unwrap/expect audit (src/ prod paths clean, audited 2026-06-18),
+  **4.5** vendor drift policy (DONE 2026-06-15), **2.1** small/short-viewport (DONE 2026-06-15), and the two
+  `osint.rs` clippy nits (already fixed: line 74 is now a `LastGoodBatches` type alias, line 181 uses
+  `unwrap_or`; `cargo clippy --release` is clean). The de-escalation gate (`theater_is_deescalating`) and the
+  first-tick-delta path are correct — no honesty bug found.
+- The real blocker (recorded in roadmap §6 header): in v2 the headline P is driven ONLY by `theater.rs::compute`,
+  which drops theater-less events; `weighted_domain_sum` (the global modality sum) is display-only and does not
+  enter `p_wwiii_annual`. Markets/CISA-KEV/OFAC are GLOBAL (no theater), so wiring them as a `domain_signal`
+  moves nothing real. The two honest ways to move the read — attribute the global signal to a theater (feedback
+  double-count risk) or add a new bounded GLOBAL `l_sys` amplifier mirroring `guardrail_collapse` — both turn on
+  a value-laden magnitude ("how much should a market panic raise the war probability?"), which is the same class
+  as the Robert-gated de-saturation peg. Introducing it unattended would violate pillar-1 HONESTY.
+- Why not ship the sandbox-doable alternative: the only in-sandbox-provable variant is a DISPLAY-only market
+  cross-check (or an escalation-momentum readout). The cap is at the rail — `display_only_in_last_7=2` per the
+  2026-06-27 entry — so a 3rd display-only run is an automatic FAIL. Forcing it would also be a marginal change
+  against pillar-1, which the scorecard ranks below an honest no-op.
+- Next shippable step: propose the `MARKET_STRESS_AMPLIFIER` design (const + a broad-severe gate over the
+  existing `ee_correlate::finance` composite, reusing `osint::finance_payload`'s proven prod path, gated on
+  `l_sys > COUPLING_AMPLIFIER_FLOOR`) to Robert. On approval it ships as a clean STAGED T1 (amplifier + gate +
+  fixture test + `#[ignore]`d live probe), anchor-safe because the backtests carry no market events.
+- Tier: n/a · Touched: noop · Lock-fails-without-change: n/a (no code change; docs only) · Counts: no frontier
+  metric moved — structured no-op recording a Robert-gated blocker · consecutive_display_only=0 ·
+  display_only_in_last_7=2 · consecutive_noop=1 (none in the prior 3 runs — within the ≤1-of-3 cap)
+- Notes future runs MUST respect: do NOT chase 6.1–6.5 as a sandbox source-wire — `weighted_domain_sum` is a
+  vestigial display field and wiring a global `domain_signal` will look green while moving nothing. The lever is
+  the Robert-gated `l_sys` amplifier above. Do NOT manufacture a display-only commit to avoid this no-op — the
+  trailing-7 cap is at 2.
+
 ## 2026-06-27 — honesty — first-tick delta no longer differences the cold-start seed (kills a phantom "▲ +N% last snap" on restart)
 - Item: roadmap 1.5 (now checked).
 - Defect: `BayesianRiskEngine::compute` Step 8 set `delta_annual = p_annual − prev_annual` and
