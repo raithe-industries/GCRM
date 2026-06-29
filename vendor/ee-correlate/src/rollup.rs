@@ -171,9 +171,14 @@ fn build_rollup(region: String, members: &[&Event], params: &RollupParams) -> Re
     } else {
         1.0
     };
-    let score = params.peak_weight * peak_severity
+    // Clamp to [0,1] for parity with the sibling cii/finance composites: all three terms
+    // are in [0,1], so with weights summing to 1 the score already is — but a future
+    // RollupParams re-weighting must not be able to silently push a region "score" out of
+    // range and skew downstream binning. (audit ee_correlate-4)
+    let score = (params.peak_weight * peak_severity
         + params.mean_weight * mean_severity
-        + params.volume_weight * volume;
+        + params.volume_weight * volume)
+        .clamp(0.0, 1.0);
 
     RegionRollup {
         region,
