@@ -95,4 +95,10 @@ opt-level     = 3
 lto           = true      # link-time optimisation — smaller, faster binary
 codegen-units = 1         # maximise optimisation (slower compile, faster runtime)
 strip         = true      # strip debug symbols from release binary
-panic         = "abort"   # no unwinding overhead in release
+# panic = unwind (the default), NOT abort. This is an always-on public monitor ingesting
+# provider-controlled feeds: with abort, a single panicking parse in any one feed task
+# kills the WHOLE process (and makes the per-task catch_unwind supervision in main()
+# ineffective). Unwind isolates a panic to its own task so one bad feed degrades that
+# feed, not the dashboard. The unwinding-overhead cost is negligible vs that blast radius.
+# (audit ee_core_cargo-3 / xcut_net-4)
+panic         = "unwind"

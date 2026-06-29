@@ -560,18 +560,32 @@ impl Ingestor {
                     continue;
                 }
 
-                handles.push(tokio::spawn(async move {
+                // Carry the source id with the handle so a task PANIC (not just a fetch
+                // error) can be attributed and health-recorded below. (audit xcut_net-6)
+                handles.push((source, tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
                     ingestor.fetch_rss_feed(&client, url, source, tier).await
-                }));
+                })));
             }
 
             let mut total       = 0usize;
             let mut sources_hit = 0usize;
-            for h in handles {
-                if let Ok((count, hit)) = h.await.unwrap_or(Ok((0, false))) {
-                    total       += count;
-                    if hit { sources_hit += 1; }
+            for (source, h) in handles {
+                match h.await {
+                    Ok(Ok((count, hit))) => {
+                        total += count;
+                        if hit { sources_hit += 1; }
+                    }
+                    // fetch_rss_feed already recorded the failure for a transport/parse error.
+                    Ok(Err(())) => {}
+                    // The per-feed task itself panicked (e.g. a parser panic on malformed
+                    // provider input). Record a health failure so should_attempt demotes it
+                    // like a network failure instead of it vanishing silently — and the
+                    // watchdog can see it. (audit xcut_net-6)
+                    Err(join_err) => {
+                        ingestor.health.lock().await.record_failure(source);
+                        warn!("RSS {source}: task panicked: {join_err}");
+                    }
                 }
             }
 
