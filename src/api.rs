@@ -311,7 +311,9 @@ pub async fn toggle_regime(
                 "active":  new_state,
                 "product": product,
             });
-            let _ = write_operator_log(&state, entry.clone()).await;
+            if let Err(e) = write_operator_log(&state, entry.clone()).await {
+                tracing::error!("operator audit-log write failed (override provenance lost): {e}");
+            }
             Json(json!({
                 "id":       id,
                 "active":   new_state,
@@ -377,7 +379,9 @@ pub async fn set_regime_multiplier(
             });
             let summary = regime_summary(&factors);
             drop(factors);
-            let _ = write_operator_log(&state, entry).await;
+            if let Err(e) = write_operator_log(&state, entry).await {
+                tracing::error!("operator audit-log write failed (override provenance lost): {e}");
+            }
             Json(json!({
                 "id":         id,
                 "multiplier": new_val,

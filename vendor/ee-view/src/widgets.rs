@@ -279,9 +279,12 @@ pub struct Gauge {
 /// Build a gauge: a composite "how hot is this stream" needle.
 ///
 /// `value = 0.7·peak + 0.3·(1 − e^(−count/scale))` with `scale = 10` — a loud single
-/// signal dominates, while sheer volume nudges the needle up and saturates. Matches
-/// the project's `[0,1]` severity convention and the `ee-correlate` rollup weighting,
-/// so the gauge agrees with the regional panels. Empty input reads 0.0 (Low).
+/// signal dominates, while sheer volume nudges the needle up and saturates. This is a
+/// STANDALONE peak+volume display heuristic on the project's `[0,1]` severity scale; it does
+/// NOT reproduce the `ee-correlate` rollup score, which is a three-term
+/// `peak_weight·peak + mean_weight·mean + volume_weight·volume` (the mean-severity term has no
+/// analogue here), so the gauge and the regional rollup panels can read differently by design.
+/// Empty input reads 0.0 (Low). (audit ee_view-1)
 pub fn gauge(label: impl Into<String>, events: &[Event]) -> Gauge {
     const VOLUME_SCALE: f64 = 10.0;
     let peak = events
