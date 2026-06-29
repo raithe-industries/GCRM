@@ -721,8 +721,15 @@ function drawDial(g,pct,ticks){
   const a=Math.PI+pct*Math.PI;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+(r-13*s)*Math.cos(a),cy+(r-13*s)*Math.sin(a));g.strokeStyle='#fff';g.lineWidth=2*s;g.stroke();
   g.beginPath();g.arc(cx,cy,4*s,0,2*Math.PI);g.fillStyle='#fff';g.fill();
 }
-let lastHero=0;
-function animateHero(t){lastHero+=(t-lastHero)*0.12;drawDial(GC,lastHero,P_TICKS);if(Math.abs(t-lastHero)>0.0005)requestAnimationFrame(()=>animateHero(t));}
+let lastHero=0,_heroTarget=0,_heroRAF=null;
+// Single-instance animator. The old version captured its target `t` per call but eased the
+// SHARED lastHero, so two snapshots with different targets reached an equilibrium where
+// |t-lastHero| stayed > 0.0005 for BOTH chains and neither ever terminated — every changed
+// P spawned a permanent rAF loop (drawDial every frame), accumulating thousands over a long
+// session. Now one loop eases toward the module-level _heroTarget and converges against IT;
+// new targets just update _heroTarget, never spawn a second loop. (audit dashboard-1)
+function _heroStep(){lastHero+=(_heroTarget-lastHero)*0.12;if(Math.abs(_heroTarget-lastHero)>0.0005){drawDial(GC,lastHero,P_TICKS);_heroRAF=requestAnimationFrame(_heroStep);}else{lastHero=_heroTarget;drawDial(GC,lastHero,P_TICKS);_heroRAF=null;}}
+function animateHero(t){_heroTarget=t;if(_heroRAF===null)_heroRAF=requestAnimationFrame(_heroStep);}
 drawDial(GC,0,P_TICKS);
 // Redraw on resize so dpr/size changes stay crisp.
 addEventListener('resize',()=>{drawDial(GC,lastHero,P_TICKS);});
@@ -916,7 +923,7 @@ function setAgeFilter(min,max,btn){_artAgeMin=min;_artAgeMax=max;document.queryS
 // (Z UTC), pulled at W ET". Source feeds deliver UTC-normalised timestamps
 // (feed-rs converts on parse), so UTC is the honest universal reference.
 function fmtArticleDate(isoStr,ingestedIso){
-  try{if(!isoStr)return'<span style="color:#404060">— no date —</span>';const pub=new Date(isoStr);if(isNaN(pub.getTime()))return`<span style="color:#404060">${isoStr}</span>`;
+  try{if(!isoStr)return'<span style="color:#404060">— no date —</span>';const pub=new Date(isoStr);if(isNaN(pub.getTime()))return`<span style="color:#404060">${esc(isoStr)}</span>`;/* esc: isoStr is feed-controlled (audit dashboard-4) */
   const now=Date.now();const ageMs=now-pub.getTime();const ageH=ageMs/3600000;
   const isFuture=ageMs<-120000;
   const torontoTime=pub.toLocaleTimeString('en-US',{timeZone:'America/Toronto',hour:'numeric',minute:'2-digit',hour12:true});
@@ -931,8 +938,8 @@ function fmtArticleDate(isoStr,ingestedIso){
   let relAge;if(ageH<1){const m=Math.floor(ageMs/60000);relAge=m<=1?'just now':m+'m ago';}else if(ageH<24){const h=Math.floor(ageH),m=Math.floor((ageH-h)*60);relAge=m>0?h+'h '+m+'m ago':h+'h ago';}else if(ageH<168){relAge=Math.floor(ageH/24)+'d '+Math.floor(ageH%24)+'h ago';}else{relAge=Math.floor(ageH/24)+'d ago';}
   let badge='';if(ageH>168)badge='<span style="font-size:7px;padding:1px 4px;background:#200800;color:#c05818;border-radius:2px;margin-left:4px">'+Math.floor(ageH/24)+'d OLD</span>';else if(ageH>24)badge='<span style="font-size:7px;padding:1px 4px;background:#141400;color:#7a7a20;border-radius:2px;margin-left:4px">'+Math.floor(ageH)+'h OLD</span>';
   return'<span style="display:block;font-family:monospace;color:#9090c0">'+torontoFull+'<span style="color:#505070;font-family:inherit"> · '+relAge+'</span>'+badge+'</span>'+subLine;
-  }catch(err){return'<span style="color:#404060">'+(isoStr||'unknown date')+'</span>';}}
-function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const RENDER_CAP=400;const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=(filtered.length>RENDER_CAP?(RENDER_CAP+' of '+filtered.length):filtered.length)+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.slice(0,RENDER_CAP).map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+a.source+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
+  }catch(err){return'<span style="color:#404060">'+esc(isoStr||'unknown date')+'</span>';}}
+function renderArticles(arts,total){const el=document.getElementById('panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const RENDER_CAP=400;const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=(filtered.length>RENDER_CAP?(RENDER_CAP+' of '+filtered.length):filtered.length)+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.slice(0,RENDER_CAP).map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+esc(a.source)+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
 // Keep the visible filter label + domain-card highlight in sync with the active
 // domain filter so the audit path is discoverable (a domain card click filters
 // the feed to the articles feeding that score).
@@ -949,7 +956,7 @@ async function fetchArticles(){try{let url=BASE_PATH+'/api/articles?limit=6000'+
   _artCache.sort((x,y)=>new Date(y.published_at)-new Date(x.published_at));
   if(_artCache.length>8000)_artCache.length=8000;
   _artTotal=d.total;renderArticles(_artCache,_artTotal);}catch(e){console.warn('fetchArticles error',e);}}
-async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];el.innerHTML='<div style="padding:5px 10px;font-size:9px;color:var(--t3);border-bottom:0.5px solid var(--border);text-align:center;letter-spacing:.04em">'+configured.length+' curated intelligence sources</div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.source+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.url.replace('https://','').slice(0,42)+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
+async function fetchSources(){try{const r=await fetch(BASE_PATH+'/api/sources');if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();const el=document.getElementById('panel-sources');if(!el)return;const active=d.active_sources||{};const configured=d.configured_sources||[];el.innerHTML='<div style="padding:5px 10px;font-size:9px;color:var(--t3);border-bottom:0.5px solid var(--border);text-align:center;letter-spacing:.04em">'+configured.length+' curated intelligence sources</div>'+configured.map(s=>{const cnt=active[s.source]||0;const barW=Math.min(100,cnt/10*100);const barCol=cnt>100?'var(--green)':cnt>0?'var(--amber)':'#2a2a3a';const tierCol=s.tier===1?'var(--green)':'var(--t4)';return'<div class="src-item" style="'+(cnt===0?'opacity:0.45':'')+'"><div style="flex:1;min-width:0"><div class="src-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(s.source)+'</div><div style="font-size:7px;color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(s.url.replace('https://','').slice(0,42))+'</div><div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;width:80px;overflow:hidden"><div style="height:100%;width:'+barW+'%;background:'+barCol+';border-radius:1px;transition:width .4s"></div></div></div><div style="text-align:right;flex-shrink:0;margin-left:6px"><span class="src-tier" style="font-size:7px;padding:1px 4px;border-radius:2px;background:'+(s.tier===1?'#0a1a0a':'#101018')+';color:'+tierCol+'">'+(s.tier===1?'T1':'T2')+'</span><div class="src-count" style="margin-top:2px">'+cnt+' art</div></div></div>'}).join('');}catch(e){const el=document.getElementById('panel-sources');if(el)el.innerHTML='<div style="padding:8px 10px;font-size:9px;color:var(--red)">Sources fetch failed: '+e.message+'</div>';}}
 const logLines=[];
 function addLog(msg,color='var(--t4)'){logLines.unshift('<span style="color:'+color+'">'+toETShort(new Date())+' '+msg+'</span>');if(logLines.length>500)logLines.pop();if(currentTab==='log'){const el=document.getElementById('log-body');el.innerHTML=logLines.slice(0,200).join('<br>');}}
 let prevAnnual=null;
@@ -965,7 +972,13 @@ function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=
 // backfill reads honestly as "calibrating", not as signal. Recomputed every refresh so
 // it stays anchored as history scrolls; only drawn when the ramp is genuinely early —
 // a late out-of-band move is a real swing, not warm-up, and is left unshaded.
-function refreshCalibrationOverlay(){
+let _calibTick=0;const CALIB_EVERY=15;
+function refreshCalibrationOverlay(force){
+  // Throttled on the per-second append path: the warm-up settle point is slowly-varying, so
+  // this O(n) scan over the whole timeline (up to MAX_TL_POINTS) need NOT run every 1s — it
+  // recomputes every CALIB_EVERY appends and keeps the cached $calibEnd between, while a
+  // timeline RELOAD passes force=true for an immediate recompute. (audit dashboard-2)
+  if(!force && (_calibTick++ % CALIB_EVERY)!==0) return;
   const arr=tlChart.data.datasets[0].data,n=arr.length;
   if(n<24){tlChart.$calibEnd=null;return;}
   const tail=arr.slice(n-Math.max(8,Math.round(n*0.2))).slice().sort((a,b)=>a-b);
@@ -1247,7 +1260,7 @@ function applyTimeline(entries){
   spikes.length=0;prevAnnual=null;{const _sl=document.getElementById('spike-label');if(_sl)_sl.textContent='';}
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
-  const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay();tlChart.update('none');
+  const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay(true);tlChart.update('none');
   if(entries.length>0){let mx=-Infinity,mn=Infinity;for(let i=0;i<entries.length;i++){const v=entries[i].p_annual;if(v>mx)mx=v;if(v<mn)mn=v;}sessionPeak=mx;sessionLow=mn;}
   // Seed the trailing-6h buffer from durable backend history so the 6h Trend is
   // populated immediately on load. Without this the buffer starts empty every
@@ -1262,7 +1275,7 @@ function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.c
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
   ws.onopen=()=>setLive(true);
-  ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());for(let k=spikes.length-1;k>=0;k--)if(--spikes[k].idx<0)spikes.splice(k,1);}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
+  ws.onmessage=e=>{try{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());for(let k=spikes.length-1;k>=0;k--)if(--spikes[k].idx<0)spikes.splice(k,1);}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
     // fetch every ~9s and the age brackets would lose all their history.
@@ -1273,7 +1286,7 @@ function connect(){
     _artTotal=msg.total;
     if(currentTab==='articles')renderArticles(_artCache,_artTotal);
     updateTicker(_artCache.slice(0,40));
-  }};
+  }}catch(err){console.warn('ws onmessage error',err);addLog('WS message dropped: '+(err&&err.message||err),'#E24B4A');}}; /* a malformed/partial snapshot must not kill the socket handler or freeze later message types (audit dashboard-6) */
   ws.onclose=()=>{setLive(false);addLog('WebSocket disconnected — reconnecting...','#c0392b');setTimeout(connect,4000)};
   ws.onerror=()=>ws.close();
 }
@@ -1466,7 +1479,7 @@ async function fetchOpLog(){
 let _map=null,_mapMode='3d',_layerMeta=[],_mapBooted=false,_hovering=false,_spinWired=false;
 const SECONDS_PER_REV=150; // ~2.5 min per rotation — a calm, eternal spin through space
 function emptyFC(){return {type:'FeatureCollection',features:[]};}
-function esc(s){return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function esc(s){return String(s==null?'':s).replace(/[<>&"'`]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));} /* escape quotes too: feed data flows into HTML ATTRIBUTES (href, style), not just text, so a feed-supplied value with a quote could break out and inject an event handler (audit dashboard-3/4/5) */
 
 async function bootMap(){
   if(typeof maplibregl==='undefined'){return;}
@@ -1557,7 +1570,7 @@ const KIND_LABEL={earthquake:'Earthquake',wildfire:'Wildfire / thermal',volcano:
 const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan',cwfis_activefires:'CWFIS Active Fires · NRCan',eccc_alerts:'Environment Canada',eccc_aqhi:'ECCC Air Quality',eccc_marine:'ECCC Marine',nws:'US NWS',gdacs:'GDACS',eonet:'NASA EONET',opensky:'OpenSky',emsc:'EMSC',gvp_volcano:'Smithsonian GVP',healthmap:'HealthMap',firms:'NASA FIRMS',acled:'ACLED',ontario511:'Ontario 511',drivebc:'DriveBC',alberta511:'Alberta 511',quebec511:'Transports Québec',cbsa_bwt:'CBSA Border Wait',navcanada:'NAV CANADA',digitraffic_ais:'Fintraffic AIS',ucdp_ged:'UCDP · Uppsala',acled_aggregated:'ACLED Aggregated',nhc:'NOAA NHC',jma_typhoon:'JMA · RSMC Tokyo',geonet_volcano:'GeoNet · GNS Science',usgs_volcano:'USGS Volcano Hazards',magma_volcano:'PVMBG · MAGMA Indonesia',nwps_flood:'NOAA NWPS',avalanche_ca:'Avalanche Canada',awc_sigmet:'NOAA AWC SIGMET'};
 function kindColor(kind){const l=_layerMeta.find(x=>x.kind===kind);return (l&&l.color)||'#9bb';}
 function relTime(iso){const t=Date.parse(iso);if(!isFinite(t))return'';let s=(Date.now()-t)/1000;if(s<0)s=0;if(s<60)return'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';}
-function safeUrl(u){return (typeof u==='string'&&/^https?:\/\//i.test(u))?u:'';}
+function safeUrl(u){if(typeof u!=='string')return'';if(/[\s"'<>`]/.test(u))return'';try{const p=new URL(u);return(p.protocol==='http:'||p.protocol==='https:')?u:'';}catch(_){return'';}} /* validate via URL() + reject any whitespace/quote/angle char so a feed url can't break out of href="" (audit dashboard-3) */
 // Layers with no live geocoded feed yet — rendered with a muted "—" + tooltip so the
 // panel reads as intentional (awaiting a key/feed) instead of broken at "0".
 const LAYER_HINTS={aircraft:'Live once an OpenSky account is configured (OPENSKY_USERNAME / OPENSKY_PASSWORD)',
