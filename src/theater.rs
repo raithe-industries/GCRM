@@ -317,7 +317,7 @@ fn theater_is_deescalating(tev: &[GeopoliticalEvent]) -> bool {
 }
 
 /// Map a theater's heat (+ overrides) to a discrete escalation rung.
-fn rung_for(heat: f64, gp_involved: bool, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
+fn rung_for(heat: f64, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
     let mut r = if heat < STABLE_HEAT_CEILING {
         EscalationRung::Stable
     } else if heat < HOT_HEAT {
@@ -333,10 +333,17 @@ fn rung_for(heat: f64, gp_involved: bool, wmd_used: bool, nuclear_used: bool) ->
     if wmd_used && r.level() < EscalationRung::LimitedWar.level() {
         r = EscalationRung::LimitedWar;
     }
-    // A great power directly in a war makes it Great-Power War.
-    if gp_involved && r.level() >= EscalationRung::LimitedWar.level() {
-        r = EscalationRung::GreatPowerWar;
-    }
+    // The rung tracks INTENSITY only. The old "a great power is tagged → force Great-Power War"
+    // promotion conflated WHO is involved with HOW intense the fight is: a moderate-tension
+    // great-power dyad (Korea at heat 0.512 = Limited War) was labeled identically to NATO–Russia
+    // at heat 1.0, so the board could not tell a great-power WAR from elevated great-power TENSION
+    // — five dyads all printed "Great-Power War" regardless of intensity, which reads as a
+    // categorically false picture. Great-power involvement is a SEPARATE dimension, carried on
+    // TheaterState.gp_involved (the I&W board reads it) and on the gp_entanglement coupler that
+    // actually feeds P — so it is no longer folded into the intensity rung. Now "Great-Power War"
+    // is reserved for theaters whose HEAT earns it (≥ GREAT_POWER_WAR_HEAT). Label-only change; the
+    // rung never feeds l_sys/P (since the 2026-06-28 de-saturation). (realism #1)
+    //
     // Confirmed nuclear use is the systemic rung (kept strict so it ~never fires
     // on conventional crises — no weapon has been used).
     if nuclear_used {
@@ -763,12 +770,12 @@ impl TheaterEngine {
         let alliance_invoked = tev.iter().any(|e| e.alliance_indicator);
         let wmd_used         = tev.iter().any(|e| e.wmd_indicator && e.severity > 0.6);
         let nuclear_used     = nuclear_use_in(tev);
-        let rung = rung_for(heat, gp_involved, wmd_used, nuclear_used);
+        let rung = rung_for(heat, wmd_used, nuclear_used);
         // The rung the FRESH evidence alone supports (fast_heat, not the held floor). When the
         // floor is holding the read up (`held_by_floor`), this is ≤ the displayed rung and shows
         // the operator how far the live read has decayed below the remembered war-state. Equal to
         // `rung` whenever the floor is not lifting the displayed heat. Honest by construction.
-        let fresh_rung = rung_for(fast_heat, gp_involved, wmd_used, nuclear_used);
+        let fresh_rung = rung_for(fast_heat, wmd_used, nuclear_used);
 
         let delta = heat - prev;
         let trend = if delta > 0.005 { "rising" } else if delta < -0.005 { "falling" } else { "stable" };
@@ -1576,10 +1583,10 @@ mod tests {
                 "rung boundaries must be strictly ordered within (0,1)");
         }
         // The rung level is monotone non-decreasing in heat across the whole range.
-        let mut prev = rung_for(0.0, false, false, false).level();
+        let mut prev = rung_for(0.0, false, false).level();
         let mut h = 0.0;
         while h <= 1.0 {
-            let cur = rung_for(h, false, false, false).level();
+            let cur = rung_for(h, false, false).level();
             assert!(cur >= prev, "rung label ran backwards at heat {h}: {prev} -> {cur}");
             prev = cur;
             h += 0.0005;
@@ -1587,11 +1594,28 @@ mod tests {
         // Each boundary separates two adjacent rungs: at the boundary the upper rung starts,
         // one ulp below it the lower rung still holds.
         for b in [STABLE_HEAT_CEILING, HOT_HEAT, LIMITED_WAR_HEAT, GREAT_POWER_WAR_HEAT] {
-            let r_at = rung_for(b, false, false, false);
-            let r_below = rung_for(b - 1e-6, false, false, false);
+            let r_at = rung_for(b, false, false);
+            let r_below = rung_for(b - 1e-6, false, false);
             assert_eq!(r_at.level(), r_below.level() + 1,
                 "boundary {b} must separate two adjacent rungs");
         }
+    }
+
+    #[test]
+    fn rung_tracks_intensity_not_great_power_involvement() {
+        // Realism fix: the rung is a pure INTENSITY ladder. A great-power dyad at limited-war
+        // heat (e.g. Korea ~0.512) must read "Limited War", NOT "Great-Power War" — the latter
+        // is reserved for heat that earns it (>= GREAT_POWER_WAR_HEAT). Great-power involvement
+        // is carried separately on TheaterState.gp_involved + the gp_entanglement coupler, and
+        // is no longer a parameter of rung_for, so it cannot force-promote the label. This guards
+        // against re-introducing the "five dyads all print Great-Power War" conflation. (realism #1)
+        assert_eq!(rung_for(0.512, false, false), EscalationRung::LimitedWar);
+        assert_eq!(rung_for(GREAT_POWER_WAR_HEAT - 1e-6, false, false), EscalationRung::LimitedWar);
+        assert_eq!(rung_for(GREAT_POWER_WAR_HEAT, false, false), EscalationRung::GreatPowerWar);
+        assert_eq!(rung_for(1.0, false, false), EscalationRung::GreatPowerWar);
+        // The wmd floor and the strict nuclear-use → Systemic override still apply.
+        assert_eq!(rung_for(0.0, true, false), EscalationRung::LimitedWar);
+        assert_eq!(rung_for(0.10, false, true), EscalationRung::Systemic);
     }
 
     #[test]
