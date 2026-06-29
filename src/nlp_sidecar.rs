@@ -275,8 +275,18 @@ impl NlpSidecar {
                                 (Some(ev), None) => Some(ev),
                                 // Path B: keyword missed; LLM is the gate.
                                 (None, Some(x)) if x.max_modality() >= 0.45 => {
-                                    llm_hits.fetch_add(1, Ordering::Relaxed);
-                                    Some(make_event_from_llm(&article, &x))
+                                    let ev = make_event_from_llm(&article, &x);
+                                    // The 0.45 dispatch gate is below the storage threshold
+                                    // (LLM_TAG_THRESHOLD/LLM_SCORE_DISCOUNT ≈ 0.556), so a hit in
+                                    // [0.45, 0.556) builds an event whose every modality fell
+                                    // below the tag floor — a signalless phantom with empty
+                                    // domain_signals/tags. Drop it rather than emit it. (audit llmnlp-1)
+                                    if ev.domain_signals.is_empty() {
+                                        None
+                                    } else {
+                                        llm_hits.fetch_add(1, Ordering::Relaxed);
+                                        Some(ev)
+                                    }
                                 }
                                 _ => None,
                             };
@@ -361,6 +371,11 @@ fn merge_llm_scores(event: &mut GeopoliticalEvent, x: &LlmExtraction) {
     for (modality, score) in x.modality_pairs() {
         if score <= 0.0 { continue; }
         let discounted = score * LLM_SCORE_DISCOUNT;
+        // Floor the merged LLM signal at LLM_TAG_THRESHOLD — the same gate make_event_from_llm
+        // and the keyword path (MIN_DOMAIN_SIGNAL) apply. Without it, a sub-threshold LLM
+        // modality seeded domain_signals when the keyword path never would, inconsistently
+        // gating signals by their source. (audit llmnlp-3)
+        if discounted < LLM_TAG_THRESHOLD { continue; }
         let existing   = event.domain_signals.get(modality).copied().unwrap_or(0.0);
         event.domain_signals.insert(modality.to_string(), existing.max(discounted));
     }

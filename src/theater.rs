@@ -192,10 +192,15 @@ pub const DEESCALATION_STEP_THRESHOLD: f64 = -0.30;
 /// many DISTINCT great powers are entangled across hot theaters.
 fn great_power_label(actor_id: &str) -> Option<&'static str> {
     match actor_id {
-        "united_states" | "united_states_military" => Some("us"),
+        // US and NATO are ALLIED — one Western nuclear bloc, not two opposing great powers.
+        // Counting them as distinct let a one-sided Western theater (only [united_states, nato]
+        // at high nuclear posture, no adversary present) satisfy the ≥2-distinct-great-powers
+        // test and trip BOTH the nuclear-brink (apex) amplifier and the entanglement coupler.
+        // Collapsing them into one bloc here fixes both at the source: the brink/entanglement
+        // now require genuinely distinct (adversary) blocs head-to-head. (audit theater-1)
+        "united_states" | "united_states_military" | "nato" => Some("us_nato"),
         "russia" | "russia_military"               => Some("russia"),
         "china"  | "china_military"                => Some("china"),
-        "nato"                                      => Some("nato"),
         _ => None,
     }
 }
@@ -1620,6 +1625,27 @@ mod tests {
         assert!(out.theaters.iter().all(|s| s.trend == "stable"),
             "a never-hot world must read stable, not falling");
         assert!(out.theaters.iter().all(|s| s.delta == 0.0));
+    }
+
+    #[test]
+    fn us_and_nato_count_as_one_western_bloc_not_two_great_powers() {
+        // US and NATO are allied, so a one-sided Western theater must contribute at most ONE
+        // distinct great power — it cannot, by itself, satisfy the ≥2 brink/entanglement test.
+        // A genuine adversary pairing still counts as two. (audit theater-1)
+        assert_eq!(
+            distinct_great_powers(&["united_states".to_string(), "nato".to_string()]),
+            1, "US + NATO must collapse to a single Western bloc"
+        );
+        assert!(distinct_great_powers(&["united_states".to_string(), "nato".to_string()])
+            < BRINK_MIN_GREAT_POWERS, "a one-sided Western theater must not reach the brink floor");
+        assert_eq!(
+            distinct_great_powers(&["united_states".to_string(), "russia".to_string()]),
+            2, "US vs Russia is a genuine two-power standoff"
+        );
+        assert_eq!(
+            distinct_great_powers(&["nato".to_string(), "russia".to_string(), "china".to_string()]),
+            3
+        );
     }
 
     #[test]

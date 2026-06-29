@@ -605,6 +605,14 @@ pub struct GeopoliticalEvent {
     /// source. Each corroboration also boosts credibility_weight directly.
     pub corroboration_count: u32,
 
+    /// The set of ADDITIONAL sources (beyond the canonical `source`) that have already
+    /// corroborated this event. Used by the aggregator to ensure the SAME source can't
+    /// inflate corroboration_count / credibility_weight more than once with reworded
+    /// headlines — only a genuinely new source counts. serde-default so older persisted
+    /// events deserialize cleanly. (audit aggregator-4)
+    #[serde(default)]
+    pub corroborating_sources: Vec<String>,
+
     pub escalation_language_score: f64,
     pub sentiment_score:           f64,
 
@@ -642,6 +650,7 @@ impl GeopoliticalEvent {
             severity: 0.0, nuclear_indicator: false, wmd_indicator: false,
             source, source_tier: tier, credibility_weight: weight,
             corroboration_count: 1,
+            corroborating_sources: Vec::new(),
             escalation_language_score: 0.0, sentiment_score: 0.0,
             domain_signals: HashMap::new(),
             domain_tags: vec![],
