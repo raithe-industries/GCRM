@@ -682,7 +682,7 @@ const DTAGS={military_escalation:'KIN',nuclear_posture:'NUC',economic_warfare:'E
 const TAG_COLORS={KIN:'#E24B4A',NUC:'#FF6B35',ECO:'#1D9E75',CYB:'#00CED1',DIP:'#7F77DD'};
 // ── Two dials ────────────────────────────────────────────────────────────────
 // Hero = forward-looking outlook (annual P(WWIII)); secondary = present escalation
-// severity (systemic index 0–100). They are DIFFERENT metrics — a probability vs an
+// severity (systemic index 0–95). They are DIFFERENT metrics — a probability vs an
 // escalation-ladder position — so each gets its own dial instead of one number that
 // looks like the other.
 const GC=document.getElementById('gauge-canvas').getContext('2d');   // hero: P(WWIII)
@@ -856,11 +856,11 @@ function domainLabel(id){const i=DID.indexOf(id);return i>=0?DSHORT[i]:id.replac
 // what the number is, how it's built, and how to read it. Opened by openInfo(key).
 const INFO={
   threat:{title:'Threat Level',html:`
-    <p><b>Threat Level</b> is the headline severity read. The big word is the escalation rung of the hottest theater; the sub-line is the <b>systemic index (0–100)</b> behind it.</p>
+    <p><b>Threat Level</b> is the headline severity read. The big word is the escalation rung of the hottest theater; the sub-line is the <b>systemic index (0–95)</b> behind it.</p>
     <span class="ih">Systemic index</span>
-    <p>A 0–100 composite of how close the world is to a <b>systemic</b> (great-power) war right now. It fuses every active theater's heat with how tightly those theaters couple to the great powers and how many are hot at the same time.</p>
+    <p>A 0–95 composite of how close the world is to a <b>systemic</b> (great-power) war right now. It fuses every active theater's heat with how tightly those theaters couple to the great powers and how many are hot at the same time.</p>
     <span class="ih">Bands</span>
-    <p><span class="pill" style="background:#0a1a10;color:#40c070">0–16 normal</span><span class="pill" style="background:#0d0d20;color:#9090ff">17–33 moderate</span><span class="pill" style="background:#1f1000;color:#ffaa40">34–66 elevated</span><span class="pill" style="background:#2a0000;color:#ff7070">67–100 critical</span></p>
+    <p><span class="pill" style="background:#0a1a10;color:#40c070">0–16 normal</span><span class="pill" style="background:#0d0d20;color:#9090ff">17–33 moderate</span><span class="pill" style="background:#1f1000;color:#ffaa40">34–66 elevated</span><span class="pill" style="background:#2a0000;color:#ff7070">67–95 critical</span></p>
     <p>The rung label (e.g. "Great-Power War", "Tension") is read from the hottest theater's escalation ladder.</p>`},
   risk:{title:'WWIII Risk (Annual)',html:`
     <p><b>WWIII Risk (Annual)</b> is the model's estimate of the probability that a <b>world-war-scale conflict begins within the next 12 months</b>, read continuously from live news.</p>
@@ -871,7 +871,7 @@ const INFO={
   driver:{title:'Primary Driver',html:`
     <p><b>Primary Driver</b> names the single factor contributing most to the current systemic index — the dominant force-domain or coupling pushing the risk right now.</p>
     <span class="ih">Theaters &amp; the systemic index</span>
-    <p>A <b>theater</b> is a flashpoint dyad (Ukraine–Russia, US–Iran, China–Taiwan…). Each is scored on an <b>escalation ladder</b> that runs from posturing up to open great-power war. The <b>systemic index (0–100)</b> blends every theater's heat with how tightly it pulls in the great powers and how many are hot at once — that's the model's headline severity, and P(WWIII) is its annualized restatement.</p>
+    <p>A <b>theater</b> is a flashpoint dyad (Ukraine–Russia, US–Iran, China–Taiwan…). Each is scored on an <b>escalation ladder</b> that runs from posturing up to open great-power war. The <b>systemic index (0–95)</b> blends every theater's heat with how tightly it pulls in the great powers and how many are hot at once — that's the model's headline severity, and P(WWIII) is its annualized restatement.</p>
     <span class="ih">Sub-line</span>
     <p>Shows the <b>hottest theater</b>: the flashpoint dyad with the highest heat this snapshot. If nothing is elevated it reads "no theater elevated".</p>
     <p>Read it as the "why" behind the number — then click a domain bar or card to audit the live articles driving it.</p>`},
@@ -1079,7 +1079,7 @@ function applyData(d){
   document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
   const _t6=trend6h(d,pA);const d6el=document.getElementById('ca-6h');if(d6el){if(!_t6){d6el.textContent='—';d6el.style.color='var(--t4)';}else{d6el.textContent=fmtTrend(_t6.delta);d6el.style.color=_t6.pegged?PEGGED_COLOR:trendColor(_t6.delta);}}
   // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
-  // secondary = present escalation severity (systemic index 0–100 + hottest rung).
+  // secondary = present escalation severity (systemic index 0–95 + hottest rung).
   const sysIdx=Math.round((d.systemic&&d.systemic.index)||0);
   const _ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const _top=_ths[0]||{};
   // Colour the headline rung WORD by its OWN rung — the same rungColor()/RUNG_LVL the

@@ -73,10 +73,8 @@ pub fn domain_weight(domain: &str) -> f64 {
         .unwrap_or(1.0)
 }
 
-#[allow(dead_code)] // v2 risk uses theater heat (theater.rs has its own); kept for reference
-fn max_weighted_sum() -> f64 {
-    DOMAIN_WEIGHTS.iter().map(|(_, w)| w).sum()
-}
+// max_weighted_sum lives in theater.rs (the v2 risk driver, used by its heat normaliser). The
+// dead duplicate that used to sit here was removed to keep a single source of truth. (audit bayesian-5)
 
 /// Co-occurrence boost anchor points: (elevated-modality count, multiplier).
 /// The boost is a continuous piecewise-linear interpolation through these anchors
@@ -149,23 +147,10 @@ pub fn co_occurrence_boost(soft_elevated: f64) -> f64 {
     1.0
 }
 
-/// Evidence gain (β) for the log-odds risk model. Controls how strongly the
-/// likelihood term `L` (weighted domain sum × co-occurrence boost, range ≈0–7)
-/// moves the probability above the regime-adjusted prior.
-///
-///   P = sigmoid( logit(prior) + β·L )
-///
-/// At L = 0 the output equals the prior exactly (calibrated quiet baseline). As
-/// L grows the output rises along a logistic S-curve and saturates toward the
-/// engineering ceiling — so, unlike the old `prior × (1 + L·k)` form, strong
-/// multi-domain signals can express genuinely high risk instead of being capped
-/// near 15%. β is the master sensitivity knob; the alert thresholds in
-/// settings.yml are tuned jointly with it. Indicative behaviour at β = 2.0
-/// (regime ≈ 1.5): L≈1.1 → ~1.5% (elevated), L≈1.8 → ~5% (critical),
-/// L≈2.6 → ~22%, L≈5 → ceiling. Precise crisis calibration (Cuba/Ukraine)
-/// requires backtesting against historical event replays.
-#[allow(dead_code)] // superseded by theater::EVIDENCE_GAIN_SYS in v2 (Phase 2); kept for reference
-const EVIDENCE_GAIN: f64 = 2.0;
+// Evidence gain (β) for the log-odds risk model is theater::EVIDENCE_GAIN_SYS — the v2 single
+// source of truth, applied as `P = sigmoid(logit(prior) + β·l_sys)` in compute(). The dead v1
+// EVIDENCE_GAIN const here (with a doc describing the superseded regime-in-prior behaviour) was
+// removed to prevent the documentation drifting from the live constant. (audit bayesian-4)
 
 // ── Guardrail-collapse coupler (Step 6b) ────────────────────────────────────────
 //

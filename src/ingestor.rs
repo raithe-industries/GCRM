@@ -19,7 +19,7 @@
 //     fetching every feed starts simultaneously; the cycle completes in max(one
 //     feed's latency) ≈ 2–5 seconds. This raises effective throughput from
 //     ~200 articles/hour to 2,000+ articles/hour in active news periods.
-//     A semaphore (MAX_CONCURRENT_RSS = 20) caps simultaneous HTTP connections
+//     A semaphore (MAX_CONCURRENT_RSS = 42) caps simultaneous HTTP connections
 //     to avoid overwhelming the network interface or triggering rate limiting.
 //
 //   IMPROVED BODY EXTRACTION
@@ -31,22 +31,18 @@
 //     quality: a content field typically provides 300–800 characters of
 //     article text versus a summary's 80–150 characters.
 //
-//   RAISED ARTICLE LIMITS
-//     RSS per-feed article limit: 20 → 50 entries per poll cycle.
-//       At 43 feeds × 50 entries × 90s cycle = up to 2,388 articles/cycle max;
-//       with deduplication and geopolitical filtering the effective rate is
-//       200–600 new articles/hour in active periods.
-//     GNews per-query article limit: 15 → 25 entries.
-//     SeenCache capacity: 10,000 → 50,000 entries.
-//       At 2,000 art/hr the old 10k cache expired in 5 hours, causing re-
-//       ingestion of articles from earlier in the same day. 50k covers 25
-//       hours of headroom at peak ingest rate.
+//   ARTICLE LIMITS (the real current constants are defined just below; the precise
+//   throughput estimates that used to live here drifted badly from the code, so they were
+//   dropped rather than left wrong — see RSS_ARTICLES_PER_FEED etc.):
+//     RSS per-feed limit:    RSS_ARTICLES_PER_FEED    = 500 entries / poll.
+//     GNews per-query limit: GNEWS_ARTICLES_PER_QUERY = 250 entries.
+//     SeenCache capacity:    50,000 entries.
+//     RSS roster re-polled on the ~100s RSS_CYCLE_MS cycle (NOT derived from the snapshot tick).
 //
 //   BACKOFF JITTER
-//     A small random jitter (±20%) is added to all poll intervals to prevent
-//     feed thundering-herd effects when multiple GCRM instances run in parallel.
-//     Uses a simple deterministic counter-based pseudo-jitter to preserve
-//     reproducibility — no external RNG dependency.
+//     A small deterministic jitter (±16% = (ctr%5)·base/25) is added to the RSS poll interval
+//     to avoid thundering-herd effects across instances. Counter-based (no external RNG) for
+//     reproducibility.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -627,9 +623,9 @@ impl Ingestor {
                       RSS_FEEDS.len());
             }
 
-            // Interval with ±20% deterministic jitter (no RNG dependency)
+            // Interval with ±16% deterministic jitter (no RNG dependency): (ctr%5)∈0..4, /25 → max 4/25 = 16%
             let base_ms = RSS_CYCLE_MS;
-            let jitter  = (jitter_ctr % 5) * base_ms / 25; // 0–20%
+            let jitter  = (jitter_ctr % 5) * base_ms / 25; // 0–16%
             let delay   = if jitter_ctr.is_multiple_of(2) { base_ms + jitter } else { base_ms - jitter };
             jitter_ctr  = jitter_ctr.wrapping_add(1);
             sleep(Duration::from_millis(delay)).await;

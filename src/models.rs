@@ -1023,7 +1023,12 @@ pub struct RegimeFactor {
 // ── Settings ──────────────────────────────────────────────────────────────────
 // Mirrors the structure of config/settings.yml
 
+// deny_unknown_fields: a typo'd / unknown config key now becomes a parse ERROR that
+// load_settings surfaces (it logs "Config parse error … using defaults"), instead of being
+// silently dropped — which would leave that setting on its built-in default with no warning.
+// Verified safe against the committed settings.yml by real_settings_yml_parses_*. (audit ops-4)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     pub regime_factors: Vec<RegimeFactor>,
     pub alerts:         AlertSettings,
@@ -1036,6 +1041,7 @@ pub struct Settings {
 // ── LlmSettings ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LlmSettings {
     #[serde(default)]
     pub enabled:      bool,
@@ -1063,8 +1069,11 @@ impl LlmSettings {
     fn default_endpoint()    -> String { "http://localhost:11434".into() }
     fn default_model()       -> String { "qwen2.5:7b".into() }
     fn default_embed_model() -> String { "nomic-embed-text".into() }
-    fn default_concurrency() -> usize  { 8 }
-    fn default_timeout()     -> u64    { 10 }
+    // Match the hand-tuned hardware-safe values in settings.yml (GTX-1080 VRAM cap). A code
+    // default must never be MORE aggressive than the calibrated config — otherwise a missing
+    // key silently falls back to a value that can OOM the GPU. (audit ops-3)
+    fn default_concurrency() -> usize  { 2 }
+    fn default_timeout()     -> u64    { 20 }
 }
 
 impl Default for LlmSettings {
@@ -1082,6 +1091,7 @@ impl Default for LlmSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlertSettings {
     pub elevated:      f64,
     pub critical:      f64,
@@ -1095,6 +1105,7 @@ impl Default for AlertSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IngestionSettings {
     pub poll_interval_seconds: u64,
     pub max_events_per_batch:  usize,
@@ -1107,6 +1118,7 @@ impl Default for IngestionSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DashboardSettings {
     pub host:         String,
     pub port:         u16,
@@ -1139,6 +1151,19 @@ impl Default for DashboardSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_settings_yml_parses_with_deny_unknown_fields() {
+        // The committed settings.yml must deserialize cleanly under deny_unknown_fields — this
+        // both proves the attribute is safe for the live config AND guards against a future
+        // stray/typo'd key being silently dropped to a (worse) default. (audit ops-4)
+        let yml = include_str!("../settings.yml");
+        let s: Settings = serde_yaml::from_str(yml).expect("settings.yml must parse");
+        assert!(!s.regime_factors.is_empty(), "regime_factors should be populated");
+        // The hardware-safe LLM values are present (and the code defaults now match them).
+        assert_eq!(s.llm.concurrency, LlmSettings::default_concurrency());
+        assert_eq!(s.llm.timeout_secs, LlmSettings::default_timeout());
+    }
 
     fn theater_st(label: &str, rung: EscalationRung, heat: f64) -> TheaterState {
         TheaterState {

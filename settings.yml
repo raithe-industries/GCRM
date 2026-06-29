@@ -7,11 +7,14 @@
 # ------------------------------------------------------------
 
 # settings.yml — Global Conflict Risk Monitor (Rust)
-# Calibrated: 2026-03-31
+# Calibrated: 2026-03-31 (v2 bands re-anchored 2026-06-09; CALIBRATION TARGETS below synced to
+#             backtest.rs, which is the single source of truth for the fitted bands)
 #
 # STRUCTURE NOTE: This file is parsed directly into the Rust Settings struct.
 # Valid top-level keys: regime_factors, alerts, ingestion, dashboard, llm.
-# Extra keys are silently ignored. Missing optional keys use built-in defaults.
+# Unknown/typo'd keys are now a PARSE ERROR (serde deny_unknown_fields): load_settings logs it
+# and falls back to defaults rather than silently dropping the key onto a worse default.
+# Missing optional keys use built-in defaults.
 #
 # REGIME MULTIPLIER METHOD:
 #   Factors encode STRUCTURAL conditions stable over months-to-years.
@@ -29,16 +32,21 @@
 #   (guardrail_from_regime, bounded by GUARDRAIL_AMPLIFIER, saturating at the
 #   GUARDRAIL_REGIME_SPAN). See methodology.html and bayesian.rs.
 #
-# CALIBRATION TARGETS:
-#   Quiet period (1-2 domains, low signals)        → ~0.5–1.5% annual
-#   Current world 2026 (4-5 domains, moderate)     → ~3–6% annual
-#   Active acute crisis (5-6 domains, high signals) → ~8–15% annual
-#   Ukraine Feb 2022 equivalent                    → ~25–35% annual
-#   Cuba Oct 1962 equivalent                       → ~40–50% annual
+# CALIBRATION TARGETS (v2 — fitted band CENTRES enforced by backtest.rs::calibration_anchors
+# plus the quiet < Ukraine < current < Cuba ordering test. Descriptive only; backtest.rs is
+# the source of truth. The old v1 figures here were ~2x low and contradicted the harness):
+#   Quiet world                                       → ~2%  annual  (band ~0.5–5%)
+#   Ukraine Feb 2022 (one theater, full war)          → ~39% annual  (band ~30–50%)
+#   Current world 2026 (idealised 3-theater, no brink)→ ~60% annual  (band ~55–75%)
+#   Cuba Oct 1962 (direct US–USSR nuclear brink, apex)→ ~80% annual  (band ~70–90%)
+#   The LIVE 2026 operating point runs higher still (≥5 entangled theaters, Article-5 live);
+#   see backtest.rs live_* analogs.
 
 # ── Alert thresholds ──────────────────────────────────────────────────────────
-# elevated: 2.5% — above the regime-adjusted structural floor; worth monitoring
-# critical: 8.0% — acute crisis territory; rare; triggers CRITICAL banner
+# elevated: 2.5% — above the structural floor; worth monitoring
+# critical: 8.0% — lights the CRITICAL banner. NOT "rare": on the v2 P scale the present world
+#           (~60–80%+) sits far above this BY DESIGN, so the banner is expected to be lit in the
+#           current era — it marks acute-crisis territory, not an anomaly.
 # thirty_day_warn: 1.0% — 30-day window threshold for early warning sub-banner
 alerts:
   elevated:       0.025
