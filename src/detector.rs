@@ -143,7 +143,9 @@ pub fn nearest_test_site(lat: f64, lon: f64) -> Option<(&'static TestSite, f64)>
     KNOWN_TEST_SITES.iter()
         .map(|site| (site, haversine_km(lat, lon, site.lat, site.lon)))
         .filter(|(site, dist)| *dist <= site.radius_km)
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        // unwrap_or(Equal), not unwrap(): a NaN distance would panic the bare unwrap. Matches
+        // the codebase convention used at every other partial_cmp site. (audit xcut_err-3)
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
 }
 
 // ── FDSN seismic source registry ──────────────────────────────────────────────

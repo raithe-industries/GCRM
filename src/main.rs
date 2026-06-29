@@ -195,6 +195,29 @@ async fn wait_for_shutdown() {
     info!("Shutdown signal received — stopping GCRM...");
 }
 
+/// Spawn a long-lived background feed/monitor under panic supervision. If its body panics
+/// (e.g. a bad-feed parse on provider-controlled input), the panic is caught, logged, and
+/// the task ends — but the whole monitor process does NOT come down with it: the public
+/// dashboard and every other feed keep running. Previously these tasks were select! arms,
+/// so ANY one returning/panicking tore the process down (a single minor feed could blank
+/// the public monitor). Restart-on-panic would need each task to be reconstructable; until
+/// then this guarantees the must-have: one feed cannot take the monitor offline. Requires
+/// panic=unwind (see Cargo.toml [profile.release]). (audit xcut_net-4)
+fn supervise<F>(name: &'static str, fut: F) -> tokio::task::JoinHandle<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    use futures::FutureExt;
+    tokio::spawn(async move {
+        match std::panic::AssertUnwindSafe(fut).catch_unwind().await {
+            Ok(())   => error!("background task '{name}' exited unexpectedly (no panic) — \
+                                degraded; dashboard and other feeds stay up"),
+            Err(_)   => error!("background task '{name}' PANICKED — isolated; dashboard and \
+                                other feeds stay up. Restart the service to recover this task"),
+        }
+    })
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -366,30 +389,21 @@ async fn main() {
         let _ = osint::finance_payload().await;
     });
 
+    // Background feeds/monitors run SUPERVISED and detached: a panic in any one is caught,
+    // logged, and isolated — it never tears down the public monitor (audit xcut_net-4). Only
+    // the server task, the NLP task (which must be awaited for its dedup-cache save), and the
+    // OS shutdown signal gate process lifetime below.
+    supervise("ingestor", ingestor.run());
+    supervise("aggregator", aggregator.run());
+    supervise("broadcast", broadcast_snapshots(snap_rx, server_state_bc));
+    supervise("seismic_monitor", seismic_monitor.run());
+    supervise("ctbto_monitor", ctbto_monitor.run());
+    supervise("nuclear_news_monitor", nuclear_news_monitor.run());
+    supervise("analyst_brief", brief::run_brief_loop(Arc::clone(&app_state), settings.llm.clone()));
+
     tokio::select! {
-        _ = tokio::spawn(ingestor.run()) => {
-            error!("Ingestor task exited unexpectedly");
-        }
         _ = &mut nlp_task => {
             error!("NLP sidecar task exited unexpectedly");
-        }
-        _ = tokio::spawn(aggregator.run()) => {
-            error!("Aggregator task exited unexpectedly");
-        }
-        _ = tokio::spawn(broadcast_snapshots(snap_rx, server_state_bc)) => {
-            error!("Broadcast task exited unexpectedly");
-        }
-        _ = tokio::spawn(seismic_monitor.run()) => {
-            error!("Seismic monitor task exited unexpectedly");
-        }
-        _ = tokio::spawn(ctbto_monitor.run()) => {
-            error!("CTBTO monitor task exited unexpectedly");
-        }
-        _ = tokio::spawn(nuclear_news_monitor.run()) => {
-            error!("Nuclear news monitor task exited unexpectedly");
-        }
-        _ = tokio::spawn(brief::run_brief_loop(Arc::clone(&app_state), settings.llm.clone())) => {
-            error!("Analyst brief task exited unexpectedly");
         }
         result = tokio::spawn(serve(host, port, server_state, operator_state, base_path)) => {
             match result {
