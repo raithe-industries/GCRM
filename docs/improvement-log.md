@@ -22,6 +22,36 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-29 — awareness/honesty — China–India clash no longer mis-attributed to Taiwan/Kashmir
+- Item: roadmap 3.19 (new). The honest INTERIM for the deferred China–India (LAC) theater the prior
+  no-op named — capturing the signal's WHERE correctly without the eyes-gated/cross-lane 6th theater.
+- Defect: `theater_of` (`models.rs`) maps both `china` and `india` to *named* theaters
+  (UsChinaTaiwan / IndiaPakistan). A China–India border clash (two nuclear great powers, NO tracked
+  dyad of its own) therefore got its per-actor count + region tiebreak resolved into Taiwan (region
+  `asia_pacific`) or Kashmir (region `south_asia`) — fabricating heat in a flashpoint the event is not
+  about, and able to name the WRONG lead theater (operator reads "US–China/Taiwan" while the fighting is
+  on the Himalayan border). A pillar-1 (the dyad's heat must mean what it says) + pillar-3 (the WHERE is
+  wrong) violation.
+- Change: narrow guard in `theater_of` — `(china|china_military)+india` with NEITHER `taiwan` NOR
+  `pakistan` present routes to `Theater::Other`, per the resolver's own contract ("a story with no
+  tracked dyad does not belong to a named theater"). Narrow by design: when the genuine partner IS
+  present the guard does not fire (china+taiwan → Taiwan; india+pakistan → Kashmir).
+- Metric moved: HONESTY/AWARENESS (engine-behavior) — a China–India standoff stops corrupting a named
+  dyad's heat and lead-theater readout. Calibration bands unchanged (anchors assign theater tags
+  directly, never via `theater_of`); Brier/RMSE/in-band unchanged.
+- Proof: `cargo build --release` clean; `cargo test --release` 481 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 22/0 (quiet/ukraine/current_2026=60/cuba intact); `cargo clippy --release` 0
+  warnings. Lock `china_india_clash_is_not_mis_attributed_to_taiwan_or_kashmir` FAILS when the guard is
+  neutralized (routes to UsChinaTaiwan, asserts panic at models.rs:1242).
+- Tier: T1 · Touched: engine-behavior · Lock-fails-without-change: yes (proof above) · Counts: none
+  (no new source/layer; corrects an existing theater attribution) · consecutive_display_only=0 ·
+  display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: the FULL fix is still a dedicated `Theater::ChinaIndia` (6th
+  `primary()` entry) — remains blocked: eyes-gated on the `repeat(5,1fr)` theater-ladder grid in
+  `dashboard.html` and cross-lane on the `osint.rs` centroid/fan-out (signal-hunter's file). Do NOT
+  weaken this guard to "restore" the China–India signal into Taiwan/Kashmir — that is the bug. The
+  great-power signal returns to the read only via the 6th theater (Robert/​signal-hunter coordinated).
+
 ## 2026-06-29 — NO-OP (structured) — cloud-provable frontier exhausted this run; next T1 is a China–India (LAC) theater, blocked cross-lane + eyes-gate
 - Named T1 (next shippable): a **China–India (LAC) theater** — the only WHERE-gap I found that is genuinely
   new coverage, not annotation. Currently `Theater::primary()` tracks 5 dyads; a China+India border-clash

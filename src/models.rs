@@ -246,6 +246,23 @@ pub fn theater_of(actor_ids: &[String], region: Option<&str>) -> Theater {
         }
     }
 
+    // China–India border clashes (e.g. Galwan 2020 — two nuclear great powers) are a dyad
+    // with NO tracked theater of their own yet. Both `china` and `india` map to *named*
+    // theaters (UsChinaTaiwan / IndiaPakistan), so without this guard the per-actor count +
+    // region tiebreak silently absorbs a China–India standoff into Taiwan or Kashmir — it
+    // fabricates heat in a flashpoint the event is NOT about and can even name the wrong
+    // *lead* theater (telling the operator "US–China/Taiwan" when the fighting is on the
+    // Himalayan border). Per this resolver's own contract ("a story with no tracked dyad does
+    // not belong to a named theater") it routes to Other until a dedicated China–India theater
+    // exists. Guarded on the ABSENCE of taiwan/pakistan so a genuine China–Taiwan or
+    // India–Pakistan story (where that partner IS present) is unaffected.
+    let has = |a: &str| actor_ids.iter().any(|x| x == a);
+    if (has("china") || has("china_military")) && has("india")
+        && !has("taiwan") && !has("pakistan")
+    {
+        return Theater::Other;
+    }
+
     let mut counts: [usize; 5] = [0; 5];
     let idx = |t: Theater| Theater::primary().iter().position(|x| *x == t).unwrap();
     for aid in actor_ids {
@@ -1217,6 +1234,22 @@ mod tests {
     fn theater_of_unknown_is_other() {
         assert_eq!(theater_of(&["brazil".into()], Some("latin_america")), Theater::Other);
         assert_eq!(theater_of(&[], None), Theater::Other);
+    }
+
+    #[test]
+    fn china_india_clash_is_not_mis_attributed_to_taiwan_or_kashmir() {
+        // A China–India border clash (both nuclear great powers, no tracked dyad of its own)
+        // must NOT be absorbed into a named flashpoint it is not about. Without the guard the
+        // count+region tiebreak routes it to Taiwan (region asia_pacific) or Kashmir (region
+        // south_asia), fabricating heat in the wrong theater. It belongs in Other until a
+        // dedicated China–India theater exists.
+        assert_eq!(theater_of(&["china".into(), "india".into()], Some("asia_pacific")), Theater::Other);
+        assert_eq!(theater_of(&["china".into(), "india".into()], Some("south_asia")), Theater::Other);
+        assert_eq!(theater_of(&["china_military".into(), "india".into()], None), Theater::Other);
+        // The guard is NARROW: when the genuine dyad partner is present it does not fire —
+        // china+taiwan stays a Taiwan story, india+pakistan stays Kashmir.
+        assert_eq!(theater_of(&["china".into(), "india".into(), "taiwan".into()], Some("asia_pacific")), Theater::UsChinaTaiwan);
+        assert_eq!(theater_of(&["china".into(), "india".into(), "pakistan".into()], Some("south_asia")), Theater::IndiaPakistan);
     }
 
     #[test]
