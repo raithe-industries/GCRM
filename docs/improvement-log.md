@@ -22,6 +22,48 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-29 — NO-OP (structured) — cloud-provable frontier exhausted this run; next T1 is a China–India (LAC) theater, blocked cross-lane + eyes-gate
+- Named T1 (next shippable): a **China–India (LAC) theater** — the only WHERE-gap I found that is genuinely
+  new coverage, not annotation. Currently `Theater::primary()` tracks 5 dyads; a China+India border-clash
+  event (Galwan-style — two nuclear powers, rising great-power coupling) has NO home: `theater_of`
+  (models.rs:225) routes `china`→UsChinaTaiwan and `india`→IndiaPakistan, then the region tiebreak sends
+  the event to whichever of those two the region tag bumps — so a real China–India standoff is silently
+  mis-attributed to Taiwan or Kashmir and is invisible as its own flashpoint.
+- Decomposed next step: (1) add `Theater::ChinaIndia` (enum + id `china_india` + label + `primary()`→`[Theater; 6]`),
+  (2) make `theater_of` route china+india co-occurrence to it (count-based, beating the single-actor
+  defaults), (3) a synthetic test proving a china+india event lands in the new theater and CHANGES an
+  output (a 6th flashpoint chip / its own heat), (4) a map centroid (~34°N 79°E, Ladakh/LAC).
+- Concrete blocker (why NOT a clean cloud single-run change today): it is **cross-lane + eyes-gated**.
+  The theater→map centroid table and the map fan-out loop are in `src/osint.rs` (lines 83–87 + the
+  hard-coded 5-id list at ~724) — the **shared collision file owned by the signal-hunter routine** (map
+  data sources); adding a 6th theater there is not the "minimal, unavoidable" edit the rails permit. And
+  `dashboard.html` hard-codes the theater-ladder grid as `repeat(5,1fr)` (and `repeat(2,1fr)` on narrow
+  viewports) — a 6th chip wraps into a broken half-row, an **eyes-gate** layout change I cannot verify in
+  the sandbox (would risk an auto-rollback). Plus ~30 tests across indicators/theater/osint hard-code the
+  5-theater roster. This wants either Robert's sign-off on the cross-lane edit or coordination with the
+  signal-hunter on the osint.rs centroid + the dashboard grid — not an unattended blind push.
+- What I verified so the next run doesn't re-derive it: the four routine-prompt "deferred" items are all
+  DONE — **4.2** unwrap/expect (src/ prod paths clean, audited 2026-06-18), **4.5** vendor drift policy
+  (2026-06-15), **2.1** small-viewport (2026-06-15), both `osint.rs` clippy nits (line 74 = `LastGoodBatches`
+  alias, line 181 area uses `and_then`; `cargo clippy --release --all-targets` = 0 warnings). A focused
+  engine audit (theater/bayesian/aggregator/indicators/api) found NO genuine honesty/correctness defect: the
+  only candidate — `max_heat` reading heat rounded to 4dp before feeding `l_sys` — is immaterial (the served
+  systemic_index is rounded to 2dp, so the ≤5e-5 quantization is far below output resolution; a "fix" would
+  be cosmetic churn). `casualties`/`civilian_impact` are ingested-but-unused, but wiring them into a
+  systemic-WAR read is value-laden (Robert-gated) and arguably off-mission (humanitarian volume ≠ great-power
+  brink). §3 awareness, §1.2 provenance, §2.3 methodology are mined out; §6 source-into-read is Robert-gated.
+- Why NO-OP and not a marginal commit: the display-only cap is spent (`display_only_in_last_7=2`), so a T3
+  polish / Nth-caveat run is disallowed by the scorecard; and a forced +1-test against pillar-1 HONESTY is
+  worse than an honest no-op. No model constant, test, or behavior touched; tree clean apart from this ledger.
+- Proof of green baseline (unchanged): `cargo build --release` clean; `cargo test --release` 479 passed / 0
+  failed / 3 ignored; `cargo test backtest` bands intact (quiet/Ukraine/current_2026=60/Cuba); `cargo clippy
+  --release --all-targets` 0 warnings.
+- Tier: NO-OP · Touched: noop · Lock-fails-without-change: n/a (no change) · Counts: none (frontier unmoved) ·
+  consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=1 · noop_in_last_3=1
+- Notes future runs MUST respect: this is the 1st no-op in the trailing 3 (cap = 1-in-3) — the NEXT run may
+  NOT no-op. If you cannot land the China–India theater (cross-lane/eyes), pick a different genuine T1; do
+  NOT manufacture a caveat (display-only is capped) and do NOT re-chase 4.2/4.5/2.1/osint-clippy (all DONE).
+
 ## 2026-06-29 — honesty — systemic momentum weights LIVE evidence, not a floor-held memory (a silent war no longer inverts the news-flow gauge)
 - Item: roadmap 3.18 follow-up (PROGRESS line added). Engine-behavior honesty fix.
 - Defect: `couplers.systemic_momentum` (the "which way is the news flow tilting RIGHT NOW" gauge,
