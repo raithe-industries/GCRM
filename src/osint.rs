@@ -277,6 +277,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // Avalanche Canada current-day danger rating per elevation band, e.g.
         // "Alpine Considerable · Treeline Moderate · Below Low" (North American scale).
         "avalanche_ca" => ee_sources::avalanche_ca::danger_chip(&e.raw),
+        // AWC international SIGMET: qualified en-route aviation hazard + flight-level
+        // band, e.g. "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430".
+        "awc_sigmet" => ee_sources::awc_sigmet::sigmet_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -383,7 +386,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -402,7 +405,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -475,6 +478,10 @@ async fn feeds_payload() -> Value {
         // to region polygons), the snow-avalanche hazard no other feed carries. Seasonal:
         // off-season regions carry no rating and drop, so summer yields 0 events.
         fetch_one("avalanche_ca", AvalancheCa, 14),
+        // NOAA AWC international SIGMETs — en-route aviation hazards (convective,
+        // turbulence, icing, volcanic ash, tropical cyclone) per FIR worldwide, the
+        // aviation-weather modality NWS/ECCC ground warnings and NHC/JMA tracks don't carry.
+        fetch_one("awc_sigmet", AwcSigmet, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -522,6 +529,7 @@ async fn feeds_payload() -> Value {
         (id_volc.0, id_volc.1, "magma_volcano", 150),
         (floods.0, floods.1, "nwps_flood", 400),
         (avalanche.0, avalanche.1, "avalanche_ca", 200),
+        (sigmets.0, sigmets.1, "awc_sigmet", 200),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -991,6 +999,29 @@ mod tests {
             feed_detail(&e).as_deref(),
             Some("Alpine Considerable · Treeline Moderate · Below Low")
         );
+    }
+
+    #[test]
+    fn awc_sigmet_chip_surfaces_qualified_hazard_and_flight_levels() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "awc-sigmet-x".into(),
+            source_id: "awc_sigmet".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.85),
+            url: None,
+            raw,
+        };
+        // `raw` is the SIGMET feature's properties: hazard + qualifier + flight band.
+        let e = mk(json!({"hazard": "TURB", "qualifier": "SEV", "base": 17000, "top": 33000}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Severe Turbulence · FL170–330"));
+        // Coverage-only qualifier + a top-only band.
+        let e = mk(json!({"hazard": "TS", "qualifier": "EMBD", "top": 43000}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Embedded Thunderstorms · to FL430"));
     }
 
     #[test]
