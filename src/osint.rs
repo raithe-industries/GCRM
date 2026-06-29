@@ -321,6 +321,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // AWC international SIGMET: qualified en-route aviation hazard + flight-level
         // band, e.g. "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430".
         "awc_sigmet" => ee_sources::awc_sigmet::sigmet_chip(&e.raw),
+        // SPC confirmed severe-storm report: the hazard + magnitude with units, e.g.
+        // "EF2 Tornado" / "2.75 in hail" / "70 mph wind" — the ground-truth read.
+        "spc_storm_reports" => ee_sources::spc_storm_reports::report_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -436,7 +439,8 @@ async fn feeds_payload() -> Value {
         navcanada::NavCanada, nhc::Nhc,
         nwps_flood::NwpsFlood, nws::Nws,
         ontario511::Ontario511,
-        opensky::OpenSky, quebec511::Quebec511, ucdp_ged::UcdpGed, usgs::Usgs,
+        opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports,
+        ucdp_ged::UcdpGed, usgs::Usgs,
         usgs_volcano::UsgsVolcano,
     };
 
@@ -446,7 +450,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -523,6 +527,11 @@ async fn feeds_payload() -> Value {
         // turbulence, icing, volcanic ash, tropical cyclone) per FIR worldwide, the
         // aviation-weather modality NWS/ECCC ground warnings and NHC/JMA tracks don't carry.
         fetch_one("awc_sigmet", AwcSigmet, 10),
+        // NOAA SPC — confirmed severe-storm reports today (tornado / large hail /
+        // damaging wind), plotted at each report's lat/lon: the ground-truth
+        // severe-convective occurrences NWS warnings (forecast) and the cyclone /
+        // flood / aviation feeds don't carry. Three small CSVs, so allow a little time.
+        fetch_one("spc_storm_reports", SpcStormReports, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -571,6 +580,7 @@ async fn feeds_payload() -> Value {
         (floods.0, floods.1, "nwps_flood", 400),
         (avalanche.0, avalanche.1, "avalanche_ca", 200),
         (sigmets.0, sigmets.1, "awc_sigmet", 200),
+        (storm_reports.0, storm_reports.1, "spc_storm_reports", 400),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -1063,6 +1073,34 @@ mod tests {
         // Coverage-only qualifier + a top-only band.
         let e = mk(json!({"hazard": "TS", "qualifier": "EMBD", "top": 43000}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Embedded Thunderstorms · to FL430"));
+    }
+
+    #[test]
+    fn spc_storm_reports_chip_surfaces_hazard_and_magnitude() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "spc-x".into(),
+            source_id: "spc_storm_reports".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.7),
+            url: None,
+            raw,
+        };
+        // `raw` is the flat report payload this connector stores: type + magnitude.
+        let e = mk(json!({"type": "tornado", "fscale": 2}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("EF2 Tornado"));
+        let e = mk(json!({"type": "tornado"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Tornado"));
+        let e = mk(json!({"type": "hail", "size_in": 2.75}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("2.75 in hail"));
+        let e = mk(json!({"type": "wind", "speed_mph": 70.0}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("70 mph wind"));
+        let e = mk(json!({"type": "wind"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Damaging wind"));
     }
 
     #[test]

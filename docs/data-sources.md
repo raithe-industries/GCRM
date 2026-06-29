@@ -71,6 +71,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `magma_volcano` | Volcano | PVMBG / MAGMA Indonesia | **Indonesian volcano operational alert levels** — PVMBG (Geological Agency, Ministry of Energy & Mineral Resources) is the authoritative national monitor for the world's most volcanically active country (~127 monitored volcanoes). Each volcano carries a ground alert level `ga_status` on the 4-step scale (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) plus the latest VONA aviation colour (`vona[].cu_avcode` GREEN/YELLOW/ORANGE/RED). Connector emits one event per volcano **above background** (status ≥ 2); Normal (1) dropped, so an all-quiet snapshot = 0 events. Severity = max(status rank, aviation-colour rank) — an ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55. Chip = "Alert Siaga (Watch) · Aviation Yellow". **Path B (committed snapshot):** MAGMA's home-map volcano list is embedded server-side (no clean public full-list JSON endpoint) and the host 403s in-sandbox, so a real captured PVMBG payload ships `include_str!`-embedded (`magma_volcano_snapshot.json`), refreshed by a local/manual re-capture job. Schema confirmed against PVMBG's own `magma-indonesia/magma-indonesia` source (`HomeController::gunungApi()` + `VonaApiService`). Fills the **Indonesia / SE-Asia** volcano geography GeoNet (NZ) and USGS (US/Alaska) don't cover. |
 | `avalanche_ca` | Weather | Avalanche Canada | **snow-avalanche danger ratings** — Canada's national public-avalanche body. Joins `/forecasts/en/products` (bulletins, by `area.id`) to `/forecasts/en/areas` (region polygons, GeoJSON, same id) and plots one dot per region **with a numeric rating today**, at the polygon centroid. Severity = peak elevation-band rating on the North American scale (Low 0.2 → Extreme 1.0). **Signal-meaningful** (the danger scale is baseline-relative — each level a defined likelihood/size, not a raw number). **Seasonal, handled honestly:** off-season bands read `norating`/spring → dropped, so summer = 0 events not an error (layer lights up ~late-Nov→Apr). Resolves the source's deferral via an off-season-tolerant parser. Auth-free JSON+GeoJSON. Chip = "Alpine Considerable · Treeline Moderate · Below Low". Fills the snow-avalanche hazard no other feed carries. |
 | `awc_sigmet` | Weather | NOAA / NWS Aviation Weather Center | **international SIGMETs** — the en-route aviation hazard warnings each Meteorological Watch Office issues for its Flight Information Region, aggregated by AWC at `api/data/isigmet?format=geojson`. One `Polygon` feature per active SIGMET, plotted at the **hazard-polygon centroid**, carrying the hazard type (`hazard`: TS/TC/VA/TURB/ICE/DS/SS/MTW/GR/IFR…), an intensity/coverage qualifier (`qualifier`: SEV/EMBD/ISOL/OCNL/FRQ…), the affected flight-level band (`base`/`top`, feet MSL), the issuing FIR (`firName`), and the raw SIGMET text. Opens an **en-route aviation-hazard modality** no feed carried (distinct from NWS/ECCC ground warnings, NHC/JMA cyclone *tracks*, and NWPS river flooding) with **global FIR geography**; pairs with the live aircraft (`opensky`) + NOTAM (`navcanada`) layers. **Signal-meaningful:** every value is a named WMO aviation phenomenon + standardized intensity + flight levels (no raw scalar). Severity = max(hazard base [VA/TC 0.9 → IFR 0.4], qualifier bump [SEV 0.85 / HVY 0.7]). Chip = "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430". Empty `FeatureCollection` (no active intl SIGMETs in scope) = 0 events, not an error. **Path B (mirrored-snapshot verification):** the live host 403s in-sandbox, so the parser + fixture are anchored to a **real captured AWC intl-SIGMET payload** committed on GitHub (`thomasdubdub/sigmet-sectors/20200316.json` — genuine SBRE RECIFE EMBD-TS / LFRR BREST SEV-TURB records); prod (full network) fetches the live `format=geojson` endpoint. Auth-free, US-Gov public domain. |
+| `spc_storm_reports` | Weather | NOAA / NWS Storm Prediction Center | **confirmed severe-storm reports** — SPC's daily Local Storm Reports, the **ground-truth severe-convective occurrences** (the touchdown/impact, not a forecast) no feed carried: NWS/ECCC ship *warnings* (what may happen), NHC/JMA ship cyclone *tracks*, NWPS ships river flooding, AWC ships en-route aviation hazards. Three small CSVs (`today_torn.csv` / `today_hail.csv` / `today_wind.csv`), each the same 8-column layout `Time,<F_Scale\|Size\|Speed>,Location,County,State,Lat,Lon,Comments`; first line is a header, the free-text `Comments` may contain commas (parsed `splitn(8,',')`). One [`EventKind::Weather`] event per report at its own lat/lon. **Signal-meaningful** (every value unit-bearing + baseline): a confirmed **tornado** (EF rating when assessed → EF0 0.6…EF5 1.0; unrated touchdown 0.85), **hail** diameter in inches (severe ≥1.0", significant ≥2.0"; the daily `Size` is hundredths-of-inch — `175`=1.75" — handled tolerant of either hundredths or decimal-inch encoding), **wind** gust in mph (severe ≥58, significant ≥75, extreme ≥90; unknown-speed damaging-wind 0.5). Chip = "EF2 Tornado" / "2.75 in hail" / "70 mph wind" / "Damaging wind". Empty report day (header only — common early in the UTC day / quiet weather) = 0 events, not an error; if NONE of the three is a recognizable report CSV (e.g. all HTML 403 pages) → error so last-good takes over. **Path A (prod fetches live):** SPC `today_*.csv` is auth-free US-Gov public domain; the host 403s WebFetch in-sandbox (as every gov host does), so the format was **anchored to real consumer-code bytes** — `garrettrayj/storm-reports` `src/downloader.py` (URL `…/climo/reports/{YYMMDD}_rpts_{torn,hail,wind}.csv`) + `src/preprocessing.py` (8-field row regex), corroborated by multiple independent sources for the per-type headers + units; prod (full network) fetches the live `today_*.csv`. US/CONUS geography. |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -184,6 +185,12 @@ Bias each run toward the least-covered axis below.
   0 events even live). Landable when EITHER a search-indexed real CAAML-GeoJSON sample surfaces on
   `raw.githubusercontent.com` OR external-GitHub read/search scope is granted (then fetch the
   `eaws-regions` geometry + a winter bulletin); re-attempt in winter regardless.
+- **Severe convective (ground-truth)** — SEEDED 2026-06-29 with `spc_storm_reports` (**NOAA SPC**
+  confirmed tornado / large-hail / damaging-wind reports, US/CONUS) — the *occurrence* layer (touchdown/
+  impact) distinct from NWS warnings (forecast), cyclone tracks, flooding, and aviation hazards. Gap now:
+  (a) **outside the US** — a Canadian (ECCC/CIFFC storm reports) or European equivalent confirmed-event
+  feed if an auth-free geocoded one exists; (b) **lightning** as a near-real-time geocoded product still
+  open. SPC Path-A refresh is automatic (prod fetches `today_*.csv` live).
 - **Aviation hazards** — SEEDED 2026-06-29 with `awc_sigmet` (**NOAA AWC international SIGMETs** —
   en-route convective / turbulence / icing / volcanic-ash / tropical-cyclone hazards per FIR,
   worldwide; pairs with the live `opensky` aircraft + `navcanada` NOTAM layers). Gap now: **CWAs**
@@ -199,6 +206,45 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-06-29** (second run) — **adopted `spc_storm_reports` (NOAA SPC confirmed severe-storm reports), Path A** —
+  a new authoritative geocoded layer opening a **severe-convective ground-truth modality** no current feed
+  carried: confirmed **tornado / large-hail / damaging-wind** reports — the *occurrence* (touchdown/impact),
+  not a forecast. Distinct from NWS/ECCC *warnings* (what may happen), NHC/JMA cyclone *tracks*, NWPS river
+  flooding, and the just-landed AWC en-route aviation hazards. Per the SUSTAINED-BLOCK DIRECTIVE I LED with a
+  landable real source rather than a no-op; SPC is a genuinely-new auth-free **live** feed, so Path A applies
+  (prod fetches it live), and per the directive I did not burn the run hunting once it surfaced. **Network
+  re-probed fresh:** the egress/UA block on non-GitHub hosts is unchanged — `spc.noaa.gov`, the third-party
+  daculaweather archive, `api.github.com`, and readthedocs ALL **403 via WebFetch**; only
+  `raw.githubusercontent.com` serves. **Anchoring (the technique that broke the 20-run stall):** the SPC daily
+  report format was confirmed from **real consumer-code bytes on GitHub** — `garrettrayj/storm-reports`
+  `src/downloader.py` (URL pattern `…/climo/reports/{YYMMDD}_rpts_{torn,hail,wind}.csv`, also the no-date
+  `today_*.csv` alias) and `src/preprocessing.py` (the 8-field row regex: time, magnitude, location, county,
+  state, lat, lon, comments; first line skipped as header) — corroborated independently by WebSearch for the
+  per-type headers (`Time,F_Scale,…` / `Time,Size,…` / `Time,Speed,…`) and the units (**hail in inches /
+  hundredths-of-inch**, severe ≥1.0"; **wind gust**, severe ≥58 mph / significant ≥75). The `jcharrell`
+  node parser was ruled out as an anchor (it parses NWS LSR text, a different product). Clears all six bars:
+  **authoritative** (SPC = the US national severe-convective body); **auth-free** CSV; **machine-readable**
+  (8-col CSV, comma-in-comments handled via `splitn(8,',')`); **geocoded** (per-report lat/lon Point);
+  **fresh** (daily real-time `today_*.csv`; header-only quiet day = 0 events, not an error); **non-duplicative**
+  (no feed carries confirmed severe-storm occurrences). **Signal-meaningful:** every plotted value is unit-
+  bearing + baseline-relative — tornado (EF rating when assessed → EF0 0.6…EF5 1.0, unrated touchdown 0.85),
+  hail diameter in inches (1.0 severe → 3"+ destructive; `Size` dual-decoded so `175`=1.75" hundredths and a
+  decimal `1.75` both read 1.75"), wind gust mph (58→0.4 … 90+→0.95; unknown-speed damaging-wind 0.5); chip =
+  "EF2 Tornado" / "2.75 in hail" / "70 mph wind" / "Damaging wind". New
+  `vendor/ee-sources/src/spc_storm_reports.rs` (three-fetch `Source::fetch`; pure
+  `parse_spc_reports(torn,hail,wind)` + `report_chip` + per-type severity ladders + `hail_inches` dual-decoder;
+  header-tolerant section parser that treats header-only as empty and only errors when NO section is a real
+  report CSV; 6 offline tests: all-three-sections parse incl comma-laden comment + EF2/hundredths-hail/
+  unknown-wind, empty-day-is-OK, error-when-no-report-CSV + one-good-among-bad, hail both-encodings + drop-
+  unsized, drop-bad-coords, severity ladders). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("spc_storm_reports", …, 12)` + count/cap row cap 400 + `feed_detail` arm + osint chip test);
+  SRC_LABEL `NOAA SPC Storm Reports` in `dashboard.html`. **`cargo build --release` green; full workspace
+  `cargo test` green (gcrm 488 / 0 failed / 3 ignored; ee-sources 113 incl spc_storm_reports 6/6;
+  ee-correlate 79; ee-view 60; ee-core 9).** EventKind::Weather (the hydromet/severe-weather convention
+  NHC/JMA/NWPS/avalanche/SIGMET follow; a dedicated severe-convective variant is the self-improvement
+  routine's lane). Next: a non-US confirmed-severe-event feed (ECCC/CIFFC or European) or lightning if an
+  auth-free geocoded near-real-time product surfaces.
 
 - **2026-06-29** — **adopted `awc_sigmet` (NOAA AWC international SIGMETs), Path B** — a new
   authoritative geocoded layer opening an **en-route aviation-hazard modality** no current feed
