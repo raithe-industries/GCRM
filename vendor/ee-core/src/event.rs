@@ -32,6 +32,12 @@ pub struct Severity(f64);
 
 impl Severity {
     pub fn new(v: f64) -> Self {
+        // Guard NaN/±Inf BEFORE clamping: f64::clamp PASSES NaN THROUGH, so a severity
+        // computed from a ratio with a zero denominator (common in feed parsers) would
+        // otherwise construct an out-of-range Severity and NaN-poison every downstream
+        // sum/mean/composite up to the systemic index. A non-finite severity is treated
+        // as the lowest, making the `[0.0, 1.0]` invariant actually total. (audit ee_core_cargo-1)
+        let v = if v.is_finite() { v } else { 0.0 };
         Self(v.clamp(0.0, 1.0))
     }
     pub fn value(&self) -> f64 {
@@ -66,6 +72,18 @@ mod tests {
         assert_eq!(Severity::new(2.0).value(), 1.0);
         assert_eq!(Severity::new(-1.0).value(), 0.0);
         assert_eq!(Severity::new(0.5).value(), 0.5);
+    }
+
+    #[test]
+    fn severity_rejects_non_finite() {
+        // A NaN/Inf severity (e.g. an x/0 ratio in a feed parser) must not leak through and
+        // poison downstream sums — the [0,1] invariant has to be total. Any non-finite is
+        // treated as the lowest (a non-finite is a computation error, not real max severity).
+        // (audit ee_core_cargo-1)
+        assert_eq!(Severity::new(f64::NAN).value(), 0.0);
+        assert_eq!(Severity::new(f64::INFINITY).value(), 0.0);
+        assert_eq!(Severity::new(f64::NEG_INFINITY).value(), 0.0);
+        assert!(Severity::new(f64::NAN).value().is_finite());
     }
 
     #[test]

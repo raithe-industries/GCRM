@@ -1075,13 +1075,22 @@ mod tests {
         // garbled precision on the apex alert reads as broken, which per the mission
         // is a FAILED render even when the value is correct. Guard the formatted form
         // and forbid a revert to the raw concatenation.
+        //
+        // The fields are now finiteness-gated (audit dashboard-10) before .toFixed(1), so a
+        // partial alert payload renders 'M?' / omits the field instead of 'Mundefined'/'NaNkm'
+        // — the optional-chaining `?.` form was itself the bug (undefined?.toFixed → undefined
+        // → "Mundefined"). The one-decimal contract still holds.
         assert!(
-            DASHBOARD_HTML.contains("top.magnitude?.toFixed(1)"),
+            DASHBOARD_HTML.contains("top.magnitude.toFixed(1)"),
             "nuke banner must format magnitude to one decimal (it was rendering raw float noise)"
         );
         assert!(
-            DASHBOARD_HTML.contains("top.depth_km?.toFixed(1)"),
+            DASHBOARD_HTML.contains("top.depth_km.toFixed(1)"),
             "nuke banner must format depth to one decimal (it was rendering raw float noise)"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("Number.isFinite(top.magnitude)"),
+            "nuke banner must finiteness-guard magnitude so a partial payload can't render 'Mundefined'"
         );
         assert!(
             !DASHBOARD_HTML.contains("'M'+top.magnitude+' depth='"),

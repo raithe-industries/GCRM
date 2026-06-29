@@ -26,7 +26,10 @@ impl Geo {
         let dla = (other.lat - self.lat).to_radians();
         let dlo = (other.lon - self.lon).to_radians();
         let a = (dla / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlo / 2.0).sin().powi(2);
-        2.0 * R * a.sqrt().asin()
+        // atan2 form, not 2*R*asin(sqrt(a)): floating error can push `a` just above 1.0 for
+        // near-antipodal points, and asin(>1) is NaN — which would then NaN-poison any
+        // distance-keyed proximity/clustering math. atan2 is total over all inputs. (audit ee_core_cargo-2)
+        2.0 * R * a.sqrt().atan2((1.0 - a).max(0.0).sqrt())
     }
 }
 
@@ -77,6 +80,17 @@ mod tests {
         let london = Geo::new(51.5074, -0.1278).unwrap();
         let d = paris.haversine_km(&london);
         assert!((300.0..400.0).contains(&d), "got {d}");
+    }
+
+    #[test]
+    fn haversine_finite_at_antipode() {
+        // Near-antipodal points can push the haversine `a` term just above 1.0; the asin
+        // form would return NaN there. atan2 stays finite ~half Earth's circumference. (audit ee_core_cargo-2)
+        let a = Geo::new(0.0, 0.0).unwrap();
+        let b = Geo::new(0.0, 180.0).unwrap();
+        let d = a.haversine_km(&b);
+        assert!(d.is_finite(), "antipodal distance must be finite, got {d}");
+        assert!((19_000.0..21_000.0).contains(&d), "got {d}");
     }
 
     #[test]
