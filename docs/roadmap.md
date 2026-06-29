@@ -427,6 +427,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
+- [x] **3.19 China–India clash no longer mis-attributed to Taiwan/Kashmir** — **DONE 2026-06-29.**
+  An engine-behavior honesty/awareness fix in `theater_of` (`models.rs`). A China–India border clash
+  (actors `china`+`india`, two nuclear great powers) has NO tracked dyad of its own, but BOTH actors map
+  to *named* theaters, so the per-actor count + region tiebreak silently absorbed it into US–China/Taiwan
+  (region `asia_pacific`) or India–Pakistan (region `south_asia`) — fabricating heat in a flashpoint the
+  event is not about and able to name the wrong *lead* theater (operator reads "US–China/Taiwan" while the
+  fighting is on the Himalayan border). Added a narrow guard: china(+/`china_military`)+india with NEITHER
+  `taiwan` NOR `pakistan` present routes to `Other`, per this resolver's own contract ("a story with no
+  tracked dyad does not belong to a named theater"). The guard does NOT fire when the genuine partner is
+  present (china+taiwan stays Taiwan; india+pakistan stays Kashmir). Anchor-safe (backtests assign theater
+  tags directly, never via `theater_of` → bit-identical, bands 22/0). Locked by
+  `china_india_clash_is_not_mis_attributed_to_taiwan_or_kashmir` (FAILS without the guard: routes to
+  UsChinaTaiwan). This is the honest INTERIM for the deferred dedicated **China–India (LAC) theater** (a
+  6th `Theater::primary()` entry — still blocked: it is eyes-gated on the `repeat(5,1fr)` ladder grid in
+  `dashboard.html` and cross-lane on the `osint.rs` centroid table; needs Robert sign-off / signal-hunter
+  coordination). See improvement-log 2026-06-29.
 - [x] **3.17 Per-theater escalation-MOMENTUM gauge** — **DONE 2026-06-28.** A NEW computed gauge
   (T1): each theater now reports `escalation_momentum` ∈ [−1,+1], the recency-weighted mean signed
   `escalation_step` of its events — the Goldstein-style conflict↔cooperation DIRECTION of the news
