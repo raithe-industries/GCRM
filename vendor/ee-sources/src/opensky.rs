@@ -42,10 +42,7 @@ impl Source for OpenSky {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
-        let mut req = client.get(self.url());
+        let mut req = crate::http::client().get(self.url());
         // Optional OpenSky account → HTTP Basic auth, which raises the daily credit
         // budget ~10× over anonymous. Set OPENSKY_USERNAME / OPENSKY_PASSWORD to enable;
         // unset, it falls back to anonymous access.
@@ -56,7 +53,7 @@ impl Source for OpenSky {
                 req = req.basic_auth(user, Some(pass));
             }
         }
-        let body = req.send().await?.text().await?;
+        let body = crate::http::checked(req.send().await?)?.text().await?;
         parse_opensky(&body)
     }
 }

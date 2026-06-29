@@ -58,13 +58,10 @@ impl Source for AvalancheCa {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         // Two fetches: the bulletins (danger ratings, by area id) + the region
         // polygons (geometry, by the same id). Join them into placed events.
-        let products = client.get(self.products_url()).send().await?.text().await?;
-        let areas = client.get(self.areas_url()).send().await?.text().await?;
+        let products = crate::http::fetch_text(self.products_url()).await?;
+        let areas = crate::http::fetch_text(self.areas_url()).await?;
         parse_avalanche_ca(&products, &areas)
     }
 }

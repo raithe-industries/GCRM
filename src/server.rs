@@ -288,10 +288,13 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
         }
     }
 
-    // Send full timeline history from EpochStore (in-memory, no disk read)
+    // Send a bounded slice of recent timeline history from EpochStore (in-memory, no disk
+    // read). Capped per connect so a 4-day ring isn't cloned+serialized in full to every
+    // client; the chart fills forward via live pushes, and /api/epoch?limit=N serves deeper
+    // durable history on demand. (audit aggregator-1)
     let timeline: Vec<serde_json::Value> = {
         let es = state.app_state.epoch_store.lock().await;
-        es.query(usize::MAX).into_iter().cloned().collect()
+        es.query(crate::aggregator::WS_TIMELINE_BOOTSTRAP).into_iter().cloned().collect()
     };
     let tl_msg = json!({"type": "timeline", "data": timeline}).to_string();
     if socket.send(Message::Text(tl_msg)).await.is_err() {
@@ -353,7 +356,9 @@ async fn get_timeline(
     State(state): State<ServerState>,
     Query(params): Query<TimelineParams>,
 ) -> impl IntoResponse {
-    let limit = params.limit.unwrap_or(usize::MAX);
+    // Sane default cap when no explicit ?limit is given (an uncapped default cloned the whole
+    // ring per request); callers wanting deeper history pass ?limit=N. (audit aggregator-1)
+    let limit = params.limit.unwrap_or(crate::aggregator::WS_TIMELINE_BOOTSTRAP);
     let es = state.app_state.epoch_store.lock().await;
     let entries: Vec<serde_json::Value> = es.query(limit).into_iter().cloned().collect();
     let total = es.len();

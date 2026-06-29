@@ -37,10 +37,7 @@ impl Source for DriveBc {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
-        let body = client.get(self.url()).send().await?.text().await?;
+        let body = crate::http::fetch_text(self.url()).await?;
         parse_drivebc(&body)
     }
 }

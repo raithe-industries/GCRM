@@ -45,10 +45,7 @@ impl Source for Firms {
             "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{}/{}/{}",
             self.source, self.area, self.days
         );
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
-        let body = client.get(url).send().await?.text().await?;
+        let body = crate::http::fetch_text(&url).await?;
         parse_firms(&body)
     }
 }

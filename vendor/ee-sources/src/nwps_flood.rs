@@ -50,23 +50,22 @@ impl Source for NwpsFlood {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         // Ask the service for only the gauges already at/above action stage; the
         // parser re-filters defensively in case the where-clause is ignored.
-        let body = client
-            .get(self.url())
-            .query(&[
-                ("where", "status IN ('major','moderate','minor','action')"),
-                ("outFields", "*"),
-                ("returnGeometry", "true"),
-                ("f", "geojson"),
-            ])
-            .send()
-            .await?
-            .text()
-            .await?;
+        let body = crate::http::checked(
+            crate::http::client()
+                .get(self.url())
+                .query(&[
+                    ("where", "status IN ('major','moderate','minor','action')"),
+                    ("outFields", "*"),
+                    ("returnGeometry", "true"),
+                    ("f", "geojson"),
+                ])
+                .send()
+                .await?,
+        )?
+        .text()
+        .await?;
         parse_nwps_flood(&body)
     }
 }

@@ -54,13 +54,10 @@ impl Source for UsgsVolcano {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         // Two fetches: the elevated notices (status, no coords) + the US volcano
         // catalogue (coords by vnum). The catalogue is large but cacheable upstream.
-        let elevated = client.get(self.elevated_url()).send().await?.text().await?;
-        let catalog = client.get(self.catalog_url()).send().await?.text().await?;
+        let elevated = crate::http::fetch_text(self.elevated_url()).await?;
+        let catalog = crate::http::fetch_text(self.catalog_url()).await?;
         parse_usgs_volcano(&elevated, &catalog)
     }
 }

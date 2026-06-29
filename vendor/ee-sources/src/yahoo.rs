@@ -69,17 +69,9 @@ impl Source for Yahoo {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (engineering-effects/0.1)")
-            .build()?;
         let mut out = Vec::with_capacity(self.basket.len());
         for sym in &self.basket {
-            let body = client
-                .get(Yahoo::chart_url(sym.ticker))
-                .send()
-                .await?
-                .text()
-                .await?;
+            let body = crate::http::fetch_text(&Yahoo::chart_url(sym.ticker)).await?;
             // One bad symbol must not sink the whole basket.
             if let Ok(Some(ev)) = parse_yahoo_chart(&body, sym.label) {
                 out.push(ev);

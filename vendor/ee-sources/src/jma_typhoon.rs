@@ -47,11 +47,8 @@ impl Source for JmaTyphoon {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         let base = self.base_url();
-        let index = client.get(format!("{base}/targetTc.json")).send().await?.text().await?;
+        let index = crate::http::fetch_text(&format!("{base}/targetTc.json")).await?;
         let ids = parse_targets(&index)?;
 
         // At most a handful of simultaneous systems; cap defensively so a malformed
@@ -59,11 +56,8 @@ impl Source for JmaTyphoon {
         let mut out = Vec::new();
         for id in ids.into_iter().take(12) {
             let url = format!("{base}/{id}/forecast.json");
-            let body = match client.get(&url).send().await {
-                Ok(r) => match r.text().await {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                },
+            let body = match crate::http::fetch_text(&url).await {
+                Ok(t) => t,
                 Err(_) => continue,
             };
             if let Ok(mut evs) = parse_jma(&body) {

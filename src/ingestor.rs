@@ -421,6 +421,39 @@ fn build_client(timeout_secs: u64) -> reqwest::Result<Client> {
         .build()
 }
 
+/// Hard ceiling on a single feed response body. Even with a client timeout, a misbehaving or
+/// compromised upstream could stream gigabytes within the time budget; this bounds memory.
+/// 16 MB is generous for RSS/Atom/JSON feeds. (audit ingestor-3 / xcut_net-5)
+const MAX_FEED_BODY_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Read a response body with a hard byte ceiling. Rejects a declared-oversize up front via
+/// Content-Length, and otherwise accumulates chunks, aborting past the cap — so a chunked
+/// response with no Content-Length is bounded too.
+async fn read_body_capped(resp: reqwest::Response, cap: u64) -> Result<bytes::Bytes, String> {
+    if let Some(len) = resp.content_length() {
+        if len > cap {
+            return Err(format!("body too large: {len} bytes > {cap} cap"));
+        }
+    }
+    let mut total: u64 = 0;
+    let mut buf = bytes::BytesMut::new();
+    let mut resp = resp;
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                total += chunk.len() as u64;
+                if total > cap {
+                    return Err(format!("body exceeded {cap} byte cap"));
+                }
+                buf.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(e) => return Err(format!("body: {e}")),
+        }
+    }
+    Ok(buf.freeze())
+}
+
 // ── Feed entry → RawArticle ───────────────────────────────────────────────────
 //
 // Body extraction priority (improved):
@@ -624,7 +657,7 @@ impl Ingestor {
             debug!("RSS {source} HTTP {}", resp.status());
             return Err(());
         }
-        let bytes = match resp.bytes().await {
+        let bytes = match read_body_capped(resp, MAX_FEED_BODY_BYTES).await {
             Ok(b)  => b,
             Err(e) => {
                 self.health.lock().await.record_failure(source);
@@ -697,7 +730,7 @@ impl Ingestor {
                     ingestor.health.lock().await.record_failure("gnews");
                     debug!("GNews HTTP {}", resp.status());
                 }
-                Ok(resp) => match resp.bytes().await {
+                Ok(resp) => match read_body_capped(resp, MAX_FEED_BODY_BYTES).await {
                     Err(e) => {
                         ingestor.health.lock().await.record_failure("gnews");
                         debug!("GNews body: {e}");
@@ -757,6 +790,10 @@ impl Ingestor {
                 let resp = client.get(&url).send().await?;
                 if !resp.status().is_success() {
                     return Err(anyhow::anyhow!("HTTP {}", resp.status()));
+                }
+                // Reject a declared-oversize body before buffering it as JSON. (audit ingestor-3)
+                if resp.content_length().is_some_and(|l| l > MAX_FEED_BODY_BYTES) {
+                    return Err(anyhow::anyhow!("body too large"));
                 }
                 let data: serde_json::Value = resp.json().await?;
                 Ok::<serde_json::Value, anyhow::Error>(data)

@@ -7,6 +7,8 @@
 //!    so it can be unit-tested without the network.
 //! 3. Add the module below and register a default instance in [`registry`].
 
+pub mod http;
+
 pub mod acled;
 pub mod acled_aggregated;
 pub mod alberta511;

@@ -45,17 +45,16 @@ impl Source for GeonetVolcano {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         // GeoNet content-negotiates by Accept header; v2 is the current GeoJSON form.
-        let body = client
-            .get(self.url())
-            .header("Accept", "application/vnd.geo+json;version=2")
-            .send()
-            .await?
-            .text()
-            .await?;
+        let body = crate::http::checked(
+            crate::http::client()
+                .get(self.url())
+                .header("Accept", "application/vnd.geo+json;version=2")
+                .send()
+                .await?,
+        )?
+        .text()
+        .await?;
         parse_geonet_val(&body)
     }
 }

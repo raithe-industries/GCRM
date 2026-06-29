@@ -16,6 +16,7 @@
 //! provider can never blank the map.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration as StdDuration, Instant};
 
 use crate::models::EscalationRung;
@@ -33,6 +34,9 @@ use tokio::time::timeout;
 struct PayloadCache {
     inner: Mutex<Option<(Instant, Value)>>,
     ttl: StdDuration,
+    /// Single-flight guard: true while a background refresh is in flight, so a stale read
+    /// triggers at most one upstream rebuild no matter how many viewers arrive.
+    refreshing: AtomicBool,
 }
 
 impl PayloadCache {
@@ -40,26 +44,56 @@ impl PayloadCache {
         Self {
             inner: Mutex::const_new(None),
             ttl,
+            refreshing: AtomicBool::new(false),
         }
     }
 
-    /// Return the cached value if still fresh, else recompute via `build` while
-    /// holding the lock so only one refresh runs at a time — concurrent callers
-    /// wait and reuse that single fresh result instead of each hitting upstream.
-    async fn get_or_refresh<F, Fut>(&self, build: F) -> Value
+    /// Stale-while-revalidate. A FRESH entry returns immediately. A STALE entry returns the
+    /// stale value immediately and kicks off a single background refresh — so only the very
+    /// first COLD load ever blocks a caller. The old design held the lock across the entire
+    /// multi-second upstream fan-out, so on every TTL expiry one unlucky viewer (and every
+    /// other concurrent viewer queued behind the lock) ate the full fan-out latency — a
+    /// periodic head-of-line stall for all viewers. (audit osint-1 / xcut_net-3)
+    async fn get_or_refresh<F, Fut>(&'static self, build: F) -> Value
     where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Value>,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Value> + Send + 'static,
     {
-        let mut g = self.inner.lock().await;
-        if let Some((at, v)) = g.as_ref() {
-            if at.elapsed() < self.ttl {
-                return v.clone();
+        let snapshot = { self.inner.lock().await.clone() };
+        match snapshot {
+            Some((at, v)) if at.elapsed() < self.ttl => v, // fresh hit
+            Some((_, v)) => {
+                self.spawn_refresh(build); // serve stale now, revalidate in the background
+                v
+            }
+            None => {
+                // Cold start: block once to produce a first value.
+                let fresh = build().await;
+                *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
+                fresh
             }
         }
-        let fresh = build().await;
-        *g = Some((Instant::now(), fresh.clone()));
-        fresh
+    }
+
+    /// Spawn at most one background rebuild (single-flight via `refreshing`), swapping the
+    /// fresh value in when it completes. Never blocks the caller.
+    fn spawn_refresh<F, Fut>(&'static self, build: F)
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Value> + Send + 'static,
+    {
+        if self
+            .refreshing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return; // a refresh is already in flight
+        }
+        tokio::spawn(async move {
+            let fresh = build().await;
+            *self.inner.lock().await = Some((Instant::now(), fresh));
+            self.refreshing.store(false, Ordering::Release);
+        });
     }
 }
 
@@ -1110,24 +1144,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn payload_cache_coalesces_until_ttl_expires() {
+    async fn payload_cache_is_stale_while_revalidate() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        let calls = AtomicUsize::new(0);
-        let bump = || async { json!(calls.fetch_add(1, Ordering::SeqCst)) };
+        // 'static counter + cache so the SWR background refresh (which spawns a task that
+        // borrows the cache) satisfies the Send + 'static bounds; matches the production
+        // statics (MAP_FEEDS_CACHE / FINANCE_CACHE). A tiny test-only leak.
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        async fn bump() -> Value { json!(CALLS.fetch_add(1, Ordering::SeqCst)) }
 
-        // Long TTL: first miss builds, the next hit is served from cache.
-        let cache = PayloadCache::new(StdDuration::from_secs(60));
+        // Long TTL: first miss builds (blocks); the second is a fresh cache hit (no rebuild).
+        let cache: &'static PayloadCache =
+            Box::leak(Box::new(PayloadCache::new(StdDuration::from_secs(60))));
         assert_eq!(cache.get_or_refresh(bump).await, json!(0));
         assert_eq!(cache.get_or_refresh(bump).await, json!(0));
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "second call should hit cache");
+        assert_eq!(CALLS.load(Ordering::SeqCst), 1, "a fresh hit must not rebuild");
 
-        // Zero TTL: every call is stale, so it rebuilds each time.
-        let calls2 = AtomicUsize::new(0);
-        let bump2 = || async { json!(calls2.fetch_add(1, Ordering::SeqCst)) };
-        let fresh = PayloadCache::new(StdDuration::from_secs(0));
-        assert_eq!(fresh.get_or_refresh(bump2).await, json!(0));
-        assert_eq!(fresh.get_or_refresh(bump2).await, json!(1));
-        assert_eq!(calls2.load(Ordering::SeqCst), 2, "expired entry must rebuild");
+        // Zero TTL: the entry is immediately stale. SWR returns the STALE value synchronously
+        // and rebuilds in the BACKGROUND (single-flight), so the rebuild count rises after a
+        // brief yield — NOT on the synchronous return.
+        static CALLS2: AtomicUsize = AtomicUsize::new(0);
+        async fn bump2() -> Value { json!(CALLS2.fetch_add(1, Ordering::SeqCst)) }
+        let swr: &'static PayloadCache =
+            Box::leak(Box::new(PayloadCache::new(StdDuration::from_secs(0))));
+        assert_eq!(swr.get_or_refresh(bump2).await, json!(0)); // cold → blocks → 0
+        let _ = swr.get_or_refresh(bump2).await;               // stale → serves stale (0) + bg rebuild
+        tokio::time::sleep(StdDuration::from_millis(80)).await; // let the background rebuild run
+        assert!(CALLS2.load(Ordering::SeqCst) >= 2, "a stale read must trigger a background rebuild");
     }
 
     // Live smoke test (network) — run explicitly: `cargo test osint -- --ignored --nocapture`.

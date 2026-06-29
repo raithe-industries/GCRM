@@ -42,17 +42,15 @@ impl Source for DigitrafficAis {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
+        let client = crate::http::client();
         let req = |u: &str| {
             client
                 .get(u)
                 .header("Digitraffic-User", "raithe/gcrm")
                 .send()
         };
-        let locations = req(self.locations_url()).await?.text().await?;
-        let vessels = req(self.vessels_url()).await?.text().await?;
+        let locations = crate::http::checked(req(self.locations_url()).await?)?.text().await?;
+        let vessels = crate::http::checked(req(self.vessels_url()).await?)?.text().await?;
         parse_digitraffic_ais(&locations, &vessels)
     }
 }
