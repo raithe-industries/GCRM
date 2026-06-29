@@ -28,8 +28,18 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 // Collect any uncaught JS exceptions and console.error output during load+render.
 const jsErrors = [];
-page.on('pageerror', (e) => jsErrors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') jsErrors.push('console.error: ' + m.text()); });
+page.on('pageerror', (e) => jsErrors.push(String(e))); // uncaught JS exceptions — always fatal
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  const t = m.text();
+  // A transient sub-resource / feed fetch 4xx-5xx (a map layer briefly down, an aborted
+  // request, a missing favicon) logs console.error but is NOT a code regression — it must
+  // not block the deploy and trigger a rollback. Filter that network/resource noise; only a
+  // real script-level console.error survives. Genuine crashes still come through 'pageerror'
+  // above and remain fatal. (audit ops-1)
+  if (/Failed to load resource|net::ERR|ERR_[A-Z_]+|status of (4|5)\d\d|favicon/i.test(t)) return;
+  jsErrors.push('console.error: ' + t);
+});
 
 try {
   // Wait for `domcontentloaded`, NOT `networkidle`. The dashboard holds a live WebSocket
@@ -95,7 +105,10 @@ const apiLatest = URL.replace(/\/+$/, '') + '/api/latest';
 // endpoint still does (latest stays null → fail below).
 for (let i = 0; i < 20; i++) {            // ≈ 20 × 800ms ≈ 16s readiness budget
   try {
-    const r = await fetch(apiLatest);
+    // Bounded fetch: without a timeout a half-open connection during the restart window
+    // would hang this await indefinitely, jamming the eyes gate (and, with no timeout on the
+    // node run itself, the whole flock-held deploy). (audit ops-2)
+    const r = await fetch(apiLatest, { signal: AbortSignal.timeout(4000) });
     if (r.ok) {
       const j = await r.json();
       if (typeof j?.probabilities?.annual === 'number') { latest = j; break; }
