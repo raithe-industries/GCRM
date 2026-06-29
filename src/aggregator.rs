@@ -1127,8 +1127,13 @@ impl Aggregator {
 
             // Compute
             let mut snapshot = self.engine.compute(&self.event_window);
-            snapshot.sources_active = self.event_window.iter()
-                .map(|e| e.source.as_str()).collect::<HashSet<_>>().len();
+            // NOTE: do NOT overwrite snapshot.sources_active here. compute() Step 4 sets it
+            // to the RECENCY-GATED distinct live-source count — the value estimate_confidence()
+            // already consumed and the value is_thinly_sourced() reads. A prior ungated
+            // `HashSet over the full 4-year window` overwrite broke that consistency lock
+            // (the displayed source count no longer matched the count behind the confidence
+            // number) and made the thin-sourced caveat unable to fire during a partial feed
+            // outage. Leave the gated value standing. (audit bayesian-2)
 
             // Surface the seismic monitor's strongest test-consistent anomaly onto the
             // snapshot so the I&W board carries the physical nuclear indicator (the
