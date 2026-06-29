@@ -309,7 +309,6 @@ async fn main() {
     let ingestor = Ingestor::new(
         raw_tx,
         Arc::clone(&app_state),
-        settings.ingestion.poll_interval_seconds,
     );
 
     // ── Aggregator ────────────────────────────────────────────────────────────
