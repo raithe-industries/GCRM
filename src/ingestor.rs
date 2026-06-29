@@ -279,6 +279,25 @@ pub const GDELT_QUERIES: &[&str] = &[
 // against individual hosts and to stay within typical OS socket limits.
 const MAX_CONCURRENT_RSS: usize = 42;
 
+// ── Feed poll cadences ──────────────────────────────────────────────────────────
+// These are the NETWORK fetch clocks — deliberately their own absolute constants, NOT
+// derived from the aggregator's snapshot tick (`poll_interval_seconds`, ~1s). They were
+// previously `poll_interval_s * {5*1000, 12, 20}`; with the live snapshot tick of 1s that
+// silently re-polled all 103 RSS hosts every ~5s (and GNews/GDELT every 12s/20s) from a
+// single datacenter IP — abusive enough to earn 429s/IP-bans and take the roster dark,
+// the exact opposite of the "feeds must stay live" invariant. Coupling them to the tick
+// also meant any change to the dashboard refresh rate would silently re-tune the feeds.
+//
+/// RSS roster re-poll cycle (~100s across the full 103-feed roster): frequent enough to
+/// catch breaking news, slow enough not to get the prod IP rate-limited/banned. (audit ingestor-1)
+const RSS_CYCLE_MS: u64 = 100_000;
+/// GNews (Google News RSS) per-query cadence. Google aggressively throttles datacenter IPs,
+/// and one query fires per tick, so poll conservatively (~4 min/query).
+const GNEWS_QUERY_INTERVAL_S: u64 = 240;
+/// GDELT DOC API per-query cadence. GDELT itself only updates every ~15 min, so ~6.7 min
+/// per query is already at the source's own resolution.
+const GDELT_QUERY_INTERVAL_S: u64 = 400;
+
 // ── Article limits ────────────────────────────────────────────────────────────
 const RSS_ARTICLES_PER_FEED:  usize = 500;  // was 20
 const GNEWS_ARTICLES_PER_QUERY: usize = 250; // was 15
@@ -456,7 +475,6 @@ fn entry_to_article(
 pub struct Ingestor {
     article_tx:      mpsc::Sender<RawArticle>,
     state:           Arc<AppState>,
-    poll_interval_s: u64,
     seen:            Arc<Mutex<SeenCache>>,
     health:          Arc<Mutex<SourceHealth>>,
 }
@@ -465,12 +483,10 @@ impl Ingestor {
     pub fn new(
         article_tx:      mpsc::Sender<RawArticle>,
         state:           Arc<AppState>,
-        poll_interval_s: u64,
     ) -> Self {
         Self {
             article_tx,
             state,
-            poll_interval_s,
             seen:   Arc::new(Mutex::new(SeenCache::new(50_000))), // raised from 10k
             health: Arc::new(Mutex::new(SourceHealth::default())),
         }
@@ -478,9 +494,10 @@ impl Ingestor {
 
     pub async fn run(self) {
         info!(
-            "Ingestor: {} RSS feeds (parallel, max {} concurrent) | {} GNews | {} GDELT | {}s base interval",
-            RSS_FEEDS.len(), MAX_CONCURRENT_RSS, GNEWS_QUERIES.len(), GDELT_QUERIES.len(),
-            self.poll_interval_s,
+            "Ingestor: {} RSS feeds (parallel, max {} concurrent, ~{}s cycle) | {} GNews (~{}s/query) | {} GDELT (~{}s/query)",
+            RSS_FEEDS.len(), MAX_CONCURRENT_RSS, RSS_CYCLE_MS / 1000,
+            GNEWS_QUERIES.len(), GNEWS_QUERY_INTERVAL_S,
+            GDELT_QUERIES.len(), GDELT_QUERY_INTERVAL_S,
         );
 
         // Seed the dedup cache from articles restored on boot (load_articles) so
@@ -564,7 +581,7 @@ impl Ingestor {
             }
 
             // Interval with ±20% deterministic jitter (no RNG dependency)
-            let base_ms = ingestor.poll_interval_s * 5 * 1000; // 10s base → 100s
+            let base_ms = RSS_CYCLE_MS;
             let jitter  = (jitter_ctr % 5) * base_ms / 25; // 0–20%
             let delay   = if jitter_ctr.is_multiple_of(2) { base_ms + jitter } else { base_ms - jitter };
             jitter_ctr  = jitter_ctr.wrapping_add(1);
@@ -627,9 +644,12 @@ impl Ingestor {
             count += 1;
         }
 
-        if count > 0 {
-            self.health.lock().await.record_success(source, count);
-        }
+        // Record a successful fetch (resets the consecutive-failure counter) whenever the
+        // feed fetched AND parsed — a clean 200 with no new articles is health, not an
+        // outage. Previously gated on count>0, so a live-but-quiet feed could never clear
+        // accumulated failures and stayed demoted to slow re-probing. The registry tally
+        // only advances when count>0 (record_success adds count). (audit ingestor-4)
+        self.health.lock().await.record_success(source, count);
         Ok((count, count > 0))
     }
 
@@ -650,11 +670,30 @@ impl Ingestor {
                 "https://news.google.com/rss/search?q={encoded}&hl=en&gl=US&ceid=US:en"
             );
 
+            // Mirror fetch_rss_feed: a send error, non-2xx (Google throttling/blocking the
+            // datacenter IP), body error or parse error must all record a health FAILURE,
+            // otherwise a dark GNews is invisible to the freshness floor / watchdog and the
+            // roster silently loses a major source. (audit ingestor-2, xcut_err-2)
             match client.get(&url).send().await {
-                Err(e) => debug!("GNews error: {e}"),
-                Ok(resp) => {
-                    if let Ok(bytes) = resp.bytes().await {
-                        if let Ok(feed) = feed_rs::parser::parse(bytes.as_ref()) {
+                Err(e) => {
+                    ingestor.health.lock().await.record_failure("gnews");
+                    debug!("GNews error: {e}");
+                }
+                Ok(resp) if !resp.status().is_success() => {
+                    ingestor.health.lock().await.record_failure("gnews");
+                    debug!("GNews HTTP {}", resp.status());
+                }
+                Ok(resp) => match resp.bytes().await {
+                    Err(e) => {
+                        ingestor.health.lock().await.record_failure("gnews");
+                        debug!("GNews body: {e}");
+                    }
+                    Ok(bytes) => match feed_rs::parser::parse(bytes.as_ref()) {
+                        Err(e) => {
+                            ingestor.health.lock().await.record_failure("gnews");
+                            debug!("GNews parse: {e}");
+                        }
+                        Ok(feed) => {
                             let mut count = 0usize;
                             for entry in feed.entries.iter().take(GNEWS_ARTICLES_PER_QUERY) {
                                 let article = match entry_to_article(entry, "gnews", SourceTier::Tier2) {
@@ -667,16 +706,16 @@ impl Ingestor {
                                 let _ = ingestor.article_tx.send(article).await;
                                 count += 1;
                             }
-                            if count > 0 {
-                                ingestor.health.lock().await.record_success("gnews", count);
-                                info!("GNews: {count} articles for '{query}'");
-                            }
+                            // A successful fetch+parse is health regardless of new-article
+                            // count — reset failures. (audit ingestor-4)
+                            ingestor.health.lock().await.record_success("gnews", count);
+                            if count > 0 { info!("GNews: {count} articles for '{query}'"); }
                         }
                     }
-                }
+                },
             }
 
-            sleep(Duration::from_secs(ingestor.poll_interval_s * 12)).await;
+            sleep(Duration::from_secs(GNEWS_QUERY_INTERVAL_S)).await;
         }
     }
 
@@ -711,6 +750,10 @@ impl Ingestor {
 
             match result {
                 Err(e) => {
+                    // Record the failure (the send/non-2xx/json error is already folded into
+                    // `result`) so a dark GDELT is visible to the watchdog, not just an
+                    // ever-growing local backoff. (audit xcut_err-2)
+                    ingestor.health.lock().await.record_failure("gdelt");
                     backoff = (backoff * 2).min(500);
                     debug!("GDELT backoff {backoff}s: {e}");
                     sleep(Duration::from_secs(backoff)).await;
@@ -755,14 +798,16 @@ impl Ingestor {
                         count += 1;
                     }
 
+                    // A successful query (HTTP 2xx + valid JSON) is health regardless of
+                    // new-article count — reset failures. (audit ingestor-4)
+                    ingestor.health.lock().await.record_success("gdelt", count);
                     if count > 0 {
-                        ingestor.health.lock().await.record_success("gdelt", count);
                         info!("GDELT: {count} articles for '{query}'");
                     }
                 }
             }
 
-            sleep(Duration::from_secs(ingestor.poll_interval_s * 20)).await;
+            sleep(Duration::from_secs(GDELT_QUERY_INTERVAL_S)).await;
         }
     }
 
