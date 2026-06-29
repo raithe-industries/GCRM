@@ -391,15 +391,21 @@ impl FuzzyDedup {
             }
         }
 
-        // Verify each candidate
+        // Verify each candidate. The MinHash estimate is only a cheap PRE-FILTER to skip
+        // obvious non-matches — it must sit STRICTLY BELOW the real threshold, never at it.
+        // Gating the estimate at the SAME JACCARD_THRESHOLD as the exact check discarded ~half
+        // of true boundary duplicates: a real pair with exact Jaccard ≈ threshold has a noisy
+        // signature estimate that lands below it ~50% of the time, so the exact verifier never
+        // ran and the duplicate leaked through as "new", inflating event/source/breadth counts
+        // that feed the risk index. The exact_jaccard check below is the authority. (audit processor-1)
+        let prefilter = (JACCARD_THRESHOLD - 0.20).max(0.0);
         for idx in candidates {
             if idx >= self.sigs.len() { continue; }
             let est = Self::jaccard_from_sigs(&sig, &self.sigs[idx]);
-            if est >= JACCARD_THRESHOLD {
-                // Signature estimate is above threshold — verify with exact Jaccard
-                if Self::exact_jaccard(title, &self.titles[idx]) >= JACCARD_THRESHOLD {
-                    return false; // duplicate
-                }
+            if est >= prefilter
+                && Self::exact_jaccard(title, &self.titles[idx]) >= JACCARD_THRESHOLD
+            {
+                return false; // duplicate
             }
         }
 
@@ -465,6 +471,21 @@ fn event_keywords() -> Vec<(EventType, Vec<&'static str>)> {
             "chemical weapon","nerve agent","sarin","novichok",
             "biological weapon","radiological","dirty bomb","wmd",
             "mass casualty weapon","chemical attack","toxin","anthrax",
+        ]),
+        // De-escalation types: without keyword lists, classify() could NEVER emit these, so a
+        // pure ceasefire/peace-deal story fell through to Unknown (severity_base 0.20) instead
+        // of being recognised as de-escalatory (Ceasefire 0.15 / PeaceTalks 0.12). In a model
+        // tuned toward false alarm, silently dropping the de-escalation signal biases it up.
+        // A genuine escalation in the same headline (e.g. "ceasefire collapses as airstrike
+        // hits city") still outranks these via classify()'s severity-weighted scoring. (audit processor-2)
+        (EventType::Ceasefire, vec![
+            "ceasefire","cease-fire","truce","armistice","cessation of hostilities",
+            "stand down","laid down arms","halt to fighting","stopped fighting",
+        ]),
+        (EventType::PeaceTalks, vec![
+            "peace talks","peace deal","peace agreement","peace accord","negotiations",
+            "negotiated settlement","summit","diplomatic talks","ceasefire deal",
+            "withdrawal agreement","prisoner exchange","de-escalation",
         ]),
     ]
 }
@@ -696,13 +717,18 @@ const ALLIANCE_INVOCATION_PHRASES: &[&str] = &[
 /// Minimum domain signal to tag a domain (I-05), recalibrated for the noisy-OR
 /// signal model in `score_domains`. Under noisy-OR a single matched keyword
 /// contributes its own weight directly, so the threshold is expressed on the
-/// same scale as keyword weights:
-///   • A single strong/definitive keyword (w ≥ 0.55) tags the domain alone.
-///   • A single moderate keyword (w ≤ 0.50) does not — e.g. a lone "peace talks"
+/// same scale as keyword weights. The gate is `signal >= MIN_DOMAIN_SIGNAL`:
+///   • A single keyword with w ≥ 0.50 tags the domain alone — this INCLUDES the
+///     w == 0.50 boundary keywords ("strategic weapons", "sanctions imposed",
+///     "hotline", "data breach") as well as the stronger/definitive ones (0.55+).
+///   • A single weaker keyword (w < 0.50) does not — e.g. a lone "peace talks"
 ///     (0.40) or "sanctions" (0.35) is insufficient.
-///   • Multiple moderate keywords accumulate via noisy-OR and can cross the
+///   • Multiple weaker keywords accumulate via noisy-OR and can cross the
 ///     threshold together (two 0.40 keywords → 1 - 0.6·0.6 = 0.64).
 /// This rejects ambient single-keyword noise while still tagging genuine signal.
+/// NOTE: the `>=` boundary is part of the fitted calibration (several real keywords sit
+/// at exactly 0.50). It is documented and pinned by a test rather than tweaked — changing
+/// it to `>` would silently shift the domain-tagging calibration. (audit processor-3)
 const MIN_DOMAIN_SIGNAL: f64 = 0.5;
 
 // ── Escalation phrases ────────────────────────────────────────────────────────
@@ -728,6 +754,23 @@ const CONCILIATORY_WORDS: &[&str] = &[
     "diplomatic","talks","truce","deescalate","cooperation","compromise","accord",
     "reconciliation","mediation","de-escalation","diplomacy",
 ];
+
+/// True if `needle` occurs in `haystack` as a whole word — alphanumeric boundaries on both
+/// sides — so the hostile token "fire" does NOT match inside "ceasefire" and "war" does not
+/// match "warning". Used only for the sentiment lexicons, where naive substring matching let
+/// a ceasefire headline score as hostile (the "fire" token) and inflate the news-flow tone.
+/// Both args are assumed already lowercased. Internal hyphens (e.g. "de-escalation") are fine
+/// — only the ends are boundary-checked. (audit processor-4)
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let hb = haystack.as_bytes();
+    let nlen = needle.len();
+    haystack.match_indices(needle).any(|(i, _)| {
+        let before_ok = i == 0 || !hb[i - 1].is_ascii_alphanumeric();
+        let after = i + nlen;
+        let after_ok = after >= hb.len() || !hb[after].is_ascii_alphanumeric();
+        before_ok && after_ok
+    })
+}
 
 // ── Nuclear / WMD / civilian indicator terms ─────────────────────────────────
 
@@ -944,8 +987,10 @@ impl NlpProcessor {
         };
 
         let sentiment_score = {
-            let h = HOSTILE_WORDS.iter().filter(|w| tl.contains(*w)).count() as f64;
-            let c = CONCILIATORY_WORDS.iter().filter(|w| tl.contains(*w)).count() as f64;
+            // Whole-word matching (not substring): otherwise "ceasefire" scores as hostile via
+            // its "fire" token and "warning" via "war", biasing the tone. (audit processor-4)
+            let h = HOSTILE_WORDS.iter().filter(|w| contains_word(&tl, w)).count() as f64;
+            let c = CONCILIATORY_WORDS.iter().filter(|w| contains_word(&tl, w)).count() as f64;
             let total = h + c;
             if total > 0.0 { ((c - h) / total * 1000.0).round() / 1000.0 } else { 0.0 }
         };
@@ -983,9 +1028,13 @@ impl NlpProcessor {
         event.escalation_step    = {
             // Sign from tone (hostile → escalatory), magnitude from severity. A
             // keyword-derived placeholder; the LLM extractor replaces it in Phase 4.
+            // Neutral tone → 0.0 (no directional momentum): the old +0.4 default silently
+            // injected an escalatory bias into the news-flow direction for EVERY neutral
+            // article whenever the LLM was unavailable, in a model already tuned toward
+            // false alarm. (audit processor-6)
             let dir = if sentiment_score < -0.15 { 1.0 }
                       else if sentiment_score >  0.15 { -1.0 }
-                      else { 0.4 };
+                      else { 0.0 };
             (severity * dir).clamp(-1.0, 1.0)
         };
         event.domain_signals            = domain_signals;
@@ -1323,6 +1372,43 @@ mod tests {
             assert!(!event.domain_tags.contains(&"great_power_conflict".to_string()),
                 "Ambient country-name-only article should not tag great_power_conflict");
         }
+    }
+
+    #[test]
+    fn sentiment_uses_word_boundaries_not_substrings() {
+        // The "fire" hostile token must not match inside "ceasefire", nor "war" inside
+        // "warning"; whole words still match, including the hyphenated "de-escalation". (audit processor-4)
+        assert!(contains_word("ceasefire holds across the front", "ceasefire"));
+        assert!(!contains_word("ceasefire holds across the front", "fire"));
+        assert!(!contains_word("severe weather warning issued", "war"));
+        assert!(contains_word("the war escalates sharply", "war"));
+        assert!(contains_word("a de-escalation deal was signed", "de-escalation"));
+    }
+
+    #[test]
+    fn classify_recognises_deescalation_types() {
+        // Without keyword lists, classify() could never emit Ceasefire/PeaceTalks, so pure
+        // de-escalation news fell through to Unknown and was scored as if escalatory. A genuine
+        // escalation in the same headline still wins via severity-weighted scoring. (audit processor-2)
+        let proc = NlpProcessor::new();
+        assert_eq!(proc.classify("ceasefire announced between the two sides"), EventType::Ceasefire);
+        assert_eq!(proc.classify("leaders begin peace talks in geneva"), EventType::PeaceTalks);
+        assert_eq!(proc.classify("ceasefire collapses as airstrike kills dozens"), EventType::MilitaryStrike);
+    }
+
+    #[test]
+    fn lone_0_50_weight_keyword_still_tags_its_domain() {
+        // The fitted gate is `signal >= MIN_DOMAIN_SIGNAL`, so a single w == 0.50 keyword
+        // ("data breach") tags its domain alone. Exercised through process() so a silent flip
+        // of the boundary to `>` would drop the tag (process returns None → unwrap panics) and
+        // be caught here — pinning the inclusive, fitted boundary. (audit processor-3)
+        assert_eq!(MIN_DOMAIN_SIGNAL, 0.5);
+        let mut proc = NlpProcessor::new();
+        let article = make_article("Major data breach disclosed at the agency", "");
+        let event = proc.process(&article)
+            .expect("a lone 0.50-weight keyword must cross the inclusive gate and tag a domain");
+        assert!(!event.domain_tags.is_empty(),
+            "lone 0.50-weight keyword tagged no domain — the >= boundary may have flipped to >");
     }
 
     #[test]

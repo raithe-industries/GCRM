@@ -1265,6 +1265,15 @@ fn try_corroborate(
 
     if let Some(idx) = best_idx {
         let existing = &mut window[idx];
+        // Only a genuinely NEW source corroborates. The candidate loop already excludes the
+        // canonical (primary) source; this also blocks a non-primary source that already
+        // corroborated this event from inflating count/credibility AGAIN with a reworded
+        // headline. A repeat from a known source is still ABSORBED (returns true, so it isn't
+        // re-added as a phantom new event) — it just doesn't re-boost. (audit aggregator-4)
+        if existing.corroborating_sources.iter().any(|s| s == &incoming.source) {
+            return true;
+        }
+        existing.corroborating_sources.push(incoming.source.clone());
         existing.corroboration_count += 1;
         let boost = incoming.credibility_weight * 0.15;
         existing.credibility_weight = (existing.credibility_weight + boost).min(1.0);
