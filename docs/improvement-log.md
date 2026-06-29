@@ -22,6 +22,37 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-29 — honesty — systemic momentum weights LIVE evidence, not a floor-held memory (a silent war no longer inverts the news-flow gauge)
+- Item: roadmap 3.18 follow-up (PROGRESS line added). Engine-behavior honesty fix.
+- Defect: `couplers.systemic_momentum` (the "which way is the news flow tilting RIGHT NOW" gauge,
+  3.18) is the heat-weighted mean of per-theater `escalation_momentum`, weighted by each theater's
+  DISPLAYED `heat`. But a floor-held theater's displayed heat is a remembered war-state carried
+  through a news gap (`held_by_floor` — memory, not live evidence), and its momentum is computed
+  from STALE, decayed coverage. So a silent, memory-held war voted at full memory-heat weight and
+  could DILUTE or even INVERT the live news-flow direction from theaters with current coverage — a
+  pillar-1 violation (the gauge says "right now" but counts stale memory at full weight).
+- Change: excluded floor-held theaters from the weight (`.filter(… && !s.held_by_floor)`) in
+  `theater.rs::compute`. Only theaters whose displayed heat reflects fresh evidence vote on the live
+  direction; a board of only silent, memory-held wars reads 0 (no live news flow → no current
+  direction), consistent with the quiet-world case. Doc comments updated (theater.rs + models.rs).
+- Metric moved: HONESTY (engine-behavior) — the systemic news-flow gauge now means what it says.
+  Test count 478 → 480 (one new lock; grep count includes the new test). Calibration unchanged:
+  backtests carry no floor-held theaters, so they are bit-identical (bands 22/0, Brier unchanged).
+- Proof: `cargo build --release` clean; `cargo test --release` 479 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 22/0 (quiet/Ukraine/current_2026/Cuba intact); `cargo clippy --release
+  --all-targets` 0 warnings. Fails-without-change VERIFIED: reverting the `!s.held_by_floor`
+  exclusion makes `systemic_momentum_weights_live_evidence_not_a_floor_held_memory` panic with
+  `got 0.313` — i.e. the gauge reads +0.313 (ESCALATING) when the only live news on the board is a
+  fresh de-escalation; with the fix it reads < −0.4.
+- Tier: T2/engine-correctness · Touched: engine-behavior (changes the served `systemic_momentum`
+  value) · Lock-fails-without-change: yes (reverts to +0.313, test panics) · Counts: HONESTY fix to a
+  live gauge — not a caveat, not a +1-test nit, not display-only · consecutive_display_only=0 ·
+  display_only_in_last_7=2 · consecutive_noop=0
+- Notes future runs MUST respect: do NOT revert the `!s.held_by_floor` exclusion — a floor-held
+  theater is memory, not live news flow, and letting it vote inverts the gauge (proven by the lock
+  test). The per-theater `escalation_momentum` chip is unaffected (it is a per-theater read, where
+  the floor-held caveat already lives via 3.11/3.13). This is the SYSTEMIC aggregate only.
+
 ## 2026-06-28 — awareness — SYSTEMIC escalation-momentum aggregate (which way the WHOLE board is tilting, a leading read)
 - Item: roadmap 3.18 (now checked). T1 new computed gauge.
 - Change: `couplers.systemic_momentum` ∈ [−1,+1] — the HEAT-WEIGHTED mean of the per-theater

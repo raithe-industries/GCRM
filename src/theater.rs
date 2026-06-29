@@ -652,8 +652,17 @@ impl TheaterEngine {
         // direction). It is the single systemic read of which way the WHOLE board is tilting —
         // a signal that turns BEFORE the realized headline P, unlike the lagging `delta`. Pure
         // read-out of a gauge the engine already computes per theater; never feeds `l_sys`/P.
+        //
+        // HONESTY: floor-held theaters are EXCLUDED from the weight. The gauge claims the live
+        // news-flow direction "right now", but a floor-held theater's displayed `heat` is a
+        // remembered war-state carried through a news gap (`held_by_floor`), not live evidence —
+        // its momentum is computed from stale, decayed coverage. Letting it vote at full
+        // memory-heat weight would dilute (or even invert) the live direction from theaters that
+        // actually have current coverage. So only theaters whose displayed heat reflects fresh
+        // evidence vote; a board of only silent, memory-held wars reads 0 (no live news flow → no
+        // current direction), consistent with the quiet-world case.
         let (mom_sum, mom_w) = states.iter()
-            .filter(|s| s.heat >= STABLE_HEAT_CEILING)
+            .filter(|s| s.heat >= STABLE_HEAT_CEILING && !s.held_by_floor)
             .fold((0.0_f64, 0.0_f64), |(sum, w), s| {
                 (sum + s.heat * s.escalation_momentum, w + s.heat)
             });
@@ -1024,6 +1033,58 @@ mod tests {
         let j = serde_json::to_value(&out.couplers).unwrap();
         assert!((j["systemic_momentum"].as_f64().unwrap() - out.couplers.systemic_momentum).abs() < 1e-12,
             "systemic_momentum must serialize as a number into the couplers JSON");
+    }
+
+    #[test]
+    fn systemic_momentum_weights_live_evidence_not_a_floor_held_memory() {
+        use chrono::Duration;
+        // HONESTY: the systemic momentum gauge reads which way the news flow is tilting RIGHT NOW.
+        // A floor-held theater's displayed `heat` is a remembered war-state carried through a news
+        // gap, and its momentum is computed from STALE coverage — it must NOT vote at full
+        // memory-heat weight, or it dilutes/inverts the live direction from theaters with current
+        // coverage. Construct exactly that adversarial board:
+        //   A (us_iran):  a sustained war aged 96h with a STALE ESCALATORY step (+0.5) → high
+        //                 memory heat, `held_by_floor`, momentum carried from old news;
+        //   B (nato_russia): FRESH, strongly DE-ESCALATING (step −0.7), above baseline but cooler.
+        // The only LIVE news flow on the board is B's de-escalation. The honest systemic read is
+        // therefore strongly negative; including A's stale escalatory memory at memory-heat weight
+        // would pull it toward zero (or positive), masking the real, current direction.
+        let mut evs = Vec::new();
+        for _ in 0..8 {
+            let mut a = ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true);
+            let mut b = ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false);
+            a.published_at = Utc::now() - Duration::hours(96);
+            b.published_at = Utc::now() - Duration::hours(96);
+            a.escalation_step = 0.5; b.escalation_step = 0.5;   // stale ESCALATORY memory
+            evs.push(a); evs.push(b);
+        }
+        for _ in 0..3 {
+            let mut c = ev("nato_russia", "military_escalation", 0.5, 0.45, &["russia", "ukraine"], true);
+            c.escalation_step = -0.7;                            // fresh DE-ESCALATION
+            evs.push(c);
+        }
+        let out = TheaterEngine::new().compute(&evs);
+        let held  = out.theaters.iter().find(|s| s.theater_id == "us_iran").unwrap();
+        let fresh = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+
+        // Preconditions that make this an adversarial dilution case (not a vacuous one):
+        assert!(held.held_by_floor,
+            "precondition: the aged war must be floor-held (memory), heat={}", held.heat);
+        assert!(held.escalation_momentum > 0.2,
+            "precondition: the held theater carries a STALE escalatory momentum, got {}",
+            held.escalation_momentum);
+        assert!(!fresh.held_by_floor && fresh.heat >= STABLE_HEAT_CEILING,
+            "precondition: the de-escalating theater is fresh + above baseline, heat={}", fresh.heat);
+        assert!(held.heat > fresh.heat,
+            "precondition: the held theater's memory heat dominates (held={}, fresh={}) — \
+             so weighting by it would swamp the live signal", held.heat, fresh.heat);
+
+        // With the floor-held theater excluded, the systemic read reflects the ONLY live news flow:
+        // B's de-escalation. (Without the exclusion this nets ~0 / positive — the stale memory
+        // masking the real direction.)
+        assert!(out.couplers.systemic_momentum < -0.4,
+            "the systemic gauge must follow the LIVE de-escalation, not the floor-held escalatory \
+             memory; got {}", out.couplers.systemic_momentum);
     }
 
     #[test]

@@ -819,7 +819,10 @@ pub struct SystemicCouplers {
     /// Systemic escalation momentum in [−1, +1] — the heat-weighted mean of the per-theater
     /// `escalation_momentum` (news-flow direction) across theaters above baseline. Each
     /// theater's momentum is weighted by its heat, so a calming backwater can't outvote a
-    /// heating flashpoint and a quiet world (no theater above baseline) reads 0. Negative =
+    /// heating flashpoint and a quiet world (no theater above baseline) reads 0. Floor-held
+    /// theaters are EXCLUDED from the weight: their displayed heat is a remembered war-state
+    /// (memory, not live evidence) and their momentum is stale, so they must not dilute the live
+    /// news-flow direction — a board of only silent, memory-held wars reads 0. Negative =
     /// the board's coverage is dominated by de-escalation (ceasefires, talks, deals);
     /// positive = by escalatory moves. This is the SINGLE systemic LEADING read — which way
     /// the whole picture is tilting RIGHT NOW — distinct from the headline `delta` (a LAGGING
