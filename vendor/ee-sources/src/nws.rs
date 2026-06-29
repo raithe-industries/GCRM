@@ -32,11 +32,9 @@ impl Source for Nws {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        // NWS rejects requests without a descriptive User-Agent (HTTP 403).
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
-        let body = client.get(self.url()).send().await?.text().await?;
+        // NWS rejects requests without a descriptive User-Agent (HTTP 403); the shared
+        // client sets one.
+        let body = crate::http::fetch_text(self.url()).await?;
         parse_nws(&body)
     }
 }

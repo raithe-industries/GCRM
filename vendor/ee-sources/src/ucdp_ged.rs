@@ -34,16 +34,13 @@ impl Source for UcdpGed {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
         // Discover the current candidate-GED CSV (the filename carries a monthly version),
         // falling back to a known-good URL if the listing can't be read.
-        let url = match client.get("https://ucdp.uu.se/downloads/").send().await {
-            Ok(r) => r.text().await.ok().and_then(|p| pick_candidate_url(&p)).unwrap_or_else(|| DEFAULT_URL.to_string()),
+        let url = match crate::http::fetch_text("https://ucdp.uu.se/downloads/").await {
+            Ok(p) => pick_candidate_url(&p).unwrap_or_else(|| DEFAULT_URL.to_string()),
             Err(_) => DEFAULT_URL.to_string(),
         };
-        let body = client.get(&url).send().await?.text().await?;
+        let body = crate::http::fetch_text(&url).await?;
         parse_ucdp_ged(&body)
     }
 }

@@ -42,42 +42,44 @@ impl Source for Acled {
             return Ok(Vec::new());
         };
         let client_id = std::env::var("ACLED_CLIENT_ID").unwrap_or_else(|_| "acled".to_string());
-        let client = reqwest::Client::builder()
-            .user_agent("engineering-effects/0.1 (+https://raithe.ca)")
-            .build()?;
+        let client = crate::http::client();
 
         // 1) OAuth password grant -> bearer token.
-        let tok: serde_json::Value = client
-            .post("https://acleddata.com/oauth/token")
-            .form(&[
-                ("grant_type", "password"),
-                ("username", user.as_str()),
-                ("password", pass.as_str()),
-                ("client_id", client_id.as_str()),
-            ])
-            .send()
-            .await?
-            .json()
-            .await?;
+        let tok: serde_json::Value = crate::http::checked(
+            client
+                .post("https://acleddata.com/oauth/token")
+                .form(&[
+                    ("grant_type", "password"),
+                    ("username", user.as_str()),
+                    ("password", pass.as_str()),
+                    ("client_id", client_id.as_str()),
+                ])
+                .send()
+                .await?,
+        )?
+        .json()
+        .await?;
         let Some(token) = tok.get("access_token").and_then(|t| t.as_str()) else {
             anyhow::bail!("acled: no access_token (check ACLED_USERNAME/PASSWORD)");
         };
 
         // 2) Recent events, point-geocoded.
         let since = (Utc::now() - chrono::Duration::days(self.days)).format("%Y-%m-%d");
-        let body = client
-            .get("https://acleddata.com/api/acled/read")
-            .query(&[
-                ("_format", "json"),
-                ("limit", "1000"),
-                ("event_date", &since.to_string()),
-                ("event_date_where", ">="),
-            ])
-            .bearer_auth(token)
-            .send()
-            .await?
-            .text()
-            .await?;
+        let body = crate::http::checked(
+            client
+                .get("https://acleddata.com/api/acled/read")
+                .query(&[
+                    ("_format", "json"),
+                    ("limit", "1000"),
+                    ("event_date", &since.to_string()),
+                    ("event_date_where", ">="),
+                ])
+                .bearer_auth(token)
+                .send()
+                .await?,
+        )?
+        .text()
+        .await?;
         parse_acled(&body)
     }
 }

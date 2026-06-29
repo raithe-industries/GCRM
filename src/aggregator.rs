@@ -395,6 +395,13 @@ impl ArticleStore {
 
 pub const MAX_EPOCH_ENTRIES: usize = 35_064 * 10; // ~350k; ~28 MB at ~80 B/entry
 
+/// Default cap on the timeline sent per WebSocket connect and per uncapped /api/timeline
+/// request. The full ring (up to MAX_EPOCH_ENTRIES ≈ 350k) was cloned and serialized to a
+/// multi-hundred-MB JSON string for EVERY client on connect — a steady-state memory/bandwidth
+/// spike. ~50k entries (~14h at 1Hz) is already far more than the chart shows meaningfully;
+/// deeper durable history stays available on disk and via /api/epoch?limit=N. (audit aggregator-1)
+pub const WS_TIMELINE_BOOTSTRAP: usize = 50_000;
+
 #[derive(Debug, Default)]
 pub struct EpochStore {
     ring: VecDeque<serde_json::Value>,

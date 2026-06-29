@@ -41,7 +41,7 @@ impl Source for Usgs {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let body = reqwest::get(self.url()).await?.text().await?;
+        let body = crate::http::fetch_text(&self.url()).await?;
         parse_usgs(&body)
     }
 }
