@@ -119,16 +119,11 @@ fn build_cluster(located: &[(&Event, Geo)], idx: &[usize]) -> Cluster {
     let mut members: Vec<Event> = idx.iter().map(|&i| located[i].0.clone()).collect();
     members.sort_by_key(|e| e.time);
 
-    let (mut lat_sum, mut lon_sum) = (0.0, 0.0);
-    for &i in idx {
-        let g = located[i].1;
-        lat_sum += g.lat;
-        lon_sum += g.lon;
-    }
-    let count = idx.len() as f64;
-    // Members are all valid coordinates, so the mean is in range; fall back to the
-    // first member's location in the impossible case `Geo::new` rejects the mean.
-    let centroid = Geo::new(lat_sum / count, lon_sum / count).unwrap_or(located[idx[0]].1);
+    // Circular-mean centroid (antimeridian-safe — a cluster straddling 180° centres near the
+    // dateline, not on the wrong hemisphere). Falls back to the first member for the degenerate
+    // antipodally-balanced case; idx is non-empty here. (audit ee_correlate-3)
+    let geos: Vec<Geo> = idx.iter().map(|&i| located[i].1).collect();
+    let centroid = ee_core::geo::centroid(&geos).unwrap_or(located[idx[0]].1);
 
     let start = members.first().map(|e| e.time).unwrap();
     let end = members.last().map(|e| e.time).unwrap();

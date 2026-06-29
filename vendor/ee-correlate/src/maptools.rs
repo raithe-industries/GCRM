@@ -36,19 +36,25 @@ fn bearing_deg(from: &Geo, to: &Geo) -> f64 {
 
 /// Smallest [`BBox`] covering every point. `points` must be non-empty.
 fn bounding_box(points: &[Geo]) -> BBox {
-    let mut b = BBox {
-        min_lat: points[0].lat,
-        min_lon: points[0].lon,
-        max_lat: points[0].lat,
-        max_lon: points[0].lon,
-    };
-    for g in &points[1..] {
-        b.min_lat = b.min_lat.min(g.lat);
-        b.min_lon = b.min_lon.min(g.lon);
-        b.max_lat = b.max_lat.max(g.lat);
-        b.max_lon = b.max_lon.max(g.lon);
+    let min_lat = points.iter().map(|g| g.lat).fold(f64::INFINITY, f64::min);
+    let max_lat = points.iter().map(|g| g.lat).fold(f64::NEG_INFINITY, f64::max);
+    let min_lon = points.iter().map(|g| g.lon).fold(f64::INFINITY, f64::min);
+    let max_lon = points.iter().map(|g| g.lon).fold(f64::NEG_INFINITY, f64::max);
+    // If the naive longitude span exceeds 180°, the set is better described as straddling the
+    // antimeridian: recompute on the unwrapped [0,360) axis and convert back, yielding a wrap
+    // box (min_lon > max_lon, understood by BBox::contains) that covers the SHORT arc instead
+    // of a planet-spanning box that would falsely contain everything. Only adopt it when it is
+    // actually tighter — a genuinely globe-spanning set can't be improved. (audit ee_correlate-3)
+    if max_lon - min_lon > 180.0 {
+        let unwrap = |lon: f64| if lon < 0.0 { lon + 360.0 } else { lon };
+        let umin = points.iter().map(|g| unwrap(g.lon)).fold(f64::INFINITY, f64::min);
+        let umax = points.iter().map(|g| unwrap(g.lon)).fold(f64::NEG_INFINITY, f64::max);
+        if umax - umin < max_lon - min_lon {
+            let rewrap = |lon: f64| if lon > 180.0 { lon - 360.0 } else { lon };
+            return BBox { min_lat, min_lon: rewrap(umin), max_lat, max_lon: rewrap(umax) };
+        }
     }
-    b
+    BBox { min_lat, min_lon, max_lat, max_lon }
 }
 
 // --------------------------------------------------------------------------- Locate
@@ -278,7 +284,7 @@ pub fn area_intel(bbox: BBox, events: &[Event]) -> AreaReport {
     let mut excluded = 0usize;
     let mut peak = 0.0_f64;
     let mut sev_sum = 0.0;
-    let (mut lat_sum, mut lon_sum) = (0.0, 0.0);
+    let mut geos: Vec<Geo> = Vec::new();
     let mut earliest: Option<DateTime<Utc>> = None;
     let mut latest: Option<DateTime<Utc>> = None;
 
@@ -292,8 +298,7 @@ pub fn area_intel(bbox: BBox, events: &[Event]) -> AreaReport {
         total += 1;
         sev_sum += e.severity.value();
         peak = peak.max(e.severity.value());
-        lat_sum += g.lat;
-        lon_sum += g.lon;
+        geos.push(g);
         earliest = Some(earliest.map_or(e.time, |t| t.min(e.time)));
         latest = Some(latest.map_or(e.time, |t| t.max(e.time)));
         if let Some(slot) = by_kind.iter_mut().find(|(k, _)| *k == e.kind) {
@@ -307,8 +312,8 @@ pub fn area_intel(bbox: BBox, events: &[Event]) -> AreaReport {
     by_kind.sort_by_key(|k| std::cmp::Reverse(k.1));
 
     let (mean_severity, centroid) = if total > 0 {
-        let n = total as f64;
-        (sev_sum / n, Geo::new(lat_sum / n, lon_sum / n))
+        // Circular-mean centroid — antimeridian-safe (audit ee_correlate-3).
+        (sev_sum / total as f64, ee_core::geo::centroid(&geos))
     } else {
         (0.0, None)
     };
