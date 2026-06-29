@@ -509,6 +509,14 @@ impl SeismicMonitor {
         let site = nearest_site.unwrap();
 
         let event_id = &feat.id;
+        // Compute the news-escalation score BEFORE taking is_new, so building+pushing the new
+        // alert is the first await after the seen-record. Otherwise a 2nd network reporting the
+        // SAME event during this (in-memory but non-trivial) await saw is_new==false yet found
+        // no alert to upgrade — the 1st task hadn't pushed it yet — and its corroboration was
+        // silently dropped. Seismic events are infrequent, so computing this for the occasional
+        // duplicate is negligible. (audit detector-4)
+        let news_score = self.news_escalation_score(site.actor).await;
+
         // Take is_new and record under a single lock so two networks reporting the
         // same event concurrently cannot both observe is_new == true.
         let (is_new, networks) = {
@@ -532,9 +540,7 @@ impl SeismicMonitor {
                 distance_km, site.name
             );
 
-            // Read current news escalation score for this actor (I-18: tightened)
-            let news_score = self.news_escalation_score(site.actor).await;
-
+            // news_score was computed above (before is_new) to keep the push race-free.
             let mut alert = SeismicAlert {
                 id:                   event_id.clone(),
                 level:                SeismicAlertLevel::Anomaly,
@@ -673,14 +679,16 @@ async fn check_aftershocks(
     };
 
     let mut alerts = state.nuclear_alerts.lock().await;
-    if aftershock_count > 0 {
-        // Aftershock sequence present — natural tectonic earthquake, not an
-        // explosion. Clear the alert outright so it stops driving the banner.
+    if aftershock_count >= AFTERSHOCK_SEQUENCE_MIN {
+        // A genuine aftershock SEQUENCE (multiple nearby events, Omori-style) — natural
+        // tectonic source, not an explosion. Clear the alert. A SINGLE coincidental nearby
+        // M≥2.5 is background seismicity, not a sequence, and no longer clears a real
+        // explosion-consistent anomaly (the old `> 0` was a false-calm bias). (audit detector-3)
         let before = alerts.len();
         alerts.retain(|a| a.id != event_id);
         if alerts.len() < before {
             info!(
-                "Seismic event {}: {} aftershock(s) detected — tectonic source, alert cleared",
+                "Seismic event {}: {} aftershocks (sequence) — tectonic source, alert cleared",
                 event_id, aftershock_count
             );
         }
@@ -689,19 +697,30 @@ async fn check_aftershocks(
 
     if let Some(alert) = alerts.iter_mut().find(|a| a.id == event_id) {
         alert.aftershock_checked  = true;
-        alert.aftershock_count    = 0;
+        alert.aftershock_count    = aftershock_count; // record the TRUE count, not a hardcoded 0
         alert.aftershock_check_at = Some(Utc::now());
 
-        // No aftershock sequence — consistent with explosion source
-        alert.level       = SeismicAlertLevel::AftershockAbsent;
+        if aftershock_count == 0 {
+            // No aftershocks at all — consistent with an explosion source.
+            alert.level = SeismicAlertLevel::AftershockAbsent;
+        }
+        // aftershock_count == 1: ambiguous (one nearby quake could be background OR the start
+        // of a sequence). Do NOT promote to AftershockAbsent and do NOT clear — leave the level
+        // as-is; compute_confidence already withholds the +0.20 absence bonus when count > 0.
         alert.confidence  = alert.compute_confidence();
         alert.description = SeismicMonitor::build_description_static(alert);
         info!(
-            "SEISMIC ANOMALY — no aftershock sequence at 2h: {} (confidence {:.0}%)",
-            alert.id, alert.confidence * 100.0
+            "SEISMIC ANOMALY aftershock check at 2h: {} aftershock(s) → {} (confidence {:.0}%)",
+            aftershock_count, alert.id, alert.confidence * 100.0
         );
     }
 }
+
+/// Minimum nearby M≥2.5 events (within 50 km / 2 h, excluding the original) that constitute a
+/// real aftershock SEQUENCE — the Omori signature of a natural tectonic source. A single event
+/// is background seismicity, not a sequence, so it must not clear an explosion-consistent
+/// anomaly. (audit detector-3)
+const AFTERSHOCK_SEQUENCE_MIN: usize = 2;
 
 impl SeismicMonitor {
     fn build_description_static(a: &SeismicAlert) -> String {
@@ -783,22 +802,32 @@ impl CtbtoMonitor {
                     self.seen.insert(guid.clone());
                     info!("CTBTO statement detected: {title}");
 
-                    // Correlate with the most recent alert from the last 7 days
-                    // rather than the oldest in the list. A statement with no recent
-                    // alert to attach to is logged but escalates nothing.
+                    // Correlate only with a recent alert the statement PLAUSIBLY refers to:
+                    // the alert's actor (country) or nearest-site name must appear in the CTBTO
+                    // title. Mere recency is NOT correlation — a generic detection-keyword press
+                    // item must not blindly escalate the most-recent alert (anywhere on Earth) to
+                    // the highest CtbtoStatement level with no geographic/actor link, flipping the
+                    // board's test-consistency light off a coincidence. No confident match → log
+                    // only, mutate nothing (same discipline as the no-recent-alert branch). (audit detector-1)
                     let now = Utc::now();
                     let mut alerts = self.state.nuclear_alerts.lock().await;
-                    let recent = alerts.iter_mut()
+                    let matched = alerts.iter_mut()
                         .filter(|a| (now - a.detected_at) < chrono::Duration::days(7))
+                        .filter(|a| {
+                            let actor = a.actor.replace('_', " ");
+                            let site  = a.nearest_site_name.to_lowercase();
+                            (!actor.is_empty() && lower.contains(&actor))
+                                || (!site.is_empty() && lower.contains(&site))
+                        })
                         .max_by_key(|a| a.detected_at);
-                    if let Some(alert) = recent {
+                    if let Some(alert) = matched {
                         alert.ctbto_statement = true;
                         alert.ctbto_text      = Some(title.clone());
                         alert.level           = SeismicAlertLevel::CtbtoStatement;
                         alert.confidence      = alert.compute_confidence();
-                        info!("CTBTO statement correlated with seismic alert {}", alert.id);
+                        info!("CTBTO statement correlated with seismic alert {} (actor/site match)", alert.id);
                     } else {
-                        info!("CTBTO statement '{title}' — no recent seismic alert to correlate");
+                        info!("CTBTO statement '{title}' — no actor/site-matching recent seismic alert to correlate");
                     }
                 }
             }
