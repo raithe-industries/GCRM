@@ -98,6 +98,12 @@ fn theater_coord(theater_id: &str) -> Option<(f64, f64)> {
 /// keeps the colour consistent with the label, gives the apex Systemic rung its own
 /// distinct colour, and removes a third hard-coded copy of the rung heat thresholds
 /// (the boundaries now live only in `theater.rs`).
+/// Marker colour for a missing/unparseable rung: a conspicuous neutral grey, NOT the
+/// safest Stable green. A snapshot is always internally generated with a known rung today,
+/// so this is a latent guard — but defaulting a parse miss to "calm" would contradict this
+/// module's anti-understatement thesis (the whole reason the marker colours by rung). (audit osint-2)
+const UNKNOWN_RUNG_COLOR: &str = "#6b7280";
+
 fn rung_color(rung: EscalationRung) -> &'static str {
     match rung {
         EscalationRung::Stable        => "#1D9E75",
@@ -126,10 +132,11 @@ fn build_theater_features(snapshot: &Option<Value>) -> Vec<Value> {
         let heat = t.get("heat").and_then(|v| v.as_f64()).unwrap_or(0.0);
         // Colour by the engine's authoritative rung (carried in the snapshot), not by
         // heat — so the marker can't understate a great-power / nuclear rung override.
-        let rung: EscalationRung = t
+        // A missing/unparseable rung is coloured a conspicuous UNKNOWN grey (never the
+        // safest Stable green) so a parse miss can never read as "calm". (audit osint-2)
+        let rung: Option<EscalationRung> = t
             .get("rung")
-            .and_then(|r| serde_json::from_value(r.clone()).ok())
-            .unwrap_or(EscalationRung::Stable);
+            .and_then(|r| serde_json::from_value(r.clone()).ok());
         out.push(json!({
             "type": "Feature",
             "geometry": { "type": "Point", "coordinates": [lon, lat] },
@@ -146,7 +153,7 @@ fn build_theater_features(snapshot: &Option<Value>) -> Vec<Value> {
                 // read has decayed below it (same contract as the ladder chip / hero caveat).
                 "held_by_floor": t.get("held_by_floor").and_then(|v| v.as_bool()).unwrap_or(false),
                 "fresh_rung_label": t.get("fresh_rung_label").and_then(|v| v.as_str()).unwrap_or(""),
-                "color": rung_color(rung),
+                "color": rung.map(rung_color).unwrap_or(UNKNOWN_RUNG_COLOR),
                 "layer": "theaters",
             }
         }));

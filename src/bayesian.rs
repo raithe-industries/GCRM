@@ -792,7 +792,17 @@ impl BayesianRiskEngine {
 
         // ── Step 3: Domain scores ──
         snap.domain_scores    = self.domain_scorer.score_all(events);
-        snap.events_in_window = events.len();
+        // events_in_window counts LIVE events only — those whose recency weight is still
+        // meaningful (~10-day cutoff at the 72h military half-life), the SAME gate Step 4
+        // applies to sources/regions/great-power events. A warm multi-year backlog must NOT
+        // keep is_data_blind() false during a live ingestion outage: this field drives the
+        // honesty caveats (data_blind, thinly_sourced), the offline warn, and the confidence
+        // volume term, and a baseline read during a total outage must not masquerade as a
+        // calm, measured quiet world (see is_data_blind / CONFIDENCE_OFFLINE_FLOOR). The raw
+        // stored-window size is not a "live signal" count and is deliberately not reported.
+        snap.events_in_window = events.iter()
+            .filter(|e| recency_weight(&e.published_at, "military_escalation") > 0.1)
+            .count();
 
         // ── Step 4: Metadata ──
         snap.great_power_events = events.iter()
