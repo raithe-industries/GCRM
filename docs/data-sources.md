@@ -70,6 +70,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `nwps_flood` | Weather | NOAA / NWS NWPS | **river flooding** — the NWS `water/riv_gauges` "Observed River Stages" GeoJSON layer (id 0), one Point per AHPS gauge with its observed **flood category** in `status`. Connector keeps only gauges **at/above action stage** (`action`/`minor`/`moderate`/`major`); drops the all-clear `no_flooding` + undefined states, so a no-flood network = 0 events, not an error. Auth-free GeoJSON, US-Gov public domain. **Signal-meaningful where a raw gauge level isn't:** `status` is the *baseline-relative* category (NWS already compared live stage to that gauge's own thresholds) — resolves the `ECCC hydrometric` "nonsense number" rejection at its root. Severity major 1.0→action 0.35; chip = "Major flooding" / "Near flood stage". Fills the river-flooding hazard no current feed carries. |
 | `magma_volcano` | Volcano | PVMBG / MAGMA Indonesia | **Indonesian volcano operational alert levels** — PVMBG (Geological Agency, Ministry of Energy & Mineral Resources) is the authoritative national monitor for the world's most volcanically active country (~127 monitored volcanoes). Each volcano carries a ground alert level `ga_status` on the 4-step scale (1 Normal / 2 Waspada / 3 Siaga / 4 Awas) plus the latest VONA aviation colour (`vona[].cu_avcode` GREEN/YELLOW/ORANGE/RED). Connector emits one event per volcano **above background** (status ≥ 2); Normal (1) dropped, so an all-quiet snapshot = 0 events. Severity = max(status rank, aviation-colour rank) — an ash-erupting Waspada volcano flagged ORANGE plots at 0.8, not 0.55. Chip = "Alert Siaga (Watch) · Aviation Yellow". **Path B (committed snapshot):** MAGMA's home-map volcano list is embedded server-side (no clean public full-list JSON endpoint) and the host 403s in-sandbox, so a real captured PVMBG payload ships `include_str!`-embedded (`magma_volcano_snapshot.json`), refreshed by a local/manual re-capture job. Schema confirmed against PVMBG's own `magma-indonesia/magma-indonesia` source (`HomeController::gunungApi()` + `VonaApiService`). Fills the **Indonesia / SE-Asia** volcano geography GeoNet (NZ) and USGS (US/Alaska) don't cover. |
 | `avalanche_ca` | Weather | Avalanche Canada | **snow-avalanche danger ratings** — Canada's national public-avalanche body. Joins `/forecasts/en/products` (bulletins, by `area.id`) to `/forecasts/en/areas` (region polygons, GeoJSON, same id) and plots one dot per region **with a numeric rating today**, at the polygon centroid. Severity = peak elevation-band rating on the North American scale (Low 0.2 → Extreme 1.0). **Signal-meaningful** (the danger scale is baseline-relative — each level a defined likelihood/size, not a raw number). **Seasonal, handled honestly:** off-season bands read `norating`/spring → dropped, so summer = 0 events not an error (layer lights up ~late-Nov→Apr). Resolves the source's deferral via an off-season-tolerant parser. Auth-free JSON+GeoJSON. Chip = "Alpine Considerable · Treeline Moderate · Below Low". Fills the snow-avalanche hazard no other feed carries. |
+| `awc_sigmet` | Weather | NOAA / NWS Aviation Weather Center | **international SIGMETs** — the en-route aviation hazard warnings each Meteorological Watch Office issues for its Flight Information Region, aggregated by AWC at `api/data/isigmet?format=geojson`. One `Polygon` feature per active SIGMET, plotted at the **hazard-polygon centroid**, carrying the hazard type (`hazard`: TS/TC/VA/TURB/ICE/DS/SS/MTW/GR/IFR…), an intensity/coverage qualifier (`qualifier`: SEV/EMBD/ISOL/OCNL/FRQ…), the affected flight-level band (`base`/`top`, feet MSL), the issuing FIR (`firName`), and the raw SIGMET text. Opens an **en-route aviation-hazard modality** no feed carried (distinct from NWS/ECCC ground warnings, NHC/JMA cyclone *tracks*, and NWPS river flooding) with **global FIR geography**; pairs with the live aircraft (`opensky`) + NOTAM (`navcanada`) layers. **Signal-meaningful:** every value is a named WMO aviation phenomenon + standardized intensity + flight levels (no raw scalar). Severity = max(hazard base [VA/TC 0.9 → IFR 0.4], qualifier bump [SEV 0.85 / HVY 0.7]). Chip = "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430". Empty `FeatureCollection` (no active intl SIGMETs in scope) = 0 events, not an error. **Path B (mirrored-snapshot verification):** the live host 403s in-sandbox, so the parser + fixture are anchored to a **real captured AWC intl-SIGMET payload** committed on GitHub (`thomasdubdub/sigmet-sectors/20200316.json` — genuine SBRE RECIFE EMBD-TS / LFRR BREST SEV-TURB records); prod (full network) fetches the live `format=geojson` endpoint. Auth-free, US-Gov public domain. |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -183,6 +184,12 @@ Bias each run toward the least-covered axis below.
   0 events even live). Landable when EITHER a search-indexed real CAAML-GeoJSON sample surfaces on
   `raw.githubusercontent.com` OR external-GitHub read/search scope is granted (then fetch the
   `eaws-regions` geometry + a winter bulletin); re-attempt in winter regardless.
+- **Aviation hazards** — SEEDED 2026-06-29 with `awc_sigmet` (**NOAA AWC international SIGMETs** —
+  en-route convective / turbulence / icing / volcanic-ash / tropical-cyclone hazards per FIR,
+  worldwide; pairs with the live `opensky` aircraft + `navcanada` NOTAM layers). Gap now: **CWAs**
+  (Center Weather Advisories, the sub-SIGMET US product) and **G-AIRMETs** are also AWC GeoJSON
+  products if a lower-severity aviation layer is wanted; the live SIGMET host 403s in-sandbox so a
+  Path-B snapshot refresh re-downloads the `format=geojson` endpoint (prod fetches it live).
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -193,6 +200,49 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-29** — **adopted `awc_sigmet` (NOAA AWC international SIGMETs), Path B** — a new
+  authoritative geocoded layer opening an **en-route aviation-hazard modality** no current feed
+  carried (convective / turbulence / icing / volcanic-ash / tropical-cyclone warnings per Flight
+  Information Region), with **global FIR geography**, pairing with the live aircraft (`opensky`) +
+  NOTAM (`navcanada`) layers. Per the SUSTAINED-BLOCK DIRECTIVE I LED with a Path-B snapshot-anchored
+  ingestion via the GitHub-captured-bytes technique, NOT a no-op block record. **Network re-probed
+  fresh:** WebFetch positive control on `raw.githubusercontent.com` correct (`facebook/react`
+  `package.json` → `private:true`/no `name`); the live AWC endpoint
+  `aviationweather.gov/api/data/isigmet?format=geojson` **403s via WebFetch** (egress-wide non-GitHub
+  block unchanged), and the glama OpenAPI mirror + AWC help host both 403 — exactly why this is Path B.
+  **The unlock (same technique that landed NHC→JMA→GeoNet→USGS-volcano→MAGMA→NWPS→avalanche-CA):**
+  confirmed via **WebSearch** that the AWC Data API isigmet/airsigmet products are open/no-auth/
+  JSON+GeoJSON (no key), then **anchored to genuine committed bytes** — a real captured AWC
+  international-SIGMET payload in `thomasdubdub/sigmet-sectors/20200316.json` (WebFetched off
+  `raw.githubusercontent.com`, the one reachable channel): a GeoJSON `FeatureCollection`, one
+  `Polygon` `Feature` per SIGMET with `properties.{icaoId,firId,firName,hazard,qualifier,geom,coords,
+  base,top,validTimeFrom,validTimeTo,rawSigmet}` + GeoJSON `geometry`. Real records confirm the shape
+  and the global reach: **SBRE RECIFE** (Brazil, EMBD TS, TOP FL430) and **LFRR BREST** (France, SEV
+  TURB, FL170–330). Schema corroborated independently by the AWC documented ISIGMET-JSON example
+  (NZ Auckland Oceanic) and a second consumer (`fvalka/sigmet-map`). Clears all six bars:
+  **authoritative** (NOAA AWC = the US aviation-weather body + intl-SIGMET aggregator); **auth-free**
+  GeoJSON; **machine-readable**; **geocoded** (hazard-polygon centroid; `coords`-string fallback);
+  **fresh** (real-time issuances; empty collection = 0 events, not an error); **non-duplicative** (no
+  feed carries en-route aviation hazards — ground warnings, cyclone tracks, and river flooding are all
+  distinct). **Signal-meaningful:** every value is a named WMO aviation phenomenon + standardized
+  intensity/coverage + flight-level band — no raw scalar; severity = max(hazard base [VA/TC 0.9 → IFR
+  0.4], qualifier bump [SEV 0.85 / HVY 0.7]); chip = "Severe Turbulence · FL170–330" / "Embedded
+  Thunderstorms · to FL430". New `vendor/ee-sources/src/awc_sigmet.rs` (pure `parse_awc_sigmet` +
+  `sigmet_chip` + hazard/qualifier severity & labels + `polygon_centroid`/`coords_centroid`/
+  `level_band` helpers; case-insensitive props; number-or-string tolerant; rejects `NaN` levels;
+  synthesizes a stable id from firId+seriesId+hazard+validTimeFrom since the GeoJSON output carries no
+  feature id; 5 offline tests: real-fixture parse drops the no-hazard + no-geometry features and grades
+  EMBD-TS/SEV-TURB/VA, empty-collection-is-OK, coords-string fallback, error-on-bad-input, severity &
+  band/qualifier ladder incl. NaN-band). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("awc_sigmet", …, 10)` + count/cap row cap 200 + `feed_detail` arm + osint chip test);
+  SRC_LABEL `NOAA AWC SIGMET` in `dashboard.html`. **`cargo build --release` green; full workspace
+  `cargo test` green (gcrm 480 / 0 failed / 3 ignored; ee-sources 107 incl. awc_sigmet 5/5;
+  ee-correlate 79; ee-view 60; ee-core 5).** EventKind::Weather (the hydromet/aviation-weather
+  convention NHC/JMA/NWPS/avalanche follow; a dedicated Aviation-hazard variant is the
+  self-improvement routine's lane). **Path-B refresh (documented):** a local job re-downloads the live
+  `isigmet?format=geojson` endpoint and re-commits the snapshot — prod fetches it live directly. Next
+  aviation target: AWC **CWAs** / **G-AIRMETs** (lower-severity products, same GeoJSON API) if a
+  lower-severity layer is wanted.
 - **2026-06-28** (second run) — **adopted `acled_aggregated` (ACLED weekly Admin-1 conflict intensity), Path B** —
   the ledger's and the SUSTAINED-BLOCK DIRECTIVE's explicitly-named top target (the "ACLED-aggregated weekly
   conflict snapshot — admin-centroid dots, fatalities→severity"). Per the directive I **led with a Path-B
