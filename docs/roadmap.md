@@ -453,6 +453,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   touched. Locked by `systemic_momentum_is_the_heat_weighted_board_direction` (theater, incl. the
   heat-weighting proof) + `dashboard_renders_systemic_news_flow_direction` (server). See
   improvement-log 2026-06-28.
+  - PROGRESS 2026-06-29: closed a **pillar-1 honesty defect** in the heat weight. The gauge reads the
+    LIVE news-flow direction "right now", but it weighted each theater by its DISPLAYED `heat` — which
+    for a floor-held theater is a remembered war-state carried through a news gap (memory, not live
+    evidence), with a STALE momentum. So a silent, memory-held war voted at full memory-heat weight and
+    could dilute or even INVERT the live direction. Adversarial proof: a 96h-silent escalatory war (held)
+    alongside a fresh, strongly de-escalating theater read `systemic_momentum = +0.313` (escalating!)
+    when the only live news was de-escalation. Excluded floor-held theaters from the weight
+    (`!s.held_by_floor`): the gauge now follows the live signal (−0.4..−1), and a board of only silent
+    held wars reads 0 (no live news flow → no current direction), consistent with the quiet-world case.
+    Engine-behavior; anchor-safe (backtests carry no floor-held theaters → bit-identical, bands 22/0).
+    Locked by `systemic_momentum_weights_live_evidence_not_a_floor_held_memory` (FAILS without the
+    exclusion: reads +0.313). See improvement-log 2026-06-29.
 - [x] **3.16 The I&W board gains a CYBER / CRITICAL-INFRASTRUCTURE warning condition** — **DONE 2026-06-25.**
   With 3.15 (diplomatic) added, four of the five tracked modalities had a NAMED board light
   (military→`gp_kinetic`, nuclear→`nuclear_signaling`, economic→`energy_chokepoint`,
