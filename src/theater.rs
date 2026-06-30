@@ -42,7 +42,7 @@ use crate::models::{
 /// Chosen so the current acute-crisis corpus (live US/Israel–Iran war + closed
 /// Hormuz + Ukraine yr5 + dead arms control) reads in the >25% band Robert set as
 /// the target, while a quiet world stays near the baseline.
-pub const EVIDENCE_GAIN_SYS: f64 = 2.4;
+pub const EVIDENCE_GAIN_SYS: f64 = 3.27;
 
 /// Heat at/above which a theater counts as "hot" (≥ Crisis) for concurrency.
 const HOT_HEAT: f64 = 0.18;
@@ -140,7 +140,7 @@ pub const GP_ENTANGLEMENT_SATURATION: f64 = 3.0;
 /// nuclear-brink apex — the "breadth-swamps-brink" regression a previous linear
 /// +0.12/theater term produced (a no-brink four-theater world pegged flat at the 0.90
 /// ceiling). LOCKED by `breadth_never_swamps_the_nuclear_brink`.
-pub const BREADTH_ASYMPTOTE: f64 = 0.26;
+pub const BREADTH_ASYMPTOTE: f64 = 0.10;
 
 /// e-fold scale of the breadth saturation: at `breadth = BREADTH_EFOLD` extra hot theaters
 /// the concurrency bonus has reached (1 − 1/e) ≈ 63% of its asymptote. Larger = slower
@@ -176,7 +176,7 @@ pub const WAR_STATE_HALF_LIFE_SCALE: f64 = 5.0;
 /// world holds ~38% across a 2-day gap rather than decaying to ~31%), reflecting the chosen error
 /// posture — err toward holding (false alarm) over premature stand-down (false calm). The
 /// de-escalation gate still releases the floor regardless of this value.
-pub const FLOOR_FRACTION: f64 = 0.85;
+pub const FLOOR_FRACTION: f64 = 0.92;
 
 /// The floor engages only for a theater whose slow war-state heat reached at least sustained war
 /// (Limited-War rung). A crisis/tension spike never earns a multi-week floor, and a quiet world
@@ -286,8 +286,18 @@ fn heat_from_scores(scores: &HashMap<String, DomainScore>) -> f64 {
         .sum();
     let soft_elev: f64 = scores.values().map(|d| soft_elevation_weight(d.score)).sum();
     let cooc = co_occurrence_boost(soft_elev);
-    ((weighted / max_weighted_sum()) * cooc).min(1.0)
+    // Soft saturation (was a HARD min(1.0)): the clamp railed every busy theater at 1.0 from ~38%
+    // of the true max signal, so the systemic read lost top-end resolution and the live 5-theater
+    // peg could not move (the `pegged · resolution exhausted` state). `1 − exp(−γ·raw)` approaches
+    // 1.0 smoothly so an intense regional war and an apex great-power war land at DIFFERENT heat and
+    // the read tracks the news. γ co-fit with EVIDENCE_GAIN_SYS + the breadth/guardrail levers against
+    // the four backtest bands (realism #3).
+    let raw = (weighted / max_weighted_sum()) * cooc;
+    1.0 - (-HEAT_DESAT_GAMMA * raw).exp()
 }
+
+/// Heat de-saturation shape — see `heat_from_scores`. γ co-fit against the four calibration bands.
+const HEAT_DESAT_GAMMA: f64 = 1.5;
 
 /// Escalation momentum: the recency-weighted mean signed `escalation_step` of a theater's
 /// events, in [−1, +1] (−1 ceasefire/deal … +1 escalatory). Recency-weighted on the military
@@ -1473,13 +1483,15 @@ mod tests {
                 "a sub-threshold score {s:.2} must add 0 elevation weight");
         }
 
-        // Reconstruct the co-occurrence multiplier the engine actually applied:
-        // heat = (weighted_sum / max_weighted_sum) * cooc  (uncapped) ⇒ cooc = heat·max/weighted.
+        // Reconstruct the co-occurrence multiplier the engine actually applied. Heat now uses the
+        // soft de-saturation curve `heat = 1 − exp(−γ·(weighted/max)·cooc)` (realism #3), so invert
+        // it: raw = −ln(1−heat)/γ, then cooc = raw·max/weighted.
         let cooc_of = |g: &TheaterState| -> f64 {
             let weighted: f64 = DOMAIN_WEIGHTS.iter()
                 .map(|(m, _)| g.modality_scores.get(*m).copied().unwrap_or(0.0) * domain_weight(m))
                 .sum();
-            g.heat * max_weighted_sum() / weighted
+            let raw = -(1.0 - g.heat).ln() / HEAT_DESAT_GAMMA;
+            raw * max_weighted_sum() / weighted
         };
         // (1) One elevated modality (nuclear) + a FAINT sub-threshold second modality.
         // The faint blip sits in the ramp's zero band, so it must add NO co-occurrence:

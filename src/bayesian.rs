@@ -181,7 +181,7 @@ pub const GUARDRAIL_REGIME_SPAN: f64 = 4.0;
 /// a background multiplier kept well below the acute theater couplers (the single-theater
 /// brink amplifier is +70%, breadth +26%, both in theater.rs), so structural decay can
 /// never swamp an actual flashpoint.
-pub const GUARDRAIL_AMPLIFIER: f64 = 0.12;
+pub const GUARDRAIL_AMPLIFIER: f64 = 0.06;
 
 /// Clamped 0..1 guardrail-collapse coupler derived from the regime multiplier.
 /// Monotone non-decreasing in `regime_multiplier`; 0 at/below neutral (1.0), 1.0 at/above

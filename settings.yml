@@ -22,8 +22,13 @@
 #   The news-signal Bayesian layer captures acute daily events separately.
 #   Do not add a factor for something the domain scoring layer already captures.
 #
-#   Current product (active factors only):
-#   1.4 × 1.4 × 1.2 × 0.7 × 1.4 × 1.2 × 1.15 × 1.3 × 1.2 × 1.1 = 5.46×
+#   Current product (active factors only — 2026-06-30, after the #4 de-double-count that moved the
+#   two ACTIVE wars (active_superpower_war, war_in_europe_year5) to standby because they are already
+#   counted in theater heat; the guardrail now carries only genuinely STRUCTURAL conditions):
+#   1.4 × 1.2 × 0.7 × 1.2 × 1.15 × 1.3 × 1.25 × 1.1 = 2.90×
+#   This sits BELOW the GUARDRAIL_REGIME_SPAN saturation point, so the guardrail is no longer railed
+#   and an operator factor (e.g. the sharpened us_institutional_norm_erosion at 1.25) now actually
+#   moves the number instead of vanishing into a saturated guardrail.
 #
 #   v2 MECHANISM (the old "Adjusted prior: 0.000987 × 5.46" line was v1 and is wrong):
 #   The v2 engine holds the prior FLAT at BASELINE_ANNUAL = HISTORICAL_ANCHOR = 0.015
@@ -142,8 +147,12 @@ regime_factors:
   - id: active_superpower_war
     label: "Active US kinetic war (Operation Epic Fury — US/Israel vs Iran)"
     multiplier: 1.4
-    active: true
-    # Disable when: ceasefire holding >30 days and Strait of Hormuz fully reopened
+    active: false
+    # STANDBY 2026-06-30 (#4 de-double-count): this ACTIVE war is now fully represented in the
+    # us_iran THEATER heat via live news scoring. Carrying it ALSO as a regime multiplier
+    # double-counted it in the guardrail (settings.yml orthogonality rule). The war is NOT over —
+    # it is just counted in the right layer now (theater heat, not the structural guardrail).
+    # Re-activate only if a structural dimension emerges that the theater heat cannot capture.
 
   # ── NUCLEAR AND ARMS CONTROL ────────────────────────────────────────────────
   - id: arms_control_dead
@@ -171,9 +180,11 @@ regime_factors:
   - id: war_in_europe_year5
     label: "Active conventional war in Europe — Ukraine, year 5"
     multiplier: 1.4
-    active: true
-    # First conventional war in Europe involving a nuclear power since 1945.
-    # Disable when: verified ceasefire holding >60 days with international monitors.
+    active: false
+    # STANDBY 2026-06-30 (#4 de-double-count): this active war is now represented in the
+    # nato_russia THEATER heat via live news scoring; carrying it as a regime multiplier too
+    # double-counted it in the guardrail. The war is NOT over — it is counted in theater heat now.
+    # Re-activate only for a structural dimension the theater heat cannot capture.
 
   - id: russia_hybrid_nato
     label: "Systematic Russian hybrid warfare campaign against NATO states"
@@ -200,11 +211,17 @@ regime_factors:
 
   # ── SYSTEMIC / INSTITUTIONAL ─────────────────────────────────────────────────
   - id: us_institutional_norm_erosion
-    label: "US institutional norm erosion — unpredictable superpower behavior"
-    multiplier: 1.2
+    label: "US executive erratic / guardrails eroding — unpredictable-escalation & alliance-reliability risk"
+    multiplier: 1.25
     active: true
-    # US struck Iran Feb 28 2026 without congressional authorization, during
-    # active diplomacy. Affects adversary ability to model US behavior.
+    # OPERATOR ASSESSMENT (Robert, 2026-06-30): an increasingly unconstrained, impulsive US
+    # executive raises systemic war risk on three channels GCRM models — crisis-escalation
+    # unpredictability (miscalculation), allies hedging as US commitment frays (deterrence
+    # weakens), and fewer institutional/legal checks on unilateral military action. A genuinely
+    # ORTHOGONAL structural condition (NOT captured by any theater's news heat), so it belongs in
+    # the guardrail. Precedent: US struck Iran Feb 28 2026 without congressional authorization
+    # during active diplomacy. Weight raised 1.2 → 1.25 per the operator. Audit-logged via the
+    # operator-log; surfaced in methodology as a declared operator judgment, not auto-scored news.
     # Disable when: institutional checks meaningfully restored.
 
   # ── CYBER / INFORMATION ──────────────────────────────────────────────────────
