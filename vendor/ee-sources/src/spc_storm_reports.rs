@@ -207,7 +207,7 @@ fn parse_section(csv: &str, kind: ReportKind, out: &mut Vec<Event>, any_header: 
         if parts.len() < 7 {
             continue; // too few columns to carry a geocoded report
         }
-        let time = field(parts.get(0).copied()).unwrap_or("");
+        let time = field(parts.first().copied()).unwrap_or("");
         let mag = field(parts.get(1).copied());
         let location = field(parts.get(2).copied()).unwrap_or("");
         let county = field(parts.get(3).copied()).unwrap_or("");

@@ -341,9 +341,15 @@ fn diurnal_robustness_active_war_survives_a_news_lull() {
         100.0 * lull.likelihood_ratio / fresh.likelihood_ratio);
     assert!(lull.p_wwiii_annual > 0.55 && lull.p_wwiii_annual < 0.75,
         "12h lull must stay in the current-world band (0.55–0.75), got {:.2}%", lull.p_wwiii_annual * 100.0);
-    assert!(lull.p_wwiii_annual > fresh.p_wwiii_annual - 0.03,
-        "a 12h news lull must not drop P by >3pp; fresh={:.3} lull={:.3}",
-        fresh.p_wwiii_annual, lull.p_wwiii_annual);
+    // Bound the headline move, but NOT to the old near-frozen ≤3pp: the heat de-saturation
+    // (realism #3) deliberately restored top-end resolution, so the read now responds to news
+    // flow instead of railing flat — a 12h lull eases the read within its band. The real "silence
+    // ≠ peace" guarantees are assertion (1) (l_sys retains ≥93%, the strengthened FLOOR_FRACTION
+    // holds the war-state) and (2) (stays inside the band). The P-level move is larger than the
+    // l_sys move only because the logistic slope is steepest near this operating point. ≤5pp.
+    assert!(lull.p_wwiii_annual > fresh.p_wwiii_annual - 0.05,
+        "a 12h lull should hold the war IN BAND but may ease within it (resolution restored); \
+         fresh={:.3} lull={:.3}", fresh.p_wwiii_annual, lull.p_wwiii_annual);
 
     // (2) Decay is still ALIVE in the lull window (not a frozen floor): a longer lull never reads
     //     hotter than a shorter one.
@@ -471,18 +477,20 @@ fn live_pegged_analog_reaches_the_railed_operating_point() {
 }
 
 #[test]
-fn breadth_saturation_is_flagged_at_the_railed_peg_and_nowhere_in_the_resolved_bands() {
-    // HONESTY lock for the `couplers.breadth_saturated` disclosure. The railed live peg
-    // (where the de-saturation thread measured ~0.0pp resolution) must SET the flag — every
-    // breadth amplifier railed, no brink — so an operator reading the ~83% breadth peg (which
-    // sits below the 0.90 forecast ceiling, so `at_ceiling` stays false) is told the number is
-    // a structural maximum, not a still-climbing point estimate.
+fn live_peg_resolves_after_desaturation_and_no_band_is_breadth_saturated() {
+    // The heat de-saturation (realism #3) ENGINEERED AWAY the railed peg: heat now approaches 1.0
+    // softly (max ≈ 0.98, never the ≥0.999 rail), so the live 5-theater operating point retains
+    // top-end resolution — it can move with the news and climb toward the apex — instead of pegging
+    // flat. So `breadth_saturated` (the old "structural maximum, can't climb" disclosure) correctly
+    // NO LONGER fires here: the read is resolved, not railed. The flag remains a latent guard for a
+    // hypothetical future world that still rails every amplifier despite the soft curve. The headline
+    // honesty is now carried by the read's own movement, not a frozen-state caveat.
     let pegged = run(live_pegged_2026().0, &live_pegged_2026().1);
-    assert!(pegged.couplers.breadth_saturated,
-        "the live railed peg rails every breadth amplifier with no brink → breadth_saturated");
+    assert!(!pegged.couplers.breadth_saturated,
+        "the live peg now RESOLVES (heat un-railed by the de-saturation) → not breadth_saturated");
     assert!(pegged.p_wwiii_annual < crate::models::FORECAST_PROB_CEILING,
-        "precondition: the saturated peg is BELOW the forecast ceiling (so at_ceiling does not \
-         fire and this flag is the only honest signal), got {:.2}%", pegged.p_wwiii_annual * 100.0);
+        "the live peg sits below the forecast ceiling with headroom to climb, got {:.2}%",
+        pegged.p_wwiii_annual * 100.0);
 
     // Every analog with genuine top-end resolution must NOT flag saturation: quiet/ukraine/
     // current are not railed (heat or alliance below the rail), and Cuba is a SINGLE-theater
