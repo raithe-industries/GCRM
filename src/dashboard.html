@@ -592,7 +592,7 @@ let _lastCalTs=null,_firstSnapReceived=false;
 // no frames). _lastSnapMs is the wall-clock receipt time of the last snapshot;
 // renderFreshness() rewrites the header status from it on a timer so a stale read
 // announces itself instead of masquerading as "Live" with a frozen timestamp.
-let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false,_thinSourced=false,_sourcesActive=0;
+let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false,_thinSourced=false,_sourcesActive=0,_wsConnected=false;
 // Last board state, cached so the timer-driven watchdog can re-flag the I&W summary as
 // STALE during a stall (renderIndicators only runs on snapshot arrival, which by
 // definition is never stale — so the board would otherwise keep a frozen all-clear).
@@ -605,16 +605,19 @@ function renderFreshness(){
   if(age>STALE_AFTER_MS){
     const s=Math.floor(age/1000);
     const rel=s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
-    ts.textContent='⚠ STALE · no update for '+rel;ts.style.color='var(--amber)';
-    // Pillar-1 honesty, board surface: the I&W board renders only on snapshot arrival
-    // (renderIndicators), so during a stall its summary keeps showing the LAST trip
-    // count as a current read — a frozen all-clear masquerading as live, the board
-    // analog of the header lie this watchdog catches. Re-flag it as STALE on the timer
-    // from the cached counts so it can't go quiet while the world goes unwatched.
+    // Distinguish a benign socket RECONNECT (the server is fine — our WebSocket dropped, e.g. a
+    // deploy restarted gcrm, or the browser throttled/closed a backgrounded tab's socket) from a
+    // true SERVER STALL (socket open, server not pushing). The first is a client-side gap that
+    // clears on the next snapshot — calling it "STALE" cried wolf; only an OPEN-socket gap is a
+    // real stall worth alarming on.
+    ts.textContent=(_wsConnected?'⚠ STALE · no update for ':'⟳ reconnecting… · last read ')+rel;
+    ts.style.color='var(--amber)';
+    // Re-flag the I&W board during ANY gap: it renders only on snapshot arrival, so it would
+    // otherwise keep showing the last trip count as a live all-clear while the world goes unwatched.
     const summ=document.getElementById('iw-summary');
     if(summ){
       summ.textContent=(_lastTripped?(_lastTripped+' / '+_lastIndsLen+' tripped'):'all-clear')
-        +' · STALE · last read '+rel+' ago';
+        +(_wsConnected?' · STALE · ':' · reconnecting · ')+'last read '+rel+' ago';
       summ.style.color=_lastApexTrip>0?'var(--red)':'var(--amber)';
     }
   }else if(_dataBlind){
@@ -1274,7 +1277,7 @@ function applyTimeline(entries){
 function setLive(on){const dot=document.getElementById('live-dot');if(dot){dot.classList.toggle('connected',on);}}
 function connect(){
   const wsProto=location.protocol==='https:'?'wss:':'ws:';const ws=new WebSocket(wsProto+'//'+location.host+BASE_PATH+'/ws');
-  ws.onopen=()=>setLive(true);
+  ws.onopen=()=>{_wsConnected=true;setLive(true);};
   ws.onmessage=e=>{try{const msg=JSON.parse(e.data);if(msg.type==='snapshot'){applyData(msg.data);tlChart.data.labels.push(msg.data.computed_at);tlChart.data.datasets[0].data.push(msg.data.probabilities.annual);tlChart.data.datasets[1].data.push(msg.data.probabilities.thirty_day);tlChart.data.datasets[2].data.push(0.001);tlChart.data.datasets[3].data.push(0.017);if(tlChart.data.labels.length>MAX_TL_POINTS){tlChart.data.labels.shift();tlChart.data.datasets.forEach(ds=>ds.data.shift());for(let k=spikes.length-1;k>=0;k--)if(--spikes[k].idx<0)spikes.splice(k,1);}refreshCalibrationOverlay();tlChart.update('none');}else if(msg.type==='timeline'){applyTimeline(msg.data);if(msg.data.length===0)fetchEpoch();}else if(msg.type==='articles'){
     // MERGE the periodic push (newest ~200) into the deep cache instead of
     // replacing it — otherwise the WS push would clobber the large initial
@@ -1287,7 +1290,7 @@ function connect(){
     if(currentTab==='articles')renderArticles(_artCache,_artTotal);
     updateTicker(_artCache.slice(0,40));
   }}catch(err){console.warn('ws onmessage error',err);addLog('WS message dropped: '+(err&&err.message||err),'#E24B4A');}}; /* a malformed/partial snapshot must not kill the socket handler or freeze later message types (audit dashboard-6) */
-  ws.onclose=()=>{setLive(false);addLog('WebSocket disconnected — reconnecting...','#c0392b');setTimeout(connect,4000)};
+  ws.onclose=()=>{_wsConnected=false;setLive(false);addLog('WebSocket disconnected — reconnecting...','#c0392b');setTimeout(connect,4000)};
   ws.onerror=()=>ws.close();
 }
 async function fetchEpoch(){
