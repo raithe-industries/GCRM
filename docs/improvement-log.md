@@ -22,6 +22,40 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-30 — NO-OP (structured) — cloud-provable value-tier frontier exhausted this run; verified findings recorded so the next run compounds
+- Swept every axis against CURRENT code (not memory). Each lever is done, blocked cross-lane,
+  Robert-gated, or a closed vein — and `display_only_in_last_7=2` is AT the cap, so a doc/clippy/+1-test
+  commit would breach it. A forced marginal commit is streak-laundering; an honest no-op is correct here.
+- VERIFIED this run (so future runs don't re-investigate):
+  - §4.2 unwrap/expect audit is genuinely CLOSED, incl. the lock-poisoning class: `grep std::sync::Mutex|RwLock src/` = ZERO
+    (all locks are `tokio::sync`, `.await`-based, non-poisoning); the only prod unwrap/expect are the already-cleared
+    safe ones (models.rs:270/292 `position().unwrap()` on `primary()` members / the just-computed max; detector.rs
+    `.expect("HTTP client")` + guarded `nearest_site`; main.rs signal-handler `.expect`). Do NOT re-chase the phantom counts.
+  - 6th theater (ChinaIndia) is correctly wired: `gp_entanglement` is actor-driven via `great_power_label` (theater.rs:193),
+    which by deliberate design = {us_nato, russia, china} only — so a LAC standoff counts CHINA toward entanglement but
+    does NOT trip the ≥2-great-power nuclear brink (correct: India/Pakistan/NK are regional, not great powers). Adding `india`
+    to `great_power_label` would be a Robert-gated calibration change, NOT an unattended fix.
+  - My-lane clippy is CLEAN; the single warning is `vendor/ee-sources/src/bmkg_quake.rs:108` (signal-hunter's lane — do not touch).
+- NAMED NEXT T1 (highest-value open frontier): §6.1 markets → `economic_warfare` via a bounded GLOBAL `MARKET_STRESS_AMPLIFIER`
+  on `l_sys` (mirrors the `guardrail_collapse` overlay `l_sys × (1 + AMP·x)`, gated `l_sys > FLOOR` so markets corroborate a
+  live crisis but never manufacture risk from calm). Next shippable step: PROPOSE the const+gate+`ee_correlate::finance` composite
+  (already runs in prod via `osint::finance_payload`) to Robert. Blocker: the amplifier MAGNITUDE is a value-laden calibration in
+  the same class as the de-saturation peg (honesty firewall) — a cloud run must NOT introduce it unattended.
+- SECONDARY Robert-gated honesty finding (deepened from the 2026-06-30 note): the de-saturation (ae70552) made `heat_from_scores`
+  end in `1 − exp(−γ·raw)` (asymptotes < 1.0), so `models::HEAT_CLAMP = 1.0` and `systemic_pegged` (`max_heat >= 1.0`) are now
+  UNREACHABLE, and the HEAT_CLAMP doc ("ends in `.min(1.0)`", models.rs:790) is FACTUALLY FALSE. The genuine remaining "+0.000%
+  because railed, not calm" peg is P at `FORECAST_PROB_CEILING` (0.90), for which the codebase ALREADY has `is_at_forecast_ceiling`
+  + the `at_ceiling`/`gauge-cap` hero surface. So the trend-cell repair is BLOCKED two ways: (a) re-keying `systemic_pegged` to the
+  P-ceiling is a semantic/honesty-surface choice (Robert-gated, per the prior note), and (b) surfacing the ceiling caveat on the
+  trend cell is the *closed* capped-caveat vein. Robert decision needed: re-key `systemic_pegged` to `is_at_forecast_ceiling`, OR
+  retire it as redundant with `at_ceiling`, OR leave it dormant by intent (as `breadth_saturated` is). The FALSE doc/`HEAT_CLAMP`
+  constant should be corrected whichever path is chosen — but a doc-only fix is display-only and would breach the 2-of-7 cap this run.
+- Proof (green, unchanged): `cargo build --release` clean; `cargo test --release` 490 passed / 0 failed / 3 ignored; my-lane clippy 0 warnings.
+- Tier: NO-OP · Touched: noop · Lock-fails-without-change: n/a (no behavior change) · Counts: none · consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: do NOT manufacture a +1-test / doc / clippy commit to avoid this no-op (display cap is full). The
+  two live T1s above are both Robert-gated, not code-blocked — when unblocked they ship as clean T1s. Map-layer frontier-debt is NOT
+  in arrears (signal-hunter moved it < 24h ago: BMKG quakes + InaTEWS tsunami + NOAA SPC storms).
+
 ## 2026-06-30 — awareness/honesty — China–India theater now receives LLM-classified clashes (drift-proofed the theater allow-list)
 - Item: roadmap 3.20 follow-up (completes the 6th-theater wiring on the enriched path).
 - Defect: `nlp_sidecar::is_valid_theater` — the allow-list that validates the LLM's `theater` hint
