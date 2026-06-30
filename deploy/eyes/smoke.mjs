@@ -47,9 +47,18 @@ try {
   // settle within 20s on a WARM start, and timed out on every COLD restart (the cold
   // /api/map fan-out keeps the network busy past the threshold). That false timeout rolled
   // back this deploy and the 2026-06-16 one alike, before any real check ran.
-  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // The cache-warm (OSINT map fan-out + the growing feed roster) can keep a freshly-restarted
+  // gcrm busy enough that the FIRST load exceeds the budget, even though the server is healthy.
+  // That is a slow cold start, not a broken deploy — so give it ONE retry with a longer ceiling
+  // before rolling back. (This intermittent 30s page.goto timeout is what flapped the deploy.)
+  try {
+    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  } catch (e1) {
+    console.error(`EYES: first load slow (${e1.message}) — retrying once with a longer ceiling…`);
+    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  }
 } catch (e) {
-  console.error(`EYES FAIL: could not load ${URL} — ${e.message}`);
+  console.error(`EYES FAIL: could not load ${URL} after retry — ${e.message}`);
   await browser.close();
   process.exit(1);
 }
