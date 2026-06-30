@@ -886,7 +886,7 @@ const INFO={
     <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
   trend:{title:'6h Trend',html:`
     <p><b>6h Trend</b> is the change in annual P(WWIII) over the trailing <b>6 hours</b>, computed server-side from the durable timeline history — so a page reload or UI change can't reset it.</p>
-    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison actually reaches and how many samples it spans.</p>
+    <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison reaches — normally a full 6 hours, or less right after a restart while the window refills.</p>
     <p>If the <b>hottest theater</b> changed over the window, the sub-line also names the relocation (<b>lead→X (was Y)</b>) — <i>where</i> the risk concentrated, which the magnitude alone can't tell. A net-flat headline can still hide one theater cooling as another heats; the lead shift surfaces it.</p>
     <p><span style="color:#E0922E"><b>Pegged at model ceiling</b></span> (amber): a frozen <b>+0.000%</b> is not always calm. When the hottest theater is railed at the model's maximum heat <i>and</i> the read has not moved all window, the number <i>can't</i> move — not because the world is quiet but because the model has run out of resolution above this point. We surface that honestly rather than letting a flat line read as reassurance.</p>`},
   w30:{title:'30-Day Window',html:`
@@ -1009,8 +1009,12 @@ function trendSub(t){
 // Pegged at the model ceiling: say so plainly. A frozen +0.000% here is not calm — the
 // hottest theater is railed at maximum heat and the read has not moved, so the model is
 // out of resolution above this point. This short-circuits the normal "vs N hrs ago" copy.
-if(t.pegged){return 'pegged at model ceiling · resolution exhausted ('+t.samples+' samples)';}
-let base;if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';base='vs '+lbl+' ago ('+t.samples+' samples)';}else{base='vs 6 hrs ago ('+t.samples+' samples)';}
+if(t.pegged){return 'pegged at model ceiling · resolution exhausted';}
+// Compare against the same clock time 6h back. Drop the raw sample count: at 1 reading/sec a
+// full window is always ~21.6k samples — an internal metric that conveys nothing to a viewer
+// (and reads like a too-low "data quality" number). The span label already states coverage when
+// the window is partial (cold start / restart), which is the only case where reach is in doubt.
+let base;if(t.span!=null&&t.span<6*3600-300){const lbl=t.span>=3600?(t.span/3600).toFixed(1)+' hrs':Math.round(t.span/60)+' min';base='vs '+lbl+' ago';}else{base='vs 6 hrs ago';}
 // Awareness: when the hottest theater changed over the window, name the relocation of risk
 // (lead→X (was Y)) — the WHERE the bare delta can't show. Only on an actual shift, so a
 // stable leader adds no clutter. Server-judged (lead_shifted) from the lead_theater SoT.
@@ -1059,7 +1063,7 @@ function renderIndicators(inds){
     }
   }
   if(!inds.length){board.innerHTML='<div class="iw-cell"><span class="iw-dot"></span><span class="iw-label">awaiting indicator data…</span></div>';return;}
-  board.innerHTML=inds.map(i=>{
+  const cells=inds.map(i=>{
     const apex=i.tripped&&i.apex;
     const dotCls=i.tripped?(apex?'iw-dot apex':'iw-dot trip'):'iw-dot';
     const where=i.theater?(' — '+i.theater):'';
@@ -1069,6 +1073,12 @@ function renderIndicators(inds){
       +'<span class="iw-label">'+i.label+'</span>'
       +'</div>';
   }).join('');
+  // Complete the partial last row of the 3-column grid: an indicator count not divisible by 3
+  // (e.g. 13) otherwise leaves empty grid tracks that show the slate --border through the 1px
+  // gaps — read as a "blue bar / holes". Neutral, non-interactive filler cells (same black --bg
+  // as a real cell) fill them so the board always reads as a clean, symmetric grid.
+  const fillers=(3-inds.length%3)%3;
+  board.innerHTML=cells+'<div class="iw-cell" aria-hidden="true"></div>'.repeat(fillers);
 }
 function applyData(d){
   _firstSnapReceived=true;
