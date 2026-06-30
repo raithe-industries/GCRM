@@ -73,6 +73,7 @@ WebFetch** (Anthropic-routed), not curl. Two ways a source lands:
 | `awc_sigmet` | Weather | NOAA / NWS Aviation Weather Center | **international SIGMETs** — the en-route aviation hazard warnings each Meteorological Watch Office issues for its Flight Information Region, aggregated by AWC at `api/data/isigmet?format=geojson`. One `Polygon` feature per active SIGMET, plotted at the **hazard-polygon centroid**, carrying the hazard type (`hazard`: TS/TC/VA/TURB/ICE/DS/SS/MTW/GR/IFR…), an intensity/coverage qualifier (`qualifier`: SEV/EMBD/ISOL/OCNL/FRQ…), the affected flight-level band (`base`/`top`, feet MSL), the issuing FIR (`firName`), and the raw SIGMET text. Opens an **en-route aviation-hazard modality** no feed carried (distinct from NWS/ECCC ground warnings, NHC/JMA cyclone *tracks*, and NWPS river flooding) with **global FIR geography**; pairs with the live aircraft (`opensky`) + NOTAM (`navcanada`) layers. **Signal-meaningful:** every value is a named WMO aviation phenomenon + standardized intensity + flight levels (no raw scalar). Severity = max(hazard base [VA/TC 0.9 → IFR 0.4], qualifier bump [SEV 0.85 / HVY 0.7]). Chip = "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430". Empty `FeatureCollection` (no active intl SIGMETs in scope) = 0 events, not an error. **Path B (mirrored-snapshot verification):** the live host 403s in-sandbox, so the parser + fixture are anchored to a **real captured AWC intl-SIGMET payload** committed on GitHub (`thomasdubdub/sigmet-sectors/20200316.json` — genuine SBRE RECIFE EMBD-TS / LFRR BREST SEV-TURB records); prod (full network) fetches the live `format=geojson` endpoint. Auth-free, US-Gov public domain. |
 | `spc_storm_reports` | Weather | NOAA / NWS Storm Prediction Center | **confirmed severe-storm reports** — SPC's daily Local Storm Reports, the **ground-truth severe-convective occurrences** (the touchdown/impact, not a forecast) no feed carried: NWS/ECCC ship *warnings* (what may happen), NHC/JMA ship cyclone *tracks*, NWPS ships river flooding, AWC ships en-route aviation hazards. Three small CSVs (`today_torn.csv` / `today_hail.csv` / `today_wind.csv`), each the same 8-column layout `Time,<F_Scale\|Size\|Speed>,Location,County,State,Lat,Lon,Comments`; first line is a header, the free-text `Comments` may contain commas (parsed `splitn(8,',')`). One [`EventKind::Weather`] event per report at its own lat/lon. **Signal-meaningful** (every value unit-bearing + baseline): a confirmed **tornado** (EF rating when assessed → EF0 0.6…EF5 1.0; unrated touchdown 0.85), **hail** diameter in inches (severe ≥1.0", significant ≥2.0"; the daily `Size` is hundredths-of-inch — `175`=1.75" — handled tolerant of either hundredths or decimal-inch encoding), **wind** gust in mph (severe ≥58, significant ≥75, extreme ≥90; unknown-speed damaging-wind 0.5). Chip = "EF2 Tornado" / "2.75 in hail" / "70 mph wind" / "Damaging wind". Empty report day (header only — common early in the UTC day / quiet weather) = 0 events, not an error; if NONE of the three is a recognizable report CSV (e.g. all HTML 403 pages) → error so last-good takes over. **Path A (prod fetches live):** SPC `today_*.csv` is auth-free US-Gov public domain; the host 403s WebFetch in-sandbox (as every gov host does), so the format was **anchored to real consumer-code bytes** — `garrettrayj/storm-reports` `src/downloader.py` (URL `…/climo/reports/{YYMMDD}_rpts_{torn,hail,wind}.csv`) + `src/preprocessing.py` (8-field row regex), corroborated by multiple independent sources for the per-type headers + units; prod (full network) fetches the live `today_*.csv`. US/CONUS geography. |
 | `bmkg_quake` | Earthquake | BMKG / InaTEWS (Indonesia) | **felt earthquakes** — BMKG's open `gempadirasakan.json` (the ~15 most recent quakes actually reported felt). NOT another USGS/EMSC *detection* catalogue: this is a **human-impact** product — only felt quakes, each graded by the **Modified-Mercalli felt intensity** (`Dirasakan`, e.g. "IV Denpasar, III Mataram") plus Indonesia's national **tsunami-potential** flag (`Potensi`). One dot per quake at its inline `Coordinates` ("lat,lon" — no geometry join). Severity = MMI ladder (II 0.25 → VI 0.7 → IX+ 1.0), with a raw-magnitude fallback when `Dirasakan` is blank, floored by any tsunami potential (Waspada 0.9 / Siaga 0.95 / Awas 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; the tsunami flag is the official InaTEWS assessment). Chip = "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga". Auth-free JSON (attribution "BMKG"); empty quiet-window list = 0 events, not an error; `gempa` tolerated as array (felt list) or single object (latest). **Path A** (prod fetches the live `gempadirasakan.json`; the host 403s WebFetch in-sandbox so the schema is anchored to the official `infoBMKG/data-gempabumi` spec + 5+ independent public copies). Fills the **felt-intensity / tsunami modality** and **Indonesia / SE-Asia** seismic geography the raw global quake catalogues (USGS/EMSC/eqcanada) don't carry. |
+| `jma_quake` | Earthquake | JMA (Japan Meteorological Agency) | **seismic-intensity earthquakes** — JMA's open `bosai/quake/data/list.json` (the rolling list of recent quake bulletins), filtered to events with an observed **JMA Shindo intensity** (`maxi`) on Japan's national 0–7 scale (`1,2,3,4,5-,5+,6-,6+,7`). NOT another USGS/EMSC *detection* catalogue: filtered to a Shindo it's a **human-impact** product — only quakes that produced measurable shaking — over **Japan / the NW-Pacific** (a key non-North-America theatre). One dot per quake at its inline `cod` (an ISO-6709 string `+lat+lon-depth/` — no geometry join). **Deduped by `eid`** (JMA issues several bulletins per quake: intensity flash → hypocentre+intensity → updates), keeping the loudest Shindo. Bulletins with no hypocentre (`cod` empty — the `震度速報` flash) or no observed Shindo (a hypocentre-only notice for an unfelt quake) are dropped — exactly what USGS/EMSC already carry. Severity = Shindo ladder (1 → 0.15, 5+ → 0.75, 7 → 1.0). **Signal-meaningful** (Shindo is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; a distinct national scale from Indonesia's MMI). Chip = "Shindo 5+ · M6.1". Auth-free JSON (attribution "気象庁/JMA"); empty array (quiet window) = 0 events, not an error. **Path A** (prod fetches the live `list.json`; the host 403s WebFetch in-sandbox so the schema is anchored to committed GitHub bytes — the `nehemiaharchives/jma-quake-api` `JmaQuakeData.kt` data class: `cod/mag/maxi/anm/en_anm/ttl/en_ttl/eid/at` fields confirmed). Complements `bmkg_quake` (Indonesia MMI) — same `bosai` host already proven live by `jma_typhoon`. |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -164,7 +165,10 @@ Bias each run toward the least-covered axis below.
 - **Geography** — feeds are Canada/US-dense; SW-Pacific seeded via `geonet_volcano` (NZ),
   W-Pacific via `jma_typhoon`, **SE-Asia / Indonesia** via `magma_volcano` (PVMBG volcanoes)
   and now `bmkg_quake` (**BMKG felt earthquakes + InaTEWS tsunami potential**, 2026-06-30) —
-  Indonesia now carries both a volcano and a seismic/tsunami feed. **Europe still the biggest
+  Indonesia now carries both a volcano and a seismic/tsunami feed. **Japan / NW-Pacific** seismic
+  intensity now via `jma_quake` (**JMA Shindo-graded earthquakes**, 2026-06-30) — the NW-Pacific
+  flashpoint region (Japan / Korea / Russia Far East) now has a national felt-intensity feed.
+  **Europe still the biggest
   blank: MeteoAlarm investigated 2026-06-30 — deferred (geometry-anchoring blocked).** Its
   auth-free public legacy feed (`feeds.meteoalarm.org/feeds/meteoalarm-legacy-rss-<country>`)
   carries only an EMMA region *code/name* + awareness level/type — NO inline geometry; the
@@ -217,6 +221,48 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-30** (second run) — **adopted `jma_quake` (JMA Japan seismic-intensity earthquakes), Path A** —
+  a new authoritative geocoded layer over **Japan / the NW-Pacific** (Japan / Korea / Russia Far East — a
+  key non-North-America flashpoint theatre the seismic feeds left thin). Per the SUSTAINED-BLOCK DIRECTIVE I
+  LED with a landable real source biased to a coverage gap (non-NA geography), not a no-op. **Why not "another
+  quake feed":** USGS/EMSC/eqcanada are raw *detection* catalogues (every instrument-detected event, magnitude
+  only); JMA `bosai/quake/data/list.json` **filtered to events carrying an observed `maxi` (JMA Shindo
+  intensity)** is a **human-impact** product — only quakes that produced measurable ground shaking, graded on
+  Japan's national 0–7 Shindo scale (`1,2,3,4,5-,5+,6-,6+,7`), a distinct national intensity scale from
+  Indonesia's MMI (`bmkg_quake`). Same justification that landed BMKG, different geography + scale. **Candidate
+  hunt this run (per the directive, biased to coverage gaps):** LED with the documented **Storm / cyclone gap —
+  Indian Ocean + Southern Hemisphere basins** (BoM Australia / IMD / Météo-France La Réunion / WMO SWIC). Ruled
+  out: BoM exposes **no clean auth-free JSON/GeoJSON** cyclone product (warnings are XML/FTP + KMZ track maps;
+  `bom.gov.au/catalogue/data-feeds` 403s WebFetch and search confirmed no JSON API), and the **WMO Severe
+  Weather Information Centre** aggregates RSMC advisories as HTML/CAP with no confirmed auth-free GeoJSON
+  feature service — both dry hunts (JTWC already ruled out HTML/RSS-only). Per the directive I did not burn the
+  run on a dry hunt and pivoted to a landable gap-filler. **Network re-probed fresh:** the egress block on
+  non-GitHub hosts is unchanged — `bom.gov.au`, `www.jma.go.jp/bosai/quake/data/list.json`, and a raw README
+  ALL **403 via WebFetch**; only `raw.githubusercontent.com` serves. **Anchoring (the GitHub-bytes technique
+  that broke the 20-run stall, now NHC→…→BMKG):** the `list.json` schema was confirmed from committed bytes —
+  the `nehemiaharchives/jma-quake-api` `src/main/kotlin/JmaQuakeData.kt` data class (WebFetched off
+  `raw.githubusercontent.com`): fields `cod` (ISO-6709 coord string), `mag`, `maxi` (Shindo), `anm`/`en_anm`
+  (epicentre name), `ttl`/`en_ttl` (bulletin type), `eid` (event id), `at` (time) — and the same `bosai` host
+  is already proven live in prod by `jma_typhoon`. Clears all six bars: **authoritative** (JMA = Japan's
+  national met/seismo agency, WMO RSMC); **auth-free** JSON; **machine-readable** (top-level array);
+  **geocoded** (inline ISO-6709 `cod` per quake — no geometry join, the failure mode that deferred
+  MeteoAlarm/EAWS); **fresh** (real-time bulletin list; empty array = 0 events, not an error);
+  **non-duplicative** (Shindo human-impact intensity over Japan/NW-Pacific; pure-detection + unfelt-hypocentre
+  bulletins dropped so it doesn't just re-plot USGS/EMSC). **Signal-meaningful:** Shindo is a defined
+  ground-shaking scale (each level a named effect) — a "Shindo 5+" dot is real, unit-bearing signal, not a raw
+  number; severity = Shindo ladder (1 → 0.15, 5+ → 0.75, 7 → 1.0). New `vendor/ee-sources/src/jma_quake.rs`
+  (single JSON fetch; pure `parse_jma` + `quake_chip` + `shindo_rank` (lower/upper split + 弱/強 forms) +
+  `severity_for` + `parse_iso6709` signed-token coord parser; **dedup by `eid` keeping the loudest bulletin**;
+  drops no-hypocentre + no-Shindo records; 6 offline tests: real-shape fixture dedups two E1 bulletins to the
+  louder 5+ and drops the unfelt-hypocentre + no-hypocentre records, empty-array-is-OK, error-on-bad-input,
+  dedup-keeps-highest-regardless-of-order, Shindo rank/severity ladder incl Japanese 弱/強, ISO-6709 parsing
+  incl southern/western signs + no-depth + malformed). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("jma_quake", …, 10)` + count/cap row cap 60 + `feed_detail` arm + osint chip test); SRC_LABEL
+  `JMA · Japan` in `dashboard.html`. **`cargo build --release` green; full workspace `cargo test` green
+  (gcrm 491 / 0 failed / 3 ignored; ee-sources 125 incl jma_quake 6/6; ee-correlate 79; ee-view 60;
+  ee-core 9).** EventKind::Earthquake. Next: the Indian-Ocean/SH cyclone basin remains open (needs an
+  auth-free geocoded product — none surfaced); Europe/MeteoAlarm still geometry-blocked; other Asia/Pacific
+  (JMA tsunami warnings are area-coded not point so geometry-blocked; Australia BoM/GA), Latin America, Africa.
 - **2026-06-30** — **adopted `bmkg_quake` (BMKG / InaTEWS Indonesia felt earthquakes), Path A** — a new
   authoritative geocoded layer opening a **felt-intensity + tsunami-potential seismic modality** the raw
   global quake catalogues (USGS/EMSC/eqcanada) don't carry, over **Indonesia / SE-Asia** (the world's most

@@ -327,6 +327,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // BMKG felt-earthquake: peak MMI intensity + magnitude (+ tsunami potential),
         // e.g. "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga".
         "bmkg_quake" => ee_sources::bmkg_quake::felt_chip(&e.raw),
+        // JMA earthquake: peak JMA seismic-intensity (Shindo) + magnitude, e.g.
+        // "Shindo 5+ · M6.1" — the human-impact read the raw catalogues don't carry.
+        "jma_quake" => ee_sources::jma_quake::quake_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -438,7 +441,7 @@ async fn feeds_payload() -> Value {
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
         geonet_volcano::GeonetVolcano, gvp_volcano::GvpVolcano,
-        healthmap::HealthMap, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
+        healthmap::HealthMap, jma_quake::JmaQuake, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
         navcanada::NavCanada, nhc::Nhc,
         nwps_flood::NwpsFlood, nws::Nws,
         ontario511::Ontario511,
@@ -453,7 +456,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -540,6 +543,11 @@ async fn feeds_payload() -> Value {
         // lat/lon: the human-impact + tsunami modality the raw USGS/EMSC detection
         // catalogues don't carry, over Indonesia/SE-Asia.
         fetch_one("bmkg_quake", BmkgQuake, 10),
+        // JMA (Japan) — recent earthquakes graded by the national Shindo seismic-intensity
+        // scale (0–7), deduped by event id to the loudest bulletin: the human-impact /
+        // intensity modality the raw USGS/EMSC detection catalogues don't carry, over
+        // Japan / the NW-Pacific. Quakes with no observed Shindo or no hypocentre drop.
+        fetch_one("jma_quake", JmaQuake, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -590,6 +598,7 @@ async fn feeds_payload() -> Value {
         (sigmets.0, sigmets.1, "awc_sigmet", 200),
         (storm_reports.0, storm_reports.1, "spc_storm_reports", 400),
         (id_felt.0, id_felt.1, "bmkg_quake", 60),
+        (jp_felt.0, jp_felt.1, "jma_quake", 60),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -1135,6 +1144,28 @@ mod tests {
         // No MMI parsed → magnitude only.
         let e = mk(json!({"magnitude": 5.1, "mmi": Value::Null}));
         assert_eq!(feed_detail(&e).as_deref(), Some("M5.1"));
+    }
+
+    #[test]
+    fn jma_quake_chip_surfaces_shindo_intensity() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "jma-x".into(),
+            source_id: "jma_quake".into(),
+            kind: EventKind::Earthquake,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.5),
+            url: None,
+            raw,
+        };
+        // `raw` is the flat quake payload this connector stores.
+        let e = mk(json!({"magnitude": 6.1, "shindo": "5+"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Shindo 5+ · M6.1"));
+        let e = mk(json!({"magnitude": 4.2, "shindo": "3"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Shindo 3 · M4.2"));
     }
 
     #[test]
