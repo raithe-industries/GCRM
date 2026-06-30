@@ -22,6 +22,42 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-30 — awareness/honesty — China–India theater now receives LLM-classified clashes (drift-proofed the theater allow-list)
+- Item: roadmap 3.20 follow-up (completes the 6th-theater wiring on the enriched path).
+- Defect: `nlp_sidecar::is_valid_theater` — the allow-list that validates the LLM's `theater` hint
+  (used in `merge_llm_scores` to fill an Other event and in `make_event_from_llm` to set the theater of
+  an LLM-only event) — was a hand-maintained 5-id `matches!` literal that had silently gone STALE: it
+  was MISSING `china_india`, the theater added hours earlier (3.20). So when the LLM correctly classified
+  a Galwan/LAC border clash and hinted `china_india`, the hint was REJECTED and the event fell back to
+  the invisible `Other` bucket (`theater::compute` drops Other/theater-less events) — undercutting the
+  brand-new flashpoint on exactly the path (the enricher) meant to catch clashes the keyword resolver
+  misses (e.g. "PLA and Indian troops clashed in Ladakh" with no literal china+india token pair). A
+  pillar-1/pillar-3 hole: a real LAC clash vanishes instead of lighting its theater.
+- Change: re-derived `is_valid_theater` from the single source of truth `models::Theater::primary()`
+  (`primary().iter().any(|th| th.id() == t)`) instead of a literal — now DRIFT-PROOF: any future theater
+  is covered automatically, and `Other` stays excluded by construction (no `primary()` slot → unknown
+  hints fall back to "other"). This list had drifted twice; deriving it kills the bug class.
+- Metric moved: engine-behavior (routing) — an LLM-classified LAC clash now reaches the `china_india`
+  theater instead of Other. Calibration bit-identical (the LLM path is not exercised by the backtest):
+  Brier 0.00092 / RMSE 3.04pp / in-band 4/4, unchanged.
+- Proof: `cargo build --release` clean; `cargo test --release` 489 passed / 0 failed / 3 ignored;
+  clippy 0 warnings. Lock proven fails-without: reverting the fn body to the stale literal panics
+  `valid_theater_ids` at the `china_india` assertion ("an LLM china_india hint must be accepted or LAC
+  clashes vanish into Other"); restored → green.
+- Tier: T1 (completes the 3.20 theater coverage on the enriched path) · Touched: engine-behavior ·
+  Lock-fails-without-change: yes (`valid_theater_ids` — china_india + every-primary-id assertions) ·
+  Counts: closes the LLM-path gap for the 6th theater · consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: (1) do NOT re-introduce a hand-maintained theater-id literal anywhere —
+  derive from `Theater::primary()`/`Theater::id()`. (2) STILL OPEN (signal-hunter lane): the `china_india`
+  map centroid in `osint.rs::theater_coord` (3.20 hand-off). (3) UNRELATED finding while auditing: the
+  de-saturation (ae70552) left `breadth_saturated` (theater.rs) and `systemic_pegged` (models.rs) keyed on
+  `max_heat >= 1.0`, now UNREACHABLE (soft heat curve asymptotes at ~0.980; no-brink conventional max
+  ~0.856). `breadth_saturated` dormancy is INTENDED + tested (`backtest::live_peg_resolves_after_desaturation_*`
+  asserts it false for the live peg at heat 0.88) — do NOT "re-enable" it (would break that operator-intent
+  test). `systemic_pegged` has no such guard test and its `models.rs:790` doc still falsely claims
+  `heat_from_scores` "ends in `.min(1.0)`" — a stale-doc/possible-oversight worth a Robert-gated look, NOT an
+  unattended threshold change.
+
 ## 2026-06-30 — awareness — dedicated China–India (LAC) theater (a 6th flashpoint the operator could not see before)
 - Item: roadmap 3.20 (the dedicated theater the 2026-06-29 no-op + 3.19 interim named as the next T1).
 - Change: promoted the china+india interim (routed to `Other`, invisible) to a real 6th `Theater::primary()`

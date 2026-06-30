@@ -441,6 +441,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   ladder/board but not (yet) as a map dot — `theater_coord` returns `None` and `build_theater_features` skips
   it gracefully (no breakage). Add `"china_india" => (34.0, 79.0)` (Ladakh / LAC) to complete map parity.
   See improvement-log 2026-06-30.
+  - FOLLOW-UP 2026-06-30: completed the China–India wiring on the LLM-enriched path. `nlp_sidecar::
+    is_valid_theater` — the allow-list gating the LLM's theater hint — was a hand-maintained 5-id literal
+    that had silently gone stale: it was MISSING `china_india`, so an LLM that correctly classified a
+    Galwan/LAC clash had its `china_india` hint REJECTED and the event routed to the invisible `Other`
+    bucket, undercutting the new theater on exactly the path (the enricher) that catches clashes the
+    keyword resolver misses. Re-derived the check from the single source of truth
+    `models::Theater::primary()` so it is now DRIFT-PROOF (a future theater is covered automatically; this
+    list had drifted twice). Engine-behavior, no calibration touched (Brier 0.00092 / in-band 4/4
+    identical). Locked by the strengthened `valid_theater_ids` (asserts `china_india` accepted — FAILS on
+    the stale literal — and that every `Theater::primary()` id is a valid hint).
 - [x] **3.19 China–India clash no longer mis-attributed to Taiwan/Kashmir** — **DONE 2026-06-29 (superseded by 3.20).**
   An engine-behavior honesty/awareness fix in `theater_of` (`models.rs`). A China–India border clash
   (actors `china`+`india`, two nuclear great powers) has NO tracked dyad of its own, but BOTH actors map

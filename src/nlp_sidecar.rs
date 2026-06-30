@@ -358,9 +358,17 @@ async fn emit_event(
 const LLM_TAG_THRESHOLD: f64 = 0.50;
 const LLM_SCORE_DISCOUNT: f64 = 0.90; // slight discount so keyword 1.0 beats LLM
 
-/// Valid theater ids the LLM hint is allowed to set (must match models::Theater ids).
+/// Valid theater ids the LLM hint is allowed to set — derived from the single source of
+/// truth `models::Theater::primary()` so a newly-added theater can never silently drift out
+/// of this allow-list. The hand-maintained literal it replaced had gone stale: when the 6th
+/// theater (`china_india`) landed it was missing here, so an LLM that correctly classified a
+/// China–India (LAC) border clash had its `china_india` hint REJECTED and the event routed to
+/// the invisible `Other` bucket (`theater::compute` drops theater-less/Other events) — silently
+/// undercutting the new flashpoint on the enriched path. `Other` is intentionally excluded (it
+/// has no `primary()` slot — an unrecognised hint must fall back to "other", not masquerade as a
+/// tracked theater).
 fn is_valid_theater(t: &str) -> bool {
-    matches!(t, "nato_russia" | "us_iran" | "us_china_taiwan" | "india_pakistan" | "korea")
+    crate::models::Theater::primary().iter().any(|th| th.id() == t)
 }
 
 /// Merge structured LLM extraction into an existing keyword-derived event: max of
@@ -607,6 +615,19 @@ mod tests {
     fn valid_theater_ids() {
         assert!(is_valid_theater("us_iran"));
         assert!(is_valid_theater("nato_russia"));
+        // The 6th theater must be accepted — a stale hand-list once dropped it, sending
+        // LLM-classified China–India (LAC) clashes to the invisible Other bucket.
+        assert!(is_valid_theater("china_india"),
+            "an LLM china_india hint must be accepted or LAC clashes vanish into Other");
+        // Drift-proof lock: EVERY named theater is a valid hint, derived from the single
+        // source of truth — a future theater addition is covered automatically, so this list
+        // can never go stale again.
+        for th in crate::models::Theater::primary() {
+            assert!(is_valid_theater(th.id()),
+                "Theater::primary() id {} must be a valid LLM theater hint", th.id());
+        }
+        // Other / unknown ids stay invalid — they must fall back to "other", never pose as a
+        // tracked theater.
         assert!(!is_valid_theater("other"));
         assert!(!is_valid_theater("atlantis"));
     }
