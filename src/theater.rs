@@ -1239,11 +1239,40 @@ mod tests {
     fn empty_window_is_all_stable() {
         let mut te = TheaterEngine::new();
         let out = te.compute(&[]);
-        assert_eq!(out.theaters.len(), 5);
+        assert_eq!(out.theaters.len(), 6);
         assert!(out.theaters.iter().all(|s| s.rung == EscalationRung::Stable));
         // l_sys = 0 → index is the baseline-prior floor on the 0..95 scale (~1.6), near zero.
         assert!(out.systemic_index < 3.0, "empty window must read near zero, got {}", out.systemic_index);
         assert!(out.l_sys.abs() < 1e-9);
+    }
+
+    #[test]
+    fn china_india_clash_is_a_visible_theater_with_its_own_heat() {
+        // The dedicated China–India (LAC) theater. End-to-end: (1) `theater_of` routes a
+        // china+india clash (no taiwan/pakistan) to ChinaIndia, and (2) `compute` scores
+        // china_india-tagged events as their OWN flashpoint with real heat. Before the theater
+        // existed these events resolved to `Other`, which has no entry in `Theater::primary()`,
+        // so `compute` dropped them from the partition and the clash was invisible in the read.
+        // This test FAILS without the new theater: the `china_india` state is absent and the
+        // `.expect` panics.
+        use crate::models::{theater_of, Theater};
+        let actors = vec!["china".to_string(), "india".to_string()];
+        assert_eq!(theater_of(&actors, Some("asia_pacific")), Theater::ChinaIndia,
+            "a china+india clash must resolve to its own theater");
+
+        let mut te = TheaterEngine::new();
+        let mut events = Vec::new();
+        for _ in 0..8 {
+            events.push(ev("china_india", "military_escalation", 0.9, 0.85, &["china", "india"], true));
+            events.push(ev("china_india", "diplomatic_breakdown", 0.7, 0.6, &["china", "india"], true));
+        }
+        let out = te.compute(&events);
+        assert_eq!(out.theaters.len(), 6, "the roster now carries six primary theaters");
+        let lac = out.theaters.iter().find(|s| s.theater_id == "china_india")
+            .expect("ChinaIndia must be a tracked theater in the output");
+        assert!(lac.heat > 0.2, "a sustained LAC clash must register real heat, got {}", lac.heat);
+        assert_ne!(lac.rung, EscalationRung::Stable, "8 strong clash events must clear Stable");
+        assert!(lac.gp_involved, "China is a great power — the clash must flag great-power involvement");
     }
 
     #[test]

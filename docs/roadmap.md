@@ -427,7 +427,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     page from claiming the opposite of what the model now does.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
-- [x] **3.19 China–India clash no longer mis-attributed to Taiwan/Kashmir** — **DONE 2026-06-29.**
+- [x] **3.20 Dedicated China–India (LAC) theater** — **DONE 2026-06-30.** Promoted the 3.19 interim
+  (china+india clash → `Other`, invisible) to a real 6th `Theater::primary()` entry (`Theater::ChinaIndia`,
+  id `china_india`, label "China–India (LAC)"). `theater_of`'s china+india guard now routes to it, so a
+  Galwan-style standoff scores its OWN heat / ladder chip / I&W contribution instead of being dropped
+  (Other has no `primary()` slot → `compute` discarded it). Dashboard ladder grid widened `repeat(5→6,1fr)`
+  (narrow breakpoint `repeat(2,1fr)` already wraps). Anchor-safe: the new theater is Stable (heat 0) in every
+  backtest → couplers/hottest-theater bit-identical (bands 22/0, Brier/RMSE unchanged). Locked by
+  `china_india_clash_is_a_visible_theater_with_its_own_heat` (theater, end-to-end: routes + scores; FAILS
+  without the theater — the `china_india` state is absent) + the renamed
+  `china_india_clash_routes_to_its_own_theater_not_taiwan_or_kashmir` (models). **MAP HAND-OFF (signal-hunter
+  lane):** `osint.rs::theater_coord` has no `china_india` centroid yet, so the LAC flashpoint shows on the
+  ladder/board but not (yet) as a map dot — `theater_coord` returns `None` and `build_theater_features` skips
+  it gracefully (no breakage). Add `"china_india" => (34.0, 79.0)` (Ladakh / LAC) to complete map parity.
+  See improvement-log 2026-06-30.
+- [x] **3.19 China–India clash no longer mis-attributed to Taiwan/Kashmir** — **DONE 2026-06-29 (superseded by 3.20).**
   An engine-behavior honesty/awareness fix in `theater_of` (`models.rs`). A China–India border clash
   (actors `china`+`india`, two nuclear great powers) has NO tracked dyad of its own, but BOTH actors map
   to *named* theaters, so the per-actor count + region tiebreak silently absorbed it into US–China/Taiwan

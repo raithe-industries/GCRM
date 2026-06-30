@@ -184,6 +184,7 @@ pub enum Theater {
     UsChinaTaiwan,
     IndiaPakistan,
     Korea,
+    ChinaIndia,
     Other,
 }
 
@@ -195,6 +196,7 @@ impl Theater {
             Theater::UsChinaTaiwan => "us_china_taiwan",
             Theater::IndiaPakistan => "india_pakistan",
             Theater::Korea         => "korea",
+            Theater::ChinaIndia    => "china_india",
             Theater::Other         => "other",
         }
     }
@@ -207,14 +209,15 @@ impl Theater {
             Theater::UsChinaTaiwan => "US–China / Taiwan",
             Theater::IndiaPakistan => "India–Pakistan",
             Theater::Korea         => "Korean Peninsula",
+            Theater::ChinaIndia    => "China–India (LAC)",
             Theater::Other         => "Other / Diffuse",
         }
     }
 
     /// All theaters except the catch-all, in display priority order.
-    pub fn primary() -> [Theater; 5] {
+    pub fn primary() -> [Theater; 6] {
         [Theater::NatoRussia, Theater::UsIran, Theater::UsChinaTaiwan,
-         Theater::IndiaPakistan, Theater::Korea]
+         Theater::IndiaPakistan, Theater::Korea, Theater::ChinaIndia]
     }
 }
 
@@ -246,24 +249,24 @@ pub fn theater_of(actor_ids: &[String], region: Option<&str>) -> Theater {
         }
     }
 
-    // China–India border clashes (e.g. Galwan 2020 — two nuclear great powers) are a dyad
-    // with NO tracked theater of their own yet. Both `china` and `india` map to *named*
-    // theaters (UsChinaTaiwan / IndiaPakistan), so without this guard the per-actor count +
-    // region tiebreak silently absorbs a China–India standoff into Taiwan or Kashmir — it
-    // fabricates heat in a flashpoint the event is NOT about and can even name the wrong
-    // *lead* theater (telling the operator "US–China/Taiwan" when the fighting is on the
-    // Himalayan border). Per this resolver's own contract ("a story with no tracked dyad does
-    // not belong to a named theater") it routes to Other until a dedicated China–India theater
-    // exists. Guarded on the ABSENCE of taiwan/pakistan so a genuine China–Taiwan or
-    // India–Pakistan story (where that partner IS present) is unaffected.
+    // China–India border clashes (e.g. Galwan 2020 — two nuclear great powers) are their own
+    // dyad. Both `china` and `india` independently map to *named* theaters (UsChinaTaiwan /
+    // IndiaPakistan), so without this guard the per-actor count + region tiebreak would absorb a
+    // China–India standoff into Taiwan or Kashmir — fabricating heat in a flashpoint the event is
+    // NOT about and able to name the wrong *lead* theater (telling the operator "US–China/Taiwan"
+    // while the fighting is on the Himalayan border). The 2026-06-29 interim routed this to Other
+    // (invisible but no longer misattributed); now the dedicated `ChinaIndia` theater gives the
+    // clash a home of its own — its own heat, ladder chip, and entanglement contribution. Guarded
+    // on the ABSENCE of taiwan/pakistan so a genuine China–Taiwan or India–Pakistan story (where
+    // that partner IS present) still resolves to its own theater.
     let has = |a: &str| actor_ids.iter().any(|x| x == a);
     if (has("china") || has("china_military")) && has("india")
         && !has("taiwan") && !has("pakistan")
     {
-        return Theater::Other;
+        return Theater::ChinaIndia;
     }
 
-    let mut counts: [usize; 5] = [0; 5];
+    let mut counts: [usize; 6] = [0; 6];
     let idx = |t: Theater| Theater::primary().iter().position(|x| *x == t).unwrap();
     for aid in actor_ids {
         for t in theaters_for(aid) {
@@ -1271,15 +1274,15 @@ mod tests {
     }
 
     #[test]
-    fn china_india_clash_is_not_mis_attributed_to_taiwan_or_kashmir() {
-        // A China–India border clash (both nuclear great powers, no tracked dyad of its own)
-        // must NOT be absorbed into a named flashpoint it is not about. Without the guard the
-        // count+region tiebreak routes it to Taiwan (region asia_pacific) or Kashmir (region
-        // south_asia), fabricating heat in the wrong theater. It belongs in Other until a
-        // dedicated China–India theater exists.
-        assert_eq!(theater_of(&["china".into(), "india".into()], Some("asia_pacific")), Theater::Other);
-        assert_eq!(theater_of(&["china".into(), "india".into()], Some("south_asia")), Theater::Other);
-        assert_eq!(theater_of(&["china_military".into(), "india".into()], None), Theater::Other);
+    fn china_india_clash_routes_to_its_own_theater_not_taiwan_or_kashmir() {
+        // A China–India border clash (both nuclear great powers) has its own dyad. It must NOT be
+        // absorbed into a named flashpoint it is not about: without the guard the count+region
+        // tiebreak routes it to Taiwan (region asia_pacific) or Kashmir (region south_asia),
+        // fabricating heat in the wrong theater. It now resolves to the dedicated ChinaIndia
+        // theater — visible as its own flashpoint, even when the region tag points elsewhere.
+        assert_eq!(theater_of(&["china".into(), "india".into()], Some("asia_pacific")), Theater::ChinaIndia);
+        assert_eq!(theater_of(&["china".into(), "india".into()], Some("south_asia")), Theater::ChinaIndia);
+        assert_eq!(theater_of(&["china_military".into(), "india".into()], None), Theater::ChinaIndia);
         // The guard is NARROW: when the genuine dyad partner is present it does not fire —
         // china+taiwan stays a Taiwan story, india+pakistan stays Kashmir.
         assert_eq!(theater_of(&["china".into(), "india".into(), "taiwan".into()], Some("asia_pacific")), Theater::UsChinaTaiwan);

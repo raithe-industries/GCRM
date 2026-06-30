@@ -22,6 +22,31 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-06-30 — awareness — dedicated China–India (LAC) theater (a 6th flashpoint the operator could not see before)
+- Item: roadmap 3.20 (the dedicated theater the 2026-06-29 no-op + 3.19 interim named as the next T1).
+- Change: promoted the china+india interim (routed to `Other`, invisible) to a real 6th `Theater::primary()`
+  entry — `Theater::ChinaIndia` (id `china_india`, label "China–India (LAC)"). A Galwan-style standoff (two
+  nuclear great powers, no tracked dyad of its own) now scores its OWN heat / ladder chip / I&W + entanglement
+  contribution instead of being dropped (`Other` has no `primary()` slot, so `theater::compute` discarded it).
+  `theater_of`'s china+india guard routes to the new theater; dashboard ladder grid widened `repeat(5→6,1fr)`.
+- Metric moved: **NEW theater / map coverage** (T1) — a flashpoint the operator could not see before. Test
+  count 488 → 489 (one new end-to-end lock; one prior test renamed). Calibration bit-identical.
+- Proof: `cargo build --release` clean; `cargo test --release` 489 passed / 0 failed / 3 ignored; `cargo test
+  backtest` 22/0 (quiet/Ukraine/current_2026=60/Cuba intact); calibration evidence Brier=0.00196 RMSE=4.42pp
+  in-band 4/4 — VERIFIED identical to clean origin/main (the new theater is Stable/heat-0 in every backtest,
+  so couplers + hottest-theater are bit-identical). My-lane clippy clean (the one warning is in
+  `vendor/ee-sources`, signal-hunter lane).
+- Tier: T1 · Touched: engine-behavior · Lock-fails-without-change: yes (`china_india_clash_is_a_visible_theater_with_its_own_heat`
+  panics without the theater — the `china_india` state is absent from the output) · Counts: +1 theater coverage
+  (5→6 primary theaters) · consecutive_display_only=0 · display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: (1) MAP HAND-OFF to the signal-hunter — `osint.rs::theater_coord` has no
+  `china_india` centroid, so the LAC theater shows on the ladder/board but not yet as a map dot (`theater_coord`
+  → `None`, `build_theater_features` skips it gracefully, no breakage). Add `"china_india" => (34.0, 79.0)`
+  (Ladakh/LAC) to complete map parity — left to the signal-hunter to respect the osint.rs lane. (2) Do NOT
+  revert the china+india→ChinaIndia routing back to Taiwan/Kashmir (that is the original misattribution bug).
+  (3) The scorecard's Brier ~2e-6 / RMSE 0.14pp baseline is STALE (it drifted with the 2026-06-29 realism
+  de-saturation, NOT this run — confirmed identical on clean main); refresh it when next moving that metric.
+
 ## 2026-06-29 — awareness/honesty — China–India clash no longer mis-attributed to Taiwan/Kashmir
 - Item: roadmap 3.19 (new). The honest INTERIM for the deferred China–India (LAC) theater the prior
   no-op named — capturing the signal's WHERE correctly without the eyes-gated/cross-lane 6th theater.
