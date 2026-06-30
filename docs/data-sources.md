@@ -72,6 +72,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `avalanche_ca` | Weather | Avalanche Canada | **snow-avalanche danger ratings** — Canada's national public-avalanche body. Joins `/forecasts/en/products` (bulletins, by `area.id`) to `/forecasts/en/areas` (region polygons, GeoJSON, same id) and plots one dot per region **with a numeric rating today**, at the polygon centroid. Severity = peak elevation-band rating on the North American scale (Low 0.2 → Extreme 1.0). **Signal-meaningful** (the danger scale is baseline-relative — each level a defined likelihood/size, not a raw number). **Seasonal, handled honestly:** off-season bands read `norating`/spring → dropped, so summer = 0 events not an error (layer lights up ~late-Nov→Apr). Resolves the source's deferral via an off-season-tolerant parser. Auth-free JSON+GeoJSON. Chip = "Alpine Considerable · Treeline Moderate · Below Low". Fills the snow-avalanche hazard no other feed carries. |
 | `awc_sigmet` | Weather | NOAA / NWS Aviation Weather Center | **international SIGMETs** — the en-route aviation hazard warnings each Meteorological Watch Office issues for its Flight Information Region, aggregated by AWC at `api/data/isigmet?format=geojson`. One `Polygon` feature per active SIGMET, plotted at the **hazard-polygon centroid**, carrying the hazard type (`hazard`: TS/TC/VA/TURB/ICE/DS/SS/MTW/GR/IFR…), an intensity/coverage qualifier (`qualifier`: SEV/EMBD/ISOL/OCNL/FRQ…), the affected flight-level band (`base`/`top`, feet MSL), the issuing FIR (`firName`), and the raw SIGMET text. Opens an **en-route aviation-hazard modality** no feed carried (distinct from NWS/ECCC ground warnings, NHC/JMA cyclone *tracks*, and NWPS river flooding) with **global FIR geography**; pairs with the live aircraft (`opensky`) + NOTAM (`navcanada`) layers. **Signal-meaningful:** every value is a named WMO aviation phenomenon + standardized intensity + flight levels (no raw scalar). Severity = max(hazard base [VA/TC 0.9 → IFR 0.4], qualifier bump [SEV 0.85 / HVY 0.7]). Chip = "Severe Turbulence · FL170–330" / "Embedded Thunderstorms · to FL430". Empty `FeatureCollection` (no active intl SIGMETs in scope) = 0 events, not an error. **Path B (mirrored-snapshot verification):** the live host 403s in-sandbox, so the parser + fixture are anchored to a **real captured AWC intl-SIGMET payload** committed on GitHub (`thomasdubdub/sigmet-sectors/20200316.json` — genuine SBRE RECIFE EMBD-TS / LFRR BREST SEV-TURB records); prod (full network) fetches the live `format=geojson` endpoint. Auth-free, US-Gov public domain. |
 | `spc_storm_reports` | Weather | NOAA / NWS Storm Prediction Center | **confirmed severe-storm reports** — SPC's daily Local Storm Reports, the **ground-truth severe-convective occurrences** (the touchdown/impact, not a forecast) no feed carried: NWS/ECCC ship *warnings* (what may happen), NHC/JMA ship cyclone *tracks*, NWPS ships river flooding, AWC ships en-route aviation hazards. Three small CSVs (`today_torn.csv` / `today_hail.csv` / `today_wind.csv`), each the same 8-column layout `Time,<F_Scale\|Size\|Speed>,Location,County,State,Lat,Lon,Comments`; first line is a header, the free-text `Comments` may contain commas (parsed `splitn(8,',')`). One [`EventKind::Weather`] event per report at its own lat/lon. **Signal-meaningful** (every value unit-bearing + baseline): a confirmed **tornado** (EF rating when assessed → EF0 0.6…EF5 1.0; unrated touchdown 0.85), **hail** diameter in inches (severe ≥1.0", significant ≥2.0"; the daily `Size` is hundredths-of-inch — `175`=1.75" — handled tolerant of either hundredths or decimal-inch encoding), **wind** gust in mph (severe ≥58, significant ≥75, extreme ≥90; unknown-speed damaging-wind 0.5). Chip = "EF2 Tornado" / "2.75 in hail" / "70 mph wind" / "Damaging wind". Empty report day (header only — common early in the UTC day / quiet weather) = 0 events, not an error; if NONE of the three is a recognizable report CSV (e.g. all HTML 403 pages) → error so last-good takes over. **Path A (prod fetches live):** SPC `today_*.csv` is auth-free US-Gov public domain; the host 403s web fetch in-sandbox (as every gov host does), so the format was **anchored to real consumer-code bytes** — `garrettrayj/storm-reports` `src/downloader.py` (URL `…/climo/reports/{YYMMDD}_rpts_{torn,hail,wind}.csv`) + `src/preprocessing.py` (8-field row regex), corroborated by multiple independent sources for the per-type headers + units; prod (full network) fetches the live `today_*.csv`. US/CONUS geography. |
+| `bmkg_quake` | Earthquake | BMKG / InaTEWS (Indonesia) | **felt earthquakes** — BMKG's open `gempadirasakan.json` (the ~15 most recent quakes actually reported felt). NOT another USGS/EMSC *detection* catalogue: this is a **human-impact** product — only felt quakes, each graded by the **Modified-Mercalli felt intensity** (`Dirasakan`, e.g. "IV Denpasar, III Mataram") plus Indonesia's national **tsunami-potential** flag (`Potensi`). One dot per quake at its inline `Coordinates` ("lat,lon" — no geometry join). Severity = MMI ladder (II 0.25 → VI 0.7 → IX+ 1.0), with a raw-magnitude fallback when `Dirasakan` is blank, floored by any tsunami potential (Waspada 0.9 / Siaga 0.95 / Awas 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; the tsunami flag is the official InaTEWS assessment). Chip = "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga". Auth-free JSON (attribution "BMKG"); empty quiet-window list = 0 events, not an error; `gempa` tolerated as array (felt list) or single object (latest). **Path A** (prod fetches the live `gempadirasakan.json`; the host 403s web fetch in-sandbox so the schema is anchored to the official `infoBMKG/data-gempabumi` spec + 5+ independent public copies). Fills the **felt-intensity / tsunami modality** and **Indonesia / SE-Asia** seismic geography the raw global quake catalogues (USGS/EMSC/eqcanada) don't carry. |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -161,10 +162,19 @@ Bias each run toward the least-covered axis below.
   **Icelandic Met Office** (IMO) volcano alerts for the N-Atlantic. **MAGMA snapshot refresh** is a
   local re-capture job (origin host unreachable in-sandbox).
 - **Geography** — feeds are Canada/US-dense; SW-Pacific seeded via `geonet_volcano` (NZ),
-  W-Pacific via `jma_typhoon`, and **SE-Asia / Indonesia** now seeded via `magma_volcano` (PVMBG).
-  Hunt authoritative regional feeds for Europe (Copernicus EMS, MeteoAlarm if it geocodes),
-  Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America (e.g. Chile SERNAGEOMIN
-  volcanoes), Africa.
+  W-Pacific via `jma_typhoon`, **SE-Asia / Indonesia** via `magma_volcano` (PVMBG volcanoes)
+  and now `bmkg_quake` (**BMKG felt earthquakes + InaTEWS tsunami potential**, 2026-06-30) —
+  Indonesia now carries both a volcano and a seismic/tsunami feed. **Europe still the biggest
+  blank: MeteoAlarm investigated 2026-06-30 — deferred (geometry-anchoring blocked).** Its
+  auth-free public legacy feed (`feeds.meteoalarm.org/feeds/meteoalarm-legacy-rss-<country>`)
+  carries only an EMMA region *code/name* + awareness level/type — NO inline geometry; the
+  geometry-bearing GeoJSON product is the registration-gated `api.meteoalarm.org` (403 in
+  web fetch, can't confirm read-auth). Mapping EMMA region codes → polygons needs a region
+  geometry table not anchorable to `raw.githubusercontent.com` bytes this run (the EAWS/SLF
+  failure mode) — landable when EITHER a committed EMMA-region GeoJSON surfaces on GitHub-raw OR
+  the keyed read-API is confirmed open (then ship the inline-geometry GeoJSON, centroid it).
+  Other hunts: Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA), Latin America (Chile
+  SERNAGEOMIN volcanoes), Africa.
 - **Domains under-covered** — power-grid stress (other ISOs), rail/pipeline incidents
   (TSB Canada, NTSB), dam/reservoir, drought, lightning (if a geocoded near-real-time
   product exists), methane/industrial (GHGSat/Sentinel). **flood-WITH-baselines SEEDED
@@ -207,6 +217,53 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-06-30** — **adopted `bmkg_quake` (BMKG / InaTEWS Indonesia felt earthquakes), Path A** — a new
+  authoritative geocoded layer opening a **felt-intensity + tsunami-potential seismic modality** the raw
+  global quake catalogues (USGS/EMSC/eqcanada) don't carry, over **Indonesia / SE-Asia** (the world's most
+  seismically and tsunami-exposed region). Per the SUSTAINED-BLOCK DIRECTIVE I LED with a landable real
+  source, not a no-op. **Why not "another quake feed":** USGS/EMSC are raw *detection* catalogues (every
+  instrument-detected event, magnitude only); BMKG `gempadirasakan.json` is a **human-impact** product — only
+  quakes actually reported FELT, each graded by the **Modified-Mercalli intensity** (`Dirasakan`, e.g. "IV
+  Denpasar, III Mataram") plus Indonesia's national **tsunami-potential** flag (`Potensi`), neither of which
+  the catalogues carry. **Candidate hunt this run (per the directive, biased to coverage gaps):** LED with the
+  biggest blank — **Europe / MeteoAlarm** (EUMETNET pan-European weather warnings). It clears the *quality*
+  bars on paper (authoritative, auth-free public legacy RSS/ATOM, baseline-relative awareness levels) BUT hit
+  the **EAWS/SLF geometry-anchoring failure mode**: the auth-free feed
+  (`feeds.meteoalarm.org/feeds/meteoalarm-legacy-rss-poland`, confirmed via the `SQ9MDD/meteoalarm` source on
+  GitHub-raw) carries only an EMMA region *code/name* + `awt`/`level` — **NO inline geometry**; the
+  geometry-bearing GeoJSON is the registration-gated `api.meteoalarm.org` (403 in web fetch — can't distinguish
+  egress-block from read-auth), and no committed EMMA-region polygon table is reachable on
+  `raw.githubusercontent.com`. Mapping region codes → centroids would be guesswork → deferred (see Geography
+  gap). **Pivoted to a clean inline-geocoded source** to avoid that trap: BMKG ships `Coordinates` ("lat,lon")
+  per record — no geometry join. **Network re-probed fresh:** `api.meteoalarm.org`, `data.bmkg.go.id`
+  (`gempadirasakan.json`), and `feeds.meteoalarm.org`-via-page all **403 via web fetch** (egress-wide non-GitHub
+  block unchanged); only `raw.githubusercontent.com` serves. **The unlock (same GitHub-anchored-schema
+  technique that landed NHC→…→SPC):** BMKG maintains an **official spec repo** `infoBMKG/data-gempabumi`
+  (web fetched its README off GitHub-raw — confirms the three open products `autogempa`/`gempaterkini`/
+  `gempadirasakan`, the `https://data.bmkg.go.id/DataMKG/TEWS/<file>` endpoints, auth-free, attribution
+  "BMKG"), and the canonical schema (`Infogempa.gempa[]` with `Tanggal/Jam/DateTime`, `Coordinates` "lat,lon",
+  `Magnitude`, `Kedalaman`, `Wilayah`, `Potensi`, `Dirasakan`) is corroborated by 5+ independent public copies
+  (`SlavyanDesu/bmkg-wrapper`, `salambae/Python-data-terbuka-bmkg`, the `muhammadhanif` XML→GeoJSON converters,
+  the `okibayu` dev.to dashboard). Clears all six bars: **authoritative** (BMKG = Indonesia's national met/geo
+  agency, operator of InaTEWS); **auth-free** JSON; **machine-readable**; **geocoded** (inline per-quake
+  `Coordinates`); **fresh** (real-time felt list; an empty quiet window = 0 events, not an error);
+  **non-duplicative** (felt-MMI human-impact + national tsunami assessment, neither in any quake catalogue).
+  **Signal-meaningful:** MMI is a defined ground-shaking scale (each level a named effect) — a "Felt MMI V"
+  dot is real, unit-bearing signal, not a raw number; severity = MMI ladder (II 0.25 → VI 0.7 → IX+ 1.0) with
+  a raw-magnitude fallback when `Dirasakan` is blank, floored by tsunami potential (Waspada 0.9 / Siaga 0.95 /
+  Awas 1.0); chip = "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga". New
+  `vendor/ee-sources/src/bmkg_quake.rs` (single JSON fetch; pure `parse_bmkg` + `felt_chip` + `max_mmi`
+  Roman-numeral peak-intensity scanner + `roman_to_int`/`int_to_roman` + `tsunami_level` + `parse_coords`;
+  `gempa` tolerated as array OR single object; 6 offline tests: real-shape fixture drops the blank-Coordinates
+  record + grades MMI IV/VI and the Siaga tsunami floor + magnitude fallback, empty-list-is-OK,
+  single-object-tolerated, error-on-bad-input, MMI/tsunami parsing incl. hyphenated range + mixed-case-region
+  safety, severity ladder). Registered in `lib.rs`; wired `src/osint.rs` (`fetch_one("bmkg_quake", …, 10)` +
+  count/cap row cap 60 + `feed_detail` arm + osint chip test); SRC_LABEL `BMKG · InaTEWS (Indonesia)` in
+  `dashboard.html`. **`cargo build --release` green; full workspace `cargo test` green (gcrm 490 / 0 failed /
+  3 ignored; ee-sources 119 incl. bmkg_quake 6/6; ee-correlate 79; ee-view 60; ee-core 9).**
+  EventKind::Earthquake. Next: Europe/MeteoAlarm becomes landable if a committed EMMA-region GeoJSON surfaces
+  on GitHub-raw or the read-API is confirmed open; other Asia/Pacific (JMA quakes/tsunami, Australia BoM/GA),
+  Latin America, Africa feeds if an auth-free geocoded product surfaces.
 - **2026-06-29** (second run) — **adopted `spc_storm_reports` (NOAA SPC confirmed severe-storm reports), Path A** —
   a new authoritative geocoded layer opening a **severe-convective ground-truth modality** no current feed
   carried: confirmed **tornado / large-hail / damaging-wind** reports — the *occurrence* (touchdown/impact),

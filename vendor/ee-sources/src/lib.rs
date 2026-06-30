@@ -14,6 +14,7 @@ pub mod acled_aggregated;
 pub mod alberta511;
 pub mod avalanche_ca;
 pub mod awc_sigmet;
+pub mod bmkg_quake;
 pub mod cbsa_bwt;
 pub mod cccs;
 pub mod cisa_kev;
@@ -67,6 +68,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(cwfis::Cwfis::default()),
         Box::new(cwfis_activefires::CwfisActiveFires),
         Box::new(eqcanada::EqCanada::default()),
+        Box::new(bmkg_quake::BmkgQuake), // Indonesia felt earthquakes + tsunami potential (BMKG/InaTEWS)
         Box::new(ontario511::Ontario511),
         Box::new(drivebc::DriveBc),
         Box::new(alberta511::Alberta511),

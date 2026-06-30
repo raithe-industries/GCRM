@@ -324,6 +324,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // SPC confirmed severe-storm report: the hazard + magnitude with units, e.g.
         // "EF2 Tornado" / "2.75 in hail" / "70 mph wind" — the ground-truth read.
         "spc_storm_reports" => ee_sources::spc_storm_reports::report_chip(&e.raw),
+        // BMKG felt-earthquake: peak MMI intensity + magnitude (+ tsunami potential),
+        // e.g. "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga".
+        "bmkg_quake" => ee_sources::bmkg_quake::felt_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -430,7 +433,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -450,7 +453,7 @@ async fn feeds_payload() -> Value {
     // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
     // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
     // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports) = tokio::join!(
+    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -532,6 +535,11 @@ async fn feeds_payload() -> Value {
         // severe-convective occurrences NWS warnings (forecast) and the cyclone /
         // flood / aviation feeds don't carry. Three small CSVs, so allow a little time.
         fetch_one("spc_storm_reports", SpcStormReports, 12),
+        // BMKG (Indonesia / InaTEWS) — recent FELT earthquakes with their Modified-Mercalli
+        // (MMI) intensity + the national tsunami-potential flag, plotted at each quake's
+        // lat/lon: the human-impact + tsunami modality the raw USGS/EMSC detection
+        // catalogues don't carry, over Indonesia/SE-Asia.
+        fetch_one("bmkg_quake", BmkgQuake, 10),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -581,6 +589,7 @@ async fn feeds_payload() -> Value {
         (avalanche.0, avalanche.1, "avalanche_ca", 200),
         (sigmets.0, sigmets.1, "awc_sigmet", 200),
         (storm_reports.0, storm_reports.1, "spc_storm_reports", 400),
+        (id_felt.0, id_felt.1, "bmkg_quake", 60),
     ] {
         evs.truncate(cap);
         if let Some(e) = err {
@@ -1101,6 +1110,31 @@ mod tests {
         assert_eq!(feed_detail(&e).as_deref(), Some("70 mph wind"));
         let e = mk(json!({"type": "wind"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Damaging wind"));
+    }
+
+    #[test]
+    fn bmkg_quake_chip_surfaces_felt_intensity_and_tsunami() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "bmkg-x".into(),
+            source_id: "bmkg_quake".into(),
+            kind: EventKind::Earthquake,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.5),
+            url: None,
+            raw,
+        };
+        // `raw` is the flat felt-quake payload this connector stores.
+        let e = mk(json!({"magnitude": 4.8, "mmi": 4}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Felt MMI IV · M4.8"));
+        let e = mk(json!({"magnitude": 6.2, "mmi": 6, "tsunami": "Siaga"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Felt MMI VI · M6.2 · Tsunami Siaga"));
+        // No MMI parsed → magnitude only.
+        let e = mk(json!({"magnitude": 5.1, "mmi": Value::Null}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("M5.1"));
     }
 
     #[test]
