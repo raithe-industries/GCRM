@@ -376,6 +376,27 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .panel-body{flex:none;max-height:80vh;overflow-y:auto;font-size:13px}
   .alert-bar,.art-title,.src-name{font-size:13px}
 }
+/* ── Short viewports (≤640px tall — landscape phones, split-screen, projectors) ──
+   The cockpit is a fixed-height (100vh, body overflow:hidden) grid. The LEFT rail
+   already scrolls in its own track (min-height:0 + overflow-y:auto), but the CENTER
+   column (domains → ladder → I&W board → charts) is overflow:hidden with the charts
+   on flex:1 — so when the fixed strips eat the height the charts squish toward zero
+   and the bottom P(WWIII)/domain card clips below the fold with NO way to scroll to
+   it. This is the vertical twin of the ≤680px fix: let the whole PAGE scroll and pin
+   the charts to explicit heights (which also kills the Chart.js no-bounded-height
+   resize→render loop, the same hazard the phone rule guards). Width is untouched, so
+   a wide-but-short display keeps its 3 columns. Scoped to short heights only, so the
+   normal-height render is byte-for-byte unchanged. */
+@media(max-height:640px){
+  body{height:auto;min-height:100dvh;overflow-y:auto}
+  .main{overflow:visible}
+  .left-panel,.center-panel,.right-panel{overflow:visible}
+  .charts-area{overflow:visible}
+  .chart-inner{height:190px;flex:none}
+  .chart-split{height:210px;flex:none}
+  .chart-split .chart-inner{height:100%}
+  .panel-body{overflow-y:visible}
+}
 </style>
 </head>
 <body>

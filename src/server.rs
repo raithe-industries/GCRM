@@ -1070,6 +1070,42 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_center_column_scrolls_instead_of_clipping_on_short_viewports() {
+        // Pillar-2 legibility (2.1), the vertical twin of the left-rail fix above. The
+        // ≤680px rule handles NARROW viewports; nothing handled SHORT ones. On a short,
+        // wide viewport (landscape phone, split-screen, a 480p projector) the center
+        // column — domains → theater ladder → I&W board (all flex-shrink:0) → charts
+        // (flex:1) — is overflow:hidden with no scroll, so the fixed strips crush the
+        // charts toward zero height and the bottom card clips below the fold with no way
+        // to reach it. The fix is a `max-height` media query that lets the PAGE scroll and
+        // pins the charts to explicit heights (the latter also kills the Chart.js
+        // no-bounded-height resize loop). Guard the contract so a refactor can't silently
+        // drop the short-viewport safety and re-clip the center column.
+        let rule = DASHBOARD_HTML
+            .split("@media(max-height:640px){")
+            .nth(1)
+            .and_then(|s| s.split('}').next())
+            .expect("dashboard lost the short-viewport (@media max-height) rule");
+        assert!(
+            rule.contains("overflow-y:auto"),
+            "short-viewport rule must let the page scroll (body overflow-y:auto) so a clipped \
+             center card can be reached"
+        );
+        // The charts need an explicit height in this mode — otherwise the flex:1 charts
+        // still collapse AND Chart.js's responsive canvas loops on an unbounded parent.
+        let block = DASHBOARD_HTML
+            .split("@media(max-height:640px){")
+            .nth(1)
+            .and_then(|s| s.split("</style>").next())
+            .expect("short-viewport rule must live inside the <style> block");
+        assert!(
+            block.contains(".chart-inner{height:") && block.contains("flex:none"),
+            "short-viewport rule must pin the charts to an explicit height (flex:none) — without \
+             it the charts squish to zero and Chart.js hits the resize→render loop"
+        );
+    }
+
+    #[test]
     fn nuke_banner_formats_magnitude_and_depth_to_one_decimal() {
         // Pillar-2 legibility: the red seismic-anomaly banner is the most prominent,
         // highest-stakes element on the dashboard. It built its text from the raw
