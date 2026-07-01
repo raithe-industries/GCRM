@@ -22,6 +22,41 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-01 — legibility — short-viewport pass: the CENTER column now scrolls instead of clipping (closes the 2.1 sibling defect)
+- Item: roadmap 2.1 sibling defect (the 06-15 run fixed the left rail, deferred the center column
+  "to avoid unverifiable chart-resize risk"; this run closes it).
+- Defect: the cockpit is a fixed-height (`100vh`, body `overflow:hidden`) grid. The ≤680px rule
+  handles NARROW viewports; nothing handled SHORT ones. On a short/wide viewport (landscape phone,
+  split-screen, a 480p projector) the center column — domains → theater ladder → I&W board (all
+  `flex-shrink:0`) → charts (`flex:1`), under `.center-panel{overflow:hidden}` — has no scroll, so
+  the fixed strips crush the charts toward zero height and the bottom P(WWIII)/domain card clips
+  below the fold with no way to reach it. Pillar-2: a correct number rendered clipped has FAILED.
+- Change: added a `@media(max-height:640px)` rule (`src/dashboard.html`) — the vertical twin of the
+  ≤680px width rule — that lets the PAGE scroll (`body` height:auto + overflow-y:auto), un-clips the
+  three panels, and pins the charts to explicit heights (`.chart-inner`/`.chart-split` height +
+  `flex:none`). The explicit heights also defuse the Chart.js no-bounded-height resize→render loop —
+  the exact risk that made the 06-15 run defer this. Width is untouched (a wide-short display keeps
+  its 3 columns), and the rule is scoped to short heights, so the normal-height render the eyes gate
+  judges is byte-for-byte unchanged (zero-regression by construction).
+- Metric moved: legibility (engine-behavior on the render path) — a short-viewport operator can now
+  reach the clipped center card. No engine constant touched; calibration bit-identical (backtest
+  bands quiet/Ukraine/current_2026=60/Cuba all green). Test count 491 → 492.
+- Proof: `cargo build --release` clean; `cargo test --release` 492 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 22/0; my-lane clippy 0 warnings (only warning is `vendor/ee-sources`,
+  signal-hunter lane). Lock `dashboard_center_column_scrolls_instead_of_clipping_on_short_viewports`
+  fails-without-change by construction: without the `@media(max-height:640px){` literal,
+  `split(...).nth(1)` is `None` → `.expect("dashboard lost the short-viewport rule")` panics.
+- Tier: T3→pillar-2 legibility (a genuine clip fix, not annotation) · Touched: engine-behavior
+  (render/CSS) · Lock-fails-without-change: yes (expect-panics without the rule) · Counts: none
+  (legibility, no frontier-metric) · consecutive_display_only=0 · display_only_in_last_7=2 ·
+  consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: (1) do NOT widen `@media(max-height:640px)` toward normal desktop
+  heights — it MUST stay scoped to genuinely short viewports so the eyes-gated render is untouched.
+  (2) The eyes gate renders at normal height, so it does NOT exercise this rule — the lock test is
+  the guard; keep it. (3) STILL Robert-gated (unchanged): §6.1 markets `MARKET_STRESS_AMPLIFIER`
+  magnitude, and the dead `systemic_pegged`/`HEAT_CLAMP=1.0` doc (heat asymptotes < 1.0 post-
+  de-saturation, so the flag can't fire; re-key vs retire is a semantic choice for Robert).
+
 ## 2026-06-30 — NO-OP (structured) — cloud-provable value-tier frontier exhausted this run; verified findings recorded so the next run compounds
 - Swept every axis against CURRENT code (not memory). Each lever is done, blocked cross-lane,
   Robert-gated, or a closed vein — and `display_only_in_last_7=2` is AT the cap, so a doc/clippy/+1-test

@@ -296,10 +296,15 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   Added `min-height:0` so the item respects the track height and the scrollbar engages → the rail
   SCROLLS. Locked by `dashboard_left_rail_scrolls_instead_of_clipping_on_short_viewports` (asserts
   both halves of the contract on the live `.left-panel` rule). Phone (≤680px) already stacks/scrolls
-  via the existing breakpoint. Final visual is the deploy-time eyes gate. (Sibling latent defect:
-  center/right panels share the same missing `min-height:0` but use `overflow:hidden` with bounded
-  internal scroll areas and currently pass eyes — left untouched to avoid unverifiable chart-resize
-  risk.) See improvement-log 2026-06-15.
+  via the existing breakpoint. Final visual is the deploy-time eyes gate. **Sibling defect CLOSED
+  2026-07-01:** the center column (`overflow:hidden`, charts on `flex:1`) had no short-viewport
+  escape, so on a short/wide viewport the fixed strips crushed the charts to zero and the bottom
+  card clipped with no scroll. Added a `@media(max-height:640px)` rule (the vertical twin of the
+  ≤680px width rule) that lets the page scroll and pins the charts to explicit heights — which also
+  defuses the chart-resize risk the 06-15 note deferred on. Scoped to short heights, so the
+  normal-height render is byte-identical. Locked by
+  `dashboard_center_column_scrolls_instead_of_clipping_on_short_viewports`. See improvement-log
+  2026-06-15 + 2026-07-01.
 - [x] **2.2 Annotation render audit** — **DONE 2026-06-10.** Audited every Chart.js instance
   (only two: timeline `tlChart`, domain bar `dmChart`) plus the methodology page (no charts).
   No annotation-plugin overlay remained — `calibBand` and `spikeMarks` were already the only
