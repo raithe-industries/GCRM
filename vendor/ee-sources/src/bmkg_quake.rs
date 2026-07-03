@@ -105,7 +105,7 @@ pub fn max_mmi(dirasakan: &str) -> Option<u8> {
     let flush = |run: &mut String, best: &mut Option<u8>| {
         if !run.is_empty() {
             if let Some(v) = roman_to_int(run) {
-                if best.map_or(true, |b| v > b) {
+                if best.is_none_or(|b| v > b) {
                     *best = Some(v);
                 }
             }
