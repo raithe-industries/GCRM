@@ -214,6 +214,19 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   bands, Brier identical). Locked by
   `first_snapshot_after_restart_reports_zero_delta_not_a_cold_start_jump` (fails without the gate:
   first delta = 0.0149… ≠ 0). See improvement-log 2026-06-27.
+- [x] **1.6 `systemic_pegged` "flat trend = pinned at ceiling" caveat was silently dead** —
+  **DONE 2026-07-03.** The de-saturation (ae70552) rewrote `heat_from_scores` to end in
+  `1 − exp(−γ·raw)` (asymptotes strictly below 1.0), so the `max_heat >= HEAT_CLAMP (1.0)` gate in
+  `systemic_pegged` could never fire — the trend-cell honesty caveat that distinguishes a genuinely
+  ceiling-pinned "+0.000%" from a calm flat line became unreachable, and the `HEAT_CLAMP` doc still
+  falsely claimed `heat_from_scores` "ends in `.min(1.0)`". Re-keyed the flag off the model's ACTUAL
+  ceiling — the headline P clamped at `FORECAST_PROB_CEILING` (`bayesian::is_at_forecast_ceiling`) AND
+  an empirically flat window — the faithful realization of the caveat's own stated purpose. Distinct
+  from the hero `at_ceiling` caveat (pegged additionally requires the window to be flat, so it answers
+  the trend cell's question: is this +0.000% informative or just pinned?). No math/calibration constant
+  touched (P, backtest bands, Brier identical); removed the now-dead `HEAT_CLAMP` + its false doc. Locked
+  by `systemic_pegged_only_when_railed_and_flat` (reworked; a revert to the heat-clamp signature no
+  longer compiles). See improvement-log 2026-07-03.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

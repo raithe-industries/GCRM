@@ -209,14 +209,16 @@ pub async fn broadcast_snapshots(
             let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
             let lead_now = crate::models::lead_theater(&snap.theaters);
             // Honesty layer: a frozen "+0.000%" 6h trend is the model PEGGED at the top of its
-            // dynamic range — the hottest theater railed at the heat clamp AND zero empirical
-            // movement across the window — not a calm flat line or a freeze/bug. Judged
-            // server-side from the same durable ring (`empirical_hw_pct`) plus the live theaters,
-            // so the browser only renders the flag. The number itself is unchanged; this just
-            // names WHY it cannot move. See models::systemic_pegged.
+            // range — the headline P clamped at the forecast ceiling AND zero empirical movement
+            // across the window — not a calm flat line or a freeze/bug. Judged server-side from
+            // the same durable ring (`empirical_hw_pct`) plus the headline P, so the browser only
+            // renders the flag. The number itself is unchanged; this just names WHY it cannot
+            // move. (Keys on the headline ceiling, not a per-theater heat clamp: post-de-saturation
+            // heat asymptotes below 1.0, so the old heat-railed gate was permanently dead.) See
+            // models::systemic_pegged.
             let empirical_hw_pct = uncertainty.get("empirical_hw_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let samples = t6.get("samples").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let pegged = crate::models::systemic_pegged(&snap.theaters, empirical_hw_pct, samples);
+            let pegged = crate::models::systemic_pegged(snap.p_wwiii_annual, empirical_hw_pct, samples);
             if let Some(obj) = t6.as_object_mut() {
                 let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;

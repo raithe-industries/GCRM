@@ -22,6 +22,44 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-03 — honesty — the "flat 6h trend = pinned at ceiling" caveat was silently dead post-de-saturation; re-keyed to the real ceiling
+- Item: roadmap 1.6 (new) — resolves the Robert-flagged `systemic_pegged`/`HEAT_CLAMP` finding the
+  06-30 / 07-01 no-op notes carried forward.
+- Defect (pillar-1 HONESTY regression): the de-saturation (ae70552) rewrote `theater::heat_from_scores`
+  to end in `1 − exp(−γ·raw)`, which asymptotes STRICTLY below 1.0 — so no theater's heat ever rails at
+  a hard 1.0. But `models::systemic_pegged` still gated on `max_heat >= HEAT_CLAMP (1.0)`, which can
+  therefore NEVER be true. The trend-cell honesty caveat that distinguishes a genuinely ceiling-pinned
+  "+0.000%" ("pegged at model ceiling") from a calm/frozen flat line was silently unreachable: served
+  `trend_6h.pegged` is always false, so a Cuba-level pinned world shows a bare "+0.000%" the operator
+  can't tell from a quiet one. The `HEAT_CLAMP` doc also still falsely claimed `heat_from_scores` "ends
+  in `.min(1.0)`". Prior runs deferred this to Robert as a "semantic choice"; on analysis the honest
+  realization of the caveat's OWN stated purpose ("the headline genuinely cannot move up") is unique.
+- Change: re-keyed `systemic_pegged(p_annual, empirical_hw_pct, samples)` to
+  `is_at_forecast_ceiling(p_annual) && empirical_hw_pct <= 0.0 && samples >= 2` — the model's ACTUAL
+  ceiling is P clamped at `FORECAST_PROB_CEILING (0.90)`, not a per-theater heat clamp. Distinct from the
+  hero `at_ceiling` caveat (which fires on ANY capped read, incl. one that jumped into the ceiling this
+  window): pegged additionally requires an empirically flat window, so it answers the trend cell's own
+  question — is this +0.000% informative, or just pinned at the top? Updated the server caller to pass
+  `snap.p_wwiii_annual`; removed the now-dead `HEAT_CLAMP` constant and its false doc.
+- Metric moved: engine-behavior (a served honesty flag that could never fire now fires on exactly the
+  pinned-at-ceiling state). NO calibration constant touched — P, backtest bands (quiet/Ukraine/
+  current_2026=60/Cuba), and Brier are bit-identical (systemic_pegged never feeds l_sys/P). Test count
+  unchanged (the lock was reworked, not added).
+- Proof: `cargo build --release` clean; `cargo test --release` 492 passed / 0 failed / 3 ignored;
+  `cargo test backtest` 22/0; my-lane clippy 0 warnings. Lock `systemic_pegged_only_when_railed_and_flat`
+  fails-without-change structurally — a revert to the old `&[TheaterState]`/`max_heat >= 1.0` signature no
+  longer compiles against the P-based calls, and a dead `false` body fails the first assert.
+- Tier: T1 (engine-behavior: repairs a dead pillar-1 honesty surface) · Touched: engine-behavior ·
+  Lock-fails-without-change: yes (signature + assert) · Counts: none (honesty repair, no frontier metric) ·
+  consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=1
+- Notes future runs MUST respect: (1) `systemic_pegged` keys on the HEADLINE ceiling now — do NOT
+  re-introduce a per-theater `max_heat`/`HEAT_CLAMP` gate (heat asymptotes < 1.0, so it is permanently
+  dead). (2) The scorecard "Calibration evidence" baseline (Brier ~2e-6 / RMSE 0.14pp) is STILL stale
+  (de-saturation drifted it; current is Brier 0.00092 / RMSE 3.04pp, in-band 4/4, current_2026 exactly on
+  60% centre) — refresh it when NEXT moving that metric, per the standing note. (3) STILL Robert-gated:
+  §6.1 markets `MARKET_STRESS_AMPLIFIER` magnitude; `breadth_saturated` dormancy is intended + tested
+  (do not "re-enable").
+
 ## 2026-07-01 — legibility — short-viewport pass: the CENTER column now scrolls instead of clipping (closes the 2.1 sibling defect)
 - Item: roadmap 2.1 sibling defect (the 06-15 run fixed the left rail, deferred the center column
   "to avoid unverifiable chart-resize risk"; this run closes it).
