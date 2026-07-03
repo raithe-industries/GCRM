@@ -36,6 +36,7 @@ pub mod eonet;
 pub mod firms;
 pub mod eqcanada;
 pub mod gdacs;
+pub mod geonet_quake;
 pub mod geonet_volcano;
 pub mod gvp_volcano;
 pub mod healthmap;
@@ -71,6 +72,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(eqcanada::EqCanada::default()),
         Box::new(bmkg_quake::BmkgQuake), // Indonesia felt earthquakes + tsunami potential (BMKG/InaTEWS)
         Box::new(jma_quake::JmaQuake), // Japan seismic-intensity (Shindo) earthquakes (JMA)
+        Box::new(geonet_quake::GeonetQuake), // NZ felt earthquakes graded by MMI (GeoNet/GNS)
         Box::new(ontario511::Ontario511),
         Box::new(drivebc::DriveBc),
         Box::new(alberta511::Alberta511),

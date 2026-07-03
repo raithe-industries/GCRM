@@ -74,6 +74,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `spc_storm_reports` | Weather | NOAA / NWS Storm Prediction Center | **confirmed severe-storm reports** — SPC's daily Local Storm Reports, the **ground-truth severe-convective occurrences** (the touchdown/impact, not a forecast) no feed carried: NWS/ECCC ship *warnings* (what may happen), NHC/JMA ship cyclone *tracks*, NWPS ships river flooding, AWC ships en-route aviation hazards. Three small CSVs (`today_torn.csv` / `today_hail.csv` / `today_wind.csv`), each the same 8-column layout `Time,<F_Scale\|Size\|Speed>,Location,County,State,Lat,Lon,Comments`; first line is a header, the free-text `Comments` may contain commas (parsed `splitn(8,',')`). One [`EventKind::Weather`] event per report at its own lat/lon. **Signal-meaningful** (every value unit-bearing + baseline): a confirmed **tornado** (EF rating when assessed → EF0 0.6…EF5 1.0; unrated touchdown 0.85), **hail** diameter in inches (severe ≥1.0", significant ≥2.0"; the daily `Size` is hundredths-of-inch — `175`=1.75" — handled tolerant of either hundredths or decimal-inch encoding), **wind** gust in mph (severe ≥58, significant ≥75, extreme ≥90; unknown-speed damaging-wind 0.5). Chip = "EF2 Tornado" / "2.75 in hail" / "70 mph wind" / "Damaging wind". Empty report day (header only — common early in the UTC day / quiet weather) = 0 events, not an error; if NONE of the three is a recognizable report CSV (e.g. all HTML 403 pages) → error so last-good takes over. **Path A (prod fetches live):** SPC `today_*.csv` is auth-free US-Gov public domain; the host 403s web fetch in-sandbox (as every gov host does), so the format was **anchored to real consumer-code bytes** — `garrettrayj/storm-reports` `src/downloader.py` (URL `…/climo/reports/{YYMMDD}_rpts_{torn,hail,wind}.csv`) + `src/preprocessing.py` (8-field row regex), corroborated by multiple independent sources for the per-type headers + units; prod (full network) fetches the live `today_*.csv`. US/CONUS geography. |
 | `bmkg_quake` | Earthquake | BMKG / InaTEWS (Indonesia) | **felt earthquakes** — BMKG's open `gempadirasakan.json` (the ~15 most recent quakes actually reported felt). NOT another USGS/EMSC *detection* catalogue: this is a **human-impact** product — only felt quakes, each graded by the **Modified-Mercalli felt intensity** (`Dirasakan`, e.g. "IV Denpasar, III Mataram") plus Indonesia's national **tsunami-potential** flag (`Potensi`). One dot per quake at its inline `Coordinates` ("lat,lon" — no geometry join). Severity = MMI ladder (II 0.25 → VI 0.7 → IX+ 1.0), with a raw-magnitude fallback when `Dirasakan` is blank, floored by any tsunami potential (Waspada 0.9 / Siaga 0.95 / Awas 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; the tsunami flag is the official InaTEWS assessment). Chip = "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga". Auth-free JSON (attribution "BMKG"); empty quiet-window list = 0 events, not an error; `gempa` tolerated as array (felt list) or single object (latest). **Path A** (prod fetches the live `gempadirasakan.json`; the host 403s web fetch in-sandbox so the schema is anchored to the official `infoBMKG/data-gempabumi` spec + 5+ independent public copies). Fills the **felt-intensity / tsunami modality** and **Indonesia / SE-Asia** seismic geography the raw global quake catalogues (USGS/EMSC/eqcanada) don't carry. |
 | `jma_quake` | Earthquake | JMA (Japan Meteorological Agency) | **seismic-intensity earthquakes** — JMA's open `bosai/quake/data/list.json` (the rolling list of recent quake bulletins), filtered to events with an observed **JMA Shindo intensity** (`maxi`) on Japan's national 0–7 scale (`1,2,3,4,5-,5+,6-,6+,7`). NOT another USGS/EMSC *detection* catalogue: filtered to a Shindo it's a **human-impact** product — only quakes that produced measurable shaking — over **Japan / the NW-Pacific** (a key non-North-America theatre). One dot per quake at its inline `cod` (an ISO-6709 string `+lat+lon-depth/` — no geometry join). **Deduped by `eid`** (JMA issues several bulletins per quake: intensity flash → hypocentre+intensity → updates), keeping the loudest Shindo. Bulletins with no hypocentre (`cod` empty — the `震度速報` flash) or no observed Shindo (a hypocentre-only notice for an unfelt quake) are dropped — exactly what USGS/EMSC already carry. Severity = Shindo ladder (1 → 0.15, 5+ → 0.75, 7 → 1.0). **Signal-meaningful** (Shindo is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; a distinct national scale from Indonesia's MMI). Chip = "Shindo 5+ · M6.1". Auth-free JSON (attribution "気象庁/JMA"); empty array (quiet window) = 0 events, not an error. **Path A** (prod fetches the live `list.json`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the `nehemiaharchives/jma-quake-api` `JmaQuakeData.kt` data class: `cod/mag/maxi/anm/en_anm/ttl/en_ttl/eid/at` fields confirmed). Complements `bmkg_quake` (Indonesia MMI) — same `bosai` host already proven live by `jma_typhoon`. |
+| `geonet_quake` | Earthquake | GeoNet / GNS Science (New Zealand) | **felt earthquakes** — GeoNet's open `quake?MMI=3` GeoJSON, filtered server-side to quakes whose **computed Modified-Mercalli intensity** (`mmi`, the calculated shaking at the closest locality) reaches the felt threshold. NOT another USGS/EMSC *detection* catalogue: filtered to a felt MMI it's a **human-impact** product — only quakes that actually shook people — over **New Zealand / the SW-Pacific** (a seismically very active plate boundary the global catalogues carry only sparsely at small magnitudes). One dot per quake at its inline `Point` `[lon,lat]` (no geometry join). Retracted quakes (`quality == "deleted"`) and any feature below the MMI-3 floor / without geometry are dropped, so a quiet window (empty `features`) = 0 events, not an error. Records may omit `time` (real GeoNet behaviour) → "now" fallback so a live-but-timeless quake still plots. Severity = MMI ladder aligned with `bmkg_quake` (3 → 0.3, 6 → 0.7, 8 → 0.95, 9+ → 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named human effect — baseline-relative, not a raw number; same scale as Indonesia's `bmkg_quake`, distinct national body + geography). Chip = "Felt MMI 5 · M5.9". Auth-free GeoJSON (CC BY 3.0 NZ, credit "GeoNet / GNS Science"; `Accept: application/vnd.geo+json;version=2`). **Path A** (prod fetches the live `quake?MMI=3`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the real `exxamalte/python-aio-geojson-geonetnz-quakes` `tests/fixtures/quakes-1.json` capture: `publicID/time/depth/magnitude/mmi/locality/quality` fields + a record that omits `time`, corroborated by GeoNet's official API docs). Same `api.geonet.org.nz` host already proven live in prod by `geonet_volcano`. Completes the felt-intensity seismic trio: `bmkg_quake` (Indonesia MMI) + `jma_quake` (Japan Shindo) + `geonet_quake` (NZ MMI). |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -168,7 +169,9 @@ Bias each run toward the least-covered axis below.
   Indonesia now carries both a volcano and a seismic/tsunami feed. **Japan / NW-Pacific** seismic
   intensity now via `jma_quake` (**JMA Shindo-graded earthquakes**, 2026-06-30) — the NW-Pacific
   flashpoint region (Japan / Korea / Russia Far East) now has a national felt-intensity feed.
-  **Europe still the biggest
+  **New Zealand / the SW-Pacific** now carries a seismic feed too via `geonet_quake` (**GeoNet
+  MMI-graded felt earthquakes**, 2026-07-03) — the felt-intensity seismic modality now spans a
+  trio of national bodies + scales (Indonesia MMI / Japan Shindo / NZ MMI). **Europe still the biggest
   blank: MeteoAlarm investigated 2026-06-30 — deferred (geometry-anchoring blocked).** Its
   auth-free public legacy feed (`feeds.meteoalarm.org/feeds/meteoalarm-legacy-rss-<country>`)
   carries only an EMMA region *code/name* + awareness level/type — NO inline geometry; the
@@ -220,6 +223,46 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-03** — **adopted `geonet_quake` (GeoNet / GNS Science NZ felt earthquakes, MMI), Path A** —
+  a new authoritative geocoded layer extending the **felt-intensity seismic modality** to **New Zealand /
+  the SW-Pacific**, a coverage gap the raw global quake catalogues carry only sparsely. Per the
+  SUSTAINED-BLOCK DIRECTIVE I LED with a landable real source biased to a coverage gap (non-NA geography +
+  the felt-intensity axis), not a no-op. **Why not "another quake feed":** USGS/EMSC/eqcanada are raw
+  *detection* catalogues (every instrument-detected event, magnitude only); GeoNet's `quake?MMI=3`,
+  **filtered to a computed felt MMI**, is a **human-impact** product — only quakes that actually shook
+  people, graded on the Modified-Mercalli scale (`mmi` = calculated shaking at the closest locality). Same
+  justification that landed `bmkg_quake` (Indonesia MMI) and `jma_quake` (Japan Shindo): a national
+  felt-intensity feed, different authoritative body (GNS Science) + geography (NZ). GeoNet is the SAME
+  `api.geonet.org.nz` host already proven live in prod by `geonet_volcano`, so this is a safe Path A.
+  **Network re-probed fresh:** the egress block on non-GitHub hosts is unchanged — the live
+  `api.geonet.org.nz/quake?MMI=4` endpoint **403s via web fetch**; only `raw.githubusercontent.com` serves.
+  **Anchoring (the GitHub-bytes technique):** the `quake` GeoJSON schema was confirmed from committed bytes
+  — the real captured GeoNet response in `exxamalte/python-aio-geojson-geonetnz-quakes`
+  `tests/fixtures/quakes-1.json` (web fetched off `raw.githubusercontent.com`): a `FeatureCollection` of
+  `Point` features with props `publicID/time/depth/magnitude/mmi/locality/quality`, INCLUDING a record that
+  **omits `time`** (drove the "now"-fallback) — corroborated by GeoNet's official API-property docs
+  (`publicID`, `time`, `depth`, `magnitude`, `mmi` = MMI at closest locality, `locality`, `quality` =
+  best/preliminary/automatic/deleted). Clears all six bars: **authoritative** (GeoNet / GNS Science = NZ's
+  official geological-hazard monitor); **auth-free** GeoJSON; **machine-readable**; **geocoded** (inline
+  per-quake `Point` — no geometry join, the failure mode that deferred MeteoAlarm/EAWS); **fresh** (10-min
+  cadence real-time list; empty `features` = 0 events, not an error); **non-duplicative** (felt-MMI
+  human-impact over NZ/SW-Pacific; retracted `deleted` quakes + sub-felt MMI < 3 dropped so it doesn't
+  re-plot the detection catalogues). **Signal-meaningful:** MMI is a defined ground-shaking scale (each
+  level a named human effect) — a "Felt MMI 5" dot is real, unit-bearing signal, not a raw number; severity
+  = MMI ladder aligned with `bmkg_quake` (3 → 0.3, 6 → 0.7, 8 → 0.95, 9+ → 1.0). New
+  `vendor/ee-sources/src/geonet_quake.rs` (single GeoJSON fetch with the `vnd.geo+json;version=2` Accept
+  header GeoNet expects; pure `parse_geonet_quake` + `quake_chip` + `severity_for_mmi` + `capitalize_first`;
+  drops `deleted`/sub-felt/no-geometry/no-id records; RFC3339 `time` with "now" fallback; 6 offline tests:
+  real-shape fixture keeps the felt MMI-7/MMI-5 quakes and drops the MMI-2 sub-felt + the `deleted` one,
+  quiet-window-is-OK incl. a sub-felt-only window, error-on-bad-input, drops-no-geometry/no-id, MMI severity
+  ladder incl. saturation, chip with + without magnitude). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("geonet_quake", …, 10)` + count/cap row cap 60 + `feed_detail` arm + osint chip test);
+  SRC_LABEL `GeoNet · GNS Science` in `dashboard.html` (CC BY 3.0 NZ credit). **`cargo build --release`
+  green; full workspace `cargo test` green (gcrm 493 / 0 failed / 3 ignored; ee-sources 131 incl.
+  geonet_quake 6/6; ee-correlate 79; ee-view 60; ee-core 9).** EventKind::Earthquake. Next: Europe/MeteoAlarm
+  still geometry-blocked; the Indian-Ocean/SH cyclone basin remains open (no auth-free geocoded product
+  surfaced); other Asia/Pacific (Australia BoM/GA), Latin America (Chile CSN/SERNAGEOMIN), Africa.
 
 - **2026-06-30** (second run) — **adopted `jma_quake` (JMA Japan seismic-intensity earthquakes), Path A** —
   a new authoritative geocoded layer over **Japan / the NW-Pacific** (Japan / Korea / Russia Far East — a
