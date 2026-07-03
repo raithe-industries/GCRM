@@ -227,6 +227,17 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   touched (P, backtest bands, Brier identical); removed the now-dead `HEAT_CLAMP` + its false doc. Locked
   by `systemic_pegged_only_when_railed_and_flat` (reworked; a revert to the heat-clamp signature no
   longer compiles). See improvement-log 2026-07-03.
+- [x] **1.7 Actor acronyms substring-matched inside ordinary words → phantom great-power inflation** —
+  **DONE 2026-07-03.** `extract_actors` (processor.rs) matched every actor pattern with raw
+  `str::find`, so the short acronyms `pla`/`cia`/`fbi`/`nato` matched inside `plan`/`plant`,
+  `official`/`special`, and `senator` — tagging China/US/NATO and setting `great_power_involved = true`
+  on essentially any article, which feeds the great-power coupler and biases the systemic index UP (the
+  exact false-alarm direction audit-P5 closed). The sibling sentiment path was already hardened with
+  `contains_word` (audit processor-4); the actor path was left on raw `find`. Fix is surgical: word-
+  boundary matching only for the acronym patterns (`BOUNDARY_ACTOR_PATS`) — country stems keep substring
+  matching so they still catch adjective forms (`russia`→`russian`). Locked by
+  `actor_acronyms_do_not_match_inside_ordinary_words` (+ `_still_match_as_whole_words`). See
+  improvement-log 2026-07-03.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

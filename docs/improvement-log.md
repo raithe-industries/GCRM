@@ -22,6 +22,45 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-03 — honesty/awareness — actor acronyms no longer match inside ordinary words (kills phantom great-power inflation)
+- Item: roadmap 1.7 (new) — a false-alarm leak in the NLP actor path, same class as audit-P5.
+- Defect (pillar-1 HONESTY): `processor::extract_actors` matched every actor pattern with raw
+  `str::find`. The short acronyms `pla`→China Military, `cia`/`fbi`→United States, `nato`→NATO
+  therefore matched as bare substrings inside extremely common words — `pla`⊂`plan/plant/display`,
+  `cia`⊂`official/special/financial`, `nato`⊂`senator`, `isis`⊂`crisis`, `quad`⊂`squad`. So an article
+  that merely said "officials plan a special response" got tagged China+US and `great_power_involved =
+  true`, corrupting `actors`/`top_actors`/`great_power_events` and feeding the great-power systemic
+  coupler → biasing the published index UP (the exact direction audit-P5/ed9cdf5 was closing). The
+  sibling sentiment path was already hardened via `contains_word` (audit processor-4); the actor path
+  was left on raw `find`.
+- Change: added `find_word` (boundary-aware `str::find`; `contains_word` now delegates to it — single
+  source of truth) and a `BOUNDARY_ACTOR_PATS` set of the short acronyms. `extract_actors` matches those
+  as WHOLE WORDS; country/proper-noun stems keep substring matching so they still catch adjective forms
+  (`russia`→`russian`, `iran`→`iranian`). Minimal, surgical — no lexicon or calibration change.
+- Metric moved: engine-behavior — a real kinetic article that names no great power no longer fabricates
+  great-power involvement. NO calibration constant touched; the backtest builds events directly (sets
+  `great_power_involved` explicitly, never routes through `extract_actors`), so the four anchors are
+  bit-identical: `cargo test backtest` 22/0, current_2026 on 60% centre.
+- Proof: `cargo build --release` clean; `cargo test --release` 495 passed / 0 failed / 3 ignored (was
+  493, +2 new tests); src/ clippy 0 warnings. Lock `actor_acronyms_do_not_match_inside_ordinary_words`
+  proven fails-without-change: forcing the acronym branch off (`if false && …`) makes it panic on
+  `great_power_involved == true`; restored → green. Companion `_still_match_as_whole_words` guards the
+  legit case ("PLA warships", "NATO") against over-fixing.
+- Tier: T1 (engine-behavior: closes a false-alarm leak that inflated the index) · Touched:
+  engine-behavior · Lock-fails-without-change: yes (proof above) · Counts: none (correctness/honesty
+  repair, no frontier metric) · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) do NOT add short acronyms to the actor dictionary without also
+  adding them to `BOUNDARY_ACTOR_PATS` — a bare 3–4 letter acronym WILL substring-match common words.
+  (2) Country stems are deliberately substring-matched (adjective recall) — do NOT boundary-restrict
+  them; the dictionary covers adjective phrases (`russian forces`) explicitly too. (3) UNADDRESSED
+  (verified, Robert-gated) findings this run's sweep surfaced: `couplers.breadth_saturated` is
+  permanently dead post-de-saturation but its dormancy is INTENDED + test-locked
+  (`live_peg_resolves_after_desaturation_*`) — do NOT re-enable; and `events_in_window`'s uniform 72h
+  military liveness clock (bayesian.rs:788) drops still-scoring longer-half-life events from the live
+  count while the domain grid shows them — a documented semantic tradeoff (per-event half-life would
+  weaken the outage-honesty intent), so it's a Robert call, not an unattended fix.
+
 ## 2026-07-03 — honesty — the "flat 6h trend = pinned at ceiling" caveat was silently dead post-de-saturation; re-keyed to the real ceiling
 - Item: roadmap 1.6 (new) — resolves the Robert-flagged `systemic_pegged`/`HEAT_CLAMP` finding the
   06-30 / 07-01 no-op notes carried forward.

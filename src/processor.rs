@@ -755,21 +755,28 @@ const CONCILIATORY_WORDS: &[&str] = &[
     "reconciliation","mediation","de-escalation","diplomacy",
 ];
 
-/// True if `needle` occurs in `haystack` as a whole word — alphanumeric boundaries on both
-/// sides — so the hostile token "fire" does NOT match inside "ceasefire" and "war" does not
-/// match "warning". Used only for the sentiment lexicons, where naive substring matching let
-/// a ceasefire headline score as hostile (the "fire" token) and inflate the news-flow tone.
-/// Both args are assumed already lowercased. Internal hyphens (e.g. "de-escalation") are fine
-/// — only the ends are boundary-checked. (audit processor-4)
-fn contains_word(haystack: &str, needle: &str) -> bool {
+/// First whole-word occurrence of `needle` in `haystack` — alphanumeric boundaries on both
+/// sides — returning its start byte offset (the boundary-aware sibling of [`str::find`]). Used
+/// for short actor acronyms (`pla`, `cia`, `nato`…) that as bare substrings hide inside ordinary
+/// words (`plan`, `official`, `senator`) and phantom-tag actors. Both args assumed lowercased;
+/// internal hyphens (e.g. "de-escalation") are fine — only the ends are boundary-checked.
+fn find_word(haystack: &str, needle: &str) -> Option<usize> {
     let hb = haystack.as_bytes();
     let nlen = needle.len();
-    haystack.match_indices(needle).any(|(i, _)| {
+    haystack.match_indices(needle).find_map(|(i, _)| {
         let before_ok = i == 0 || !hb[i - 1].is_ascii_alphanumeric();
         let after = i + nlen;
         let after_ok = after >= hb.len() || !hb[after].is_ascii_alphanumeric();
-        before_ok && after_ok
+        (before_ok && after_ok).then_some(i)
     })
+}
+
+/// True if `needle` occurs in `haystack` as a whole word — so the hostile token "fire" does NOT
+/// match inside "ceasefire" and "war" does not match "warning". Used only for the sentiment
+/// lexicons, where naive substring matching let a ceasefire headline score as hostile (the "fire"
+/// token) and inflate the news-flow tone. (audit processor-4)
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    find_word(haystack, needle).is_some()
 }
 
 // ── Nuclear / WMD / civilian indicator terms ─────────────────────────────────
@@ -806,6 +813,16 @@ fn severity_base(et: &EventType) -> f64 {
 }
 
 // ── Actor entity dictionary ───────────────────────────────────────────────────
+
+/// Actor patterns that are short acronyms/initialisms and MUST be matched as whole words. As bare
+/// substrings they hide inside ordinary English words and phantom-tag actors — and for
+/// `pla`/`cia`/`fbi`/`nato` that fabricates GREAT-POWER involvement, biasing the index UP (the
+/// false-alarm direction): `pla`⊂`plan/plant/display`, `cia`⊂`official/special/financial`,
+/// `nato`⊂`senator`, `isis`⊂`crisis`, `quad`⊂`squad`, `idf`⊂`midfield`. Country/proper-noun stems
+/// are deliberately NOT here — they SHOULD prefix-match their adjective forms (`russia`→`russian`,
+/// `iran`→`iranian`), which the dictionary otherwise catches only via explicit phrases.
+const BOUNDARY_ACTOR_PATS: &[&str] =
+    &["pla", "cia", "fbi", "idf", "mi6", "irgc", "isis", "isil", "aukus", "quad", "nato", "dprk"];
 
 fn actor_entity_patterns() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -1101,12 +1118,22 @@ impl NlpProcessor {
         let mut matched_spans: Vec<(usize, usize)> = Vec::new();
 
         for (pattern, display) in &self.actor_pats {
-            if let Some(pos) = tl.find(pattern) {
-                let end = pos + pattern.len();
+            let pat: &str = pattern;
+            // Short acronyms match as whole words only (see BOUNDARY_ACTOR_PATS): as bare
+            // substrings they hide inside ordinary words (plan/official/senator/crisis) and
+            // phantom-tag actors and great-power involvement. Country stems keep substring
+            // matching so they still catch adjective forms (russia→russian).
+            let hit = if BOUNDARY_ACTOR_PATS.contains(&pat) {
+                find_word(tl, pat)
+            } else {
+                tl.find(pat)
+            };
+            if let Some(pos) = hit {
+                let end = pos + pat.len();
                 if matched_spans.iter().any(|(s, e)| pos < *e && end > *s) {
                     continue;
                 }
-                let norm = normalize_actor(pattern);
+                let norm = normalize_actor(pat);
                 if !seen_ids.contains(&norm) {
                     seen_ids.push(norm);
                     actors.push(display.to_string());
@@ -1383,6 +1410,41 @@ mod tests {
         assert!(!contains_word("severe weather warning issued", "war"));
         assert!(contains_word("the war escalates sharply", "war"));
         assert!(contains_word("a de-escalation deal was signed", "de-escalation"));
+    }
+
+    #[test]
+    fn actor_acronyms_do_not_match_inside_ordinary_words() {
+        // Short acronyms (pla/cia/nato/isis) must not tag actors — or fabricate GREAT-POWER
+        // involvement, biasing the index UP — when they merely hide inside common words:
+        // plan/plant(pla), officials/special(cia), senator(nato), crisis(isis). No great power
+        // is named here, only a real kinetic signal ("missile strike").
+        let mut proc = NlpProcessor::new();
+        let article = make_article(
+            "Missile strike hits a power plant near the border",
+            "Local officials plan a special crisis response briefed to a senator",
+        );
+        let event = proc.process(&article).unwrap();
+        assert!(!event.great_power_involved,
+            "no great power is named; plan/plant/official/special/senator/crisis must not tag one");
+        for phantom in ["China Military", "United States", "NATO", "ISIS"] {
+            assert!(!event.actors.iter().any(|a| a == phantom),
+                "phantom actor {phantom} matched inside an ordinary word");
+        }
+    }
+
+    #[test]
+    fn actor_acronyms_still_match_as_whole_words() {
+        // The boundary fix must not lose a legitimate whole-word acronym mention.
+        let mut proc = NlpProcessor::new();
+        let article = make_article(
+            "PLA warships enter the Taiwan strait as forces clash",
+            "NATO condemns the move",
+        );
+        let event = proc.process(&article).unwrap();
+        assert!(event.great_power_involved,
+            "'PLA' and 'NATO' as whole words are great powers and must still tag");
+        assert!(event.actors.iter().any(|a| a == "China Military"));
+        assert!(event.actors.iter().any(|a| a == "NATO"));
     }
 
     #[test]
