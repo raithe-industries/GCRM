@@ -63,6 +63,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
 | `acled_aggregated` | Conflict | ACLED | **weekly Admin-1 conflict-intensity** — ACLED's free, no-key **Aggregated Data** product (the licensed event API stays dormant; see `acled`). One dot per first-level admin region at its **centroid** (the file ships `CENTROID_LATITUDE/LONGITUDE`, so no external centroid table is needed), coloured by the **trailing-window sum** (~4 weeks ending at the file's latest `WEEK`) of events + fatalities — so a multi-year file plots *current* regional heat, not history. A regional-intensity complement to `ucdp_ged`'s discrete events: weekly cadence + ACLED's broad taxonomy (political violence / explosions-remote / demonstrations / strategic developments). **Path-B committed snapshot** (`acled_aggregated_snapshot.csv`, `include_str!`): `acleddata.com`/HDX 403s in-sandbox and the download is a manual/registered step, so a real ACLED Middle-East weekly aggregate (Jan–Mar 2026; 14 countries, 104 admin1s incl. Iran/Israel/Palestine/Lebanon/Syria/Yemen/Iraq) ships embedded, refreshed by a local re-download job. Canonical 13-col schema (`WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE`) confirmed against 15+ independent public copies. Severity = log(fatalities) (UCDP ladder); zero-fatality-but-active region floors at 0.12. **Signal-meaningful** (event + fatality counts are inherently unit-bearing conflict measures). Chip = "41 events · 66 fatalities · Air/drone strike". |
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
+| `asam` | Vessel | NGA (US) | **worldwide anti-shipping hostile-act reports** — NGA's Maritime Safety Information **Anti-Shipping Activity Messages**: reported piracy, armed robbery, boarding, hijacking, kidnapping, and drone/missile/USV attacks against ships, each carrying a decimal `latitude`/`longitude`. Extends the Vessel layer **beyond the Baltic** to the theatres a war-risk operator watches (Red Sea / Bab-el-Mandeb, Gulf of Aden, **Strait of Hormuz**, Gulf of Guinea, Singapore/Malacca Straits, **South China Sea**). A distinct **maritime-security incident** modality vs `digitraffic_ais` live AIS positions. **Signal-meaningful:** ASAM carries no numeric severity, so severity is graded by the **escalation class** read from the aggressor (`hostility`) + narrative (`description`) — a real maritime-security ladder (armed attack 0.9 > boarding 0.65 > robbery 0.5 > attempted 0.3; an *attempted* act de-escalates its tier). Chip = escalation class + vessel, e.g. "Boarding · Bulk Carrier" / "Armed attack · Chemical Tanker". **Path A** (prod fetches the live `msi.nga.mil/api/publications/asam?output=json&sort=date&minOccurDate=<today−365d>`; last-year window so the layer reads as current maritime posture, not the full archive). Auth-free, US-Gov public domain; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the NGA reference consumers `ngageoint/anti-piracy-{iOS,android}-app` (read `json["asam"]` off the same endpoint) + `hrbrmstr/asam` R package (record columns `reference,date,latitude,longitude,navArea,subreg,hostility,victim,description`; sample row `2019-73 \| 2019-09-30 \| 1.04 \| 104. \| XI \| 71 \| Five Armed robbers \| Bulk Carrier \| SINGAPORE STRAITS`). Empty `asam` array (quiet window) = 0 events, not an error. |
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
 | `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
@@ -128,14 +129,19 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
 
 Bias each run toward the least-covered axis below.
 
-- **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic). Gap
-  now: extend coverage beyond the Baltic — other authoritative auth-free AIS regions
-  (NOAA, port authorities) or a GitHub-mirrored snapshot. Two leads ruled out: **NOAA/USCG
-  marinecadastre** (authoritative but data on Azure blob, GeoParquet bulk historical — not
-  GitHub-raw, not live, no hand-parse) and **Danish Maritime Authority** (live AIS is *paid*,
-  DKK 1,800–5,600/yr; only historical 2006–2016 bulk CSV is free, on `web.ais.dk` not GitHub;
-  the `dma-ais` GitHub org is Java *software* libraries, no data feed). Neither is a Path-A or
-  Path-B fit.
+- **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic) and
+  EXTENDED 2026-07-04 with **`asam`** (**NGA Anti-Shipping Activity Messages** — worldwide
+  hostile-act reports against ships, Path A). The Baltic-only gap is now closed on the
+  **maritime-security** axis: ASAM covers the Red Sea/Hormuz/Gulf of Guinea/Singapore
+  Strait/South China Sea theatres with a distinct *incident* modality (piracy / boarding /
+  hijacking / drone-missile attack), complementing Fintraffic's live AIS *positions*.
+  Remaining: **live AIS traffic** outside the Baltic (positions, not incidents) — other
+  authoritative auth-free regional AIS if one surfaces. Two AIS-traffic leads stay ruled out:
+  **NOAA/USCG marinecadastre** (authoritative but data on Azure blob, GeoParquet bulk
+  historical — not GitHub-raw, not live, no hand-parse) and **Danish Maritime Authority**
+  (live AIS is *paid*, DKK 1,800–5,600/yr; only historical 2006–2016 bulk CSV is free, on
+  `web.ais.dk` not GitHub; the `dma-ais` GitHub org is Java *software* libraries, no data
+  feed). Neither is a Path-A or Path-B fit.
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV) and EXTENDED
   2026-06-28 with `acled_aggregated` (**ACLED weekly Admin-1 intensity, Path-B snapshot**) —
   the ACLED aggregated-weekly product is now LANDED (the licensed event `acled` stays dormant).
@@ -223,6 +229,63 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-04** — **adopted `asam` (NGA Anti-Shipping Activity Messages), Path A** — a new
+  authoritative geocoded layer opening a **maritime-security incident** modality no feed carried,
+  extending the Vessel layer **beyond the Baltic** (the ledger's named Vessel gap: "Asian-theater
+  maritime coverage — Taiwan Strait / Hormuz — the Vessel layer is Baltic-only"). ASAM plots
+  reported hostile acts against ships — piracy, armed robbery, boarding, hijacking, kidnapping,
+  and drone/missile/USV attacks — worldwide, over exactly the theatres a war-risk operator watches
+  (Red Sea / Bab-el-Mandeb, Gulf of Aden, **Strait of Hormuz**, Gulf of Guinea, Singapore/Malacca
+  Straits, **South China Sea**). Directly on-mission: attacks on shipping (Houthi Red Sea strikes,
+  Hormuz incidents) are first-order escalation indicators. **Candidate ranking this run (biased to
+  the top gaps):** LED with the #1 gap **military-posture observables** via **NGA MSI broadcast
+  warnings** (NAVAREA/HYDROLANT/HYDROPAC — carry naval exercises / live-fire / missile-test /
+  closure warnings). **Ruled out THIS run (not a binding rejection):** the `broadcast-warn` product
+  hits the geometry-anchoring failure mode — positions live in the free-text `text` field, no
+  structured lat/lon in the JSON (confirmed via web search + the reference consumers); a free-text
+  position parser is fragile/scraper-ish, so deferred. **Pivoted within the same gap cluster** to
+  ASAM, NGA MSI's sibling product that DOES ship a clean decimal `latitude`/`longitude` per record —
+  no geometry join (the trap that defers MeteoAlarm/EAWS). Also weighed the explicitly-blessed
+  **`acled_aggregated` snapshot refresh** (it has aged out — latest WEEK 2026-03-07, ~17 weeks old,
+  so the ACLED half plots 0): NOT taken because a faithful refresh needs the real ~100-row regional
+  aggregate as verbatim bytes, and web fetch **summarizes** (can't return the exact CSV); fabricating
+  values would violate the honesty bar, so the refresh stays an open lane for a run with real byte
+  access, not a fabricated one. **Network re-probed fresh:** the egress block on non-GitHub hosts is
+  unchanged — the live `msi.nga.mil/api/publications/asam` and `openepi.io`/`postman.com` doc pages
+  all **403 via web fetch**; only `raw.githubusercontent.com` serves. **Anchoring (the GitHub-bytes
+  technique):** the endpoint + wire schema were confirmed from committed bytes — the NGA reference
+  consumers `ngageoint/anti-piracy-iOS-app` `AsamResource.swift` + `anti-piracy-android-app`
+  (`AsamWebService`/`AsamBean`: base URL `…/api/publications/asam`, `sort`/`output`/`minOccurDate`/
+  `maxOccurDate` params, top-level `json["asam"]` array, fields id/latitude/longitude/occurrenceDate/
+  referenceNumber/geographicalSubregion/navArea/aggressor/victim/description), corroborated by the
+  `hrbrmstr/asam` R package's documented 9 record columns (`reference,date,latitude,longitude,navArea,
+  subreg,hostility,victim,description`) + a genuine sample row (`2019-73 | 2019-09-30 | 1.04 | 104. |
+  XI | 71 | Five Armed robbers | Bulk Carrier | SINGAPORE STRAITS`). Clears all six bars:
+  **authoritative** (NGA MSI, compiled daily); **auth-free** JSON (US-Gov public domain, the apps
+  use no key); **machine-readable** (`{"asam":[…]}`); **geocoded** (inline decimal lat/lon per
+  record); **fresh** (daily; last-year `minOccurDate` window; empty array = 0 events, not an error);
+  **non-duplicative** (maritime-security incidents — piracy/attacks on shipping — over global waters;
+  distinct from Fintraffic's Baltic AIS *positions* and from UCDP/ACLED *land* conflict).
+  **Signal-meaningful:** ASAM carries no numeric severity, so severity is graded by the **escalation
+  class** read from the aggressor (`hostility`) + narrative (`description`) — a real maritime-security
+  ladder (armed attack 0.9 > boarding 0.65 > robbery 0.5 > attempted 0.3; an *attempted* act
+  de-escalates its tier), and the chip surfaces class + vessel ("Boarding · Bulk Carrier" / "Armed
+  attack · Chemical Tanker"), not a raw scalar. New `vendor/ee-sources/src/asam.rs` (single JSON fetch
+  with a `minOccurDate=today−365d` window; pure `parse_asam` + `classify` act-ladder + `asam_chip` +
+  number-or-string tolerant `num`/`text` helpers incl. the trailing-dot "104." form; drops
+  out-of-range centroids; 4 offline tests: real-shape fixture keeps a Red-Sea UAV attack / Singapore
+  boarding / attempted-approach and drops the bad-centroid record + grades the class ladder,
+  empty-window-is-OK, error-on-bad-input incl. non-JSON 403 body, classify ladder incl. attempted
+  de-escalation). Registered in `lib.rs`; wired `src/osint.rs` (`fetch_one("asam", …, 12)` +
+  count/cap row cap 400 + `feed_detail` arm + osint chip test); SRC_LABEL `NGA ASAM · Anti-Shipping`
+  in `dashboard.html`. **`cargo build --release` green; full workspace `cargo test` green (gcrm 537 /
+  0 failed / 3 ignored; ee-sources 138 incl. asam 4/4; ee-correlate 79; ee-view 60; ee-core 9).**
+  EventKind::Vessel (a dedicated MaritimeSecurity variant is the self-improvement routine's lane).
+  Next Vessel target: live AIS *traffic* outside the Baltic if an auth-free regional feed surfaces;
+  the NGA broadcast-warn military-posture layer becomes landable if structured geometry (or a
+  committed positions parser anchor) surfaces; the `acled_aggregated` refresh remains open for a run
+  with verbatim-byte access to the ACLED regional aggregate.
 
 - **2026-07-03 (OPERATOR SESSION — not a hunter run; lane-relevant map changes recorded here)** —
   Robert-directed session touched this ledger's lane: **(1)** the permanently-403 live `acled` fetch

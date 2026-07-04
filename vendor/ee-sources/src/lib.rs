@@ -12,6 +12,7 @@ pub mod http;
 pub mod acled;
 pub mod acled_aggregated;
 pub mod alberta511;
+pub mod asam;
 pub mod avalanche_ca;
 pub mod awc_sigmet;
 pub mod bmkg_quake;
@@ -87,6 +88,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(magma_volcano::MagmaVolcano), // Indonesia volcanic alert levels (PVMBG/MAGMA, Path-B snapshot)
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
+        Box::new(asam::Asam), // Vessel layer (NGA anti-shipping hostile-act reports, global)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
         Box::new(acled_aggregated::AcledAggregated), // Conflict layer (ACLED weekly Admin-1 intensity, Path-B snapshot)
         Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC, Atlantic/E-Pacific)
