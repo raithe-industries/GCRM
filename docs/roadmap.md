@@ -238,6 +238,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   matching so they still catch adjective forms (`russia`→`russian`). Locked by
   `actor_acronyms_do_not_match_inside_ordinary_words` (+ `_still_match_as_whole_words`). See
   improvement-log 2026-07-03.
+- [x] **1.8 Domain keywords substring-matched mid-token → phantom domain inflation** —
+  **DONE 2026-07-04.** The sibling of 1.7 on the DOMAIN-scoring path: `score_domains` matched every
+  keyword with raw `tl.contains`, so short bare keywords fired inside unrelated words — `rocket`⊂
+  `skyrocket(ed)`, `forces`⊂`reinforces/enforces`, `atomic`⊂`anatomical/subatomic`, `respond`⊂
+  `correspondent`, `deal`⊂`ideal`. A benign economic sentence ("prices skyrocketed as the report
+  reinforces …") tagged `military_escalation` (0.58) AND `nuclear_posture` (0.65, tags alone) — phantom
+  signal into `domain_signals` → theater heat → the published index, the false-alarm direction. Fix
+  uses a WORD-START matcher (`starts_word`, boundary-before/any-suffix) on a curated `WORD_START_DOMAIN_KWS`
+  set — strictly better than substring: it keeps the wanted plural/tense forms (`rockets`/`forces`/
+  `atomic`) that whole-word matching would have dropped, but kills the mid-token hits. Multi-word
+  keywords keep substring (can't hide mid-token). No calibration constant touched; backtest builds
+  events directly so the four anchors are bit-identical. Locked by
+  `domain_keywords_match_at_word_start_not_mid_token` (+ `_still_match_plural_and_tense_forms`). See
+  improvement-log 2026-07-04.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

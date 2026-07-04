@@ -22,6 +22,43 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-04 — honesty/awareness — domain keywords no longer match mid-token (kills phantom domain inflation)
+- Item: roadmap 1.8 (new) — the domain-scoring sibling of 1.7 (actors) and audit-processor-4 (sentiment).
+- Defect (pillar-1 HONESTY): `processor::score_domains` matched every domain keyword with raw
+  `tl.contains`, so short bare keywords fired inside unrelated words: `rocket`⊂`skyrocket(ed)`,
+  `forces`⊂`reinforces/enforces/workforces`, `atomic`⊂`anatomical/subatomic/diatomic`,
+  `respond`⊂`correspondent/corresponding`, `deal`⊂`ideal`. This path is NOT display-only: the
+  resulting `domain_signals` feed `DomainScorer::score_all` → theater `modality_scores`/heat → the
+  published P(WWIII) (bayesian.rs:446). A benign economic sentence therefore leaked war signal — proven
+  by the lock: `score_domains("prices skyrocketed as the report reinforces an ideal outlook for
+  anatomical research")` returned `{military_escalation: 0.5775, nuclear_posture: 0.65}` (nuclear's
+  0.65 ≥ MIN_DOMAIN_SIGNAL, so `atomic`⊂`anatomical` tags ALONE), inflating the index the false-alarm
+  direction — same class as 1.7 / audit-P5.
+- Change: added `starts_word` (boundary-before, any-suffix) and a curated `WORD_START_DOMAIN_KWS`
+  = `{rocket, forces, atomic, respond, deal}`; `score_domains` matches those at a word START, every
+  other keyword keeps substring. Word-start is the CORRECT matcher here (not whole-word like the actor
+  acronyms): it preserves the wanted plural/tense forms `rockets`/`forces`/`responded` that whole-word
+  would drop, while killing the mid-token hits. Multi-word keywords are untouched (they can't hide
+  mid-token). No lexicon weight or calibration constant changed.
+- Metric moved: engine-behavior — benign text no longer fabricates military/nuclear domain signal.
+  NO calibration constant touched; the backtest constructs events with explicit `domain_signals`
+  (never routes through `score_domains`), so the four anchors are bit-identical: `cargo test backtest`
+  22/0, current_2026 60.01% on the 60% centre, Brier 0.00092 / in-band 4/4 (unchanged).
+- Proof: `cargo build --release` clean; `cargo test --release` 497 passed / 0 failed / 3 ignored (was
+  495, +2 tests); src/ clippy 0 warnings. Lock `domain_keywords_match_at_word_start_not_mid_token`
+  proven fails-without-change: forcing the match back to `tl.contains(*kw)` makes it panic with the
+  `{military_escalation: 0.5775, nuclear_posture: 0.65}` phantom tags; restored → green. Companion
+  `_still_match_plural_and_tense_forms` guards `rockets`/`forces`/`atomic` against over-fixing.
+- Tier: T1 (engine-behavior: closes a false-alarm leak that inflated the index) · Touched:
+  engine-behavior · Lock-fails-without-change: yes (proof above) · Counts: none (correctness/honesty
+  repair, no frontier metric) · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) do NOT add a short bare keyword (≤~6 chars) to a domain
+  vocabulary without checking it can't hide mid-token — if it can, add it to `WORD_START_DOMAIN_KWS`.
+  (2) `WORD_START_DOMAIN_KWS` uses word-START (not whole-word) deliberately: plural/tense recall
+  (`rockets`/`forces`) is wanted; do NOT switch it to `find_word`/`contains_word`. (3) The two `0.12`
+  and the market-amplifier findings from prior runs remain Robert-gated — untouched.
+
 ## 2026-07-03 — honesty/awareness — actor acronyms no longer match inside ordinary words (kills phantom great-power inflation)
 - Item: roadmap 1.7 (new) — a false-alarm leak in the NLP actor path, same class as audit-P5.
 - Defect (pillar-1 HONESTY): `processor::extract_actors` matched every actor pattern with raw

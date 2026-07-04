@@ -731,6 +731,20 @@ const ALLIANCE_INVOCATION_PHRASES: &[&str] = &[
 /// it to `>` would silently shift the domain-tagging calibration. (audit processor-3)
 const MIN_DOMAIN_SIGNAL: f64 = 0.5;
 
+/// Bare domain keywords short enough to hide mid-word: matched at a WORD START (boundary before,
+/// any suffix after) in `score_domains` so they still catch plural/tense forms but do NOT fire
+/// inside an unrelated token — the same false-alarm leak the actor-acronym fix (`BOUNDARY_ACTOR_PATS`)
+/// closed, here on the domain-scoring path that feeds `domain_signals` → theater heat → the published
+/// index. Each biases the index UP from benign text; documented cases:
+///   "rocket"  ⊄ "skyrocket(ed)"                   (military ← economic price move)
+///   "forces"  ⊄ "reinforces / enforces / workforces" (military ← generic prose)
+///   "atomic"  ⊄ "anatomical / subatomic / diatomic"  (nuclear  ← unrelated; w=0.65 ≥ threshold → tags ALONE)
+///   "respond" ⊄ "correspondent / corresponding"      (diplomatic ← generic prose)
+///   "deal"    ⊄ "ideal"                              (diplomatic ← generic prose)
+/// Multi-word keywords keep substring matching (they cannot hide mid-token); only these exact bare
+/// keywords are boundary-restricted, every other domain keyword is unchanged.
+const WORD_START_DOMAIN_KWS: &[&str] = &["rocket", "forces", "atomic", "respond", "deal"];
+
 // ── Escalation phrases ────────────────────────────────────────────────────────
 
 const ESCALATION_PHRASES: &[&str] = &[
@@ -777,6 +791,17 @@ fn find_word(haystack: &str, needle: &str) -> Option<usize> {
 /// token) and inflate the news-flow tone. (audit processor-4)
 fn contains_word(haystack: &str, needle: &str) -> bool {
     find_word(haystack, needle).is_some()
+}
+
+/// True if `needle` starts a word in `haystack` — a boundary (or the string start) precedes it,
+/// but any suffix may follow. The correct matcher for short DOMAIN keywords (`WORD_START_DOMAIN_KWS`)
+/// that must still catch plural/tense forms ("rocket"→"rockets", "force"→"forces") yet not fire when
+/// the keyword merely hides mid-token ("skyrocket", "reinforces", "correspondent", "ideal",
+/// "anatomical"). Whole-word matching would wrongly drop the wanted plural/tense forms; substring
+/// matching wrongly keeps the mid-word hits — word-start is the honest middle. Both args lowercased.
+fn starts_word(haystack: &str, needle: &str) -> bool {
+    let hb = haystack.as_bytes();
+    haystack.match_indices(needle).any(|(i, _)| i == 0 || !hb[i - 1].is_ascii_alphanumeric())
 }
 
 // ── Nuclear / WMD / civilian indicator terms ─────────────────────────────────
@@ -1098,7 +1123,14 @@ impl NlpProcessor {
             let mut miss_product = 1.0_f64;
             let mut any_match     = false;
             for (kw, w) in kw_weights {
-                if tl.contains(*kw) {
+                // Short bare keywords match at a word start (kills mid-token false alarms like
+                // "skyrocket"→rocket); every other keyword keeps substring matching.
+                let hit = if WORD_START_DOMAIN_KWS.contains(kw) {
+                    starts_word(tl, kw)
+                } else {
+                    tl.contains(*kw)
+                };
+                if hit {
                     any_match = true;
                     miss_product *= 1.0 - w.clamp(0.0, 1.0);
                 }
@@ -1445,6 +1477,35 @@ mod tests {
             "'PLA' and 'NATO' as whole words are great powers and must still tag");
         assert!(event.actors.iter().any(|a| a == "China Military"));
         assert!(event.actors.iter().any(|a| a == "NATO"));
+    }
+
+    #[test]
+    fn domain_keywords_match_at_word_start_not_mid_token() {
+        // Domain-scoring analogue of the actor-acronym leak: short bare keywords must not fire when
+        // they merely hide inside an unrelated word. Under the old raw-substring match this benign
+        // economic/generic sentence tagged military_escalation (rocket⊂skyrocketed + forces⊂reinforces
+        // → noisy-OR 0.58 ≥ 0.5) and nuclear_posture (atomic⊂anatomical, w=0.65 tags alone), inflating
+        // the published index from text about nothing. Word-start matching drops all of them.
+        let proc = NlpProcessor::new();
+        let tl = "prices skyrocketed as the report reinforces an ideal outlook for anatomical research";
+        let sig = proc.score_domains(tl);
+        assert!(!sig.contains_key("military_escalation"),
+            "'skyrocketed'/'reinforces' must not tag military_escalation, got {sig:?}");
+        assert!(!sig.contains_key("nuclear_posture"),
+            "'anatomical' must not tag nuclear_posture, got {sig:?}");
+    }
+
+    #[test]
+    fn domain_keywords_still_match_plural_and_tense_forms() {
+        // The word-start restriction must not lose legitimate plural/tense forms of the same keywords
+        // (rocket→rockets, force→forces, atomic as a word). Guards against over-fixing.
+        let proc = NlpProcessor::new();
+        assert!(proc.score_domains("rockets struck the base as forces regrouped")
+            .contains_key("military_escalation"),
+            "'rockets'/'forces' as word starts must still tag military_escalation");
+        assert!(proc.score_domains("the atomic arsenal was placed on alert")
+            .contains_key("nuclear_posture"),
+            "'atomic' as a whole word must still tag nuclear_posture");
     }
 
     #[test]
