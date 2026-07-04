@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use ee_core::{Event, EventKind, Geo, Severity, Source, SourceMeta};
+use std::collections::HashMap;
 use std::time::Duration;
 
 /// NASA EONET natural-event source. `days` bounds how far back open events are pulled.
@@ -86,7 +87,9 @@ pub fn parse_eonet(json: &str) -> anyhow::Result<Vec<Event>> {
         return Ok(Vec::new());
     };
 
-    let mut out = Vec::with_capacity(features.len());
+    let mut out: Vec<Event> = Vec::with_capacity(features.len());
+    // Event id -> index in `out`, so repeated track features collapse to one dot.
+    let mut newest: HashMap<String, usize> = HashMap::new();
     for f in features {
         let props = f.get("properties").cloned().unwrap_or(serde_json::Value::Null);
 
@@ -102,6 +105,12 @@ pub fn parse_eonet(json: &str) -> anyhow::Result<Vec<Event>> {
             .and_then(|c| c.get("id"))
             .and_then(|c| c.as_str())
             .unwrap_or("");
+        // Sea & lake ice = drifting icebergs. Decoration, not situational awareness:
+        // 15 tracked bergs were painting ~490 track-history dots (5% of the whole map
+        // payload). The category is dropped outright.
+        if category == "seaLakeIce" {
+            continue;
+        }
         let (kind, severity) = kind_and_severity(category);
 
         let geo = f
@@ -122,7 +131,7 @@ pub fn parse_eonet(json: &str) -> anyhow::Result<Vec<Event>> {
             .unwrap_or("Natural event")
             .to_string();
 
-        out.push(Event {
+        let event = Event {
             id: format!("eonet-{id}"),
             source_id: "eonet".to_string(),
             kind,
@@ -132,7 +141,30 @@ pub fn parse_eonet(json: &str) -> anyhow::Result<Vec<Event>> {
             severity: Severity::new(severity),
             url: props.get("link").and_then(|u| u.as_str()).map(String::from),
             raw: f.clone(),
-        });
+        };
+        // EONET repeats one event id per track-date geometry (a storm emits one
+        // feature per day of track). Keep only the NEWEST geometry per event id:
+        // one event, one dot at its latest position — not a breadcrumb trail of
+        // duplicate-id history points. Plottability outranks recency: a newer
+        // geo-less row (e.g. a Polygon geometry `last_point` can't reduce) must
+        // not unplot an event whose recent positions are known.
+        match newest.get(&event.id) {
+            Some(&i) => {
+                let cur = &out[i];
+                let replace = if event.geo.is_some() == cur.geo.is_some() {
+                    event.time > cur.time // same plottability → newest wins
+                } else {
+                    event.geo.is_some() // geocoded beats geo-less regardless of age
+                };
+                if replace {
+                    out[i] = event;
+                }
+            }
+            None => {
+                newest.insert(event.id.clone(), out.len());
+                out.push(event);
+            }
+        }
     }
     Ok(out)
 }
@@ -181,5 +213,34 @@ mod tests {
         assert_eq!(parse_eonet(r#"{"type":"x"}"#).unwrap().len(), 0);
         // Valid but empty collection is also fine.
         assert_eq!(parse_eonet(r#"{"type":"FeatureCollection","features":[]}"#).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn keeps_only_newest_geometry_per_event_and_drops_sea_lake_ice() {
+        // EONET's geojson feed emits one FEATURE per track date, all sharing one event
+        // id — live audit found 15 icebergs painted as 489 history dots. One event must
+        // become one dot at its NEWEST position (time-based, not feature order), and the
+        // seaLakeIce category (pure decoration) must drop entirely.
+        const DUP: &str = r#"{
+          "type": "FeatureCollection",
+          "features": [
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[100.0,15.0]},
+             "properties":{"id":"EONET_9","title":"Storm Track","date":"2026-06-01T00:00:00Z",
+               "categories":[{"id":"severeStorms","title":"Severe Storms"}]}},
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[103.0,18.0]},
+             "properties":{"id":"EONET_9","title":"Storm Track","date":"2026-06-03T00:00:00Z",
+               "categories":[{"id":"severeStorms","title":"Severe Storms"}]}},
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[-40.0,-60.0]},
+             "properties":{"id":"EONET_ICE","title":"Iceberg A76C","date":"2026-06-02T00:00:00Z",
+               "categories":[{"id":"seaLakeIce","title":"Sea and Lake Ice"}]}}
+          ]
+        }"#;
+        let ev = parse_eonet(DUP).unwrap();
+        assert_eq!(ev.len(), 1, "track history must dedup and icebergs must drop");
+        assert_eq!(ev[0].id, "eonet-EONET_9");
+        let g = ev[0].geo.unwrap();
+        // The June-3 (newest) vertex wins, not the earlier June-1 one.
+        assert!((g.lat - 18.0).abs() < 1e-9 && (g.lon - 103.0).abs() < 1e-9);
+        assert_eq!(ev[0].time.format("%Y-%m-%d").to_string(), "2026-06-03");
     }
 }

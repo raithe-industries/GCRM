@@ -9,6 +9,7 @@
 use async_trait::async_trait;
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use ee_core::{Event, EventKind, Geo, Severity, Source, SourceMeta};
+use std::collections::HashMap;
 use std::time::Duration;
 
 /// GDACS multi-hazard disaster source.
@@ -68,7 +69,9 @@ pub fn parse_gdacs(json: &str) -> anyhow::Result<Vec<Event>> {
         .and_then(|f| f.as_array())
         .ok_or_else(|| anyhow::anyhow!("gdacs: missing 'features' array"))?;
 
-    let mut out = Vec::with_capacity(features.len());
+    let mut out: Vec<Event> = Vec::with_capacity(features.len());
+    // Event id -> index in `out`, so multi-feature events collapse to one dot.
+    let mut newest: HashMap<String, usize> = HashMap::new();
     for f in features {
         let props = f.get("properties").cloned().unwrap_or(serde_json::Value::Null);
 
@@ -122,7 +125,7 @@ pub fn parse_gdacs(json: &str) -> anyhow::Result<Vec<Event>> {
 
         let url = props.get("url").and_then(|u| u.as_str()).map(String::from);
 
-        out.push(Event {
+        let event = Event {
             id: format!("gdacs-{eventtype}-{eventid}"),
             source_id: "gdacs".to_string(),
             kind: kind_for(eventtype),
@@ -132,7 +135,29 @@ pub fn parse_gdacs(json: &str) -> anyhow::Result<Vec<Event>> {
             severity: Severity::new(severity_for(alertlevel)),
             url,
             raw: f.clone(),
-        });
+        };
+        // GDACS's MAP list repeats one event as several features (one per affected
+        // polygon / episode), all sharing the eventid — live audit found the same
+        // flood plotted 2-3×. Keep the newest feature per event id: one disaster,
+        // one dot (ties keep the first-listed feature). Plottability outranks
+        // recency: a newer geo-less episode row must not unplot the event.
+        match newest.get(&event.id) {
+            Some(&i) => {
+                let cur = &out[i];
+                let replace = if event.geo.is_some() == cur.geo.is_some() {
+                    event.time > cur.time // same plottability → newest wins
+                } else {
+                    event.geo.is_some() // geocoded beats geo-less regardless of age
+                };
+                if replace {
+                    out[i] = event;
+                }
+            }
+            None => {
+                newest.insert(event.id.clone(), out.len());
+                out.push(event);
+            }
+        }
     }
     Ok(out)
 }
@@ -183,5 +208,29 @@ mod tests {
     #[test]
     fn errors_on_missing_array() {
         assert!(parse_gdacs(r#"{"type":"x"}"#).is_err());
+    }
+
+    #[test]
+    fn multi_feature_event_dedupes_to_newest() {
+        // One flood, two features sharing eventid 7 (GDACS emits one feature per
+        // affected polygon/episode) — must plot as ONE dot at the newest feature's
+        // position, not stacked duplicates.
+        const DUP: &str = r#"{
+          "type": "FeatureCollection",
+          "features": [
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[-95.7,39.4]},
+             "properties":{"eventtype":"FL","eventid":7,"eventname":"Flood A",
+               "alertlevel":"Green","fromdate":"2026-05-19T01:00:00"}},
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[-96.2,40.1]},
+             "properties":{"eventtype":"FL","eventid":7,"eventname":"Flood A",
+               "alertlevel":"Green","fromdate":"2026-05-21T01:00:00"}}
+          ]
+        }"#;
+        let ev = parse_gdacs(DUP).unwrap();
+        assert_eq!(ev.len(), 1, "same eventid must collapse to one dot");
+        assert_eq!(ev[0].id, "gdacs-FL-7");
+        let g = ev[0].geo.unwrap();
+        // The newer (May-21) feature's position wins.
+        assert!((g.lat - 40.1).abs() < 1e-9 && (g.lon + 96.2).abs() < 1e-9);
     }
 }

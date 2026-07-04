@@ -16,7 +16,7 @@
 //! provider can never blank the map.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration as StdDuration, Instant};
 
 use crate::models::EscalationRung;
@@ -109,6 +109,38 @@ type LastGoodBatches = HashMap<String, (Instant, Vec<Event>)>;
 static FEED_LAST_GOOD: Mutex<Option<LastGoodBatches>> = Mutex::const_new(None);
 /// How long a feed's last-good batch may stand in for an empty live pull (30 min).
 const LAST_GOOD_MAX_AGE: StdDuration = StdDuration::from_secs(1800);
+
+/// OpenSky fetch window: (last-good key, (lamin, lomin, lamax, lomax), event cap).
+type OpenskyWindow = (&'static str, (f64, f64, f64, f64), usize);
+/// The four aircraft windows the map cares about. Anonymous OpenSky credits only
+/// afford two boxed requests per rebuild, but the flashpoint theaters span four
+/// regions — the old fixed NA + EU/ME pair left Korea and the Taiwan Strait (3 of
+/// 5 theaters) with zero aircraft coverage. Each 180s SWR rebuild now fetches ONE
+/// pair ([`opensky_phase_windows`]: even = Atlantic, odd = Asian) and the payload
+/// unions every window's most recent batch, so all four stay populated.
+const OPENSKY_WINDOWS: [OpenskyWindow; 4] = [
+    ("opensky@na", (24.0, -140.0, 72.0, -52.0), 500), // North America (incl. Canada)
+    ("opensky@eu", (24.0, -11.0, 60.0, 60.0), 300),   // Europe / Middle East
+    ("opensky@kr", (32.0, 122.0, 44.0, 134.0), 300),  // Korean peninsula / Sea of Japan
+    ("opensky@tw", (20.0, 116.0, 27.5, 124.0), 300),  // Taiwan / Taiwan Strait
+];
+/// How long an off-phase window's last-good batch stays on the map (~2 rebuild
+/// cycles + slack). Deliberately far below [`LAST_GOOD_MAX_AGE`]: aircraft move,
+/// so a 30-minute-old "position" would be a lie, not resilience — and every dot's
+/// popup shows its own fix time regardless.
+const OPENSKY_WINDOW_MAX_AGE: StdDuration = StdDuration::from_secs(480);
+/// Monotone rebuild counter driving the OpenSky window rotation.
+static OPENSKY_PHASE: AtomicUsize = AtomicUsize::new(0);
+
+/// The pair of OpenSky windows fetched on a given rebuild (counter taken mod 2:
+/// even = Atlantic pair, odd = Asian pair). Pure — coverage is test-locked.
+fn opensky_phase_windows(counter: usize) -> (&'static OpenskyWindow, &'static OpenskyWindow) {
+    if counter % 2 == 0 {
+        (&OPENSKY_WINDOWS[0], &OPENSKY_WINDOWS[1])
+    } else {
+        (&OPENSKY_WINDOWS[2], &OPENSKY_WINDOWS[3])
+    }
+}
 
 /// A representative coordinate (lat, lon) for each canonical GCRM theater id, so the
 /// abstract flashpoints can be placed on the map. `other` has no fixed location.
@@ -287,11 +319,14 @@ fn feed_detail(e: &Event) -> Option<String> {
             };
             // Append GDACS's severity text only when it's short enough for a chip (some
             // entries carry a full sentence); otherwise the alert level + type stands alone.
+            // Flood-class events carry a literal "Magnitude 0" (floods have no magnitude)
+            // — a nonsense number, so the level + hazard type stand alone instead.
             let detail = pf("severitydata")
                 .and_then(|s| s.get("severitytext"))
                 .and_then(Value::as_str)
                 .map(str::trim)
-                .filter(|s| !s.is_empty() && s.chars().count() <= 60);
+                .filter(|s| !s.is_empty() && s.chars().count() <= 60)
+                .filter(|s| !matches!(*s, "Magnitude 0" | "Magnitude 0M"));
             Some(match detail {
                 Some(d) => format!("{head} · {d}"),
                 None => head,
@@ -416,6 +451,171 @@ fn title_case(s: &str) -> String {
     }
 }
 
+/// Order a feed's batch so a cap keeps the dots that MATTER: severity descending,
+/// ties broken newest-first. `evs.truncate(cap)` used to cut in raw provider order,
+/// silently dropping arbitrary — possibly highest-severity — tails on every feed
+/// that runs at its cap (7 feeds live at audit time).
+fn sort_for_cap(evs: &mut [Event]) {
+    evs.sort_by(|a, b| {
+        b.severity
+            .value()
+            .partial_cmp(&a.severity.value())
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.time.cmp(&a.time))
+    });
+}
+
+// ── Cross-feed earthquake dedup ──────────────────────────────────────────────
+// The same physical quake arrives from up to four catalogues at once (live audit:
+// an M6.1 near Taiwan plotted 4× — USGS + EMSC + JMA + GDACS — plus 44 identical
+// USGS↔EMSC pairs). One quake must be one dot.
+
+/// Dedup rank for a quake catalogue (lower wins). Intensity-graded national feeds
+/// beat the global detection catalogues — their Shindo/MMI grade is the human-impact
+/// read the raw catalogues don't carry — then USGS > EMSC > GDACS (whose quake entry
+/// duplicates the others and its chip adds nothing). Non-quake sources: None.
+fn quake_feed_rank(source_id: &str) -> Option<u8> {
+    match source_id {
+        "jma_quake" | "geonet_quake" | "bmkg_quake" | "eqcanada" => Some(0),
+        "usgs" => Some(1),
+        "emsc" => Some(2),
+        "gdacs" => Some(3),
+        _ => None,
+    }
+}
+
+/// Two catalogue entries describe the same quake when their origin times are within
+/// 90 s and their epicentres within ~0.3° (agency hypocentre solutions differ a
+/// little; real distinct quakes essentially never coincide this tightly).
+const QUAKE_DEDUP_TIME_S: i64 = 90;
+const QUAKE_DEDUP_DEG: f64 = 0.3;
+
+fn same_quake(a: &Event, b: &Event) -> bool {
+    if (a.time - b.time).num_seconds().abs() > QUAKE_DEDUP_TIME_S {
+        return false;
+    }
+    let (Some(ga), Some(gb)) = (a.geo, b.geo) else { return false };
+    // Longitude difference wraps at ±180° (Fiji/Kermadec quakes straddle it).
+    let mut dlon = (ga.lon - gb.lon).abs();
+    if dlon > 180.0 {
+        dlon = 360.0 - dlon;
+    }
+    (ga.lat - gb.lat).abs() <= QUAKE_DEDUP_DEG && dlon <= QUAKE_DEDUP_DEG
+}
+
+/// Magnitude carried by a global detection-catalogue entry, for the merged chip.
+fn quake_magnitude(e: &Event) -> Option<f64> {
+    match e.source_id.as_str() {
+        "usgs" | "emsc" => e.raw.get("properties").and_then(|p| p.get("mag")).and_then(Value::as_f64),
+        _ => None,
+    }
+}
+
+/// The intensity segments of a national feed's chip — its own magnitude reading
+/// removed ("Shindo 3 · M6.4" -> "Shindo 3"; "Felt MMI VI · M6.2 · Tsunami Siaga"
+/// -> "Felt MMI VI · Tsunami Siaga") so it can be recombined with the global
+/// catalogue's magnitude. None when nothing but a magnitude remains (eqcanada).
+fn quake_intensity_part(e: &Event) -> Option<String> {
+    let chip = feed_detail(e)?;
+    let parts: Vec<&str> = chip
+        .split(" · ")
+        .filter(|s| !(s.starts_with('M') && s[1..].starts_with(|c: char| c.is_ascii_digit())))
+        .collect();
+    if parts.is_empty() { None } else { Some(parts.join(" · ")) }
+}
+
+/// Post-join cross-feed quake dedup over the assembled event list. Groups quake
+/// entries within [`QUAKE_DEDUP_TIME_S`] / [`QUAKE_DEDUP_DEG`] of each other, keeps
+/// the best-ranked entry per group ([`quake_feed_rank`] — so the surviving dot
+/// carries the human-impact read and its own source link) and drops the rest
+/// (GDACS quake entries survive only when no other catalogue saw the event).
+/// Returns chip overrides for kept NATIONAL entries that had a global sibling:
+/// "M6.1 · Shindo 3" — magnitude from the global catalogue (USGS over EMSC),
+/// intensity from the national one. Pure; test-locked below.
+fn dedup_earthquakes(events: &mut Vec<Event>) -> HashMap<String, String> {
+    // Dedup-able quake entries, best rank first (stable, so input order breaks ties).
+    let mut idx: Vec<usize> = (0..events.len())
+        .filter(|&i| {
+            events[i].kind == ee_core::EventKind::Earthquake
+                && events[i].geo.is_some()
+                && quake_feed_rank(&events[i].source_id).is_some()
+        })
+        .collect();
+    idx.sort_by_key(|&i| quake_feed_rank(&events[i].source_id).unwrap_or(u8::MAX));
+
+    let mut claimed = vec![false; events.len()]; // true = dropped as a duplicate
+    let mut overrides: HashMap<String, String> = HashMap::new();
+    for (n, &i) in idx.iter().enumerate() {
+        if claimed[i] {
+            continue;
+        }
+        // `i` is this group's keeper; claim every later-ranked sibling that matches,
+        // remembering the best global magnitude among them for the merged chip.
+        let mut global_mag: Option<(u8, f64)> = None; // (rank, magnitude), lower rank wins
+        for &j in idx.iter().skip(n + 1) {
+            if claimed[j] || !same_quake(&events[i], &events[j]) {
+                continue;
+            }
+            // A catalogue does not duplicate itself: two rows from ONE feed inside the
+            // time/distance window are a mainshock + immediate aftershock, not the same
+            // event twice — both stay. And when both entries carry a known magnitude,
+            // they must agree (±0.7) before merging, so a real M5.6 aftershock is not
+            // swallowed by an M7.0 mainshock that happens to sit within 0.3°/90 s.
+            if events[j].source_id == events[i].source_id {
+                continue;
+            }
+            if let (Some(mi), Some(mj)) = (quake_magnitude(&events[i]), quake_magnitude(&events[j])) {
+                if (mi - mj).abs() > 0.7 {
+                    continue;
+                }
+            }
+            claimed[j] = true;
+            if let Some(m) = quake_magnitude(&events[j]) {
+                let r = quake_feed_rank(&events[j].source_id).unwrap_or(u8::MAX);
+                if global_mag.is_none_or(|(br, _)| r < br) {
+                    global_mag = Some((r, m));
+                }
+            }
+        }
+        // Merged chip only when a national keeper has both a global magnitude and an
+        // intensity read of its own — otherwise its native chip already says it all.
+        if quake_feed_rank(&events[i].source_id) == Some(0) {
+            if let (Some((_, mag)), Some(intensity)) = (global_mag, quake_intensity_part(&events[i])) {
+                overrides.insert(events[i].id.clone(), format!("M{mag:.1} · {intensity}"));
+            }
+        }
+    }
+    let mut k = 0;
+    events.retain(|_| {
+        let keep = !claimed[k];
+        k += 1;
+        keep
+    });
+    overrides
+}
+
+/// Per-`source_id` count of features that actually made it into the GeoJSON — the
+/// post-drop / post-dedup complement to the raw fetch `counts`. Pure.
+fn plotted_counts(feeds: &Value) -> serde_json::Map<String, Value> {
+    let mut plotted = serde_json::Map::new();
+    let Some(arr) = feeds.get("features").and_then(|f| f.as_array()) else {
+        return plotted;
+    };
+    for feat in arr {
+        let sid = feat
+            .get("properties")
+            .and_then(|p| p.get("source_id"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if sid.is_empty() {
+            continue;
+        }
+        let e = plotted.entry(sid.to_string()).or_insert(json!(0u64));
+        *e = json!(e.as_u64().unwrap_or(0) + 1);
+    }
+    plotted
+}
+
 /// Build the full map payload: live feeds (GeoJSON), GCRM theater flashpoints, the
 /// toggleable layer registry, and the base-map catalogue.
 ///
@@ -430,6 +630,11 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
     if let Some(counts) = payload.get_mut("counts").and_then(|c| c.as_object_mut()) {
         counts.insert("theaters".to_string(), json!(theater_features.len()));
     }
+    // Theater markers always render (they're built with coordinates), so their
+    // plotted count equals the fetched count — kept in both maps for symmetry.
+    if let Some(plotted) = payload.get_mut("plotted").and_then(|c| c.as_object_mut()) {
+        plotted.insert("theaters".to_string(), json!(theater_features.len()));
+    }
     payload["theaters"] = json!({ "type": "FeatureCollection", "features": theater_features });
     payload
 }
@@ -439,7 +644,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled::Acled, acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -453,18 +658,20 @@ async fn feeds_payload() -> Value {
         usgs_volcano::UsgsVolcano,
     };
 
-    // Pull the geocoded feeds concurrently, each time-boxed. Aircraft over BOTH
-    // North America (incl. Canada) and Europe/Middle-East (the live theaters), for
-    // dense, honest coverage on both sides of the Atlantic. NWS/USGS leave Canada
-    // nearly blank, so four Canada-native feeds (ECCC alerts, ECCC air-quality, CWFIS
-    // wildfire hotspots, NRCan earthquakes) fill the North-American gap; three global
-    // feeds (EMSC quakes, GVP volcanoes, HealthMap outbreaks) populate the rest of the world.
-    let (quakes, disasters, weather, ac_na, ac_eu, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, gl_conflict, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt) = tokio::join!(
+    // Pull the geocoded feeds concurrently, each time-boxed. Aircraft rotate across
+    // the four OPENSKY_WINDOWS (two per rebuild — Atlantic pair / Asian pair — see
+    // opensky_phase_windows), so Korea and the Taiwan Strait are covered, not just
+    // NA + EU/ME. NWS/USGS leave Canada nearly blank, so four Canada-native feeds
+    // (ECCC alerts, ECCC air-quality, CWFIS wildfire hotspots, NRCan earthquakes)
+    // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
+    // HealthMap outbreaks) populate the rest of the world.
+    let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
-        fetch_one("opensky", OpenSky { bbox: Some((24.0, -140.0, 72.0, -52.0)) }, 9),
-        fetch_one("opensky", OpenSky { bbox: Some((24.0, -11.0, 60.0, 60.0)) }, 9),
+        fetch_one("opensky", OpenSky { bbox: Some(win_a.1) }, 9),
+        fetch_one("opensky", OpenSky { bbox: Some(win_b.1) }, 9),
         // NASA EONET natural events (wildfires / storms / volcanoes), last 45 days.
         fetch_one("eonet", Eonet { days: 45 }, 10),
         // Environment Canada weather warnings/watches — the Canadian NWS equivalent.
@@ -484,8 +691,10 @@ async fn feeds_payload() -> Value {
         fetch_one("healthmap", HealthMap { days: 2 }, 10),
         // NASA FIRMS — global satellite wildfire detections (dormant until FIRMS_MAP_KEY).
         fetch_one("firms", Firms::default(), 12),
-        // ACLED — global armed-conflict events (dormant until ACLED_USERNAME/PASSWORD).
-        fetch_one("acled", Acled::default(), 12),
+        // (The live `acled` fetch was removed 2026-07-03: ACLED's event API is
+        //  license-gated — confirmed permanent 2026-06-14 — so it burned a 12s fetch
+        //  slot and a perpetual errors[] "HTTP 403" every rebuild for a guaranteed
+        //  failure. The free aggregated Path-B snapshot below carries the modality.)
         // Ontario 511 — provincial-highway road events (closures, collisions, roadwork).
         fetch_one("ontario511", Ontario511, 9),
         // Environment Canada marine warnings (Great Lakes — rings Ontario).
@@ -566,15 +775,15 @@ async fn feeds_payload() -> Value {
     let mut lg_guard = FEED_LAST_GOOD.lock().await;
     let last_good = lg_guard.get_or_insert_with(HashMap::new);
     let now = Instant::now();
-    // Cap each feed so the payload can't balloon; the two OpenSky regions sum into
-    // one "opensky" count. (events, optional error, source key, per-feed cap)
-    let mut opensky_total = 0usize;
+    // Cap each feed so the payload can't balloon; the two fetched OpenSky windows
+    // land in window-keyed slots and are unioned with the off-phase windows below.
+    // (events, optional error, source key, per-feed cap)
     for (mut evs, err, key, cap) in [
         (quakes.0, quakes.1, "usgs", 600usize),
         (disasters.0, disasters.1, "gdacs", 400),
         (weather.0, weather.1, "nws", 400),
-        (ac_na.0, ac_na.1, "opensky", 500),
-        (ac_eu.0, ac_eu.1, "opensky", 300),
+        (ac_a.0, ac_a.1, win_a.0, win_a.2),
+        (ac_b.0, ac_b.1, win_b.0, win_b.2),
         (natural.0, natural.1, "eonet", 600),
         (ca_alerts.0, ca_alerts.1, "eccc_alerts", 300),
         (ca_fires.0, ca_fires.1, "cwfis", 700),
@@ -584,7 +793,6 @@ async fn feeds_payload() -> Value {
         (gl_volc.0, gl_volc.1, "gvp_volcano", 200),
         (gl_health.0, gl_health.1, "healthmap", 300),
         (gl_fires.0, gl_fires.1, "firms", 1800),
-        (gl_conflict.0, gl_conflict.1, "acled", 800),
         (on_roads.0, on_roads.1, "ontario511", 500),
         (ca_marine.0, ca_marine.1, "eccc_marine", 100),
         (ca_active_fires.0, ca_active_fires.1, "cwfis_activefires", 400),
@@ -609,46 +817,80 @@ async fn feeds_payload() -> Value {
         (jp_felt.0, jp_felt.1, "jma_quake", 60),
         (nz_felt.0, nz_felt.1, "geonet_quake", 60),
     ] {
+        // Keep the dots that MATTER when a feed overflows its cap (severity, then
+        // recency) — plain truncation cut in arbitrary provider order.
+        sort_for_cap(&mut evs);
         evs.truncate(cap);
         if let Some(e) = err {
             errors.push(e);
         }
-        // Resilience: refresh last-good on a non-empty pull; on an empty one, reuse the
-        // recent last-good (flagged stale) instead of caching a deceptive zero. Skipped
-        // for the double-keyed "opensky" so its two regions don't fight over one slot.
-        if key != "opensky" {
+        // The fetched OpenSky windows park their batch in a window-keyed slot; the
+        // union across ALL four windows is assembled after the loop, so they skip
+        // the generic fallback / count / extend below.
+        if key.starts_with("opensky@") {
             if !evs.is_empty() {
-                last_good.insert(key.to_string(), (now, evs.clone()));
-            } else if let Some((at, prev)) = last_good.get(key) {
-                if now.duration_since(*at) < LAST_GOOD_MAX_AGE {
-                    let age = now.duration_since(*at).as_secs();
-                    evs = prev.clone();
-                    errors.push(format!(
-                        "{key}: live feed empty — showing last-good {} ({age}s old)",
-                        evs.len()
-                    ));
+                last_good.insert(key.to_string(), (now, evs));
+            }
+            continue;
+        }
+        // Resilience: refresh last-good on a non-empty pull; on an empty one, reuse the
+        // recent last-good (flagged stale) instead of caching a deceptive zero.
+        if !evs.is_empty() {
+            last_good.insert(key.to_string(), (now, evs.clone()));
+        } else if let Some((at, prev)) = last_good.get(key) {
+            if now.duration_since(*at) < LAST_GOOD_MAX_AGE {
+                let age = now.duration_since(*at).as_secs();
+                evs = prev.clone();
+                errors.push(format!(
+                    "{key}: live feed empty — showing last-good {} ({age}s old)",
+                    evs.len()
+                ));
+            }
+        }
+        counts.insert(key.to_string(), json!(evs.len()));
+        feed_events.extend(evs);
+    }
+    // Aircraft layer = union of all four OpenSky rotation windows: the pair fetched
+    // this rebuild (age 0) plus each off-phase window still younger than
+    // OPENSKY_WINDOW_MAX_AGE, deduped to each airframe's newest fix (an aircraft
+    // can sit in two batches at a window seam or across phases).
+    {
+        let mut newest_fix: HashMap<String, Event> = HashMap::new();
+        for (win, _bbox, _cap) in &OPENSKY_WINDOWS {
+            let Some((at, batch)) = last_good.get(*win) else { continue };
+            if now.duration_since(*at) >= OPENSKY_WINDOW_MAX_AGE {
+                continue;
+            }
+            for e in batch {
+                if newest_fix.get(&e.id).is_none_or(|prev| e.time > prev.time) {
+                    newest_fix.insert(e.id.clone(), e.clone());
                 }
             }
         }
-        if key == "opensky" {
-            opensky_total += evs.len();
-            counts.insert("opensky".to_string(), json!(opensky_total));
-        } else {
-            counts.insert(key.to_string(), json!(evs.len()));
-        }
-        feed_events.extend(evs);
+        counts.insert("opensky".to_string(), json!(newest_fix.len()));
+        feed_events.extend(newest_fix.into_values());
     }
     drop(lg_guard);
+
+    // Cross-feed earthquake dedup: keep one dot per physical quake (the audit's M6.1
+    // near Taiwan plotted 4× — USGS + EMSC + JMA + GDACS), remembering the merged
+    // magnitude+intensity chips to apply below.
+    let chip_overrides = dedup_earthquakes(&mut feed_events);
 
     let mut feeds = ee_view::geojson::to_feature_collection(&feed_events);
     // Enrich each plotted feature with a human-readable value chip ("M2.7", "24 MW
     // fire power", "Warning", "AQHI 7 · High risk") pulled from the provider's raw
     // payload and matched back by event id — so the map popup conveys real meaning,
     // not an opaque normalized 0–1 severity.
-    let details: HashMap<&str, String> = feed_events
+    let mut details: HashMap<&str, String> = feed_events
         .iter()
         .filter_map(|e| feed_detail(e).map(|d| (e.id.as_str(), d)))
         .collect();
+    // Merged quake chips ("M6.1 · Shindo 3": global-catalogue magnitude + national
+    // intensity) replace the kept event's own single-feed chip.
+    for (id, chip) in &chip_overrides {
+        details.insert(id.as_str(), chip.clone());
+    }
     if let Some(arr) = feeds.get_mut("features").and_then(|f| f.as_array_mut()) {
         for feat in arr {
             let id = feat.get("properties").and_then(|p| p.get("id")).and_then(|i| i.as_str());
@@ -657,6 +899,12 @@ async fn feeds_payload() -> Value {
             }
         }
     }
+    // Post-conversion per-source dot counts: `counts` above is the raw fetch total
+    // (the feed-health read existing consumers key on), but geo-less events drop at
+    // GeoJSON conversion and the quake dedup removes cross-feed duplicates — so
+    // `plotted` reports what actually renders. The payload must never claim more
+    // dots than it shows. (meaningful-number rule)
+    let plotted = plotted_counts(&feeds);
 
     // Layer registry (ee-view) + a synthetic descriptor for the GCRM flashpoint layer.
     let mut layers: Vec<Value> = ee_view::layers::registry()
@@ -701,6 +949,7 @@ async fn feeds_payload() -> Value {
         "layers": layers,
         "feeds": feeds,
         "counts": counts,
+        "plotted": plotted,
         "errors": errors,
     })
 }
@@ -1331,5 +1580,122 @@ mod tests {
             fin["composite"], fin["level"], fin["dominant"], fin["active_segments"]
         );
         assert_eq!(fin["segments"].as_array().unwrap().len(), 7);
+    }
+
+    // ── Locks for the 2026-07-03 map fixes (quake dedup / caps / rotation / counts) ──
+
+    fn quake(id: &str, source_id: &str, secs: i64, lat: f64, lon: f64, raw: Value) -> Event {
+        Event {
+            id: id.to_string(),
+            source_id: source_id.to_string(),
+            kind: ee_core::EventKind::Earthquake,
+            title: format!("test quake {id}"),
+            time: chrono::DateTime::from_timestamp(1_780_000_000 + secs, 0).unwrap(),
+            geo: Some(ee_core::Geo { lat, lon }),
+            severity: ee_core::Severity::new(0.5),
+            url: None,
+            raw,
+        }
+    }
+
+    #[test]
+    fn cross_feed_quake_dedup_keeps_one_dot_with_the_merged_intensity_chip() {
+        // The live audit found one M6.1 near Taiwan plotted FOUR times (usgs + emsc +
+        // jma + gdacs). The intensity-graded national entry must win, the rest drop,
+        // and the survivor's chip must recombine the global magnitude with the
+        // national intensity read: "M6.1 · Shindo 3".
+        let mut evs = vec![
+            quake("u1", "usgs", 0, 25.95, 125.79, json!({"properties":{"mag":6.1}})),
+            quake("e1", "emsc", 12, 25.98, 125.75, json!({"properties":{"mag":6.1}})),
+            quake("j1", "jma_quake", 30, 25.9, 125.8, json!({"shindo":"3","magnitude":6.4})),
+            quake("g1", "gdacs", 45, 25.96, 125.77, json!({})),
+        ];
+        let overrides = dedup_earthquakes(&mut evs);
+        assert_eq!(evs.len(), 1, "four catalogue entries for one quake must become one dot");
+        assert_eq!(evs[0].id, "j1", "the intensity-graded national entry outranks the catalogues");
+        assert_eq!(overrides.get("j1").map(String::as_str), Some("M6.1 · Shindo 3"),
+            "the merged chip carries the global magnitude + the national intensity");
+    }
+
+    #[test]
+    fn quake_dedup_never_merges_same_catalogue_or_disagreeing_magnitudes() {
+        // A catalogue does not duplicate itself: a mainshock and an immediate
+        // aftershock from ONE feed inside the 90 s / 0.3° window are two real events.
+        let mut same_src = vec![
+            quake("m", "usgs", 0, 35.0, 140.0, json!({"properties":{"mag":7.0}})),
+            quake("a", "usgs", 70, 35.1, 140.1, json!({"properties":{"mag":5.6}})),
+        ];
+        assert!(dedup_earthquakes(&mut same_src).is_empty());
+        assert_eq!(same_src.len(), 2, "same-catalogue pair must both survive");
+        // Cross-catalogue entries with known but disagreeing magnitudes are two real
+        // events too (an M7.0 mainshock must not swallow a separately-solved M5.6).
+        let mut cross = vec![
+            quake("u", "usgs", 0, 35.0, 140.0, json!({"properties":{"mag":7.0}})),
+            quake("e", "emsc", 70, 35.1, 140.1, json!({"properties":{"mag":5.6}})),
+        ];
+        dedup_earthquakes(&mut cross);
+        assert_eq!(cross.len(), 2, "magnitude disagreement > 0.7 must block the merge");
+    }
+
+    #[test]
+    fn quake_dedup_matches_across_the_antimeridian() {
+        // Fiji/Kermadec hypocentre solutions straddle ±180°; the longitude delta must
+        // wrap or the same quake stays plotted twice out there forever.
+        let mut evs = vec![
+            quake("u", "usgs", 0, -23.0, 179.9, json!({"properties":{"mag":5.8}})),
+            quake("e", "emsc", 20, -23.05, -179.95, json!({"properties":{"mag":5.9}})),
+        ];
+        dedup_earthquakes(&mut evs);
+        assert_eq!(evs.len(), 1, "a ±180° wrap pair is one quake");
+        assert_eq!(evs[0].id, "u", "usgs outranks emsc");
+    }
+
+    #[test]
+    fn sort_for_cap_keeps_the_most_severe_then_the_newest() {
+        // evs.truncate(cap) used to cut in provider order, silently dropping arbitrary
+        // (possibly highest-severity) tails on every feed at its cap. After sorting,
+        // a cap keeps the dots that matter.
+        let mut evs = vec![
+            quake("low", "usgs", 0, 0.0, 0.0, json!({})),
+            quake("hi_old", "usgs", 10, 1.0, 1.0, json!({})),
+            quake("hi_new", "usgs", 500, 2.0, 2.0, json!({})),
+        ];
+        evs[0].severity = ee_core::Severity::new(0.2);
+        evs[1].severity = ee_core::Severity::new(0.9);
+        evs[2].severity = ee_core::Severity::new(0.9);
+        sort_for_cap(&mut evs);
+        let order: Vec<&str> = evs.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(order, vec!["hi_new", "hi_old", "low"],
+            "severity desc, ties newest-first — so truncate(cap) drops the least important");
+    }
+
+    #[test]
+    fn opensky_rotation_covers_all_four_windows_in_two_rebuilds() {
+        // Even rebuilds fetch the Atlantic pair, odd the Asian pair — so Korea and the
+        // Taiwan Strait (3 of 5 flashpoint theaters) are genuinely fetched, not just
+        // declared, without raising the anonymous request count per rebuild.
+        let (a0, b0) = opensky_phase_windows(0);
+        let (a1, b1) = opensky_phase_windows(1);
+        let (a2, b2) = opensky_phase_windows(2);
+        assert_eq!((a0.0, b0.0), ("opensky@na", "opensky@eu"));
+        assert_eq!((a1.0, b1.0), ("opensky@kr", "opensky@tw"));
+        assert_eq!((a2.0, b2.0), (a0.0, b0.0), "rotation is period-2 over the rebuild counter");
+    }
+
+    #[test]
+    fn plotted_counts_reports_only_features_that_made_the_geojson() {
+        // counts{} reports raw fetch totals while geo-less events are dropped at the
+        // GeoJSON conversion — plotted{} must say what is actually on the map, so the
+        // payload never claims more than it shows (audit: nws counted 400, plotted 110).
+        let feeds = json!({"features": [
+            {"properties": {"source_id": "nws"}},
+            {"properties": {"source_id": "nws"}},
+            {"properties": {"source_id": "usgs"}},
+            {"properties": {}}
+        ]});
+        let plotted = plotted_counts(&feeds);
+        assert_eq!(plotted.get("nws").and_then(Value::as_u64), Some(2));
+        assert_eq!(plotted.get("usgs").and_then(Value::as_u64), Some(1));
+        assert_eq!(plotted.len(), 2, "a feature with no source_id counts toward no feed");
     }
 }

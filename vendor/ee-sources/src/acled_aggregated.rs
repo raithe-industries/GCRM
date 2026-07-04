@@ -44,6 +44,13 @@ pub const SNAPSHOT: &str = include_str!("acled_aggregated_snapshot.csv");
 /// intensity rather than years of stacked history. ~4 inclusive weeks.
 const WINDOW_DAYS: i64 = 27;
 
+/// Age gate (days) against *today*, not the file's own max week (~6 weeks). The
+/// window above is relative to the file's newest row, so a frozen committed
+/// snapshot would keep painting months-old conflict heat as current forever.
+/// Rows older than this drop outright: a snapshot the refresh job has abandoned
+/// self-empties — the honest read — instead of masquerading as live intensity.
+const MAX_ROW_AGE_DAYS: i64 = 42;
+
 /// ACLED Aggregated weekly conflict source (Path-B committed snapshot).
 #[derive(Default)]
 pub struct AcledAggregated;
@@ -162,12 +169,19 @@ pub fn intensity_chip(raw: &serde_json::Value) -> Option<String> {
     Some(chip)
 }
 
+/// Live-path parser: [`parse_acled_aggregated_asof`] anchored at today (UTC), so
+/// the [`MAX_ROW_AGE_DAYS`] age gate runs against the real clock.
+pub fn parse_acled_aggregated(csv: &str) -> anyhow::Result<Vec<Event>> {
+    parse_acled_aggregated_asof(csv, Utc::now().date_naive())
+}
+
 /// Pure parser: ACLED aggregated-weekly CSV -> one [`EventKind::Conflict`] event
 /// per Admin 1, summed over the trailing [`WINDOW_DAYS`] window ending at the
 /// file's most recent `WEEK`. Offline-tested. A header missing the required
-/// columns is an error; rows outside the window or without a usable centroid are
+/// columns is an error; rows outside the window, older than [`MAX_ROW_AGE_DAYS`]
+/// before `today` (stale-snapshot self-empty), or without a usable centroid are
 /// dropped, so an aggregated file whose latest weeks are all-quiet is Ok/empty.
-pub fn parse_acled_aggregated(csv: &str) -> anyhow::Result<Vec<Event>> {
+pub fn parse_acled_aggregated_asof(csv: &str, today: NaiveDate) -> anyhow::Result<Vec<Event>> {
     let rows = parse_csv(csv);
     let header = rows.first().ok_or_else(|| anyhow::anyhow!("acled_aggregated: empty CSV"))?;
     // Case-insensitive header lookup (ACLED ships ALL-CAPS column names).
@@ -209,6 +223,11 @@ pub fn parse_acled_aggregated(csv: &str) -> anyhow::Result<Vec<Event>> {
     let mut max_week: Option<NaiveDate> = None;
     for r in rows.iter().skip(1) {
         let Some(week) = r.get(i_week).and_then(|s| parse_week(s)) else { continue };
+        // Age gate against the real clock: a frozen snapshot's rows must not pass
+        // just because they are the newest thing in a stale file.
+        if week < today - ChronoDuration::days(MAX_ROW_AGE_DAYS) {
+            continue;
+        }
         let admin1 = r.get(i_admin1).cloned().unwrap_or_default().trim().to_string();
         if admin1.is_empty() {
             continue;
@@ -344,9 +363,15 @@ mod tests {
 2026-03-07,Middle East,Iran,Quiet,Protests,Peaceful protest,7,0,,Demonstrations,2,35.0,51.0\n\
 2026-03-07,Middle East,Nowhere,Bad,Battles,Armed clash,3,9,,Political violence,3,999.0,0.0\n";
 
+    /// Fixture tests run pinned just after the fixture's newest week (2026-03-07),
+    /// so the real-clock age gate doesn't hollow them out as wall time advances.
+    fn fixture_asof() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 3, 10).unwrap()
+    }
+
     #[test]
     fn windows_and_aggregates() {
-        let ev = parse_acled_aggregated(FIXTURE).unwrap();
+        let ev = parse_acled_aggregated_asof(FIXTURE, fixture_asof()).unwrap();
         // Two plottable regions (bad-centroid dropped); deadliest (Hot) first.
         assert_eq!(ev.len(), 2);
 
@@ -372,7 +397,7 @@ mod tests {
 
     #[test]
     fn zero_fatality_region_floors_and_omits_fatalities() {
-        let ev = parse_acled_aggregated(FIXTURE).unwrap();
+        let ev = parse_acled_aggregated_asof(FIXTURE, fixture_asof()).unwrap();
         let quiet = ev.iter().find(|e| e.id == "acled-agg-quiet-iran").unwrap();
         // 7 events, 0 fatalities -> severity floor, no "killed" in the title/chip.
         assert!((quiet.severity.value() - 0.12).abs() < 1e-9);
@@ -393,10 +418,40 @@ mod tests {
     }
 
     #[test]
+    fn age_gate_drops_stale_rows_so_a_frozen_snapshot_self_empties() {
+        // The committed snapshot is refreshed by a local job; if that job stops, the
+        // in-file window (relative to the file's OWN max week) would keep painting
+        // months-old conflict heat as current forever. The gate runs against TODAY:
+        // a stale row drops even when a fresh sibling exists, and an all-stale file
+        // yields Ok(empty) — the honest read for a frozen snapshot — not an error.
+        let today = Utc::now().date_naive();
+        let fresh = (today - ChronoDuration::days(7)).format("%Y-%m-%d").to_string();
+        let stale = (today - ChronoDuration::days(MAX_ROW_AGE_DAYS + 7)).format("%Y-%m-%d").to_string();
+        let header = "WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE\n";
+        let mixed = format!(
+            "{header}{stale},Middle East,Iran,Old,Battles,Armed clash,50,80,,Political violence,1,30.0,52.0\n\
+             {fresh},Middle East,Iran,New,Battles,Armed clash,10,5,,Political violence,2,31.0,53.0\n"
+        );
+        let ev = parse_acled_aggregated(&mixed).unwrap();
+        assert_eq!(ev.len(), 1, "only the fresh row may survive the age gate");
+        assert_eq!(ev[0].id, "acled-agg-new-iran");
+        let all_stale = format!(
+            "{header}{stale},Middle East,Iran,Old,Battles,Armed clash,50,80,,Political violence,1,30.0,52.0\n"
+        );
+        assert!(
+            parse_acled_aggregated(&all_stale).unwrap().is_empty(),
+            "an all-stale snapshot must self-empty, not plot months-old heat as current"
+        );
+    }
+
+    #[test]
     fn committed_snapshot_parses_to_conflict_events() {
         // The shipped real ACLED Middle-East aggregate must parse into Conflict
         // dots, all geocoded, all within the trailing window of the latest week.
-        let ev = parse_acled_aggregated(SNAPSHOT).unwrap();
+        // Pinned to the snapshot's own vintage (weeks end 2026-03-07) so the parser
+        // stays exercised against the genuine committed bytes even after the age
+        // gate has — correctly — emptied the LIVE read of a stale snapshot.
+        let ev = parse_acled_aggregated_asof(SNAPSHOT, fixture_asof()).unwrap();
         assert!(ev.len() >= 30, "snapshot should carry many Admin 1 regions, got {}", ev.len());
         assert!(ev.iter().all(|e| e.kind == EventKind::Conflict && e.geo.is_some()));
         assert!(ev.iter().all(|e| e.severity.value() >= 0.12));
@@ -406,5 +461,16 @@ mod tests {
         assert!((latest - earliest) <= ChronoDuration::days(WINDOW_DAYS));
         // Every dot carries a meaningful intensity chip.
         assert!(ev.iter().all(|e| intensity_chip(&e.raw).is_some()));
+        // LIVE-path honesty invariant: whatever today is, nothing older than the
+        // age gate may reach the map from this snapshot — stale ⇒ empty, refreshed
+        // ⇒ only current rows. Holds across future snapshot re-commits.
+        let gate = Utc::now().date_naive() - ChronoDuration::days(MAX_ROW_AGE_DAYS);
+        assert!(
+            parse_acled_aggregated(SNAPSHOT)
+                .unwrap()
+                .iter()
+                .all(|e| e.time.date_naive() >= gate),
+            "live parse of the committed snapshot leaked rows older than the age gate"
+        );
     }
 }

@@ -122,7 +122,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
 .tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
 .tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
-/* Indications & Warning board — a 3-column light panel of the eleven deterministic
+/* Indications & Warning board — a 3-column light panel of the twelve deterministic
    warning conditions (indicators::evaluate). Mirrors the ladder strip's idiom. */
 .iw-board{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .iw-cell{background:var(--bg);padding:5px 9px;display:flex;align-items:center;gap:7px;min-width:0}
@@ -165,6 +165,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .map-lyr .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .map-lyr .ct{margin-left:auto;font-size:8px;color:var(--t4);font-family:monospace}
 .map-lyr .ct.z{color:#39414f;font-weight:400}
+/* Feed-health strip: /api/map errors[] (fetch failures + last-good fallbacks) were
+   invisible to the operator — a dead or stale feed looked identical to a quiet one. */
+.map-health{display:flex;align-items:baseline;gap:4px;font-size:8px;color:var(--amber);padding:2px 0 3px;border-bottom:0.5px solid var(--border);margin-bottom:2px;cursor:default}
+.map-health .hdot{width:5px;height:5px;border-radius:50%;background:var(--amber);flex-shrink:0;align-self:center}
+.map-health .hmore{color:var(--t4)}
 /* Map signal popup — a meaningful card, not a bare number. Dark-themed (MapLibre's
    default popup is white, which made the old white-on-white text invisible). */
 .maplibregl-popup.sig-pop .maplibregl-popup-content{background:rgba(8,12,17,.97);border:0.5px solid var(--border);border-radius:5px;padding:7px 9px 8px;box-shadow:0 4px 14px rgba(0,0,0,.55)}
@@ -529,7 +534,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          the model-internal rail on the left.) -->
     <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
     <div class="theater-ladder" id="theater-ladder"></div>
-    <!-- v2 Indications & Warning board: the eleven deterministic, observable warning
+    <!-- v2 Indications & Warning board: the twelve deterministic, observable warning
          conditions the IC I&W method tracks. Each is computed from the live theaters
          + couplers + the seismic monitor (never the LLM), so the operator sees WHICH
          specific danger conditions have tripped — the "why" behind the headline number,
@@ -1526,7 +1531,7 @@ async function bootMap(){
       sources:{base:{type:'raster',tiles,tileSize:256,
       attribution:(d.basemap&&d.basemap.attribution)||'© CARTO © OpenStreetMap'}},
       layers:[{id:'base',type:'raster',source:'base'}]},
-    center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:7,renderWorldCopies:true,
+    center:[-30,18],zoom:0.9,bearing:23.4,minZoom:0.4,maxZoom:10,renderWorldCopies:true,
     fadeDuration:0,attributionControl:{compact:true}});
   _map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
   _map.on('load',()=>{
@@ -1605,13 +1610,15 @@ const SRC_LABEL={usgs:'USGS',eqcanada:'Earthquakes Canada',cwfis:'CWFIS · NRCan
 function kindColor(kind){const l=_layerMeta.find(x=>x.kind===kind);return (l&&l.color)||'#9bb';}
 function relTime(iso){const t=Date.parse(iso);if(!isFinite(t))return'';let s=(Date.now()-t)/1000;if(s<0)s=0;if(s<60)return'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';}
 function safeUrl(u){if(typeof u!=='string')return'';if(/[\s"'<>`]/.test(u))return'';try{const p=new URL(u);return(p.protocol==='http:'||p.protocol==='https:')?u:'';}catch(_){return'';}} /* validate via URL() + reject any whitespace/quote/angle char so a feed url can't break out of href="" (audit dashboard-3) */
-// Layers with no live geocoded feed yet — rendered with a muted "—" + tooltip so the
-// panel reads as intentional (awaiting a key/feed) instead of broken at "0".
-const LAYER_HINTS={aircraft:'Live once an OpenSky account is configured (OPENSKY_USERNAME / OPENSKY_PASSWORD)',
-  vessel:'AIS vessel feed not yet wired',conflict:'Armed conflict (ACLED) — set ACLED account credentials to enable',
+// Layers with no live geocoded feed RIGHT NOW — rendered with a muted "—" + tooltip so
+// the panel reads as intentional instead of broken at "0". Hints must stay TRUE: they
+// surface whenever a feed transiently zeroes, so a stale hint is a lie to the operator.
+const LAYER_HINTS={aircraft:'No aircraft in the current fetch — OpenSky anonymous quota or outage (see the feed-health strip); windows rotate NA / EU-ME / Korea / Taiwan',
+  vessel:'No vessels in the current fetch — Baltic AIS (Fintraffic) outage or quiet window; dots return on the next successful fetch',
+  conflict:'Empty when live UCDP is unreachable and the weekly snapshots have aged out — stale conflict data is dropped, never shown as current',
   cyber:'Cyber signals are non-geographic — tracked, not plotted on the map',
   market:'Markets are read in the Markets panel, not plotted on the map',
-  news:'Geocoded news feed not yet wired'};
+  news:'News feeds the risk engine directly — a geocoded news layer is not planned'};
 
 function buildLayerPanel(d){
   const feats=(d.feeds&&d.feeds.features)||[]; const kc={};
@@ -1619,6 +1626,15 @@ function buildLayerPanel(d){
   const tcount=((d.theaters&&d.theaters.features)||[]).length;
   const byGroup={}; _layerMeta.forEach(l=>{(byGroup[l.group]=byGroup[l.group]||[]).push(l);});
   let html='';
+  // Degraded-feed strip: each errors[] entry is already operator-readable ("id: msg",
+  // incl. "(showing last-good Ns old)" fallbacks). Show the first two, tuck the rest
+  // into the tooltip — the operator can always tell dead/stale from quiet.
+  const errs=Array.isArray(d.errors)?d.errors.filter(x=>typeof x==='string'&&x):[];
+  if(errs.length){
+    const shown=errs.slice(0,2).map(x=>esc(x.length>46?x.slice(0,44)+'…':x)).join(' · ');
+    const more=errs.length>2?` <span class="hmore">+${errs.length-2} more</span>`:'';
+    html+=`<div class="map-health" title="${esc(errs.join('\n'))}"><span class="hdot"></span><span>${shown}${more}</span></div>`;
+  }
   MAP_GROUP_ORDER.forEach(g=>{ if(!byGroup[g])return;
     html+=`<div class="map-grp-h">${MAP_GROUPS[g]||g}</div>`;
     byGroup[g].forEach(l=>{ const c=l.id==='theaters'?tcount:(kc[l.kind]||0);
@@ -1706,7 +1722,10 @@ function wireMapClicks(){
         const meta=[relTime(p.time),esc(SRC_LABEL[p.source_id]||p.source_id||'')].filter(Boolean).join(' · ');
         const u=safeUrl(p.url);
         const link=u?`<a class="pop-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">→ source report</a>`:'';
-        html=`<div class="pop-h"><span class="pop-dot" style="background:${kindColor(kind)}"></span><span class="pop-kind">${esc(KIND_LABEL[kind]||kind)}</span>${detail}</div>`+
+        // NOTAMs ride the aircraft layer but are airspace RESTRICTIONS, not aircraft —
+        // a runway-closure card headed "Aircraft" misread. Name them for what they are.
+        const kindText=p.source_id==='navcanada'?'Airspace NOTAM':(KIND_LABEL[kind]||kind);
+        html=`<div class="pop-h"><span class="pop-dot" style="background:${kindColor(kind)}"></span><span class="pop-kind">${esc(kindText)}</span>${detail}</div>`+
           title+(meta?`<div class="pop-meta">${meta}</div>`:'')+link;
       }
       new maplibregl.Popup({closeButton:true,maxWidth:'250px',className:'sig-pop'}).setLngLat(e.lngLat)
