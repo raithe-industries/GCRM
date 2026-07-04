@@ -518,6 +518,24 @@ fn quake_magnitude(e: &Event) -> Option<f64> {
     }
 }
 
+/// Magnitude for the DEDUP GUARD — read from every catalogue's raw shape: usgs/emsc
+/// (`properties.mag`), the intensity-graded national feeds (`magnitude`), eqcanada
+/// (`mag`), gdacs (`properties.severitydata.severity` — the magnitude on EQ features).
+/// Unlike [`quake_magnitude`] (global-chip source only) this exists to VETO merges:
+/// an unreadable magnitude means the pair cannot be verified as one event.
+fn quake_guard_magnitude(e: &Event) -> Option<f64> {
+    quake_magnitude(e)
+        .or_else(|| e.raw.get("magnitude").and_then(Value::as_f64))
+        .or_else(|| e.raw.get("mag").and_then(Value::as_f64))
+        .or_else(|| {
+            e.raw
+                .get("properties")
+                .and_then(|p| p.get("severitydata"))
+                .and_then(|s| s.get("severity"))
+                .and_then(Value::as_f64)
+        })
+}
+
 /// The intensity segments of a national feed's chip — its own magnitude reading
 /// removed ("Shindo 3 · M6.4" -> "Shindo 3"; "Felt MMI VI · M6.2 · Tsunami Siaga"
 /// -> "Felt MMI VI · Tsunami Siaga") so it can be recombined with the global
@@ -565,16 +583,18 @@ fn dedup_earthquakes(events: &mut Vec<Event>) -> HashMap<String, String> {
             }
             // A catalogue does not duplicate itself: two rows from ONE feed inside the
             // time/distance window are a mainshock + immediate aftershock, not the same
-            // event twice — both stay. And when both entries carry a known magnitude,
-            // they must agree (±0.7) before merging, so a real M5.6 aftershock is not
-            // swallowed by an M7.0 mainshock that happens to sit within 0.3°/90 s.
+            // event twice — both stay. And the magnitudes must agree (±0.7) before
+            // merging, so a real M5.6 aftershock is not swallowed by an M7.0 mainshock
+            // that happens to sit within 0.3°/90 s. The guard reads EVERY catalogue's
+            // magnitude (it used to see only usgs/emsc, so any national keeper merged
+            // its siblings unchecked) and fails CLOSED on an unreadable one — an
+            // unverifiable pair keeps both dots rather than risking a swallowed event.
             if events[j].source_id == events[i].source_id {
                 continue;
             }
-            if let (Some(mi), Some(mj)) = (quake_magnitude(&events[i]), quake_magnitude(&events[j])) {
-                if (mi - mj).abs() > 0.7 {
-                    continue;
-                }
+            match (quake_guard_magnitude(&events[i]), quake_guard_magnitude(&events[j])) {
+                (Some(mi), Some(mj)) if (mi - mj).abs() <= 0.7 => {}
+                _ => continue,
             }
             claimed[j] = true;
             if let Some(m) = quake_magnitude(&events[j]) {
@@ -1673,7 +1693,8 @@ mod tests {
             quake("u1", "usgs", 0, 25.95, 125.79, json!({"properties":{"mag":6.1}})),
             quake("e1", "emsc", 12, 25.98, 125.75, json!({"properties":{"mag":6.1}})),
             quake("j1", "jma_quake", 30, 25.9, 125.8, json!({"shindo":"3","magnitude":6.4})),
-            quake("g1", "gdacs", 45, 25.96, 125.77, json!({})),
+            quake("g1", "gdacs", 45, 25.96, 125.77,
+                json!({"properties":{"severitydata":{"severity":6.1}}})),
         ];
         let overrides = dedup_earthquakes(&mut evs);
         assert_eq!(evs.len(), 1, "four catalogue entries for one quake must become one dot");
@@ -1700,6 +1721,36 @@ mod tests {
         ];
         dedup_earthquakes(&mut cross);
         assert_eq!(cross.len(), 2, "magnitude disagreement > 0.7 must block the merge");
+    }
+
+    #[test]
+    fn quake_dedup_national_keeper_cannot_swallow_a_distinct_aftershock() {
+        // The guard used to read magnitudes only off usgs/emsc, so a NATIONAL keeper
+        // (rank 0) merged every same_quake sibling unchecked: a JMA M7.0 mainshock
+        // swallowed a separately-solved USGS M5.6 aftershock 70 s / 0.15° away, and the
+        // real aftershock vanished from the map. National magnitudes now feed the guard.
+        let mut evs = vec![
+            quake("j", "jma_quake", 0, 35.0, 140.0, json!({"shindo":"6+","magnitude":7.0})),
+            quake("u", "usgs", 70, 35.1, 140.1, json!({"properties":{"mag":5.6}})),
+        ];
+        dedup_earthquakes(&mut evs);
+        assert_eq!(evs.len(), 2, "a distinct M5.6 aftershock must survive a national M7.0 keeper");
+
+        // Same magnitudes still merge through the national keeper (the designed path).
+        let mut same = vec![
+            quake("j", "jma_quake", 0, 35.0, 140.0, json!({"shindo":"3","magnitude":6.2})),
+            quake("u", "usgs", 30, 35.05, 140.05, json!({"properties":{"mag":6.1}})),
+        ];
+        dedup_earthquakes(&mut same);
+        assert_eq!(same.len(), 1, "agreeing magnitudes keep collapsing to the national dot");
+
+        // Unreadable magnitude ⇒ fail closed: keep both dots rather than risk a swallow.
+        let mut unk = vec![
+            quake("j", "jma_quake", 0, 35.0, 140.0, json!({"shindo":"3","magnitude":6.2})),
+            quake("x", "usgs", 30, 35.05, 140.05, json!({})),
+        ];
+        dedup_earthquakes(&mut unk);
+        assert_eq!(unk.len(), 2, "an unverifiable pair must not merge");
     }
 
     #[test]
