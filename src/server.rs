@@ -34,7 +34,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{broadcast, Mutex};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::aggregator::{snapshot_to_json, SharedState};
 use crate::ingestor::RSS_FEEDS;
@@ -178,94 +178,106 @@ pub async fn broadcast_snapshots(
     let mut article_push_counter = 0u32;
 
     while let Some(snap) = snap_rx.recv().await {
-        let mut data = snapshot_to_json(&snap);
+        // One poisoned snapshot must not kill this loop: since 7f38c1a this task is the
+        // SINGLE writer of `latest_snapshot`, so a panic anywhere in the enrichment path
+        // would freeze /api/latest at its last payload until a service restart —
+        // supervise() isolates a panicked task but cannot resurrect it ("restart the
+        // service to recover"). Catch the unwind per snapshot instead: log loudly, skip
+        // the poisoned snapshot, keep serving the next one. Requires panic=unwind (same
+        // contract as supervise, one snapshot finer).
+        let processed = std::panic::AssertUnwindSafe(async {
+            let mut data = snapshot_to_json(&snap);
 
-        // Merge model calibration timestamp so dashboard can show honest "MODEL UPDATED" indicator
-        {
-            let cal = server_state.app_state.last_calibrated_at.lock().await;
-            data["model_calibrated_at"] = match *cal {
-                Some(ref ts) => serde_json::Value::String(ts.to_rfc3339()),
-                None         => serde_json::Value::Null,
-            };
-        }
-
-        // Durable, server-computed trailing-6h trend (EpochStore::trend_6h). It
-        // lives in the payload so the dashboard never reconstructs it from a
-        // fragile per-tab session buffer — a UI refactor can no longer silently
-        // reset the "6h Trend" readout to "—". The browser only renders it.
-        {
-            let es = server_state.app_state.epoch_store.lock().await;
-            // Awareness layer: alongside the trend MAGNITUDE, report whether the locus of
-            // risk relocated over the window. `lead_then` (the hottest theater 6h ago) comes
-            // from the durable ring; `lead` (now) is read from the live snapshot via the same
-            // `lead_theater` single source of truth, so a shift is judged consistently. The
-            // browser renders `lead→X (was Y)` only when `lead_shifted`, so a stable leader
-            // adds no clutter and the bare delta is never overstated as attribution.
-            let mut t6 = es.trend_6h(snap.p_wwiii_annual);
-            // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
-            // plain-language reference-class limit and error posture. The interval is computed
-            // server-side from the durable ring (same discipline as trend_6h); the epistemic
-            // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
-            let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
-            let lead_now = crate::models::lead_theater(&snap.theaters);
-            // Honesty layer: a frozen "+0.000%" 6h trend is the model PEGGED at the top of its
-            // range — the headline P clamped at the forecast ceiling AND zero empirical movement
-            // across the window — not a calm flat line or a freeze/bug. Judged server-side from
-            // the same durable ring (`empirical_hw_pct`) plus the headline P, so the browser only
-            // renders the flag. The number itself is unchanged; this just names WHY it cannot
-            // move. (Keys on the headline ceiling, not a per-theater heat clamp: post-de-saturation
-            // heat asymptotes below 1.0, so the old heat-railed gate was permanently dead.) See
-            // models::systemic_pegged.
-            let empirical_hw_pct = uncertainty.get("empirical_hw_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let samples = t6.get("samples").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let pegged = crate::models::systemic_pegged(snap.p_wwiii_annual, empirical_hw_pct, samples);
-            if let Some(obj) = t6.as_object_mut() {
-                let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;
-                obj.insert("lead".into(), serde_json::Value::String(lead_now));
-                obj.insert("lead_shifted".into(), serde_json::Value::Bool(shifted));
-                obj.insert("pegged".into(), serde_json::Value::Bool(pegged));
+            // Merge model calibration timestamp so dashboard can show honest "MODEL UPDATED" indicator
+            {
+                let cal = server_state.app_state.last_calibrated_at.lock().await;
+                data["model_calibrated_at"] = match *cal {
+                    Some(ref ts) => serde_json::Value::String(ts.to_rfc3339()),
+                    None         => serde_json::Value::Null,
+                };
             }
-            data["trend_6h"] = t6;
-            data["uncertainty"] = uncertainty;
-            // Honesty layer: the momentum gauge is LABELLED "leading". Measure it — does momentum
-            // actually precede the realized P over the durable ring? — so the operator sees an
-            // EARNED verdict (leads ~L / no measurable lead / insufficient history), never a bare
-            // assertion. Diagnostic only; never feeds P. (EpochStore::momentum_lead_lag.)
-            data["momentum_lead"] = es.momentum_lead_lag();
-        }
-        data["epistemic"] = serde_json::json!({
-            "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
-            "error_posture":   crate::models::ERROR_POSTURE_NOTE,
+
+            // Durable, server-computed trailing-6h trend (EpochStore::trend_6h). It
+            // lives in the payload so the dashboard never reconstructs it from a
+            // fragile per-tab session buffer — a UI refactor can no longer silently
+            // reset the "6h Trend" readout to "—". The browser only renders it.
+            {
+                let es = server_state.app_state.epoch_store.lock().await;
+                // Awareness layer: alongside the trend MAGNITUDE, report whether the locus of
+                // risk relocated over the window. `lead_then` (the hottest theater 6h ago) comes
+                // from the durable ring; `lead` (now) is read from the live snapshot via the same
+                // `lead_theater` single source of truth, so a shift is judged consistently. The
+                // browser renders `lead→X (was Y)` only when `lead_shifted`, so a stable leader
+                // adds no clutter and the bare delta is never overstated as attribution.
+                let mut t6 = es.trend_6h(snap.p_wwiii_annual);
+                // Honesty layer: publish the headline as an INTERVAL, not a bare point, plus the
+                // plain-language reference-class limit and error posture. The interval is computed
+                // server-side from the durable ring (same discipline as trend_6h); the epistemic
+                // text is the SINGLE source of truth in models.rs, so page prose can't drift from it.
+                let uncertainty = es.uncertainty_6h(snap.p_wwiii_annual, snap.estimate_confidence);
+                let lead_now = crate::models::lead_theater(&snap.theaters);
+                // Honesty layer: a frozen "+0.000%" 6h trend is the model PEGGED at the top of its
+                // range — the headline P clamped at the forecast ceiling AND zero empirical movement
+                // across the window — not a calm flat line or a freeze/bug. Judged server-side from
+                // the same durable ring (`empirical_hw_pct`) plus the headline P, so the browser only
+                // renders the flag. The number itself is unchanged; this just names WHY it cannot
+                // move. (Keys on the headline ceiling, not a per-theater heat clamp: post-de-saturation
+                // heat asymptotes below 1.0, so the old heat-railed gate was permanently dead.) See
+                // models::systemic_pegged.
+                let empirical_hw_pct = uncertainty.get("empirical_hw_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let samples = t6.get("samples").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let pegged = crate::models::systemic_pegged(snap.p_wwiii_annual, empirical_hw_pct, samples);
+                if let Some(obj) = t6.as_object_mut() {
+                    let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;
+                    obj.insert("lead".into(), serde_json::Value::String(lead_now));
+                    obj.insert("lead_shifted".into(), serde_json::Value::Bool(shifted));
+                    obj.insert("pegged".into(), serde_json::Value::Bool(pegged));
+                }
+                data["trend_6h"] = t6;
+                data["uncertainty"] = uncertainty;
+                // Honesty layer: the momentum gauge is LABELLED "leading". Measure it — does momentum
+                // actually precede the realized P over the durable ring? — so the operator sees an
+                // EARNED verdict (leads ~L / no measurable lead / insufficient history), never a bare
+                // assertion. Diagnostic only; never feeds P. (EpochStore::momentum_lead_lag.)
+                data["momentum_lead"] = es.momentum_lead_lag();
+            }
+            data["epistemic"] = serde_json::json!({
+                "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
+                "error_posture":   crate::models::ERROR_POSTURE_NOTE,
+            });
+
+            // Update latest in shared state
+            {
+                let mut latest = server_state.app_state.latest_snapshot.lock().await;
+                *latest = Some(data.clone());
+            }
+
+            // Broadcast snapshot to all connected WebSocket clients
+            let payload = json!({"type": "snapshot", "data": data}).to_string();
+            let _ = server_state.broadcast_tx.send(Arc::new(payload));
+
+            // Article push every 3 snapshots
+            article_push_counter += 1;
+            if article_push_counter >= 3 {
+                article_push_counter = 0;
+                let store = server_state.app_state.article_store.lock().await;
+                let total = store.len();
+                let recent: Vec<_> = store.query(200, None, None)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                drop(store);
+                let art_payload = json!({
+                    "type":  "articles",
+                    "data":  recent,
+                    "total": total,
+                }).to_string();
+                let _ = server_state.broadcast_tx.send(Arc::new(art_payload));
+            }
         });
-
-        // Update latest in shared state
-        {
-            let mut latest = server_state.app_state.latest_snapshot.lock().await;
-            *latest = Some(data.clone());
-        }
-
-        // Broadcast snapshot to all connected WebSocket clients
-        let payload = json!({"type": "snapshot", "data": data}).to_string();
-        let _ = server_state.broadcast_tx.send(Arc::new(payload));
-
-        // Article push every 3 snapshots
-        article_push_counter += 1;
-        if article_push_counter >= 3 {
-            article_push_counter = 0;
-            let store = server_state.app_state.article_store.lock().await;
-            let total = store.len();
-            let recent: Vec<_> = store.query(200, None, None)
-                .into_iter()
-                .cloned()
-                .collect();
-            drop(store);
-            let art_payload = json!({
-                "type":  "articles",
-                "data":  recent,
-                "total": total,
-            }).to_string();
-            let _ = server_state.broadcast_tx.send(Arc::new(art_payload));
+        if futures::FutureExt::catch_unwind(processed).await.is_err() {
+            error!("broadcast_snapshots: snapshot processing PANICKED — snapshot skipped, loop continues");
         }
     }
 
