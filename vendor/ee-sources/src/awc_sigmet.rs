@@ -31,6 +31,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use ee_core::{Event, EventKind, Geo, Severity, Source, SourceMeta};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::time::Duration;
 
 /// NOAA AWC international-SIGMET source.
@@ -225,6 +226,11 @@ pub fn parse_awc_sigmet(json: &str) -> anyhow::Result<Vec<Event>> {
         .ok_or_else(|| anyhow::anyhow!("awc_sigmet: missing 'features' array"))?;
 
     let mut out = Vec::with_capacity(features.len());
+    // The AWC aggregate sometimes carries the SAME issuance twice as byte-identical
+    // features (observed live 2026-07-04: WIII/FAOR/SAME series each ×2), so a map
+    // rebuild plotted stacked twin dots with colliding ids. Collapse on the synthetic
+    // identity key (fir+series+hazard+from) — first record wins.
+    let mut seen: HashSet<String> = HashSet::new();
     for f in features {
         let props = f.get("properties").cloned().unwrap_or(Value::Null);
 
@@ -261,6 +267,9 @@ pub fn parse_awc_sigmet(json: &str) -> anyhow::Result<Vec<Event>> {
         let from = prop_str(&props, "validTimeFrom").unwrap_or("");
         let fir_id = prop_str(&props, "firId").unwrap_or("fir");
         let id = format!("awc-sigmet-{fir_id}-{series}-{hazard}-{from}");
+        if !seen.insert(id.clone()) {
+            continue; // upstream duplicate of an already-emitted issuance
+        }
 
         out.push(Event {
             id,
@@ -342,6 +351,22 @@ mod tests {
         assert_eq!(ev[2].title, "RJJJ FUKUOKA \u{2014} Volcanic ash");
         assert!((ev[2].severity.value() - 0.9).abs() < 1e-9);
         assert_eq!(sigmet_chip(&ev[2].raw).as_deref(), Some("Volcanic ash \u{00b7} FL000\u{2013}150"));
+    }
+
+    #[test]
+    fn upstream_duplicate_issuance_collapses_to_one_event() {
+        // The live AWC aggregate has been observed carrying the same issuance twice as
+        // byte-identical features (2026-07-04: WIII/FAOR/SAME series each ×2), which
+        // plotted stacked twin dots with colliding ids. Duplicate the first fixture
+        // feature and assert the parser still emits exactly the fixture's 3 events.
+        let mut root: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let feats = root.get_mut("features").unwrap().as_array_mut().unwrap();
+        let twin = feats[0].clone();
+        feats.insert(1, twin);
+        let ev = parse_awc_sigmet(&root.to_string()).unwrap();
+        assert_eq!(ev.len(), 3, "duplicate upstream issuance must collapse, not double-plot");
+        assert_eq!(ev[0].id, "awc-sigmet-SBRE--TS-2020-03-16T08:00:00Z");
+        assert_ne!(ev[1].id, ev[0].id, "distinct issuances keep distinct ids");
     }
 
     #[test]

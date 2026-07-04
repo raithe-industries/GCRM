@@ -301,6 +301,14 @@ deferred, and the green-proof. Append; never rewrite history.
   (Finland STUK if a STUK-direct auth-free feed exists; Ireland EPA; EURDEP is access-restricted); the
   maritime-security / global-NOTAM / ACLED-refresh lanes remain open per the gap notes above.
 
+- **2026-07-04 (local watch, evening)** — **`awc_sigmet` duplicate-issuance collapse.** A live map
+  duplicate audit (896 quakes across 7 seismic feeds: ZERO same-time cross-feed duplicates — the
+  cross-feed dedup verified clean) surfaced exactly one duplicate class: the AWC international-SIGMET
+  aggregate itself carried three issuances as byte-identical twin features (WIII/FAOR/SAME series,
+  verified upstream), which plotted stacked twin dots with colliding ids. Fix: `parse_awc_sigmet`
+  now collapses on the synthetic identity key (fir+series+hazard+from), first record wins; locked by
+  `upstream_duplicate_issuance_collapses_to_one_event`. Green-proof: ee-sources 6/6, full suite green.
+
 - **2026-07-04 (local watch, same day)** — **`asam` LIVE → DORMANT: upstream verified dead
   from the full-network side.** First live map rebuild after deploy reported `asam: HTTP 404`
   / 0 events. Local verification (no sandbox limits): `msi.nga.mil/api/publications/asam`
