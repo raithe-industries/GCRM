@@ -647,7 +647,7 @@ pub async fn map_payload(snapshot: Option<Value>) -> Value {
 /// part — it performs all upstream I/O and never touches the live snapshot.
 async fn feeds_payload() -> Value {
     use ee_sources::{
-        acled_aggregated::AcledAggregated, alberta511::Alberta511, asam::Asam, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
+        acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
         eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
@@ -669,7 +669,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, asam_acts, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -716,11 +716,12 @@ async fn feeds_payload() -> Value {
         fetch_one("navcanada", NavCanada, 14),
         // Fintraffic AIS — live Baltic vessel positions (fills the Vessel layer).
         fetch_one("digitraffic_ais", DigitrafficAis, 15),
-        // NGA ASAM — worldwide anti-shipping hostile-act reports (piracy, boarding,
-        // hijacking, drone/missile attacks), extending the Vessel layer beyond the
-        // Baltic to the theatres an operator watches (Red Sea/Hormuz/Gulf of Guinea/
-        // Singapore Strait). Path-A live JSON, last-year window, severity by act class.
-        fetch_one("asam", Asam, 12),
+        // (The live `asam` fetch was removed 2026-07-04, hours after adoption: NGA's
+        //  MSI API no longer serves the product — `/api/publications/asam` returns an
+        //  application-level 404 with a valid session, and the Esri Living Atlas
+        //  partner archive froze at 2024-06-25 — so it burned a 12s fetch slot and a
+        //  perpetual errors[] "HTTP 404" every rebuild for a guaranteed failure. The
+        //  connector + chip stay for the day a live successor surfaces.)
         // UCDP candidate GED — georeferenced conflict events (fills the Conflict layer).
         fetch_one("ucdp_ged", UcdpGed, 15),
         // ACLED Aggregated — weekly Admin-1 conflict intensity (events + fatalities,
@@ -810,7 +811,6 @@ async fn feeds_payload() -> Value {
         (ca_borders.0, ca_borders.1, "cbsa_bwt", 60),
         (ca_notams.0, ca_notams.1, "navcanada", 600),
         (vessels.0, vessels.1, "digitraffic_ais", 800),
-        (asam_acts.0, asam_acts.1, "asam", 400),
         (conflict.0, conflict.1, "ucdp_ged", 800),
         (conflict_agg.0, conflict_agg.1, "acled_aggregated", 500),
         (storms.0, storms.1, "nhc", 60),

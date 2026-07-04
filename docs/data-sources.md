@@ -63,7 +63,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `ucdp_ged` | Conflict | UCDP / Uppsala Univ. | georeferenced conflict events (candidate GED), fatalities→severity. Auth-free direct CSV (the live API is now token-gated); version-discovered from the downloads page. Monthly cadence. Fills the Conflict layer ACLED can't. |
 | `acled_aggregated` | Conflict | ACLED | **weekly Admin-1 conflict-intensity** — ACLED's free, no-key **Aggregated Data** product (the licensed event API stays dormant; see `acled`). One dot per first-level admin region at its **centroid** (the file ships `CENTROID_LATITUDE/LONGITUDE`, so no external centroid table is needed), coloured by the **trailing-window sum** (~4 weeks ending at the file's latest `WEEK`) of events + fatalities — so a multi-year file plots *current* regional heat, not history. A regional-intensity complement to `ucdp_ged`'s discrete events: weekly cadence + ACLED's broad taxonomy (political violence / explosions-remote / demonstrations / strategic developments). **Path-B committed snapshot** (`acled_aggregated_snapshot.csv`, `include_str!`): `acleddata.com`/HDX 403s in-sandbox and the download is a manual/registered step, so a real ACLED Middle-East weekly aggregate (Jan–Mar 2026; 14 countries, 104 admin1s incl. Iran/Israel/Palestine/Lebanon/Syria/Yemen/Iraq) ships embedded, refreshed by a local re-download job. Canonical 13-col schema (`WEEK,REGION,COUNTRY,ADMIN1,EVENT_TYPE,SUB_EVENT_TYPE,EVENTS,FATALITIES,POPULATION_EXPOSURE,DISORDER_TYPE,ID,CENTROID_LATITUDE,CENTROID_LONGITUDE`) confirmed against 15+ independent public copies. Severity = log(fatalities) (UCDP ladder); zero-fatality-but-active region floors at 0.12. **Signal-meaningful** (event + fatality counts are inherently unit-bearing conflict measures). Chip = "41 events · 66 fatalities · Air/drone strike". |
 | `digitraffic_ais` | Vessel | Fintraffic (Finland) | live Baltic AIS — vessels in abnormal nav state (aground/NUC/restricted) loud, moving commercial traffic faint; routine moored/anchored dropped. Auth-free (Digitraffic-User header + gzip). Fills the previously-empty Vessel layer; Baltic = on-mission (NATO/Russia maritime). |
-| `asam` | Vessel | NGA (US) | **worldwide anti-shipping hostile-act reports** — NGA's Maritime Safety Information **Anti-Shipping Activity Messages**: reported piracy, armed robbery, boarding, hijacking, kidnapping, and drone/missile/USV attacks against ships, each carrying a decimal `latitude`/`longitude`. Extends the Vessel layer **beyond the Baltic** to the theatres a war-risk operator watches (Red Sea / Bab-el-Mandeb, Gulf of Aden, **Strait of Hormuz**, Gulf of Guinea, Singapore/Malacca Straits, **South China Sea**). A distinct **maritime-security incident** modality vs `digitraffic_ais` live AIS positions. **Signal-meaningful:** ASAM carries no numeric severity, so severity is graded by the **escalation class** read from the aggressor (`hostility`) + narrative (`description`) — a real maritime-security ladder (armed attack 0.9 > boarding 0.65 > robbery 0.5 > attempted 0.3; an *attempted* act de-escalates its tier). Chip = escalation class + vessel, e.g. "Boarding · Bulk Carrier" / "Armed attack · Chemical Tanker". **Path A** (prod fetches the live `msi.nga.mil/api/publications/asam?output=json&sort=date&minOccurDate=<today−365d>`; last-year window so the layer reads as current maritime posture, not the full archive). Auth-free, US-Gov public domain; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the NGA reference consumers `ngageoint/anti-piracy-{iOS,android}-app` (read `json["asam"]` off the same endpoint) + `hrbrmstr/asam` R package (record columns `reference,date,latitude,longitude,navArea,subreg,hostility,victim,description`; sample row `2019-73 \| 2019-09-30 \| 1.04 \| 104. \| XI \| 71 \| Five Armed robbers \| Bulk Carrier \| SINGAPORE STRAITS`). Empty `asam` array (quiet window) = 0 events, not an error. |
+| `asam` | Vessel | NGA (US) | **worldwide anti-shipping hostile-act reports** — **DORMANT: the upstream is dead** (local live-verification 2026-07-04, hours after adoption). NGA's MSI API no longer serves the product: `msi.nga.mil/api/publications/asam` (and `/asam/areas`) return an **application-level 404** even with a valid WAF session — while the sibling `publications/broadcast-warn` returns 200 on the same session, so the API stack itself is alive and ASAM specifically is gone (NGA's own SPA still calls the removed path, i.e. their Piracy page is broken too). Corroboration: the Esri Living Atlas partner mirror (`esri_livefeeds2` `ASAM_events_V1` FeatureServer, "sourced from NGA") **froze at newest incident 2024-06-25** (9,182 records), and the NGA reference apps are archived — the product appears to have stopped updating ~mid-2024, long before adoption; the in-sandbox 403 masked this (schema anchoring proved the *shape*, not *liveness*). The connector (`vendor/ee-sources/src/asam.rs`), its escalation-class severity ladder (armed attack 0.9 > boarding 0.65 > robbery 0.5 > attempted 0.3), chip, and fixture tests all stay green and registered, ready for a live successor; only the `src/osint.rs` fan-out fetch was removed (it burned a 12s slot + a perpetual errors[] "HTTP 404" per rebuild). |
 | `nhc` | Weather | NOAA NHC | active tropical cyclones (Atlantic / E+C Pacific) from `CurrentStorms.json` — live position, classification (HU/TS/TD), max wind (kt)→Saffir-Simpson category + severity, pressure. Auth-free JSON, U.S. public domain. Empty `activeStorms` (off-season) = 0 events, not an error. Fills the storm/cyclone gap EONET (lagging catalog) and GDACS (alert level only) don't cover operationally. |
 | `jma_typhoon` | Weather | JMA / RSMC Tokyo | active typhoons over the **Western North Pacific + South China Sea** — the basin NHC does NOT cover (NHC = Atlantic/E-Pacific only). JMA is the WMO-designated RSMC for this basin. `bosai` JSON: `targetTc.json` index → per-system `{tcId}/forecast.json`; the connector emits the *analysis* part (current fix: `center` [lat,lon], `pressure` hPa, `maximumWind.sustained.knots`, `category.en`). Chip = category + JMA intensity grade (Strong/Very Strong/Violent Typhoon) + wind (kt) + pressure (hPa). Auth-free, multi-fetch (index + per-TC), empty index off-season = 0 events not an error. |
 | `geonet_volcano` | Volcano | GeoNet / GNS Science | New Zealand **Volcanic Alert Levels** — the `volcano/val` GeoJSON: per-volcano official VAL (0–5) + ICAO aviation colour code (`acc`: Green/Yellow/Orange/Red) + plain-language activity/hazards. Connector drops VAL 0 ("no unrest") and plots only volcanoes at level ≥ 1, so an all-quiet network = 0 events (not an error). Auth-free GeoJSON (`Accept: application/vnd.geo+json;version=2`). Fills the **operational alert-level** modality and **NZ / SW-Pacific** geography that the global GVP eruption catalogue and EONET (event-based) don't carry. Chip = "Alert Level {n} · Aviation {colour}". CC BY 3.0 NZ. |
@@ -129,13 +129,21 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
 
 Bias each run toward the least-covered axis below.
 
-- **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic) and
-  EXTENDED 2026-07-04 with **`asam`** (**NGA Anti-Shipping Activity Messages** — worldwide
-  hostile-act reports against ships, Path A). The Baltic-only gap is now closed on the
-  **maritime-security** axis: ASAM covers the Red Sea/Hormuz/Gulf of Guinea/Singapore
-  Strait/South China Sea theatres with a distinct *incident* modality (piracy / boarding /
-  hijacking / drone-missile attack), complementing Fintraffic's live AIS *positions*.
-  Remaining: **live AIS traffic** outside the Baltic (positions, not incidents) — other
+- **Vessel / AIS** — SEEDED 2026-06-14 with `digitraffic_ais` (Fintraffic, Baltic).
+  The 2026-07-04 `asam` adoption did NOT close the maritime-security gap — the NGA
+  upstream is dead (see the DORMANT `asam` row: API removed server-side; partner mirror
+  frozen 2024-06-25), so the **maritime-security incident** modality (piracy / boarding /
+  hijacking / drone-missile attack over Red Sea/Hormuz/Gulf of Guinea/Singapore Strait/
+  South China Sea) is **REOPENED and back at the top of this gap list**. Successor leads,
+  best first: (a) **ONI Worldwide Threat to Shipping (WTS)** — the U.S. Office of Naval
+  Intelligence weekly report that superseded ASAM operationally; check for a
+  machine-readable form (the PDF/para text needs a geometry anchor — same failure mode
+  as `broadcast-warn` unless a KML/shapefile/API exists); (b) **IMB Piracy Reporting
+  Centre live map** (icc-ccs.org — licensing/scrape-ban must be verified first);
+  (c) **ReCAAP ISC** (Asia piracy, official reports; check for JSON). The dormant
+  `asam` connector's parser/severity ladder is reusable if any successor speaks a
+  compatible schema. Also remaining: **live AIS traffic** outside the Baltic
+  (positions, not incidents) — other
   authoritative auth-free regional AIS if one surfaces. Two AIS-traffic leads stay ruled out:
   **NOAA/USCG marinecadastre** (authoritative but data on Azure blob, GeoParquet bulk
   historical — not GitHub-raw, not live, no hand-parse) and **Danish Maritime Authority**
@@ -230,6 +238,20 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-04 (local watch, same day)** — **`asam` LIVE → DORMANT: upstream verified dead
+  from the full-network side.** First live map rebuild after deploy reported `asam: HTTP 404`
+  / 0 events. Local verification (no sandbox limits): `msi.nga.mil/api/publications/asam`
+  returns an application-level 404 (`{"status":404,"error":"Not Found"}`) with a valid
+  `akam_nga_msi` session while sibling `publications/broadcast-warn` returns 200 with real
+  NAVAREA JSON on the same session — the product is removed, not WAF-blocked; NGA's own SPA
+  still calls the dead path. Esri Living Atlas partner mirror (`ASAM_events_V1` FeatureServer)
+  frozen at newest incident **2024-06-25**. Action: removed the `src/osint.rs` fan-out fetch
+  (acled-style tombstone comment), kept connector/chip/tests + registry, corrected this
+  ledger's LIVE row + Vessel gap (REOPENED, with ONI WTS / IMB PRC / ReCAAP successor leads).
+  Green-proof: `cargo build --release` + full `cargo test` green locally before push.
+  Lesson recorded: **schema anchoring proves shape, not liveness** — a Path-A source whose
+  host can't be web fetch-verified needs a first-rebuild follow-up check before its gap is
+  declared closed.
 - **2026-07-04** — **adopted `asam` (NGA Anti-Shipping Activity Messages), Path A** — a new
   authoritative geocoded layer opening a **maritime-security incident** modality no feed carried,
   extending the Vessel layer **beyond the Baltic** (the ledger's named Vessel gap: "Asian-theater
