@@ -179,14 +179,18 @@ pub fn parse_odlinfo(json: &str) -> anyhow::Result<Vec<Event>> {
             .filter(|s| !s.is_empty());
         let Some(sid) = sid else { continue };
 
-        // `end_measure` is RFC3339 (e.g. "2021-11-30T21:00:00Z"); fall back to "now"
-        // so a live reading with a missing/odd timestamp still plots.
-        let time = props
+        // `end_measure` is RFC3339 (e.g. "2021-11-30T21:00:00Z"). A reading whose
+        // measurement time cannot be read is DROPPED, not stamped "now": an
+        // unknown-age elevated gamma value rendered as "just now" would be a false
+        // freshness claim on exactly the signal where staleness matters most.
+        let Some(time) = props
             .get("end_measure")
             .and_then(Value::as_str)
             .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
             .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(Utc::now);
+        else {
+            continue;
+        };
 
         let place = props
             .get("name")
@@ -323,6 +327,24 @@ mod tests {
            "properties":{"id":"DEZ0010","kenn":"10","name":"Also quiet","value":0.20,"unit":"µSv/h","site_status":1}}
         ]}"#;
         assert!(parse_odlinfo(normal).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unreadable_measurement_time_drops_the_record_not_ages_it_as_now() {
+        // An ELEVATED reading with a missing or malformed end_measure must be dropped:
+        // stamping it "now" would render an unknown-age gamma value as fresh — a false
+        // freshness claim on exactly the signal where staleness matters most.
+        let json = r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[9.0,50.0]},
+           "properties":{"id":"DEZ0001","kenn":"1","name":"No time","value":0.62,"unit":"µSv/h","site_status":1}},
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[9.5,50.5]},
+           "properties":{"id":"DEZ0002","kenn":"2","name":"Bad time","value":0.62,"unit":"µSv/h","site_status":1,"end_measure":"yesterday-ish"}},
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[10.0,51.0]},
+           "properties":{"id":"DEZ0003","kenn":"3","name":"Good","value":0.62,"unit":"µSv/h","site_status":1,"end_measure":"2026-07-04T10:00:00Z"}}
+        ]}"#;
+        let ev = parse_odlinfo(json).unwrap();
+        assert_eq!(ev.len(), 1, "only the timestamped elevated reading plots");
+        assert_eq!(ev[0].id, "odlinfo-DEZ0003");
     }
 
     #[test]
