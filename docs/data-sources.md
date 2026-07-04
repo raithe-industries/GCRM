@@ -224,6 +224,23 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-03 (OPERATOR SESSION — not a hunter run; lane-relevant map changes recorded here)** —
+  Robert-directed session touched this ledger's lane: **(1)** the permanently-403 live `acled` fetch
+  is REMOVED from `src/osint.rs` — ACLED live access is license-gated for good (confirmed 2026-06-14);
+  do NOT re-add a live connector. Path-B **`acled_aggregated` remains the only ACLED lane** and
+  **(2)** now AGE-GATES its snapshot (`MAX_ROW_AGE_DAYS` ~6 weeks vs the real clock): an abandoned
+  snapshot self-empties instead of painting March data as current — it currently plots **0 rows
+  (aged out honestly; the layer hint explains)**. The snapshot needs a refresh job or the ACLED half
+  of the Conflict layer stays empty — that refresh is an open hunter-lane candidate. **(3)** `eonet`
+  drops the `seaLakeIce` (icebergs) category outright (489 junk dots, ~5% of the map payload) and
+  keeps only the newest geometry per event id; `gdacs` keeps the newest feature per event id
+  (multi-polygon 2-3× dups gone); +3 vendor lock tests, ee-sources 134/0. **(4)** NEW cross-feed
+  earthquake dedup in `src/osint.rs` (`dedup_earthquakes`: 90s/0.3° match, ±180° lon wrap): feed-rank
+  priority **national-intensity (`jma_quake`/`geonet_quake`/`bmkg_quake`/`eqcanada`) > `usgs` >
+  `emsc` > `gdacs`** — ANY new quake source must be slotted into `quake_feed_rank` (osint.rs) or its
+  events won't dedup against the existing catalogues; national intensity feeds keep the dot and get
+  a merged chip ("M6.1 · Shindo 3") from the best global sibling.
+
 - **2026-07-03** — **adopted `geonet_quake` (GeoNet / GNS Science NZ felt earthquakes, MMI), Path A** —
   a new authoritative geocoded layer extending the **felt-intensity seismic modality** to **New Zealand /
   the SW-Pacific**, a coverage gap the raw global quake catalogues carry only sparsely. Per the

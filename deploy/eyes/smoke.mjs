@@ -129,6 +129,8 @@ if (!latest) {
   fail.push('api/latest never returned a snapshot with probabilities.annual within readiness budget');
 } else {
   const pa = latest.probabilities.annual;
+  // Deliberate fail-safe: an honestly-capped read ≥ 0.89 (a genuine ceiling-grade world crisis) also
+  // hard-fails here and blocks ALL deploys until a human looks — intended behavior, not a bug.
   if (pa >= CEILING - MARGIN) fail.push(`annual P(WWIII) saturated at ceiling: ${pa} — non-credible / no resolution`);
   else ok(`annual P(WWIII) = ${(pa * 100).toFixed(1)}% (not pegged at ceiling)`);
 }

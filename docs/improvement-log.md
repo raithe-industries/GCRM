@@ -22,6 +22,138 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-03 — OPERATOR SESSION (Robert-directed; not a routine run) — guardrails-light retirement · news-pipeline hygiene · map dedup/honesty · routine-docs overhaul
+- Item: operator session across four audit lanes (audit-indicators / audit-news / audit-map /
+  audit-routines), implemented in-session under Robert's direction 2026-07-03. One coherent
+  change-set; the four parts below are its lanes, not separate runs.
+- Change (i) — GUARDRAILS I&W BOARD LIGHT RETIRED (first use of the NEW T2 retirement lane, below).
+  Unreachability proof: the light was the board's only read of operator CONFIG rather than the world
+  (`bayesian::guardrail_from_regime` over the seeded regime factors), and its 0.70 trip threshold
+  requires a regime product ≥ 3.8 — unreachable since the 2026-06-30 de-double-count froze the live
+  product at 2.90 → guardrail 0.475, so the light could NEVER trip again. Removed the light + its
+  `evaluate()` slot (`src/indicators.rs`); the board is now 12 lights = a clean 4×3 grid, filler
+  cells gone (filler JS retained as a guard); stale "thirteen/eleven" copy fixed in
+  dashboard/methodology/server-test comment. `couplers.guardrail_collapse` keeps its FULL engine
+  role (l_sys amplifier, dominant-coupler naming, regime inspector, serialized field) — only the
+  board echo of config is gone. Lock: `guardrails_board_light_stays_retired` (with the coupler
+  railed at 1.0, no light of id "guardrails" exists and nothing trips). Before-state recorded: prod
+  :8000 served 13 indicators incl. guardrails (tripped=false, "guardrail collapse 0.47", frozen) on
+  2026-07-03.
+- Change (ii) — NEWS-PIPELINE HYGIENE (`src/ingestor.rs` / `aggregator.rs` / `processor.rs` /
+  `nlp_sidecar.rs` / `models.rs`): canonical URLs (tracking-param/fragment strip) + update-in-place
+  (`ArticleStore::update_by_url`, refuses older `published_at`; reload keeps newest-per-URL) kill
+  the 834 live-blog duplicate rows (559 dup URLs, worst ×13) — they can no longer accumulate and do
+  not resurrect at reboot; 152 exact cross-feed duplicate titles now dropped at ingest (bounded
+  50k-key `TitleDedup`, <12-char titles bypass, seeded from the archive on boot); 2,797 gnews
+  " - Outlet" suffixes stripped before dedup/storage; HTML entities/tags/boilerplate scrubbed at
+  ingest (the 1,868 raw-HTML-body class; titles starting with `<` rejected) so the LLM excerpt is
+  text, not markup; word-boundary fixes extended beyond d5b7ba1 to person/org names
+  (putin…hezbollah/hamas/houthi), `has_geopolitical_trigger` short tokens (pla/irgc/nato — nato ⊂
+  senator — + war/coup/bomb/hack with morphology spelled out) and event/domain keywords
+  (hit/raid/fire/shot/deal) — calibration anchors BIT-IDENTICAL (backtest builds domain_signals
+  directly); SeenCache restart re-ingest window today+yesterday → ~7 days (keys-only archive seed,
+  under the FIFO cap); GDELT darkness root-caused (upstream per-IP 429 "one request every 5
+  seconds" aggravated by our own 2s fast-retry) → `GDELT_MIN_RETRY_S=30` floor + new `search_apis`
+  health in `/risk/api/sources`; junk filter (sport paths, "yonhap news summary"); roster invariant
+  restored: globaltimes→**cgtn**, xinhua→**ecns**, rnz world→**pacific** — 103/103 live-probed.
+- Change (iii) — MAP (`src/osint.rs` / `vendor/ee-sources` / `src/dashboard.html`): cross-feed
+  earthquake dedup (`dedup_earthquakes`: 90s/0.3° match with ±180° lon wrap; rank national-intensity
+  jma/geonet/bmkg/eqcanada > usgs > emsc > gdacs; merged chips "M6.1 · Shindo 3") — the live audit
+  had 44+ multi-source duplicate cells incl. an M6.1 plotted 4×, now 0; severity-sort-before-cap so
+  layer caps keep the most severe (ties newest); OpenSky 4-window rotation (na/eu/kr/tw — Korea +
+  Taiwan Strait covered at the same request count) + short aircraft last-good so stale positions
+  are not lies; GDACS flood "Magnitude 0" chip suppressed (nonsense-number rule); the
+  permanently-403 live `acled` fetch REMOVED (Path-B `acled_aggregated` stays); `plotted` counts
+  added to `/api/map` so geo-less drops are visible (nws counted 322 vs plotted 93). Vendor:
+  `acled_aggregated` age-gates its snapshot (`MAX_ROW_AGE_DAYS` ~6 weeks vs the real clock — an
+  abandoned snapshot self-empties instead of painting March data as current); `eonet`
+  newest-geometry-per-event + seaLakeIce (icebergs) dropped outright (489 junk dots, ~5% of
+  payload → 64 features); `gdacs` newest-feature-per-event (multi-polygon 2-3× dups). Dashboard:
+  maxZoom 7→10; LAYER_HINTS rewritten to be TRUE; feed-health amber strip rendering `/api/map`
+  `errors[]`; NOTAM popups headed "Airspace NOTAM". Verified on a temp :8100 instance (prod
+  untouched): quake dup cells 0; eyes gate PASSED.
+- Change (iv) — ROUTINE-DOCS OVERHAUL (audit-routines.md (a)-(d), operator decisions applied):
+  prompt enricher line → hands-off (cap=2 is a deliberate GTX-1080 VRAM calibration, roadmap 4.1);
+  §6 bias bullet now carries the Robert-gate note (6.1-6.5 blocked on `MARKET_STRESS_AMPLIFIER`;
+  the shippable step is PROPOSING the design); dead `docs/model-reviews/` ref dropped; closed caveat
+  family extended to blind/thin/stale/capped/held/**saturated/pegged** at every site
+  (prompt/scorecard/roadmap); no-op shaming replaced (a structured NO-OP is the honest, expected
+  output when every lever is done, Robert-gated, or cross-lane); board closure re-scoped to **12
+  lights of ANY class** at every site; roadmap 1.4 annotated DORMANT-BY-DESIGN, 3.7 FOLLOW-UP
+  marked HISTORICAL (within_band + its lock retired 2026-06-28), 2.3 → [x] DONE 2026-06-15, 4.2 →
+  [x] CLOSED 2026-06-18/re-verified 2026-06-30, 3.2 → [x] DONE at ingestion (awareness layer
+  superseded by §8.2), stale +26% asymptote values annotated (refit to 0.10 on 2026-06-28), 5.1
+  scope-check note, header axis-rotation subordinated to tier; scorecard: NEW T2 retirement lane
+  (prove unreachability + re-base the test floor downward in the same entry; deleting a removed
+  feature's lock tests is not weakening a test), Brier baseline re-based, test floor re-based, feed
+  liveness re-based; auto-improve.sh stale "bug-sweep" vintage wording refreshed (comments/strings
+  only); smoke.mjs ceiling-gate fail-safe comment added.
+- Metric moved: I&W board 13 → 12 lights (honesty: the config echo is gone); article store dup
+  classes (834 live-blog rows / 152 cross-feed titles / 2,797 gnews suffixes) → structurally closed
+  at ingest; map quake duplicate cells 44+ → 0; eonet features ~493 → 64; test floor re-based 463
+  (stale) → 536 post-rebase; feed liveness baseline 102/103 (stale) → 103/103; calibration baseline re-based
+  ~2e-6/0.14pp (stale, pre-de-saturation) → 0.00092/3.04pp (value unchanged this session —
+  verified bit-identical vs committed HEAD).
+- Post-review repairs (two independent adversarial review passes ran over this session's diff
+  before landing; every confirmed finding was fixed and locked): (1) `update_by_url` now refuses a
+  same-URL hit from a DIFFERENT source — GDELT surfaces the exact publisher URLs the roster stores,
+  with page-title furniture and always-newer scrape dates, and would otherwise clobber clean rows
+  (locks: `article_store_update_by_url_refuses_cross_source_clobber`, `…keeps_excerpt_when_refetch_body_is_empty`);
+  (2) the hit/raid word-boundary fix regained the inflected forms the substring era matched
+  ("missile hits…", "troops raided…" — hits/hitting/raids/raided/raiding in the MilitaryStrike list,
+  fires/fired/shots/gunfire/deals ambient credit, warfare/warhead/warship/warplane/wartime/bomber/hacker
+  dispatch stems); (3) quake dedup refuses same-catalogue pairs (mainshock+aftershock are two events)
+  and magnitude disagreement > 0.7; (4) EONET/GDACS newest-per-id prefers a geocoded feature over a
+  newer geo-less one; (5) boot seeding marks both as-stored and re-derived title keys (gnews
+  idempotency); (6) TitleDedup keys expire after 48 h so a recurring verbatim headline is a new
+  edition, not a duplicate (lock: `title_dedup_expires_so_recurring_headlines_are_new_editions`);
+  (7) six osint locks written for the map functions this entry claims (`cross_feed_quake_dedup_*`,
+  `quake_dedup_*` ×2, `sort_for_cap_*`, `opensky_rotation_*`, `plotted_counts_*`); (8) the T2
+  retirement-lane gate tightened to objective unreachability only; layer hints made cause-neutral.
+  Rebase reconciliation: d2f616e (routine run, landed mid-session) added a word-start matcher for
+  rocket/forces/atomic/respond/deal — kept as-is for the first four; "deal"/"deals" now enforce the
+  same documented cases (ideal/ordeal) via the whole-word ambient set instead, so both changes'
+  tests pass together.
+- Proof: `cargo build --release` clean; `cargo test --release` **536 passed / 0 failed / 3 ignored** (post-rebase, incl. d2f616e)
+  (gcrm target; ee-sources 134/0 incl. 3 new vendor locks); `calibration_evidence_report` fresh this
+  session: quiet 2.62% / ukraine 43.24% / current_2026 60.01% (on the 60% centre) / cuba 84.30%,
+  **Brier 0.00092 / RMSE 3.04pp / in-band 4/4**; `feed_roster_liveness` 103/103; eyes gate PASSED
+  on the temp :8100 instance (headline 77.9% finite, trend renders, board renders).
+- Tier: T1+T2 (engine-behavior: ingest dedup/sanitation/word-boundaries, map dedup, GDELT retry
+  floor; T2 retirement: guardrails light) · Touched: engine-behavior ·
+  Lock-fails-without-change: yes (`guardrails_board_light_stays_retired`; the stage-2 dedup/
+  sanitation locks fail on revert; `dedup_earthquakes` locks) · Counts: none (honesty/hygiene
+  repairs, no frontier metric) · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- SUPERSESSION NOTICE — four older "Notes future runs must respect" are now WRONG; the originals
+  stand as history (log is append-only), these corrections override them:
+  1. 2026-06-24 entry ("do not auto-tune to clear the #[ignore]d
+     `resolution_restored_at_the_railed_peg` bar"): the de-saturation HAPPENED 2026-06-28 and that
+     test no longer exists — there is no pending bar; do not search for it.
+  2. 2026-06-25 entry ("the de-saturation RECALIBRATION … remains Robert-gated"): done by Robert
+     2026-06-28. Its framing of `#gauge-saturated` as a live awareness win is superseded — the flag
+     is dormant-by-design (Notes below).
+  3. 2026-06-25 cyber-light entry ("the next board light should be a genuinely NEW
+     velocity/physical/coupler-class observable"): VOID — the board is CLOSED at 12 lights of ANY
+     class; no run adds a light of any kind without Robert's explicit sign-off.
+  4. 2026-07-01 + 2026-06-30 entries ("`systemic_pegged`/`HEAT_CLAMP` … re-key vs retire is a
+     Robert choice, still gated"): RESOLVED 2026-07-03 — re-keyed to the forecast ceiling,
+     `HEAT_CLAMP` deleted (see the same-day entry below).
+- Notes future runs MUST respect: (1) the I&W board is CLOSED at **12 lights of ANY class**
+  (per-modality, coupler, velocity, physical alike) — no run adds a light without Robert's explicit
+  sign-off. (2) `breadth_saturated` / `#gauge-saturated` is a DORMANT-BY-DESIGN latent guard
+  (unreachable since the 2026-06-28 de-saturation; dormancy test-locked by
+  `live_peg_resolves_after_desaturation_*`) — do NOT re-enable, extend, or mirror it; full
+  retirement remains Robert-gated. (3) The calibration baseline is Brier 0.00092 / RMSE 3.04pp /
+  in-band 4/4 — the pre-de-saturation ~2e-6 fit is NOT a target; do not retune toward it. (4) ACLED
+  live is PERMANENTLY license-gated — the live fetch was removed this session; do not re-add it
+  (Path-B `acled_aggregated` is the only ACLED lane). (5) Stale-snapshot age-gates
+  (`acled_aggregated` ~6 weeks) are HONESTY FEATURES, not bugs — an aged-out empty layer is the
+  correct read, not a regression to "fix" by widening the gate. (6) Retiring a dead
+  indicator/caveat is now a creditable T2 (scorecard retirement lane): prove unreachability +
+  re-base the test floor downward in the same entry; deleting a removed feature's lock tests is not
+  weakening a test.
+
 ## 2026-07-04 — honesty/awareness — domain keywords no longer match mid-token (kills phantom domain inflation)
 - Item: roadmap 1.8 (new) — the domain-scoring sibling of 1.7 (actors) and audit-processor-4 (sentiment).
 - Defect (pillar-1 HONESTY): `processor::score_domains` matched every domain keyword with raw

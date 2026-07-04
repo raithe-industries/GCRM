@@ -8,8 +8,9 @@ move on — **verify the current code before assuming an item is still open.**
 
 Items are tagged **[verified]** (confirmed real against the code) or **[candidate]** (a lead
 worth investigating — confirm before acting). Axes are in mission-priority order; the axis a
-run touches should rotate (read `improvement-log.md` to see which axis is least-recently
-advanced and bias there, so coverage stays even).
+run touches should rotate WITHIN the chosen value tier (read `improvement-log.md` to see which
+axis is least-recently advanced and bias there, so coverage stays even) — rotation never
+justifies dropping a tier (scorecard: the tie-break is within-tier only).
 
 The mission, against which every item is judged: give an operator ONE honest, legible,
 real-time read on how close the world is to systemic / great-power war, and *where* it's
@@ -19,12 +20,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 > tier you can do well today (T1 new source / gauge / theater / calibration / monitor-rung > T2
 > first-time honesty surface > T3 annotation) and prove it with that tier's falsifiable gate.
 >
-> **CLOSED VEINS — forbidden to mine, no credit at any tier:** the per-modality I&W indicator-light
-> family (13 lights, 5/5 modalities — military / nuclear / economic / diplomatic / cyber, complete as
-> of 3.16) and the blind / thin / stale / capped / held caveat family (complete across header / board /
-> hero / map / chip). These are DONE. Adding the Nth light or mirroring a caveat onto another surface
-> is annotation inflation, not improvement. The open frontier is **§6 new signal · §7 platform · §8
-> monitors** below.
+> **CLOSED VEINS — forbidden to mine, no credit at any tier:** the I&W indicator-light BOARD —
+> CLOSED at 12 lights of ANY class (per-modality, coupler, velocity, physical alike; 5/5 modalities
+> — military / nuclear / economic / diplomatic / cyber, complete as of 3.16; the config-only
+> "guardrails" light was RETIRED 2026-07-03 — do not re-add it; no run adds a light of any kind
+> without Robert's explicit sign-off) — and the blind / thin / stale / capped / held / saturated /
+> pegged caveat family (complete across header / board / hero / map / chip). These are DONE. Adding
+> the Nth light or mirroring a caveat onto another surface is annotation inflation, not improvement.
+> The open frontier is **§6 new signal · §7 platform · §8 monitors** below.
 
 ---
 
@@ -78,6 +81,8 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `breadth_never_swamps_the_nuclear_brink` (structural `BRINK_AMPLIFIER > BREADTH_ASYMPTOTE` + a
     live-engine bound proving the breadth amplifier stays strictly below `1+BREADTH_ASYMPTOTE`, hence
     below the brink). No value changed — calibration evidence identical (Brier ~2e-6, in-band 4/4).
+    (Values as of 2026-06 — the 2026-06-28 de-saturation refit `BREADTH_ASYMPTOTE` to 0.10;
+    methodology templates from the constant, so operator prose is unaffected.)
     Remaining un-pinned: the guardrail-coupler magic in `bayesian.rs::compute` (the `/4.0`
     normalization and `0.12` guardrail amplifier) and the operator-tunable regime × factor defaults
     (already labeled `RegimeFactor`s in settings, not blind literals). P₀ is `BASELINE_ANNUAL`
@@ -204,6 +209,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     at a glance. HTML/CSS done in-sandbox; final visual verdict is the local eyes gate. Locked by
     `dashboard_flags_a_breadth_saturated_read_as_a_structural_max` (server.rs). No model constant
     touched. See improvement-log 2026-06-25.
+  - **DORMANT SINCE 2026-06-28 (the de-saturation) — dormant-by-design latent guard, operator
+    decision 2026-07-03.** `heat_from_scores` now ends in `1 − exp(−γ·raw)` and asymptotes < 1.0, so
+    the rail gate (`max_heat >= 1.0 − 1e-3`) can NEVER fire: `couplers.breadth_saturated` /
+    `meta.breadth_saturated` / the `#gauge-saturated` hero caveat are permanently quiet today. That
+    dormancy is INTENDED and test-locked
+    (`backtest::live_peg_resolves_after_desaturation_and_no_band_is_breadth_saturated`; the
+    theater.rs comment records the stance) — the flag stays as a latent guard should a future
+    recalibration ever re-rail the heat curve. Do NOT re-enable, extend, or mirror it to another
+    surface. Full RETIREMENT (flag + hero caveat + lock tests) remains Robert-gated — a creditable
+    T2 under the scorecard's retirement lane once he signs off, not before.
 - [x] **1.5 First-tick delta is a cold-start artifact** — **DONE 2026-06-27.** The per-snapshot
   `delta_annual`/`delta_30day` (dashboard `#cmd-risk-delta` "▲ +N% last snap", the ▲/▼ rate, the
   event log) were differenced against the engine's seed values (`prev_annual = HISTORICAL_ANCHOR`,
@@ -369,9 +384,11 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `ALERT_CRIT`/`ALERT_ELEV`. Canvas-drawn for the same reason as `elevLine`/`calibBand`/`spikeMarks`
   (chartjs-plugin-annotation renders nothing under v4). Locked by 3 tests. See improvement-log
   2026-06-10.
-- [ ] **2.3 Methodology completeness** [candidate] — model internals (regime ×, P₀, GP,
-  elevated) belong in the methodology view, NOT the landing rail (rail stays 30d/90d/
-  last-computed). Keep methodology honest and current with the model as it evolves.
+- [x] **2.3 Methodology completeness** — **DONE 2026-06-15** ("2.3 is now fully addressed", see the
+  2026-06-15 PROGRESS below; kept current by later runs as the model evolves). Model internals
+  (regime ×, P₀, GP, elevated) belong in the methodology view, NOT the landing rail (rail stays
+  30d/90d/last-computed). Further methodology PROSE for something already shown is T3 annotation and
+  display-only-cap-bound — not an open item.
   - PROGRESS 2026-06-11: added the **Alert bands** section (`#alerts`) — the methodology
     previously documented the index/likelihood but never told the operator what P(WWIII)
     triggers the elevated/critical/30-day alert states. The three thresholds are TEMPLATED
@@ -440,7 +457,9 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     terms: `+70% > +26%`, so breadth never swamps a single nuclear brink (the engine invariant
     `breadth_never_swamps_the_nuclear_brink`). No model constant value changed; backtest 9/9, calibration
     evidence identical. Locked by `methodology_renders_coupler_magnitudes_from_the_model_constants`. **2.3
-    is now fully addressed.**
+    is now fully addressed.** (Coupler magnitudes as of 2026-06 — the 2026-06-28 de-saturation refit
+    `BREADTH_ASYMPTOTE` to 0.10 (+10%); the methodology figures TEMPLATE from the constants, so the
+    operator page stayed correct automatically.)
   - PROGRESS 2026-06-23: the model EVOLVED — the **persistence floor** (theater.rs, added 2026-06-21)
     holds an active war's heat through a multi-day news gap and is surfaced to the operator as the
     `⏸ held by persistence` caveat (chip 3.11 / hero 3.12 / map 3.23) — yet the methodology never
@@ -467,7 +486,9 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     to instead reject the absolute claim and require the qualified one. No model/calibration constant
     touched; backtest bands green, calibration evidence identical (Brier ~2e-6, in-band 4/4); suite 450
     green, clippy clean. (Does NOT touch the Robert-gated de-saturation recalibration — only stops the
-    page from claiming the opposite of what the model now does.)
+    page from claiming the opposite of what the model now does.) (The `+26%` figure is as of 2026-06;
+    refit to +10% (`BREADTH_ASYMPTOTE = 0.10`) by the 2026-06-28 de-saturation — the invariant and the
+    templating are unaffected.)
 
 ## 3. Awareness — theaters / feeds / map  (show where & why)
 - [x] **3.20 Dedicated China–India (LAC) theater** — **DONE 2026-06-30.** Promoted the 3.19 interim
@@ -705,6 +726,10 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     `rung_for_and_within_band_share_one_contiguous_partition`, which proves the index position
     `(rung.level()+within_band)/6` stays continuous + monotone across every rung seam (a drift between the
     two functions would jump it). No model constant value changed. See improvement-log 2026-06-14.
+    (HISTORICAL — the `(rung.level()+within_band)/6` staircase index, `within_band` itself, and that
+    lock test were RETIRED by the 2026-06-28 de-saturation; the index is now the continuous
+    `index_from_l_sys` (theater.rs:252-273) and the rung is a label only. The named heat-boundary
+    constants remain live in `rung_for`. Do not search for the retired test.)
 - [x] **3.6 Apex I&W lights attribute WHERE to the hottest qualifying theater** — **DONE 2026-06-13.**
   The two APEX I&W board lights (`gp_kinetic`, `nuclear_brink` — the red, highest-stakes
   great-power-war conditions, `IW_APEX` on the dashboard) attributed their WHERE pointer to the
@@ -764,9 +789,11 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   were hard-403 dead (Cloudflare bot-fight) → replaced with defensescoop + lowy_interpreter
   (probed live, same niche/tier); cbc's cmlink endpoint was retired → moved to the
   canonical webfeed URL. 103/103 live. See improvement-log 2026-06-09.
-- [ ] **3.2 GDELT** [candidate] — verify it is live, then wire it as an awareness layer.
-  Do NOT add geo-less sources to the map (e.g. CISA KEV has no geo). Confirm live before
-  committing a connector.
+- [x] **3.2 GDELT** — **DONE at ingestion** (`GDELT_QUERIES` + `gdelt_loop` in `src/ingestor.rs`
+  feed the event stream, liveness-probed by `search_api_liveness` per 3.1; loop health served in
+  `/api/sources` `search_apis` since 2026-07-03). The sub-national "awareness layer" ambition is
+  SUPERSEDED by §8.2 (the Hotzones monitor — out-of-repo). Standing rule kept: do NOT add geo-less
+  sources to the map (e.g. CISA KEV has no geo).
 - [x] **3.3 Per-theater "why"** — **DONE 2026-06-09.** Each `TheaterState` now carries
   `top_driver`: the modality id with the largest WEIGHTED heat contribution (score ×
   domain_weight) — the model's own dominant term, empty for a Stable theater. Computed in
@@ -801,7 +828,9 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `acquire_owned()` backpressure. `concurrency: 2` is a **deliberate GTX-1080 (8GB) VRAM
   calibration** — above 2, qwen2.5:7b's KV cache spills to CPU and *doubles* latency. **Do
   NOT "re-optimize" this or raise the cap.** (See improvement-log 2026-06-09.)
-- [ ] **4.2 Risky `unwrap()/expect()` audit** [candidate] — find `unwrap()/expect()` on
+- [x] **4.2 Risky `unwrap()/expect()` audit** — **CLOSED 2026-06-18, re-verified 2026-06-30**
+  (src/ prod paths clean, see PROGRESS below + improvement-log 2026-06-30 — **do not re-chase the
+  phantom counts**). Original brief: find `unwrap()/expect()` on
   genuinely fallible runtime paths (network, parse, lock-poisoning) that could panic the
   service; convert to graceful handling. Skip the legitimately-infallible ones. Lock each
   fix with a test that exercises the error path.
@@ -849,6 +878,8 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 ## 5. Toward v2  (the approved factored rebuild)
 - [ ] **5.1** Sensible standalone steps toward theaters × orthogonal modalities × couplers,
   each shippable and test-locked on its own. See the v2 plan; don't land half-states.
+  (Largely REALIZED by the v2 engine already in place — scope check with Robert before picking
+  this up; do not invent v2 work to fill the checkbox.)
 
 ## 6. New signal — wire the ee-sources catalog into the read  (highest-value open frontier)
 GCRM ingests news + OSINT, but the vendored `ee-sources` catalog (~35 connectors) does NOT yet feed
