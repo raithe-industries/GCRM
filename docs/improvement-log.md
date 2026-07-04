@@ -22,6 +22,54 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-04 — legibility (VISUAL-ANALYTIC) — the eyes gate can now SEE the I&W "why" board
+- Item: roadmap 2.7 (new) — standing lane 2 VISUAL-ANALYTIC: "strengthen deploy/eyes/smoke.mjs with
+  checks for surfaces that exist but are unverified (the I&W board renders 12 cells…)."
+- Defect (pillar-2 LEGIBILITY): the deploy-time eyes gate — the system's own eyes, the thing that
+  rolls a bad deploy back — checked the timeline, domain chart, gauge and ladder, but was BLIND to
+  the I&W board. That board is the densest awareness surface and, in the code's own words, "the why
+  behind the headline number… far more legible and defensible than one opaque value." It renders
+  purely client-side from a WS snapshot (`renderIndicators(d.indicators)`), so a client refactor that
+  dropped cells, threw inside `renderIndicators`, or left the "awaiting indicator data…" placeholder
+  up would ship a dashboard with a dead why-panel while every existing eyes check stayed green — a
+  correct headline whose reasoning is invisible has failed pillar-2.
+- Change (VISUAL-ANALYTIC gate extension + in-sandbox server-contract lock):
+  (a) `deploy/eyes/smoke.mjs` check #7: read the fixed 12-condition board off the already-fetched
+      `api/latest.indicators`; poll the DOM for the board to populate (WS-race-safe, ≈7.5s budget
+      mirroring the existing api/latest readiness poll; filler cells excluded via `aria-hidden` so
+      the count is future-proof if the board size ever changes); then assert the board rendered
+      EXACTLY the indicators the server sent, each with a legible (non-empty) `.iw-label`, and is not
+      collapsed. No opinion on which lights are lit — a floor, not a cage.
+  (b) `every_indicator_carries_a_legible_nonempty_label_and_unique_id` (src/indicators.rs): locks the
+      SERVER side of that contract in-sandbox across a quiet AND a hot snapshot — every one of the 12
+      indicators has a non-empty, ≤48-char label and a unique id, so a future light with a blank
+      label (an unreadable dot) or a duplicated id (colliding board cells / apex lookup) can never
+      ship. This is the fails-without-it proof the browser leg can't run in the cloud sandbox.
+- Metric moved: new eyes-gate coverage of a previously-unwatched core surface (no engine/calibration
+  constant touched; the four anchors are bit-identical — `cargo test backtest` green, Brier 0.00092 /
+  in-band 4/4 unchanged). Test count 544 → 545 (+1 lock) — the lock is the companion, not the point;
+  the substantive change is the gate gaining sight of the why-board.
+- Proof: `cargo build --release` clean; `cargo test --release` **545 passed / 0 failed / 3 ignored**;
+  `cargo clippy --release` 0 warnings; `node --check deploy/eyes/smoke.mjs` OK. Lock proven
+  fails-without-change TWICE: blanking `gp_kinetic`'s label → panics "has a blank label"; renaming
+  `gp_kinetic`'s id to a duplicate `cross_domain` → panics "duplicate indicator id" (both restored).
+- Tier: T3-verification (a deploy-gate/robustness extension of the system's own eyes over an
+  unwatched surface + an in-sandbox legibility lock; NOT a new operator SEE/COMPUTE, so not T1/T2,
+  and NOT dashboard-annotation churn) · Touched: display-only (no engine/model behavior changed — the
+  gate and the server-contract lock changed; streak-counted conservatively as display-only) ·
+  Lock-fails-without-change: yes (blank-label + duplicate-id panics shown above) · Counts: none of
+  Live-sources/Map-layers/Monitors moved — a legibility-verification run · consecutive_display_only=1
+  · display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) the browser leg of check #7 runs ONLY at local deploy
+  (`raithe-sync-deploy.sh`) — the cloud sandbox has no live service, so roadmap 2.7 is STAGED here and
+  the local deploy+watchdog promote STAGED→DONE (same two-phase rule as a new source). (2) The eyes
+  gate is a FLOOR not a CAGE — check #7 asserts only presence/count-match/legible-label, never which
+  lights are lit or their copy; keep it that way so the dashboard stays free to redesign. (3) display
+  _only_in_last_7 is now 2 — the 2-of-7 cap is HIT; the next run must be T1/T2 or a structured NO-OP,
+  never a 3rd display-only. (4) The 12-count itself was already locked (indicators.rs
+  `empty_snapshot_trips_nothing`, server `methodology_advertises_the_live_iw_board_count`); this run
+  added the LABEL/ID legibility contract those never covered — not a redundant re-assert of the count.
+
 ## 2026-07-04 — honesty/awareness (MATH-ANALYTIC) — the momentum "leading" claim is now MEASURED, not asserted
 - Item: roadmap 1.9 (new) — standing lane 1 MATH-ANALYTIC: "lead-lag evidence that systemic_momentum
   actually LEADS the headline P."

@@ -467,6 +467,49 @@ mod tests {
     }
 
     #[test]
+    fn every_indicator_carries_a_legible_nonempty_label_and_unique_id() {
+        // The I&W board renders one cell per indicator showing its `label`, and the
+        // deploy-time eyes gate now asserts each rendered cell is present and its label is
+        // legible (non-empty). Lock the SERVER side of that legibility contract so a future
+        // light with a blank label (an unreadable dot on the board) or a duplicated id
+        // (which would collide in the apex/`i.apex` lookup and mis-key the cell) can never
+        // ship. The `.iw-label` cell is 8px and ellipsis-clipped, so also cap the length so
+        // a pathologically long label can't blow past the cell. Checked on BOTH a quiet and
+        // a hot snapshot so the tripped/clear label branches are both exercised.
+        let hot = RiskSnapshot {
+            theaters: vec![
+                theater("us_iran", EscalationRung::GreatPowerWar, true,
+                    &[("military_escalation",0.7),("economic_warfare",0.6),("diplomatic_breakdown",0.5)],
+                    &["united_states","iran"]),
+                theater("nato_russia", EscalationRung::GreatPowerWar, true,
+                    &[("military_escalation",0.6),("nuclear_posture",0.80),("diplomatic_breakdown",0.5)],
+                    &["united_states","russia"]),
+            ],
+            couplers: SystemicCouplers {
+                gp_entanglement: 1.0, alliance_activation: 1.0, concurrency: 2.5,
+                guardrail_collapse: 1.0, coupling_multiplier: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for snap in [RiskSnapshot::default(), hot] {
+            let inds = evaluate(&snap);
+            assert_eq!(inds.len(), 12, "the board is a fixed 12 warning conditions");
+            let mut ids = std::collections::HashSet::new();
+            for i in &inds {
+                assert!(!i.label.trim().is_empty(),
+                    "indicator `{}` has a blank label — an unreadable board cell", i.id);
+                assert!(i.label.chars().count() <= 48,
+                    "indicator `{}` label is {} chars — too long for the 8px board cell",
+                    i.id, i.label.chars().count());
+                assert!(!i.id.trim().is_empty(), "an indicator has a blank id");
+                assert!(ids.insert(i.id),
+                    "duplicate indicator id `{}` — two board cells would collide", i.id);
+            }
+        }
+    }
+
+    #[test]
     fn gp_kinetic_clear_surfaces_hottest_near_miss() {
         // No great power at Limited War or above → clear, but the detail must name the
         // hottest great-power theater's rung (same legibility contract as the

@@ -288,6 +288,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   improvement-log 2026-07-04.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.7 The eyes gate can SEE the I&W "why" board** — **STAGED 2026-07-04.** The deploy-time
+  eyes gate (`deploy/eyes/smoke.mjs`) verified the timeline, domain chart, gauge and ladder, but
+  never looked at the I&W board — the densest awareness surface and, per the code itself, "the why
+  behind the headline number." A client refactor that dropped cells, crashed `renderIndicators`, or
+  left the "awaiting indicator data…" placeholder up would ship an EMPTY why-panel with the gate
+  green. Added check #7: read the fixed 12-condition board off `api/latest.indicators`, poll the DOM
+  for the board to populate (WS-race-safe, fillers excluded via `aria-hidden`), then assert it
+  rendered exactly the indicators the server sent, each with a legible (non-empty) label, board not
+  collapsed. Server side of the contract locked IN-SANDBOX by
+  `every_indicator_carries_a_legible_nonempty_label_and_unique_id` (fails on a blank label or a
+  duplicated id — both proven). STAGED→DONE on the local deploy that runs the browser gate. See
+  improvement-log 2026-07-04.
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted
   `Live · <time>` from each snapshot's `computed_at`, set ONLY on snapshot arrival (dashboard.html
   `applyData`). If the model worker stalled or the WebSocket hung silently (TCP alive, no `onclose`,

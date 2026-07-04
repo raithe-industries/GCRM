@@ -152,6 +152,48 @@ if (trendTxt === null) fail.push('#cmd-trend readout element missing (6h Trend n
 else if (trendTxt.trim() === '') fail.push('#cmd-trend readout is empty');
 else ok(`#cmd-trend renders "${trendTxt.trim()}"`);
 
+// 7) INDICATIONS & WARNING board — the "why" panel. The engine ships a fixed 12-condition
+//    board in `data.indicators`; the client renders one cell per indicator (plus neutral
+//    aria-hidden filler cells to square off the 3-column grid). This is the densest
+//    awareness surface and the one core panel the gate never looked at: a client refactor
+//    that dropped cells, crashed renderIndicators, or left the "awaiting indicator data…"
+//    placeholder up would ship an EMPTY "why" board undetected. Assert the board renders
+//    exactly the indicators the server sent (fillers excluded), each with a legible
+//    (non-empty) label, and occupies real space. No opinion on which lights are lit.
+if (latest) {
+  const inds = Array.isArray(latest.indicators) ? latest.indicators : null;
+  if (!inds || inds.length === 0) {
+    fail.push('api/latest carries no indicators array — the I&W "why" board has nothing to render');
+  } else {
+    // The board renders from the WS snapshot, which can land a beat after api/latest is
+    // ready. Poll the DOM briefly for the board to populate to the server's count before
+    // asserting, so a warm-up race can't false-fail (mirrors the api/latest readiness poll).
+    // Fillers carry aria-hidden; exclude them so the count is future-proof if the board size
+    // ever changes to a non-multiple of 3.
+    const realLabels = () => page.$$eval(
+      '#iw-board .iw-cell:not([aria-hidden="true"])',
+      (els) => els.map((e) => (e.querySelector('.iw-label')?.textContent || '').trim()),
+    );
+    let labels = [];
+    for (let i = 0; i < 15; i++) {                 // ≈ 15 × 500ms ≈ 7.5s
+      labels = await realLabels().catch(() => []);
+      // Populated = one real cell per indicator, and not the single "awaiting…" placeholder.
+      if (labels.length === inds.length && !labels.some((t) => /awaiting/i.test(t))) break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    const bd = await box('#iw-board');
+    if (!bd || bd.height < 8) {
+      fail.push(`#iw-board missing or collapsed (${bd ? Math.round(bd.height) + 'px' : 'no box'})`);
+    } else if (labels.length !== inds.length) {
+      fail.push(`I&W board rendered ${labels.length} cells, server sent ${inds.length} indicators — the "why" panel is broken/partial`);
+    } else if (labels.some((t) => t === '')) {
+      fail.push(`I&W board has ${labels.filter((t) => t === '').length} blank warning light(s) — unreadable`);
+    } else {
+      ok(`I&W board rendered all ${labels.length} indicator cells, labels legible`);
+    }
+  }
+}
+
 await browser.close();
 
 if (fail.length) {
