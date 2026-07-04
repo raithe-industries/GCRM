@@ -158,7 +158,7 @@ pub fn parse_geonet_quake(json: &str) -> anyhow::Result<Vec<Event>> {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|s| capitalize_first(s))
+            .map(capitalize_first)
             .unwrap_or_else(|| "New Zealand earthquake".to_string());
 
         out.push(Event {

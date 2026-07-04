@@ -135,7 +135,7 @@ static OPENSKY_PHASE: AtomicUsize = AtomicUsize::new(0);
 /// The pair of OpenSky windows fetched on a given rebuild (counter taken mod 2:
 /// even = Atlantic pair, odd = Asian pair). Pure — coverage is test-locked.
 fn opensky_phase_windows(counter: usize) -> (&'static OpenskyWindow, &'static OpenskyWindow) {
-    if counter % 2 == 0 {
+    if counter.is_multiple_of(2) {
         (&OPENSKY_WINDOWS[0], &OPENSKY_WINDOWS[1])
     } else {
         (&OPENSKY_WINDOWS[2], &OPENSKY_WINDOWS[3])
