@@ -202,7 +202,7 @@ pub async fn broadcast_snapshots(
             // fragile per-tab session buffer — a UI refactor can no longer silently
             // reset the "6h Trend" readout to "—". The browser only renders it.
             {
-                let es = server_state.app_state.epoch_store.lock().await;
+                let mut es = server_state.app_state.epoch_store.lock().await;
                 // Awareness layer: alongside the trend MAGNITUDE, report whether the locus of
                 // risk relocated over the window. `lead_then` (the hottest theater 6h ago) comes
                 // from the durable ring; `lead` (now) is read from the live snapshot via the same

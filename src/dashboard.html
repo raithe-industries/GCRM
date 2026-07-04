@@ -1036,8 +1036,12 @@ function momLead(d){
   if(ll.verdict==='leads'){
     const m=Math.round((ll.lead_secs||0)/60), lab=m>=60?((m/60)%1?(m/60).toFixed(1):(m/60).toFixed(0))+'h':m+'m';
     return {vis:' · leads P ~'+lab,
-      tip:'MEASURED to lead the headline P by ~'+lab+' ('+(ll.hit_pct||0).toFixed(0)+'% directional hit over '+winH+'h, '+(ll.pairs||0)+' decisive samples) — an earned verdict, not an assertion'};
+      tip:'MEASURED to lead the headline P by ~'+lab+' ('+(ll.hit_pct||0).toFixed(0)+'% directional hit over '+winH+'h, '+(ll.pairs||0)+' decisive samples across '+(ll.episodes||0)+' episodes, beating the '+(ll.baseline_hit_pct||0).toFixed(0)+'% contemporaneous baseline) — an earned verdict, not an assertion'};
   }
+  if(ll.verdict==='coincident')
+    return {vis:'',tip:'moves WITH the headline P ('+(ll.hit_pct||0).toFixed(0)+'% directional hit ≈ '+(ll.baseline_hit_pct||0).toFixed(0)+'% contemporaneous baseline) — simultaneous co-movement, not a measured lead'};
+  if(ll.verdict==='insufficient_episodes')
+    return {vis:'',tip:'directional hit clears the bar but the evidence spans only '+(ll.episodes||0)+' momentum episode(s) — one episode cannot distinguish lead from coincidence; verdict withheld'};
   if(ll.verdict==='no_lead')
     return {vis:'',tip:'direction shown, but NOT measured to lead the headline P over the last '+winH+'h (best '+(ll.hit_pct||0).toFixed(0)+'% directional hit) — an honest null, not a claim'};
   return {vis:'',tip:'lead over the headline P not yet measurable (too few decisive-momentum episodes in the durable ring)'};
@@ -1259,13 +1263,13 @@ function applyData(d){
       const heldTag=held?'<span class="tl-held" style="color:#EF9F27" title="'+heldTip+'">⏸ held'+(demoted?' · fresh: '+freshR:'')+'</span>':'';
       // Escalation momentum: the recency-weighted DIRECTION of the news flow (server field
       // escalation_momentum ∈ [−1,+1]; − = ceasefires/talks dominate recent coverage, + =
-      // escalatory moves dominate). A LEADING signal distinct from the heat trend (▲/▼, which
+      // escalatory moves dominate). The DIRECTION of coverage, distinct from the heat trend (▲/▼, which
       // tracks the heat SCORE): coverage can turn conciliatory while heat is still high or held,
       // or escalatory before heat rises. Shown only when the flow is decisively one-sided
       // (|m| ≥ 0.25) so a noisy/neutral theater names nothing.
       const mom=(typeof t.escalation_momentum==='number')?t.escalation_momentum:0;
-      const momTag=(mom<=-0.25)?'<span class="tl-mom" style="color:#1D9E75" title="news flow de-escalating — ceasefires/talks dominate recent coverage (momentum '+mom.toFixed(2)+'); a leading signal, distinct from the heat trend">⇩ talks</span>'
-        :(mom>=0.25)?'<span class="tl-mom" style="color:#E24B4A" title="news flow escalating — escalatory moves dominate recent coverage (momentum +'+mom.toFixed(2)+'); a leading signal, distinct from the heat trend">⇧ escalatory</span>':'';
+      const momTag=(mom<=-0.25)?'<span class="tl-mom" style="color:#1D9E75" title="news flow de-escalating — ceasefires/talks dominate recent coverage (momentum '+mom.toFixed(2)+'); the direction of coverage, distinct from the heat trend (whether momentum LEADS P is measured only at the systemic gauge)">⇩ talks</span>'
+        :(mom>=0.25)?'<span class="tl-mom" style="color:#E24B4A" title="news flow escalating — escalatory moves dominate recent coverage (momentum +'+mom.toFixed(2)+'); the direction of coverage, distinct from the heat trend (whether momentum LEADS P is measured only at the systemic gauge)">⇧ escalatory</span>':'';
       const momTip=(mom<=-0.25)?' · news flow de-escalating (momentum '+mom.toFixed(2)+')':(mom>=0.25)?' · news flow escalating (momentum +'+mom.toFixed(2)+')':'';
       return '<div class="tl-chip" title="'+t.label+' — '+t.rung_label+' · heat '+heatPct+'% · '+ec+' signals'+(drv?' · driven by '+drv:'')+(rise?' · rising on '+rise:'')+momTip+(held?' · held by persistence floor (no fresh escalation'+(demoted?', fresh evidence: '+freshR:'')+')':'')+(t.gp_involved?' · great power engaged':'')+'">'
         +'<div class="tl-top"><span class="tl-name">'+t.label+'</span><span class="tl-rung" style="color:'+col+'">'+t.rung_label+tr+'</span></div>'

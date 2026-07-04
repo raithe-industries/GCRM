@@ -468,10 +468,15 @@ pub const WS_TIMELINE_BOOTSTRAP: usize = 50_000;
 #[derive(Debug, Default)]
 pub struct EpochStore {
     ring: VecDeque<serde_json::Value>,
+    /// Stride-cached momentum lead-lag payload: the diagnostic scans the whole 48h
+    /// window, its answer can only change once per stride, and it used to run per 1 Hz
+    /// broadcast while holding the shared epoch_store lock. (Cache, not eviction: the
+    /// ring itself is untouched.)
+    mom_ll_cache: Option<(DateTime<Utc>, serde_json::Value)>,
 }
 
 impl EpochStore {
-    pub fn new() -> Self { Self { ring: VecDeque::new() } }
+    pub fn new() -> Self { Self { ring: VecDeque::new(), mom_ll_cache: None } }
 
     /// Append one timeline entry. Evicts oldest when ring is full.
     pub fn push(&mut self, entry: serde_json::Value) {
@@ -632,31 +637,42 @@ impl EpochStore {
         })
     }
 
-    /// Lead-lag diagnostic — does the systemic momentum gauge actually PRECEDE the realized
-    /// headline P, as its "leading" label claims? Measured server-side over the durable ring so
-    /// the operator sees an EARNED statement, not an unbacked assertion. Default window/lags.
-    pub fn momentum_lead_lag(&self) -> serde_json::Value {
-        self.momentum_lead_lag_window(
-            Utc::now(),
-            MOM_LL_WINDOW_SECS,
-            MOM_LL_STRIDE_SECS,
-            MOM_LL_LAGS,
-        )
+    /// Stride-cached public entry: the window scan reads the whole 48h series, its
+    /// answer can only change once per [`MOM_LL_STRIDE_SECS`], and it runs on the 1 Hz
+    /// broadcast path under the shared epoch_store lock — so recompute at most once
+    /// per stride and serve the cached payload in between.
+    pub fn momentum_lead_lag(&mut self) -> serde_json::Value {
+        let now = Utc::now();
+        if let Some((at, v)) = &self.mom_ll_cache {
+            if (now - *at).num_seconds() < MOM_LL_STRIDE_SECS {
+                return v.clone();
+            }
+        }
+        let v = self.momentum_lead_lag_window(now, MOM_LL_WINDOW_SECS, MOM_LL_STRIDE_SECS, MOM_LL_LAGS);
+        self.mom_ll_cache = Some((now, v.clone()));
+        v
     }
 
     /// Testable core of [`momentum_lead_lag`]. Builds a stride-decimated ascending series of
-    /// `(secs, p_annual, mom)` over the window, then for each candidate lag `L` measures whether
-    /// the SIGN of the momentum at time `t` predicts the SIGN of the forward move
-    /// `p(t+L) − p(t)`. A pair counts only when the momentum is decisive (`|m| ≥ MOM_DEADBAND`)
-    /// AND the forward move is real (`|Δp| ≥ DP_DEADBAND`) — near-zero momentum has no direction
-    /// to test and a flat P has no move to predict. Reports the full lead-lag profile plus a
-    /// conservative verdict. `leads` only when the best lag clears `LEAD_HIT_THRESHOLD` on
-    /// `>= MOM_LL_MIN_PAIRS` decisive samples (momentum's direction reliably preceded the P move);
-    /// `no_lead` when there were enough decisive samples but no lag beat the threshold (the
-    /// direction did NOT reliably lead in this window — an honest null result); `insufficient`
-    /// when the history holds too few decisive-momentum episodes to test.
-    /// Decimation to one sample per `stride_secs` keeps 1 Hz autocorrelated ticks from inflating
-    /// the sample count. Touches no fitted constant and never feeds P — pure diagnostic.
+    /// `(secs, p_annual, mom, episode)` over the window, then for each candidate lag `L`
+    /// measures whether the SIGN of the momentum at time `t` predicts the SIGN of the forward
+    /// move `p(t+L) − p(t)`. A pair counts only when the momentum is decisive
+    /// (`|m| ≥ MOM_DEADBAND`) AND the forward move is real (`|Δp| ≥ DP_DEADBAND`).
+    ///
+    /// The `leads` verdict must be EARNED past three controls, because momentum and P are
+    /// computed from the same event board each tick and co-move by construction during a
+    /// sustained episode (which would score ~100% at EVERY lag — no evidence of precedence):
+    ///  1. hit rate ≥ [`LEAD_HIT_THRESHOLD`] on ≥ [`MOM_LL_MIN_PAIRS`] decisive samples;
+    ///  2. it must beat the CONTEMPORANEOUS baseline (the same measure at one stride) by
+    ///     ≥ [`LEAD_BASELINE_MARGIN`] whenever that baseline is itself judgeable — otherwise
+    ///     the verdict is `coincident` (moves WITH P; no measurable lead);
+    ///  3. the winning pairs must span ≥ [`MOM_LL_MIN_EPISODES`] distinct decisive-momentum
+    ///     episodes (sign-change/deadband-separated runs) — otherwise `insufficient_episodes`
+    ///     (one episode cannot distinguish lead from coincidence).
+    /// `no_lead` stays the honest null when enough samples exist but no lag clears the
+    /// threshold; `insufficient` when there is too little decisive history to test at all.
+    /// Decimation to one sample per `stride_secs` keeps 1 Hz autocorrelated ticks from
+    /// inflating the sample count. Touches no fitted constant and never feeds P.
     pub fn momentum_lead_lag_window(
         &self,
         now: DateTime<Utc>,
@@ -665,10 +681,11 @@ impl EpochStore {
         lags_secs: &[i64],
     ) -> serde_json::Value {
         let cutoff = now - chrono::Duration::seconds(window_secs);
-        // Stride-decimated ascending series: (secs_since_cutoff, p_annual, mom).
-        let mut series: Vec<(i64, f64, f64)> = Vec::new();
-        let mut last_kept: Option<i64> = None;
-        for e in self.ring.iter() {
+        // Collect in-window entries newest→oldest, breaking at the cutoff so pre-window
+        // history is never parsed (the ring can hold days beyond the window — same
+        // discipline as trend_window / uncertainty_window).
+        let mut rev: Vec<(i64, f64, f64)> = Vec::new();
+        for e in self.ring.iter().rev() {
             let t = match e
                 .get("t")
                 .and_then(|v| v.as_str())
@@ -677,35 +694,50 @@ impl EpochStore {
                 Some(dt) => dt.with_timezone(&Utc),
                 None => continue,
             };
-            if t < cutoff || t > now {
+            if t > now {
                 continue;
+            }
+            if t < cutoff {
+                break;
             }
             let p = match e.get("p_annual").and_then(|v| v.as_f64()) {
                 Some(p) => p,
                 None => continue,
             };
             let m = e.get("mom").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let secs = (t - cutoff).num_seconds();
+            rev.push(((t - cutoff).num_seconds(), p, m));
+        }
+
+        // Ascending stride decimation + episode segmentation: an episode is a maximal run
+        // of consecutive kept samples whose decisive momentum keeps one sign; a sign flip
+        // or a sub-deadband gap starts a new one. Episode id 0 = not decisive.
+        let mut series: Vec<(i64, f64, f64, u32)> = Vec::with_capacity(rev.len() / 4 + 1);
+        let mut last_kept: Option<i64> = None;
+        let (mut ep, mut last_sign): (u32, i8) = (0, 0);
+        for &(secs, p, m) in rev.iter().rev() {
             if let Some(lk) = last_kept {
                 if secs - lk < stride_secs {
                     continue;
                 }
             }
             last_kept = Some(secs);
-            series.push((secs, p, m));
+            let sign: i8 = if m >= MOM_DEADBAND { 1 } else if m <= -MOM_DEADBAND { -1 } else { 0 };
+            if sign != 0 && sign != last_sign {
+                ep += 1;
+            }
+            last_sign = sign;
+            series.push((secs, p, m, if sign == 0 { 0 } else { ep }));
         }
 
-        // For each lag, pair sample i with the sample nearest t_i+L (within ±stride tolerance)
-        // via a forward two-pointer over the ascending series.
+        // Directional-hit measure at one lag: pair sample i with the sample nearest t_i+L
+        // (within ±stride tolerance) via a forward two-pointer over the ascending series.
         let tol = stride_secs;
-        let mut profile: Vec<serde_json::Value> = Vec::with_capacity(lags_secs.len());
-        let mut best: Option<(i64, f64, usize)> = None; // (lag, hit, pairs)
-        for &lag in lags_secs {
+        let measure = |lag: i64| -> (usize, usize, std::collections::HashSet<u32>) {
             let mut j = 0usize;
-            let mut considered = 0usize;
-            let mut agree = 0usize;
+            let (mut considered, mut agree) = (0usize, 0usize);
+            let mut episodes: std::collections::HashSet<u32> = std::collections::HashSet::new();
             for i in 0..series.len() {
-                let (ti, pi, mi) = series[i];
+                let (ti, pi, mi, epi) = series[i];
                 if mi.abs() < MOM_DEADBAND {
                     continue; // momentum has no decisive direction to test
                 }
@@ -713,7 +745,6 @@ impl EpochStore {
                 while j + 1 < series.len() && series[j].0 < target {
                     j += 1;
                 }
-                // pick the closer of series[j] and series[j-1] to `target`
                 let cand = if j > 0 && (target - series[j - 1].0).abs() < (series[j].0 - target).abs() {
                     j - 1
                 } else {
@@ -727,10 +758,24 @@ impl EpochStore {
                     continue; // P did not actually move → nothing to predict
                 }
                 considered += 1;
+                episodes.insert(epi);
                 if (mi > 0.0) == (dp > 0.0) {
                     agree += 1;
                 }
             }
+            (considered, agree, episodes)
+        };
+
+        // Contemporaneous control: the same measure at one stride. If momentum "predicts"
+        // the very next tick just as well as any real lag, the co-movement is simultaneous
+        // and no lead has been demonstrated.
+        let (b_pairs, b_agree, _) = measure(stride_secs);
+        let b_hit = if b_pairs > 0 { b_agree as f64 / b_pairs as f64 } else { 0.0 };
+
+        let mut profile: Vec<serde_json::Value> = Vec::with_capacity(lags_secs.len());
+        let mut best: Option<(i64, f64, usize, usize)> = None; // (lag, hit, pairs, episodes)
+        for &lag in lags_secs {
+            let (considered, agree, episodes) = measure(lag);
             let hit = if considered > 0 { agree as f64 / considered as f64 } else { 0.0 };
             profile.push(serde_json::json!({
                 "lag_secs": lag,
@@ -740,30 +785,41 @@ impl EpochStore {
             if considered >= MOM_LL_MIN_PAIRS {
                 let better = match best {
                     // higher hit wins; tie → shorter lag (earliest detectable lead)
-                    Some((bl, bh, _)) => hit > bh + 1e-9 || (( hit - bh).abs() <= 1e-9 && lag < bl),
+                    Some((bl, bh, _, _)) => hit > bh + 1e-9 || ((hit - bh).abs() <= 1e-9 && lag < bl),
                     None => true,
                 };
                 if better {
-                    best = Some((lag, hit, considered));
+                    best = Some((lag, hit, considered, episodes.len()));
                 }
             }
         }
 
         match best {
-            Some((lag, hit, pairs)) => {
-                let verdict = if hit >= LEAD_HIT_THRESHOLD { "leads" } else { "no_lead" };
+            Some((lag, hit, pairs, eps)) => {
+                let verdict = if hit < LEAD_HIT_THRESHOLD {
+                    "no_lead"
+                } else if b_pairs >= MOM_LL_MIN_PAIRS && hit - b_hit < LEAD_BASELINE_MARGIN {
+                    "coincident"
+                } else if eps < MOM_LL_MIN_EPISODES {
+                    "insufficient_episodes"
+                } else {
+                    "leads"
+                };
                 serde_json::json!({
-                    "available":   true,
-                    "verdict":     verdict,
-                    "lead_secs":   lag,
-                    "hit_pct":     (hit * 100.0 * 1e1).round() / 1e1,
-                    "pairs":       pairs,
-                    "window_secs": window_secs,
-                    "profile":     profile,
+                    "available":         true,
+                    "verdict":           verdict,
+                    "lead_secs":         lag,
+                    "hit_pct":           (hit * 100.0 * 1e1).round() / 1e1,
+                    "baseline_hit_pct":  (b_hit * 100.0 * 1e1).round() / 1e1,
+                    "pairs":             pairs,
+                    "episodes":          eps,
+                    "window_secs":       window_secs,
+                    "profile":           profile,
                     "basis": "sign of systemic momentum at t vs sign of the realized P move over \
-                              the next L, across decisive-momentum episodes in the durable ring; \
-                              'leads' only when a lag clears the directional-hit threshold on \
-                              enough samples — never asserted",
+                              the next L (decisive = |momentum| ≥ 0.05; real move = |ΔP| ≥ 0.2pp); \
+                              'leads' only when a lag clears the hit threshold on enough samples \
+                              spanning ≥3 distinct momentum episodes AND beats the contemporaneous \
+                              one-stride baseline — measured, never asserted",
                 })
             }
             None => serde_json::json!({
@@ -790,6 +846,8 @@ const MOM_DEADBAND: f64 = 0.05;      // |momentum| below this has no decisive di
 const DP_DEADBAND: f64 = 0.002;      // |Δp| below this (0.2pp) is not a real move
 const MOM_LL_MIN_PAIRS: usize = 12;  // decisive samples required to judge a lag
 const LEAD_HIT_THRESHOLD: f64 = 0.60; // directional-hit rate to earn the "leads" verdict
+const LEAD_BASELINE_MARGIN: f64 = 0.10; // best lag must beat the contemporaneous baseline by this
+const MOM_LL_MIN_EPISODES: usize = 3;   // distinct decisive episodes required to claim a lead
 
 /// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
 /// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
@@ -2496,6 +2554,63 @@ mod tests {
         }
         let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
         assert_eq!(v["available"], false); // no `mom` ⇒ no decisive samples
+    }
+
+    #[test]
+    fn momentum_lead_lag_contemporaneous_comovement_is_coincident_not_a_lead() {
+        // Momentum and P rising TOGETHER for the whole window (they are computed from the
+        // same event board, so a sustained episode co-moves by construction): every lag
+        // scores ~100%, including the one-stride contemporaneous baseline — which is
+        // exactly why this must NOT read as "leads". The old verdict minted a false
+        // "MEASURED to lead ~15m" from this shape.
+        let now = Utc::now();
+        let n = 300usize;
+        let base = now - chrono::Duration::seconds(300 * n as i64);
+        let mut es = EpochStore::new();
+        for k in 0..n {
+            let t = base + chrono::Duration::seconds(300 * k as i64);
+            es.push(serde_json::json!({
+                "t": t.to_rfc3339(),
+                "p_annual": 0.30 + 0.003 * k as f64,
+                "mom": 0.3,
+            }));
+        }
+        let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], true);
+        assert_eq!(
+            v["verdict"], "coincident",
+            "simultaneous co-movement must not be dressed up as a lead: {v:?}"
+        );
+        assert!(v["baseline_hit_pct"].as_f64().unwrap() >= 90.0, "baseline saw the same co-movement: {v:?}");
+    }
+
+    #[test]
+    fn momentum_lead_lag_two_episode_evidence_withholds_the_lead_verdict() {
+        // A perfect forward relationship, but ALL the evidence lives in just two decisive
+        // episodes (a 10-tick +run and a 10-tick −run; P ramps 6 ticks behind each).
+        // Sample-count alone clears MIN_PAIRS with a 100% hit and a quiet baseline —
+        // yet two episodes cannot establish that momentum generally precedes P.
+        let now = Utc::now();
+        let n = 300usize;
+        let base = now - chrono::Duration::seconds(300 * n as i64);
+        let ramp = |k: usize, from: usize| -> f64 {
+            (k.saturating_sub(from)).min(10) as f64
+        };
+        let mut es = EpochStore::new();
+        for k in 0..n {
+            let t = base + chrono::Duration::seconds(300 * k as i64);
+            let mom = if k < 10 { 0.3 } else if (50..60).contains(&k) { -0.3 } else { 0.0 };
+            let p = 0.30 + 0.003 * ramp(k, 6) - 0.003 * ramp(k, 56);
+            es.push(serde_json::json!({ "t": t.to_rfc3339(), "p_annual": p, "mom": mom }));
+        }
+        let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], true);
+        assert_eq!(
+            v["verdict"], "insufficient_episodes",
+            "two episodes must withhold the lead verdict: {v:?}"
+        );
+        assert_eq!(v["episodes"], 2, "episode segmentation counts the two runs: {v:?}");
+        assert!(v["pairs"].as_u64().unwrap() >= MOM_LL_MIN_PAIRS as u64);
     }
 
     // ── load_epoch ────────────────────────────────────────────────────────────
