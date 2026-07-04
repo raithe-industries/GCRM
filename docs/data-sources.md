@@ -76,6 +76,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `bmkg_quake` | Earthquake | BMKG / InaTEWS (Indonesia) | **felt earthquakes** — BMKG's open `gempadirasakan.json` (the ~15 most recent quakes actually reported felt). NOT another USGS/EMSC *detection* catalogue: this is a **human-impact** product — only felt quakes, each graded by the **Modified-Mercalli felt intensity** (`Dirasakan`, e.g. "IV Denpasar, III Mataram") plus Indonesia's national **tsunami-potential** flag (`Potensi`). One dot per quake at its inline `Coordinates` ("lat,lon" — no geometry join). Severity = MMI ladder (II 0.25 → VI 0.7 → IX+ 1.0), with a raw-magnitude fallback when `Dirasakan` is blank, floored by any tsunami potential (Waspada 0.9 / Siaga 0.95 / Awas 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; the tsunami flag is the official InaTEWS assessment). Chip = "Felt MMI IV · M4.8" / "Felt MMI VI · M6.2 · Tsunami Siaga". Auth-free JSON (attribution "BMKG"); empty quiet-window list = 0 events, not an error; `gempa` tolerated as array (felt list) or single object (latest). **Path A** (prod fetches the live `gempadirasakan.json`; the host 403s web fetch in-sandbox so the schema is anchored to the official `infoBMKG/data-gempabumi` spec + 5+ independent public copies). Fills the **felt-intensity / tsunami modality** and **Indonesia / SE-Asia** seismic geography the raw global quake catalogues (USGS/EMSC/eqcanada) don't carry. |
 | `jma_quake` | Earthquake | JMA (Japan Meteorological Agency) | **seismic-intensity earthquakes** — JMA's open `bosai/quake/data/list.json` (the rolling list of recent quake bulletins), filtered to events with an observed **JMA Shindo intensity** (`maxi`) on Japan's national 0–7 scale (`1,2,3,4,5-,5+,6-,6+,7`). NOT another USGS/EMSC *detection* catalogue: filtered to a Shindo it's a **human-impact** product — only quakes that produced measurable shaking — over **Japan / the NW-Pacific** (a key non-North-America theatre). One dot per quake at its inline `cod` (an ISO-6709 string `+lat+lon-depth/` — no geometry join). **Deduped by `eid`** (JMA issues several bulletins per quake: intensity flash → hypocentre+intensity → updates), keeping the loudest Shindo. Bulletins with no hypocentre (`cod` empty — the `震度速報` flash) or no observed Shindo (a hypocentre-only notice for an unfelt quake) are dropped — exactly what USGS/EMSC already carry. Severity = Shindo ladder (1 → 0.15, 5+ → 0.75, 7 → 1.0). **Signal-meaningful** (Shindo is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; a distinct national scale from Indonesia's MMI). Chip = "Shindo 5+ · M6.1". Auth-free JSON (attribution "気象庁/JMA"); empty array (quiet window) = 0 events, not an error. **Path A** (prod fetches the live `list.json`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the `nehemiaharchives/jma-quake-api` `JmaQuakeData.kt` data class: `cod/mag/maxi/anm/en_anm/ttl/en_ttl/eid/at` fields confirmed). Complements `bmkg_quake` (Indonesia MMI) — same `bosai` host already proven live by `jma_typhoon`. |
 | `geonet_quake` | Earthquake | GeoNet / GNS Science (New Zealand) | **felt earthquakes** — GeoNet's open `quake?MMI=3` GeoJSON, filtered server-side to quakes whose **computed Modified-Mercalli intensity** (`mmi`, the calculated shaking at the closest locality) reaches the felt threshold. NOT another USGS/EMSC *detection* catalogue: filtered to a felt MMI it's a **human-impact** product — only quakes that actually shook people — over **New Zealand / the SW-Pacific** (a seismically very active plate boundary the global catalogues carry only sparsely at small magnitudes). One dot per quake at its inline `Point` `[lon,lat]` (no geometry join). Retracted quakes (`quality == "deleted"`) and any feature below the MMI-3 floor / without geometry are dropped, so a quiet window (empty `features`) = 0 events, not an error. Records may omit `time` (real GeoNet behaviour) → "now" fallback so a live-but-timeless quake still plots. Severity = MMI ladder aligned with `bmkg_quake` (3 → 0.3, 6 → 0.7, 8 → 0.95, 9+ → 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named human effect — baseline-relative, not a raw number; same scale as Indonesia's `bmkg_quake`, distinct national body + geography). Chip = "Felt MMI 5 · M5.9". Auth-free GeoJSON (CC BY 3.0 NZ, credit "GeoNet / GNS Science"; `Accept: application/vnd.geo+json;version=2`). **Path A** (prod fetches the live `quake?MMI=3`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the real `exxamalte/python-aio-geojson-geonetnz-quakes` `tests/fixtures/quakes-1.json` capture: `publicID/time/depth/magnitude/mmi/locality/quality` fields + a record that omits `time`, corroborated by GeoNet's official API docs). Same `api.geonet.org.nz` host already proven live in prod by `geonet_volcano`. Completes the felt-intensity seismic trio: `bmkg_quake` (Indonesia MMI) + `jma_quake` (Japan Shindo) + `geonet_quake` (NZ MMI). |
+| `odlinfo` | Other (Radiation) | BfS (Germany) | **ambient gamma dose rate** — the Bundesamt für Strahlenschutz ODL-Info **OGC WFS opendata** layer `odlinfo_odl_1h_latest` (`imis.bfs.de/ogc/opendata/ows`, `outputFormat=application/json`): a GeoJSON `FeatureCollection`, one `Point` per one of ~1,700 fixed stations across Germany carrying its latest 1-hour mean dose rate in `value` (µSv/h, `Gamma-ODL-Brutto` = cosmic + terrestrial), an ISO `end_measure`, `id`/`kenn`/`name`/`plz`, and `site_status` (1 in operation / 2 defective / 3 test). Opens a **radiation / nuclear-monitoring modality no other feed carries** — a first-order WWIII-risk observable (reactor release / detonation / dispersal) over a NATO frontline state. **Signal-meaningful where a raw gauge isn't** (resolves the ECCC-hydrometric trap at its root): a dose rate in µSv/h has a **universal natural-background baseline** (~0.05–0.20 µSv/h everywhere), so an elevation is interpretable *without* a per-station table. The connector plots **only stations elevated above background** (`value` ≥ 0.3 µSv/h, clearing normal + local geology); all background stations drop, so an all-normal network — the healthy peacetime state — is 0 events, not an error, and the layer lights up precisely when radiation rises (the `usgs_volcano` / `nwps_flood` drop-the-all-clear pattern). Non-operational stations (defective/test) drop so a stuck/garbage reading can't false-alarm. Severity ladder: above-normal 0.4 (≥0.3) → elevated 0.5 (≥0.5) → high 0.7 (≥1.0) → very high 0.9 (≥10) → extreme 1.0 (≥100). Chip = "0.45 µSv/h · Above normal" / "3.10 µSv/h · High". `EventKind::Other` (the catch-all for a new modality before it earns a first-class variant → renders in the "Other Signals" layer; promoting it to a first-class Radiation layer is the self-improvement routine's lane). **Path A** (prod fetches the live WFS; the host 403s web fetch in-sandbox so endpoint + schema are anchored to committed GitHub bytes — the authoritative `bundesAPI/strahlenschutz-api` `openapi.yaml`: server `imis.bfs.de/ogc/opendata/ows`, **no security scheme (auth-free)**, FeatureCollection of ExtendedFeature with `value`/`unit "µSv/h"`/`id`/`kenn`/`name`/`end_measure`/`site_status`/`nuclide "Gamma-ODL-Brutto"`/`duration "1h"` + Point `[lon,lat]`, example value 0.124). Auth-free open data, Datenlizenz Deutschland – Namensnennung 2.0 (credit "© Bundesamt für Strahlenschutz (BfS)"). |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -228,6 +229,20 @@ Bias each run toward the least-covered axis below.
   (Center Weather Advisories, the sub-SIGMET US product) and **G-AIRMETs** are also AWC GeoJSON
   products if a lower-severity aviation layer is wanted; the live SIGMET host 403s in-sandbox so a
   Path-B snapshot refresh re-downloads the `format=geojson` endpoint (prod fetches it live).
+- **Radiation / nuclear monitoring** — SEEDED 2026-07-04 with `odlinfo` (**BfS Germany ambient
+  gamma dose rate**, WFS opendata, Path A) — a genuinely new war-risk modality (reactor release /
+  detonation / dispersal detection) over a NATO frontline state; plots only stations elevated above
+  the universal µSv/h natural-background baseline, so it's dark in peacetime and lights up on a real
+  rise. Gaps now: (a) **radiation OUTSIDE Germany** — **Finland STUK** (~255 stations; auth-free
+  values but the surfaced JSON API is fronted by a third party `Apitalks`, not a STUK-direct
+  endpoint — verify a direct auth-free STUK/`ilmatieteenlaitos` feed before adopting), **Ireland EPA**
+  (~23 stations), or another national dose-rate network with a direct auth-free geocoded µSv/h product;
+  the EU JRC **EURDEP** aggregate is access-restricted (not auth-free). (b) **promote to a first-class
+  `Radiation` EventKind + map layer** — currently rides `EventKind::Other` ("Other Signals", default-off);
+  that promotion (ee_core enum + ee_view layer + colour/label) is the **self-improvement routine's lane**,
+  not this one. Note: **US EPA RadNet is REJECTED for the map** — it publishes gamma **gross count rate**
+  (detector-specific, no universal baseline) not µSv/h, so its raw value is a "nonsense number" (same
+  failure mode as ECCC hydrometric); revisit only if a baseline-relative RadNet product surfaces.
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -237,6 +252,54 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-04 (Signal Hunter)** — **adopted `odlinfo` (BfS Germany ambient gamma dose rate), Path A** —
+  a new authoritative geocoded layer opening a **radiation / nuclear-monitoring modality no feed carried**,
+  a first-order WWIII-risk observable (reactor release / detonation / dispersal) over a NATO frontline state.
+  **Candidate ranking this run (biased to the top mission gaps), all genuinely evaluated before landing:**
+  (1) **maritime-security (Asian/Hormuz — the #1 REOPENED gap after `asam` died):** ONI WTS (PDF only, no
+  machine-readable geometry), IMB Piracy Reporting Centre (licensing/scrape-ban), **ReCAAP ISC** (PDF +
+  Re-VAMP dashboard, no JSON API), **UKMTO** (PDF advisory notes; the site 403s web fetch, no data feed),
+  **BarentsWatch/Kystverket AIS** (Arctic/Barents — but OpenID-Connect-gated → would ship dormant) — all
+  blocked. (2) **military-posture / global NOTAM:** NGA `broadcast-warn` (geometry-in-free-text, ruled out
+  the prior run), **FAA NOTAM API** (GeoJSON/AIXM but credentials are email-request to NOTAMS@faa.gov → keyed
+  + manual, dormant at best), NASA DIP NOTAM (account-gated) — blocked. (3) **conflict freshness / the
+  `acled_aggregated` refresh:** the snapshot has aged out (latest WEEK 2026-03-07, ~17 weeks, plots 0) but a
+  faithful refresh needs the real ~100-row regional aggregate as **verbatim bytes** — the ACLED aggregated
+  download is registration-gated and web fetch *summarizes* (won't return exact CSV); fabricating values would
+  break the honesty bar, so it stays an open lane for a run with real byte access (NOT taken here). (4)
+  **radiation:** **US EPA RadNet REJECTED** (gamma gross **count rate**, detector-specific, no universal
+  baseline → "nonsense number"). **Pivoted to `odlinfo`, which clears all six bars cleanly.** **Network
+  re-probed fresh:** the egress block on non-GitHub hosts is unchanged — the live WFS
+  `imis.bfs.de/ogc/opendata/ows`, `odlinfo.bfs.de/json`, `api.bund.dev`, and the NTRS/FAA doc pages ALL
+  **403 via web fetch**; only `raw.githubusercontent.com` serves. **Anchoring (the GitHub-bytes technique):**
+  endpoint + wire schema + **auth model** were confirmed from committed bytes — the authoritative
+  `bundesAPI/strahlenschutz-api` `openapi.yaml` (fetched off GitHub-raw): server
+  `https://www.imis.bfs.de/ogc/opendata/ows`, **no `security` scheme declared (auth-free open data)**, a
+  GeoJSON `FeatureCollection` (`totalFeatures` ~1722) of ExtendedFeature — Point `[lon,lat]` + properties
+  `value`/`unit "µSv/h"`/`id "DEZ…"`/`kenn`/`name`/`plz`/`start_measure`/`end_measure`/`validated`/
+  `nuclide "Gamma-ODL-Brutto"`/`duration "1h"`/`site_status 1|2|3`/`site_status_text`, example `value 0.124`
+  — corroborated by the `bundesAPI/deutschland` strahlenschutz model docs (`Station.mw` = "Aktueller Messwert
+  in µSv/h"). Clears all six bars: **authoritative** (BfS = Germany's Federal Office for Radiation Protection);
+  **auth-free** (WFS opendata, no security scheme); **machine-readable** GeoJSON; **geocoded** (inline Point per
+  station — no join, the trap that defers MeteoAlarm/EAWS); **fresh** (`_1h_latest`, hourly, ~1,700 24/7
+  stations; all-normal network = 0 events, not an error); **non-duplicative** (a radiation modality nothing else
+  carries). **Signal-meaningful (the key call):** unlike a river gauge, a dose rate in µSv/h has a **universal**
+  natural-background baseline (~0.05–0.20 everywhere), so the connector plots ONLY stations elevated above it
+  (`value` ≥ 0.3 µSv/h, clearing normal + local geology) and drops non-operational stations; severity ladder
+  above-normal 0.4 → elevated 0.5 → high 0.7 → very high 0.9 → extreme 1.0; chip "0.45 µSv/h · Above normal" /
+  "3.10 µSv/h · High". New `vendor/ee-sources/src/odlinfo.rs` (single WFS-GeoJSON fetch via the shared client;
+  pure `parse_odlinfo` + `dose_chip` + `severity_for_dose` + `dose_band`; drops below-floor/non-operational/
+  no-geometry/no-value/no-id records; 6 offline tests: real-shape fixture keeps 3 elevated operational stations
+  and drops a normal-background + a defective + a no-geometry record, all-normal-network-is-OK,
+  error-on-bad-input incl. non-JSON 403 body, drops-no-geometry/value/id, severity+band ladder, chip). Registered
+  in `lib.rs`; wired `src/osint.rs` (`fetch_one("odlinfo", …, 12)` + count/cap row cap 400 + `feed_detail` arm +
+  osint chip test); SRC_LABEL `BfS · ODL Gamma Dose (Germany)` in `dashboard.html`. `EventKind::Other` ("Other
+  Signals" layer, default-off) — a first-class `Radiation` EventKind + layer is the self-improvement routine's
+  lane. **`cargo build --release` green; full workspace `cargo test` green (gcrm 544 / 0 failed / 3 ignored;
+  ee-sources 144 incl. odlinfo 6/6; ee-correlate 79; ee-view 60; ee-core 9).** Next: radiation OUTSIDE Germany
+  (Finland STUK if a STUK-direct auth-free feed exists; Ireland EPA; EURDEP is access-restricted); the
+  maritime-security / global-NOTAM / ACLED-refresh lanes remain open per the gap notes above.
 
 - **2026-07-04 (local watch, same day)** — **`asam` LIVE → DORMANT: upstream verified dead
   from the full-network side.** First live map rebuild after deploy reported `asam: HTTP 404`

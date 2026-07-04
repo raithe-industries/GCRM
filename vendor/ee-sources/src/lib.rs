@@ -45,6 +45,7 @@ pub mod jma_quake;
 pub mod jma_typhoon;
 pub mod magma_volcano;
 pub mod nws;
+pub mod odlinfo;
 pub mod ontario511;
 pub mod opensky;
 pub mod quebec511;
@@ -97,6 +98,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(avalanche_ca::AvalancheCa),       // Avalanche danger ratings (Avalanche Canada, seasonal)
         Box::new(awc_sigmet::AwcSigmet),           // International SIGMETs (NOAA AWC, en-route aviation hazards)
         Box::new(spc_storm_reports::SpcStormReports), // Severe-storm reports (NOAA SPC, confirmed tornado/hail/wind)
+        Box::new(odlinfo::Odlinfo), // Radiation: gamma dose rate above natural background (BfS ODL, Germany)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

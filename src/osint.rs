@@ -371,6 +371,10 @@ fn feed_detail(e: &Event) -> Option<String> {
         // GeoNet felt earthquake: computed MMI shaking + magnitude, e.g.
         // "Felt MMI 5 · M5.9" — the human-impact read for NZ / the SW-Pacific.
         "geonet_quake" => ee_sources::geonet_quake::quake_chip(&e.raw),
+        // BfS ODL gamma dose rate above natural background: the µSv/h reading + band,
+        // e.g. "0.45 µSv/h · Above normal" / "3.10 µSv/h · High" — a universal-baseline
+        // radiation read, not a raw scalar.
+        "odlinfo" => ee_sources::odlinfo::dose_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -654,7 +658,7 @@ async fn feeds_payload() -> Value {
         geonet_quake::GeonetQuake, geonet_volcano::GeonetVolcano, gvp_volcano::GvpVolcano,
         healthmap::HealthMap, jma_quake::JmaQuake, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
         navcanada::NavCanada, nhc::Nhc,
-        nwps_flood::NwpsFlood, nws::Nws,
+        nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports,
         ucdp_ged::UcdpGed, usgs::Usgs,
@@ -669,7 +673,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -774,6 +778,11 @@ async fn feeds_payload() -> Value {
         // USGS/EMSC detection catalogues don't carry, over New Zealand / the SW-Pacific.
         // Sub-felt (MMI < 3) and retracted quakes drop, so a quiet window = 0 events.
         fetch_one("geonet_quake", GeonetQuake, 10),
+        // BfS ODL (Germany) — ambient gamma dose rate; only stations elevated above
+        // natural background (µSv/h, a universal baseline) plot, so an all-normal
+        // network = 0 events. A radiation/nuclear-monitoring modality no other feed
+        // carries (reactor release / detonation / dispersal) over a NATO frontline state.
+        fetch_one("odlinfo", Odlinfo, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -825,6 +834,9 @@ async fn feeds_payload() -> Value {
         (id_felt.0, id_felt.1, "bmkg_quake", 60),
         (jp_felt.0, jp_felt.1, "jma_quake", 60),
         (nz_felt.0, nz_felt.1, "geonet_quake", 60),
+        // Normally ~0 (all-normal network); a real radiological event can light up many
+        // stations at once, so allow generous headroom before the cap truncates.
+        (de_radiation.0, de_radiation.1, "odlinfo", 400),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
@@ -1477,6 +1489,28 @@ mod tests {
         assert_eq!(feed_detail(&e).as_deref(), Some("Felt MMI 7 · M5.9"));
         let e = mk(json!({"magnitude": 5.02, "mmi": 5}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Felt MMI 5 · M5.0"));
+    }
+
+    #[test]
+    fn odlinfo_chip_surfaces_dose_rate_and_band() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "odlinfo-x".into(),
+            source_id: "odlinfo".into(),
+            kind: EventKind::Other,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(0.4),
+            url: None,
+            raw,
+        };
+        // `raw` is the WFS feature's `properties` object this connector stores.
+        let e = mk(json!({"value": 0.45, "unit": "µSv/h"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("0.45 µSv/h · Above normal"));
+        let e = mk(json!({"value": 3.1, "unit": "µSv/h"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("3.10 µSv/h · High"));
     }
 
     #[test]
