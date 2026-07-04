@@ -67,10 +67,45 @@ impl PayloadCache {
                 v
             }
             None => {
-                // Cold start: block once to produce a first value.
-                let fresh = build().await;
-                *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
-                fresh
+                // Cold start: exactly ONE caller runs the build (reusing the `refreshing`
+                // single-flight flag); every other cold caller waits for its value instead
+                // of launching a concurrent full fan-out. A deploy boot used to run 2-3
+                // of them at once (prewarm task + eyes-gate page load + first viewer),
+                // tripling the load and burning rate-limited upstreams (opensky 429s).
+                if self
+                    .refreshing
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    let fresh = build().await;
+                    *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
+                    self.refreshing.store(false, Ordering::Release);
+                    fresh
+                } else {
+                    // Another cold build is in flight — poll for its result. Bounded by
+                    // that build's own per-feed timeouts; the interval is far below any
+                    // caller's patience and costs nothing measurable.
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        if let Some((_, v)) = self.inner.lock().await.clone() {
+                            return v;
+                        }
+                        if !self.refreshing.load(Ordering::Acquire) {
+                            // Builder finished without storing (cannot happen today) or
+                            // panicked: take over the build rather than spin forever.
+                            if self
+                                .refreshing
+                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                                .is_ok()
+                            {
+                                let fresh = build().await;
+                                *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
+                                self.refreshing.store(false, Ordering::Release);
+                                return fresh;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
