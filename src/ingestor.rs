@@ -161,7 +161,11 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://www.bbc.co.uk/news/technology/rss.xml",                source: "bbc_tech",        tier: SourceTier::Tier2 },
     // State media / alternative perspectives (signals, not endorsements)
     FeedSpec { url: "https://tass.com/rss/v2.xml",                                  source: "tass",            tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.xinhuanet.com/english/rss/worldrss.xml",           source: "xinhua",          tier: SourceTier::Tier2 },
+    // xinhuanet.com hard-403s its english RSS (probed 2026-07-03; Xinhua's newer
+    // english.news.cn domain serves a stale 2018 shell). Replaced with ECNS — the
+    // English service of China News Service, the other Chinese state wire: same
+    // state-view purpose, probed 200 + valid RSS with same-day items.
+    FeedSpec { url: "https://www.ecns.cn/rss/rss.xml",                              source: "ecns",            tier: SourceTier::Tier2 },
     // Asia-Pacific
     FeedSpec { url: "https://www.japantimes.co.jp/feed/",                           source: "japantimes",      tier: SourceTier::Tier2 },
     // koreaherald's RSS now returns empty shells after a CMS migration; replaced with Yonhap (ROK national wire).
@@ -202,14 +206,21 @@ pub const RSS_FEEDS: &[FeedSpec] = &[
     FeedSpec { url: "https://nationalpost.com/feed/",                               source: "nationalpost",    tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.cnbc.com/id/100727362/device/rss/rss.html",        source: "cnbc",            tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.abc.net.au/news/feed/51120/rss.xml",               source: "abc_au",          tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.rnz.co.nz/rss/world.xml",                          source: "rnz",             tier: SourceTier::Tier2 },
+    // rnz's /rss/world.xml became a permanently EMPTY channel shell after a site
+    // change (probed 2026-07-03: HTTP 200, valid RSS, zero <item>s — invisibly dead
+    // to SourceHealth). Switched to the live Pacific feed: RNZ's distinctive beat
+    // in this roster is the Pacific/NZ view, and pacific.xml carries same-day items.
+    FeedSpec { url: "https://www.rnz.co.nz/rss/pacific.xml",                        source: "rnz",             tier: SourceTier::Tier2 },
     // Asia-Pacific — Tier 2
     FeedSpec { url: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml", source: "cna",      tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.thehindu.com/news/international/feeder/default.rss",source: "thehindu",        tier: SourceTier::Tier2 },
     FeedSpec { url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",   source: "timesofindia",    tier: SourceTier::Tier2 },
     FeedSpec { url: "https://asiatimes.com/feed/",                                  source: "asiatimes",       tier: SourceTier::Tier2 },
     FeedSpec { url: "https://www.nknews.org/feed/",                                 source: "nknews",          tier: SourceTier::Tier2 },
-    FeedSpec { url: "https://www.globaltimes.cn/rss/outbrain.xml",                  source: "globaltimes",     tier: SourceTier::Tier2 },
+    // globaltimes' RSS host stopped answering entirely (TCP connect timeout from
+    // prod, probed 2026-07-03); replaced with CGTN World — the same Chinese
+    // state-media view, probed 200 + valid RSS with current items.
+    FeedSpec { url: "https://www.cgtn.com/subscribe/rss/section/world.xml",         source: "cgtn",            tier: SourceTier::Tier2 },
     FeedSpec { url: "https://chinadigitaltimes.net/feed/",                          source: "chinadigitaltimes", tier: SourceTier::Tier2 },
     // Middle East — Tier 2
     FeedSpec { url: "https://www.jpost.com/rss/rssfeedsheadlines.aspx",             source: "jpost",           tier: SourceTier::Tier2 },
@@ -298,8 +309,45 @@ const GDELT_QUERY_INTERVAL_S: u64 = 400;
 const RSS_ARTICLES_PER_FEED:  usize = 500;  // was 20
 const GNEWS_ARTICLES_PER_QUERY: usize = 250; // was 15
 
+// ── URL canonicalization ──────────────────────────────────────────────────────
+// Feeds decorate article links with per-fetch tracking params (BBC at_medium/
+// at_campaign, SCMP utm_source, Guardian CMP, NYT smid, social fbclid/gclid) and
+// fragments. None of them identify the article — they made SeenCache keys fragile
+// (same story, "different" URL), left ~488 dirty outbound links in the live store,
+// and would let a re-fetch with fresh params slip past dedup. (audit-news L3)
+
+/// Query parameters that never identify an article — matched case-insensitively
+/// against the param NAME; `utm_` is handled as a prefix (utm_source, utm_medium…).
+const TRACKING_PARAM_NAMES: &[&str] =
+    &["at_medium", "at_campaign", "cmp", "smid", "fbclid", "gclid", "ref"];
+
+/// Canonicalize an article URL for dedup keys and storage: strip the `#fragment`,
+/// drop tracking query params (any `utm_*` + TRACKING_PARAM_NAMES), and drop a
+/// resulting bare trailing '?'. Non-tracking params (real article ids, pagination)
+/// are preserved in their original order, so distinct articles stay distinct.
+pub fn canonicalize_url(url: &str) -> String {
+    let url = url.trim();
+    // Fragment first — everything after '#' is client-side only.
+    let no_frag = &url[..url.find('#').unwrap_or(url.len())];
+    let Some((base, query)) = no_frag.split_once('?') else {
+        return no_frag.to_string();
+    };
+    let is_tracking = |param: &str| {
+        let name = param.split('=').next().unwrap_or(param).to_ascii_lowercase();
+        name.starts_with("utm_") || TRACKING_PARAM_NAMES.contains(&name.as_str())
+    };
+    let kept: Vec<&str> = query.split('&')
+        .filter(|p| !p.is_empty() && !is_tracking(p))
+        .collect();
+    if kept.is_empty() {
+        base.to_string() // also drops a bare trailing '?' (SCMP)
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    }
+}
+
 // ── Seen cache — deduplication ────────────────────────────────────────────────
-// MD5 of (url + title) — same as Python SeenCache.
+// MD5 of (canonical url + title) — same shape as the Python SeenCache.
 // Capacity raised to 50,000 to cover 25h at 2,000 art/hr peak rate.
 
 pub struct SeenCache {
@@ -318,7 +366,10 @@ impl SeenCache {
     }
 
     fn key(url: &str, title: &str) -> String {
-        let input = format!("{url}{title}");
+        // Key on the CANONICAL url: tracking-param churn must not make the same
+        // article look new, and archive-seeded keys (old rows carry raw URLs)
+        // must match their live re-fetch either way.
+        let input = format!("{}{title}", canonicalize_url(url));
         format!("{:x}", md5::compute(input.as_bytes()))
     }
 
@@ -344,6 +395,111 @@ impl SeenCache {
     pub fn mark_seen(&mut self, url: &str, title: &str) {
         let k = Self::key(url, title);
         if self.cache.insert(k.clone()) {
+            self.order.push_back(k);
+            if self.order.len() > self.max_size {
+                if let Some(old) = self.order.pop_front() {
+                    self.cache.remove(&old);
+                }
+            }
+        }
+    }
+}
+
+// ── Cross-feed title dedup ────────────────────────────────────────────────────
+// The same story syndicates across feeds under different URLs (152 exact-duplicate
+// titles live in an 11k store: one NATO headline carried verbatim by almonitor,
+// thehindu AND straitstimes; gnews carrying publisher copies). SeenCache can't see
+// those — its key includes the URL — so this second bounded FIFO set keys on the
+// NORMALIZED title alone, across ALL sources. The event layer (FuzzyDedup) already
+// suppressed the duplicate EVENTS; this stops the duplicate ARTICLES from piling
+// into the visible feed. Deliberately EXACT-match after normalization — near-dup
+// judgment stays with FuzzyDedup's Jaccard, which is untouched. (audit-news L1)
+
+/// Normalize a title for exact cross-feed dedup: lowercase, punctuation → space,
+/// whitespace collapsed — so case/punctuation variants of one headline match.
+pub(crate) fn normalize_title_for_dedup(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut last_space = true;
+    for c in title.chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
+            last_space = false;
+        } else if !last_space {
+            out.push(' ');
+            last_space = true;
+        }
+    }
+    while out.ends_with(' ') { out.pop(); }
+    out
+}
+
+/// Below this normalized length a title is too generic to dedup across feeds
+/// ("watch live", "in pictures" — different outlets legitimately reuse it for
+/// DIFFERENT stories), so short titles bypass the cross-feed dedup entirely.
+const TITLE_DEDUP_MIN_LEN: usize = 12;
+
+/// How long a cross-feed title key blocks re-storage. A verbatim-recurring
+/// headline separated by DAYS is a new edition/incident (weekly franchise
+/// titles, "N. Korea fires ballistic missile toward East Sea"), not a
+/// syndicated copy — only same-news-cycle repeats are duplicates.
+const TITLE_DEDUP_TTL_S: i64 = 48 * 3600;
+
+pub struct TitleDedup {
+    cache:    std::collections::HashMap<String, i64>, // key → inserted-at (unix s)
+    order:    VecDeque<String>,
+    max_size: usize,
+}
+
+impl TitleDedup {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            cache:    std::collections::HashMap::new(),
+            order:    VecDeque::new(),
+            max_size,
+        }
+    }
+
+    /// md5 of the normalized title (fixed-size keys — memory bounded like
+    /// SeenCache); None when the title is too short/generic to dedup safely.
+    fn key(title: &str) -> Option<String> {
+        let norm = normalize_title_for_dedup(title);
+        if norm.len() < TITLE_DEDUP_MIN_LEN { return None; }
+        Some(format!("{:x}", md5::compute(norm.as_bytes())))
+    }
+
+    /// True if no article with this normalized title has been stored before —
+    /// from ANY source — within the TTL window. Records/refreshes the title.
+    /// Short/generic titles always pass.
+    pub fn is_new(&mut self, title: &str) -> bool {
+        self.is_new_at(title, chrono::Utc::now().timestamp())
+    }
+
+    fn is_new_at(&mut self, title: &str, now_s: i64) -> bool {
+        let Some(k) = Self::key(title) else { return true; };
+        if let Some(&at) = self.cache.get(&k) {
+            if now_s - at <= TITLE_DEDUP_TTL_S {
+                return false;
+            }
+            // Expired: this is a NEW edition of a recurring headline. Refresh the
+            // timestamp in place (the stale order slot evicts early later — that
+            // only shortens dedup memory, never hides a fresh story).
+            self.cache.insert(k, now_s);
+            return true;
+        }
+        self.cache.insert(k.clone(), now_s);
+        self.order.push_back(k);
+        if self.order.len() > self.max_size {
+            if let Some(old) = self.order.pop_front() {
+                self.cache.remove(&old);
+            }
+        }
+        true
+    }
+
+    /// Boot seeding: mark a title as already stored without reporting novelty.
+    pub fn mark_seen(&mut self, title: &str) {
+        let Some(k) = Self::key(title) else { return; };
+        if self.cache.insert(k.clone(), chrono::Utc::now().timestamp()).is_none() {
             self.order.push_back(k);
             if self.order.len() > self.max_size {
                 if let Some(old) = self.order.pop_front() {
@@ -450,6 +606,157 @@ async fn read_body_capped(resp: reqwest::Response, cap: u64) -> Result<bytes::By
     Ok(buf.freeze())
 }
 
+// ── Title / body hygiene ──────────────────────────────────────────────────────
+// Feeds ship HTML entities in titles (thecradle "&#039;", timesofindia "&amp;"),
+// raw markup in bodies (1,868/11,000 live articles; middleeastmonitor opens with
+// ~300 chars of pure <div><img> furniture, which then IS the LLM's 600-byte
+// excerpt), and CMS boilerplate tails. No new crate dependencies — a small
+// explicit scrubber for what feeds actually emit. (audit-news C1–C4)
+
+/// Strip the " - <Outlet>" attribution Google News appends to every headline
+/// ("NATO summit opens - Reuters"). Applied to gnews entries BEFORE dedup keys and
+/// storage, so a story's gnews copy matches its publisher-feed copy (and the
+/// "- Euronews" / "- Euronews.com" / "- Reuters" variants of ONE story collapse).
+/// Only the LAST " - " segment is dropped, and only when a substantial title
+/// remains, so a short hyphenated clause isn't butchered.
+pub(crate) fn strip_gnews_outlet_suffix(title: &str) -> &str {
+    match title.rfind(" - ") {
+        Some(i) if title[..i].trim_end().len() >= 10 => title[..i].trim_end(),
+        _ => title,
+    }
+}
+
+/// Named HTML entities that actually occur in feed titles/bodies. Deliberately a
+/// small explicit set, not a spec implementation — unknown entities stay visible
+/// rather than being guessed at. Numeric forms are decoded separately.
+const NAMED_ENTITIES: &[(&str, &str)] = &[
+    ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&apos;", "'"),
+    ("&nbsp;", " "), ("&ndash;", "\u{2013}"), ("&mdash;", "\u{2014}"),
+    ("&lsquo;", "\u{2018}"), ("&rsquo;", "\u{2019}"),
+    ("&ldquo;", "\u{201c}"), ("&rdquo;", "\u{201d}"), ("&hellip;", "\u{2026}"),
+];
+
+/// Decode common named + numeric (`&#039;` decimal, `&#x27;` hex) HTML entities.
+/// Unrecognised ampersand runs are kept literally — visible beats silently wrong.
+fn decode_html_entities(s: &str) -> String {
+    if !s.contains('&') { return s.to_string(); }
+    let mut out  = String::with_capacity(s.len());
+    let mut rest = s;
+    'outer: while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let tail = &rest[amp..];
+        // An entity's ';' arrives within a short window (real entities are short).
+        // Byte-scan for the ASCII ';' — a fixed-width str slice here could split a
+        // multibyte char right after the '&' and panic.
+        if let Some(semi) = tail.bytes().take(12).position(|b| b == b';') {
+            let ent = &tail[..=semi];
+            if let Some(num) = ent.strip_prefix("&#").and_then(|e| e.strip_suffix(';')) {
+                let parsed = if let Some(hex) = num.strip_prefix('x').or_else(|| num.strip_prefix('X')) {
+                    u32::from_str_radix(hex, 16).ok()
+                } else {
+                    num.parse::<u32>().ok()
+                };
+                if let Some(c) = parsed.and_then(char::from_u32) {
+                    out.push(c);
+                    rest = &tail[semi + 1..];
+                    continue 'outer;
+                }
+            }
+            if let Some((_, repl)) = NAMED_ENTITIES.iter().find(|(name, _)| *name == ent) {
+                out.push_str(repl);
+                rest = &tail[semi + 1..];
+                continue 'outer;
+            }
+        }
+        // Not a recognisable entity — keep the '&' literally and move on.
+        out.push('&');
+        rest = &tail[1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Strip HTML tags: every `<…>` span (with its attributes) becomes a single space
+/// so `</p><p>` doesn't glue words together (whitespace is collapsed afterwards).
+/// An unterminated '<' (truncated feed body) drops the remainder — markup must
+/// never leak into the store.
+fn strip_html_tags(s: &str) -> String {
+    if !s.contains('<') { return s.to_string(); }
+    let mut out    = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match (in_tag, c) {
+            (false, '<') => in_tag = true,
+            (false, _)   => out.push(c),
+            (true, '>')  => { in_tag = false; out.push(' '); }
+            (true, _)    => {}
+        }
+    }
+    out
+}
+
+/// Cut CMS boilerplate tails: the WordPress "The post <title> appeared first on
+/// <outlet>." footer (timesofisrael et al) and Guardian's "Continue reading...".
+/// Applied BEFORE truncation so the stored excerpt is article text, not furniture.
+fn strip_boilerplate_tail(s: &str) -> &str {
+    let mut end = s.len();
+    if let Some(i) = s.find("Continue reading") { end = end.min(i); }
+    if let Some(j) = s.find("appeared first on") {
+        // Cut from the "The post " that opens the footer sentence when present,
+        // otherwise from the phrase itself — never from an earlier unrelated
+        // "The post office…" in the article body.
+        end = end.min(s[..j].rfind("The post ").unwrap_or(j));
+    }
+    s[..end].trim_end()
+}
+
+/// Feed-text scrubber for titles and bodies: strip tags, decode entities, cut
+/// boilerplate tails, collapse whitespace.
+pub(crate) fn sanitize_feed_text(s: &str) -> String {
+    let stripped = strip_html_tags(s);
+    let decoded  = decode_html_entities(&stripped);
+    let cut      = strip_boilerplate_tail(&decoded);
+    cut.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The exact title form the ingest path keys dedup on: sanitized, and for gnews
+/// with the " - Outlet" suffix stripped. Boot seeding MUST derive keys through
+/// this same function or archived rows (stored raw, before this hygiene existed)
+/// won't match their own live re-fetch and get stored twice.
+fn ingest_title_key(source: &str, raw_title: &str) -> String {
+    let t = sanitize_feed_text(raw_title);
+    if source == "gnews" { strip_gnews_outlet_suffix(&t).to_string() } else { t }
+}
+
+// ── Junk filter ───────────────────────────────────────────────────────────────
+// Two conservative classes only. (1) Recurring wire furniture that carries no
+// event (yonhap's daily "Yonhap News Summary" digest, taipeitimes' "EDITORIAL
+// CARTOON"). (2) Per-feed sports SECTIONS by URL path (live at audit time: 76 bbc
+// /sport/ + 38 guardian /sport/+/football/ articles in the store). Path-based
+// ONLY — never keyword-based — so a geopolitics story can never be dropped for
+// how its headline reads. (audit-news L6 + off-topic flood)
+
+const JUNK_TITLE_PREFIXES: &[&str] = &["yonhap news summary", "editorial cartoon"];
+
+/// Per-source sports-section URL paths to exclude. The source match is exact and
+/// each path substring includes the host, so e.g. a guardian story ABOUT football
+/// politics under /world/ is untouched.
+fn is_excluded_path(source: &str, url: &str) -> bool {
+    match source {
+        "bbc"      => url.contains("bbc.co.uk/sport/") || url.contains("bbc.com/sport/"),
+        "guardian" => url.contains("theguardian.com/sport/")
+                   || url.contains("theguardian.com/football/"),
+        "abc_au"   => url.contains("abc.net.au/sport/") || url.contains("/news/sport/"),
+        _          => false,
+    }
+}
+
+/// Junk gate applied at ingest, before dedup keys and storage.
+fn is_junk_entry(source: &str, url: &str, title: &str) -> bool {
+    let tl = title.trim().to_lowercase();
+    JUNK_TITLE_PREFIXES.iter().any(|p| tl.starts_with(p)) || is_excluded_path(source, url)
+}
+
 // ── Feed entry → RawArticle ───────────────────────────────────────────────────
 //
 // Body extraction priority (improved):
@@ -468,19 +775,35 @@ fn entry_to_article(
     source: &str,
     tier:   SourceTier,
 ) -> Option<RawArticle> {
-    let title = entry.title.as_ref()?.content.trim().to_string();
+    let raw_title = entry.title.as_ref()?.content.trim().to_string();
+    if raw_title.is_empty() { return None; }
+    // skynews live-blog junk: the "title" is literally an "<a href=…>…" tag —
+    // nothing meaningful survives sanitation, so reject the entry outright.
+    if raw_title.starts_with('<') { return None; }
+
+    let mut title: String = sanitize_feed_text(&raw_title).chars().take(500).collect();
+    if source == "gnews" {
+        title = strip_gnews_outlet_suffix(&title).to_string();
+    }
     if title.is_empty() { return None; }
 
-    let url = entry.links.first()
-        .map(|l| l.href.clone())
-        .unwrap_or_default();
+    let url = canonicalize_url(
+        &entry.links.first().map(|l| l.href.clone()).unwrap_or_default());
 
-    // Prefer content.body over summary for better NLP signal quality
-    let body: String = entry.content
+    if is_junk_entry(source, &url, &title) { return None; }
+
+    // Prefer content.body over summary for better NLP signal quality. Sanitize
+    // (tags out, entities decoded, boilerplate tails cut) BEFORE truncating so
+    // the stored excerpt and the LLM's 600-byte window hold text, not markup.
+    let raw_body: String = entry.content
         .as_ref()
         .and_then(|c| c.body.as_deref())
         .or_else(|| entry.summary.as_ref().map(|s| s.content.as_str()))
         .unwrap_or("")
+        .chars()
+        .take(20_000) // bound the scrubber's work; far past any useful excerpt
+        .collect();
+    let body: String = sanitize_feed_text(&raw_body)
         .chars()
         .take(5000)  // raised from 1000 to capture more article context
         .collect();
@@ -491,7 +814,7 @@ fn entry_to_article(
 
     Some(RawArticle::new(
         url,
-        title.chars().take(500).collect(),
+        title,
         body,
         source.to_string(),
         tier,
@@ -505,6 +828,7 @@ pub struct Ingestor {
     article_tx:      mpsc::Sender<RawArticle>,
     state:           Arc<AppState>,
     seen:            Arc<Mutex<SeenCache>>,
+    titles:          Arc<Mutex<TitleDedup>>,
     health:          Arc<Mutex<SourceHealth>>,
 }
 
@@ -517,6 +841,7 @@ impl Ingestor {
             article_tx,
             state,
             seen:   Arc::new(Mutex::new(SeenCache::new(50_000))), // raised from 10k
+            titles: Arc::new(Mutex::new(TitleDedup::new(50_000))),
             health: Arc::new(Mutex::new(SourceHealth::default())),
         }
     }
@@ -529,17 +854,45 @@ impl Ingestor {
             GDELT_QUERIES.len(), GDELT_QUERY_INTERVAL_S,
         );
 
-        // Seed the dedup cache from articles restored on boot (load_articles) so
-        // live feeds re-fetching the same stories don't store them a second time.
-        // Without this the feed shows duplicate pairs after every restart.
+        // Seed the dedup caches from the archive so live feeds re-fetching the same
+        // stories don't store them a second time (neither cache is itself persisted).
+        // Two layers: a KEYS-ONLY replay of ~5 further archive days (slow feeds —
+        // think-tanks, journals — keep entries live for a week+, so a cache seeded
+        // with only two days re-stored anything older after every restart,
+        // audit-news L5), then the in-memory store (today+yesterday, restored by
+        // load_articles). Oldest first, so FIFO eviction keeps the newest keys.
         {
-            let store = self.state.article_store.lock().await;
-            let mut seen = self.seen.lock().await;
-            for a in store.articles.iter() {
-                seen.mark_seen(&a.url, &a.title);
+            let mut seen   = self.seen.lock().await;
+            let mut titles = self.titles.lock().await;
+            let archived   = crate::aggregator::load_archived_article_keys(6, 2).await;
+            for (url, title, source) in &archived {
+                // Stored titles already went through ingest hygiene, so re-deriving the
+                // key can over-strip (a gnews title with a legitimate final " - segment"
+                // loses it a second time). Seed BOTH forms: the as-stored title and the
+                // re-derived key — whichever the live re-fetch produces, it matches.
+                let as_stored = sanitize_feed_text(title);
+                let rederived = ingest_title_key(source, title);
+                seen.mark_seen(url, &as_stored);
+                titles.mark_seen(&as_stored);
+                if rederived != as_stored {
+                    seen.mark_seen(url, &rederived);
+                    titles.mark_seen(&rederived);
+                }
             }
-            if !store.articles.is_empty() {
-                info!("Ingestor: seeded dedup cache with {} restored articles", store.articles.len());
+            let store = self.state.article_store.lock().await;
+            for a in store.articles.iter() {
+                let as_stored = sanitize_feed_text(&a.title);
+                let rederived = ingest_title_key(&a.source, &a.title);
+                seen.mark_seen(&a.url, &as_stored);
+                titles.mark_seen(&as_stored);
+                if rederived != as_stored {
+                    seen.mark_seen(&a.url, &rederived);
+                    titles.mark_seen(&rederived);
+                }
+            }
+            if !store.articles.is_empty() || !archived.is_empty() {
+                info!("Ingestor: seeded dedup caches with {} restored + {} archived article keys",
+                      store.articles.len(), archived.len());
             }
         }
 
@@ -679,6 +1032,13 @@ impl Ingestor {
             if !self.seen.lock().await.is_new(&article.url, &article.title) {
                 continue;
             }
+            // Cross-feed exact-title dedup: an identical normalized headline already
+            // stored from ANY source is the same story syndicated — drop it. A
+            // live-blog EDIT (same URL, new title) passes here and becomes an
+            // update-in-place inside store_article. (audit-news L1)
+            if !self.titles.lock().await.is_new(&article.title) {
+                continue;
+            }
             self.store_article(&article).await;
             if self.article_tx.send(article).await.is_err() {
                 warn!("RSS {source}: article channel closed");
@@ -720,20 +1080,25 @@ impl Ingestor {
             match client.get(&url).send().await {
                 Err(e) => {
                     ingestor.health.lock().await.record_failure("gnews");
+                    ingestor.note_search_api("gnews", Some(format!("send: {e}"))).await;
                     debug!("GNews error: {e}");
                 }
                 Ok(resp) if !resp.status().is_success() => {
+                    let status = resp.status();
                     ingestor.health.lock().await.record_failure("gnews");
-                    debug!("GNews HTTP {}", resp.status());
+                    ingestor.note_search_api("gnews", Some(format!("HTTP {status}"))).await;
+                    debug!("GNews HTTP {status}");
                 }
                 Ok(resp) => match read_body_capped(resp, MAX_FEED_BODY_BYTES).await {
                     Err(e) => {
                         ingestor.health.lock().await.record_failure("gnews");
+                        ingestor.note_search_api("gnews", Some(format!("body: {e}"))).await;
                         debug!("GNews body: {e}");
                     }
                     Ok(bytes) => match feed_rs::parser::parse(bytes.as_ref()) {
                         Err(e) => {
                             ingestor.health.lock().await.record_failure("gnews");
+                            ingestor.note_search_api("gnews", Some(format!("parse: {e}"))).await;
                             debug!("GNews parse: {e}");
                         }
                         Ok(feed) => {
@@ -745,6 +1110,11 @@ impl Ingestor {
                                 };
                                 if !ingestor.seen.lock().await
                                     .is_new(&article.url, &article.title) { continue; }
+                                // Cross-feed title dedup — gnews is the roster's largest
+                                // duplicate injector (publisher copies + per-outlet
+                                // "- X" variants of one story). (audit-news L4)
+                                if !ingestor.titles.lock().await
+                                    .is_new(&article.title) { continue; }
                                 ingestor.store_article(&article).await;
                                 let _ = ingestor.article_tx.send(article).await;
                                 count += 1;
@@ -752,6 +1122,7 @@ impl Ingestor {
                             // A successful fetch+parse is health regardless of new-article
                             // count — reset failures. (audit ingestor-4)
                             ingestor.health.lock().await.record_success("gnews", count);
+                            ingestor.note_search_api("gnews", None).await;
                             if count > 0 { info!("GNews: {count} articles for '{query}'"); }
                         }
                     }
@@ -763,6 +1134,14 @@ impl Ingestor {
     }
 
     // ── GDELT loop ────────────────────────────────────────────────────────────
+
+    /// Floor on the GDELT failure-retry delay, in seconds. GDELT's 429 body
+    /// documents a hard "one request every 5 seconds" per-IP limit; the old
+    /// backoff started at 2s, so after any 429 the retry itself violated the
+    /// limit and GUARANTEED another 429 — a self-sustaining throttle loop that
+    /// kept GDELT dark (0 stored articles over days, live-diagnosed 2026-07-03).
+    /// Comfortably above the documented limit so a throttle window can drain.
+    const GDELT_MIN_RETRY_S: u64 = 30;
 
     async fn gdelt_loop(ingestor: Arc<Self>) {
         let client = match build_client(15) {
@@ -801,7 +1180,10 @@ impl Ingestor {
                     // `result`) so a dark GDELT is visible to the watchdog, not just an
                     // ever-growing local backoff. (audit xcut_err-2)
                     ingestor.health.lock().await.record_failure("gdelt");
-                    backoff = (backoff * 2).min(500);
+                    ingestor.note_search_api("gdelt", Some(e.to_string())).await;
+                    // Never retry below GDELT_MIN_RETRY_S — a sub-5s retry after a
+                    // 429 is itself another rate-limit violation. (audit-news c)
+                    backoff = (backoff * 2).clamp(Self::GDELT_MIN_RETRY_S, 500);
                     debug!("GDELT backoff {backoff}s: {e}");
                     sleep(Duration::from_secs(backoff)).await;
                     continue;
@@ -815,12 +1197,18 @@ impl Ingestor {
 
                     let mut count = 0usize;
                     for art_d in &articles {
+                        // Same hygiene as the RSS path: GDELT titles can carry
+                        // entities, and its URLs the same tracking params.
                         let title = match art_d["title"].as_str() {
-                            Some(t) if !t.is_empty() => t.to_string(),
+                            Some(t) if !t.is_empty() => sanitize_feed_text(t),
                             _ => continue,
                         };
-                        let url_a = art_d["url"].as_str().unwrap_or("").to_string();
+                        if title.is_empty() { continue; }
+                        let url_a = canonicalize_url(art_d["url"].as_str().unwrap_or(""));
                         if !ingestor.seen.lock().await.is_new(&url_a, &title) { continue; }
+                        // Cross-feed title dedup: GDELT surfaces publisher headlines
+                        // the RSS roster often already stored. (audit-news L1)
+                        if !ingestor.titles.lock().await.is_new(&title) { continue; }
 
                         let pub_at = art_d["seendate"].as_str()
                             .and_then(|s| {
@@ -848,6 +1236,7 @@ impl Ingestor {
                     // A successful query (HTTP 2xx + valid JSON) is health regardless of
                     // new-article count — reset failures. (audit ingestor-4)
                     ingestor.health.lock().await.record_success("gdelt", count);
+                    ingestor.note_search_api("gdelt", None).await;
                     if count > 0 {
                         info!("GDELT: {count} articles for '{query}'");
                     }
@@ -858,9 +1247,51 @@ impl Ingestor {
         }
     }
 
+    // ── Search-API loop health ────────────────────────────────────────────────
+
+    /// Record a gnews/gdelt loop outcome where operators can SEE it: GET
+    /// /api/sources serves last_success_at + consecutive_failures per API, so a
+    /// dark loop (e.g. GDELT persistently 429-throttled) is visible on the wire
+    /// instead of only inferable from a silently empty store. (audit-news c)
+    async fn note_search_api(&self, api: &str, error: Option<String>) {
+        let mut health = self.state.search_api_health.lock().await;
+        let entry = health.entry(api.to_string()).or_default();
+        let now = Utc::now().to_rfc3339();
+        entry.last_attempt_at = Some(now.clone());
+        match error {
+            None => {
+                entry.last_success_at      = Some(now);
+                entry.consecutive_failures = 0;
+                entry.last_error           = None;
+            }
+            Some(e) => {
+                entry.consecutive_failures += 1;
+                entry.last_error            = Some(e);
+            }
+        }
+    }
+
     // ── Shared article store helper ───────────────────────────────────────────
 
     async fn store_article(&self, article: &RawArticle) {
+        let body_excerpt: String = article.body.chars().take(500).collect(); // raised from 300
+        // Update-in-place: a canonical URL already in the store is the SAME article
+        // re-ingested after an edit (live-blog title churn produced 559 duplicate
+        // URLs / 834 extra rows in an 11k store). Refresh title/body/published_at
+        // on the EXISTING row — same id, so the JSONL append supersedes older lines
+        // at reload — and don't recount it in the per-source registry. (audit-news L2)
+        let updated = self.state.article_store.lock().await.update_by_url(
+            &article.url,
+            &article.source,
+            &article.title,
+            &body_excerpt,
+            &article.published_at.to_rfc3339(),
+            &article.fetched_at.to_rfc3339(),
+        );
+        if let Some(u) = updated {
+            crate::aggregator::append_article(&u).await;
+            return;
+        }
         let stored = StoredArticle {
             id:           article.id.clone(),
             title:        article.title.clone(),
@@ -869,7 +1300,7 @@ impl Ingestor {
             tier:         article.source_tier as u8,
             published_at: article.published_at.to_rfc3339(),
             ingested_at:  article.fetched_at.to_rfc3339(),
-            body:         article.body.chars().take(500).collect(), // raised from 300
+            body:         body_excerpt,
             domain_tags:  vec![],
         };
         // Durable archive: append to date-rotated JSONL so the feed survives
@@ -937,6 +1368,245 @@ mod tests {
         let mut cache = SeenCache::new(100);
         assert!(cache.is_new("", ""));
         assert!(!cache.is_new("", ""));
+    }
+
+    // ── URL canonicalization ──────────────────────────────────────────────────
+
+    #[test]
+    fn canonicalize_url_strips_tracking_params() {
+        // Real decorations from the live store (audit-news L3): BBC at_medium/
+        // at_campaign, SCMP utm_source. The clean article path must survive.
+        assert_eq!(
+            canonicalize_url("https://www.bbc.co.uk/news/articles/c24y2303ev8o?at_medium=RSS&at_campaign=rss"),
+            "https://www.bbc.co.uk/news/articles/c24y2303ev8o");
+        assert_eq!(
+            canonicalize_url("https://www.scmp.com/news/world/article/3359383/europe?utm_source=rss_feed"),
+            "https://www.scmp.com/news/world/article/3359383/europe");
+    }
+
+    #[test]
+    fn canonicalize_url_strips_fragment_and_bare_question_mark() {
+        assert_eq!(
+            canonicalize_url("https://news.sky.com/story/x?postid=1#liveblog-body"),
+            "https://news.sky.com/story/x?postid=1",
+            "fragment goes, real query param stays");
+        assert_eq!(canonicalize_url("https://www.scmp.com/article/123?"),
+            "https://www.scmp.com/article/123", "bare trailing '?' dropped");
+    }
+
+    #[test]
+    fn canonicalize_url_preserves_identifying_params() {
+        // Non-tracking params can BE the article identity (CMS ids, pagination) —
+        // stripping them would merge distinct articles. Order is preserved.
+        assert_eq!(
+            canonicalize_url("https://example.com/a?id=42&page=2&utm_medium=rss&CMP=x&smid=y&fbclid=z&gclid=w&ref=home"),
+            "https://example.com/a?id=42&page=2");
+        assert_eq!(canonicalize_url("https://example.com/plain"), "https://example.com/plain",
+            "a URL with nothing to strip is unchanged");
+    }
+
+    #[test]
+    fn seen_cache_tracking_param_variants_are_the_same_key() {
+        // The dedup key must not treat per-fetch tracking churn as a new article.
+        let mut cache = SeenCache::new(100);
+        assert!(cache.is_new("https://bbc.co.uk/news/x?at_medium=RSS&at_campaign=rss", "Headline"));
+        assert!(!cache.is_new("https://bbc.co.uk/news/x", "Headline"),
+            "same canonical URL + title must be a duplicate");
+    }
+
+    // ── GNews outlet-suffix strip ─────────────────────────────────────────────
+
+    #[test]
+    fn gnews_outlet_suffix_is_stripped() {
+        // Live examples: one Article-5 story stored ≥6× via "- Euronews" /
+        // "- Euronews.com" / "- Reuters" variants alone (audit-news L4).
+        assert_eq!(
+            strip_gnews_outlet_suffix("NATO to reaffirm iron-clad commitment to Article 5 at Ankara summit - Euronews"),
+            "NATO to reaffirm iron-clad commitment to Article 5 at Ankara summit");
+        assert_eq!(
+            strip_gnews_outlet_suffix("NATO to reaffirm iron-clad commitment to Article 5 at Ankara summit - Euronews.com"),
+            "NATO to reaffirm iron-clad commitment to Article 5 at Ankara summit");
+    }
+
+    #[test]
+    fn gnews_suffix_strip_spares_short_and_plain_titles() {
+        assert_eq!(strip_gnews_outlet_suffix("US - China trade"), "US - China trade",
+            "a short hyphenated clause must not be butchered");
+        assert_eq!(strip_gnews_outlet_suffix("No suffix here"), "No suffix here");
+    }
+
+    // ── Feed-text sanitation ──────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_decodes_html_entities_named_and_numeric() {
+        // Live titles: thecradle "&#039;", timesofindia "&amp;" (audit-news C1).
+        assert_eq!(
+            sanitize_feed_text("Yemen repels warplanes &#039;threatening&#039; airliner"),
+            "Yemen repels warplanes 'threatening' airliner");
+        assert_eq!(sanitize_feed_text("Hamas, Hezbollah &amp; Houthis"), "Hamas, Hezbollah & Houthis");
+        assert_eq!(sanitize_feed_text("A &#x27;quoted&#x27; word"), "A 'quoted' word", "hex numeric form");
+        assert_eq!(sanitize_feed_text("AT&T results & more"), "AT&T results & more",
+            "a bare ampersand is not an entity and stays literal");
+        assert_eq!(sanitize_feed_text("Q&Aé über die Lage — «détente» &amp; more"),
+            "Q&Aé über die Lage — «détente» & more",
+            "multibyte text right after '&' must not panic the entity window");
+    }
+
+    #[test]
+    fn sanitize_strips_html_tags_from_bodies() {
+        // middleeastmonitor bodies open with ~300 chars of pure markup, which then
+        // IS the LLM's 600-byte excerpt (audit-news C3).
+        assert_eq!(
+            sanitize_feed_text("<div style=\"x\"><img src=\"y\"/></div><p>Troops advanced</p><p>at dawn.</p>"),
+            "Troops advanced at dawn.");
+        assert_eq!(sanitize_feed_text("truncated <a href=\"x"), "truncated",
+            "an unterminated tag must not leak markup");
+    }
+
+    #[test]
+    fn sanitize_cuts_feed_boilerplate_tails() {
+        // WordPress + Guardian furniture (audit-news C4).
+        assert_eq!(
+            sanitize_feed_text("Strikes continued overnight. The post Strikes continued appeared first on The Times of Israel."),
+            "Strikes continued overnight.");
+        assert_eq!(
+            sanitize_feed_text("Officials met in Cairo. Continue reading..."),
+            "Officials met in Cairo.");
+        assert_eq!(
+            sanitize_feed_text("The post office reopened after the storm."),
+            "The post office reopened after the storm.",
+            "'The post …' without the WordPress footer phrase is real content");
+    }
+
+    // ── Junk filter ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn junk_titles_and_sport_paths_are_rejected() {
+        // Denylist titles (live: yonhap ×3, taipeitimes ×2) + real sports URLs
+        // from the live store (audit-news L6 / off-topic flood).
+        assert!(is_junk_entry("yonhap", "https://en.yna.co.kr/x", "Yonhap News Summary"));
+        assert!(is_junk_entry("taipeitimes", "https://taipeitimes.com/x", "EDITORIAL CARTOON"));
+        assert!(is_junk_entry("bbc",
+            "https://www.bbc.co.uk/sport/tennis/articles/cddlqd0877mo", "Wimbledon day four"));
+        assert!(is_junk_entry("guardian",
+            "https://www.theguardian.com/sport/2026/jul/03/us-rugby-eagles-portugal", "Rugby preview"));
+        assert!(is_junk_entry("guardian",
+            "https://www.theguardian.com/football/live/2026/jul/03/world-cup-2026", "World Cup live"));
+        assert!(is_junk_entry("abc_au",
+            "https://www.abc.net.au/sport/2026-07-03/afl-round", "AFL round"));
+    }
+
+    #[test]
+    fn junk_filter_never_touches_geopolitics() {
+        // Path-based only: the same outlets' news sections — and sport-WORDED
+        // geopolitics headlines — must always pass.
+        assert!(!is_junk_entry("bbc",
+            "https://www.bbc.co.uk/news/articles/c4gyv05gk4do", "Russia attacks Kyiv"));
+        assert!(!is_junk_entry("guardian",
+            "https://www.theguardian.com/world/2026/jul/03/ukraine-strikes", "Ukraine strikes"));
+        assert!(!is_junk_entry("guardian",
+            "https://www.theguardian.com/world/x", "Football diplomacy: World Cup politics"));
+        assert!(!is_junk_entry("aljazeera",
+            "https://aljazeera.com/sport/x", "Sport section of a non-listed source passes"));
+    }
+
+    // ── Cross-feed title dedup ────────────────────────────────────────────────
+
+    #[test]
+    fn title_dedup_drops_exact_cross_feed_duplicates() {
+        // Live: one NATO headline stored verbatim by 3 different feeds (audit-news L1).
+        let mut td = TitleDedup::new(100);
+        assert!(td.is_new("NATO leaders to gather in Ankara, aiming to smooth over tensions with Trump"));
+        assert!(!td.is_new("NATO leaders to gather in Ankara, aiming to smooth over tensions with Trump"),
+            "identical headline from a second feed must be dropped");
+    }
+
+    #[test]
+    fn title_dedup_normalizes_case_and_punctuation() {
+        // Live near-dup class: "…Iran's supreme leader" vs "…Iran's Supreme Leader".
+        let mut td = TitleDedup::new(100);
+        assert!(td.is_new("Strike ordered on Iran's supreme leader"));
+        assert!(!td.is_new("Strike ordered on Iran’s Supreme Leader!"),
+            "case/punctuation variants of one headline must match");
+    }
+
+    #[test]
+    fn title_dedup_short_generic_titles_bypass() {
+        // "Watch live" from two outlets is two DIFFERENT streams — too generic to
+        // dedup safely, so short titles always pass.
+        let mut td = TitleDedup::new(100);
+        assert!(td.is_new("Watch live"));
+        assert!(td.is_new("Watch live"));
+    }
+
+    #[test]
+    fn title_dedup_evicts_at_max_size() {
+        let mut td = TitleDedup::new(2);
+        assert!(td.is_new("first long headline about events"));
+        assert!(td.is_new("second long headline about events"));
+        assert!(td.is_new("third long headline about events")); // first evicted
+        assert!(td.is_new("first long headline about events"),
+            "FIFO eviction must bound memory like SeenCache");
+    }
+
+    #[test]
+    fn title_dedup_expires_so_recurring_headlines_are_new_editions() {
+        // A verbatim-recurring wire headline days later ("N. Korea fires ballistic
+        // missile toward East Sea", a weekly franchise title) is a NEW incident or
+        // edition — only same-news-cycle repeats are duplicates. Keys age out at the
+        // TTL instead of blocking for the life of the 50k FIFO (~1-2 weeks).
+        let mut td = TitleDedup::new(100);
+        let t0 = 1_780_000_000;
+        assert!(td.is_new_at("north korea fires ballistic missile toward east sea", t0));
+        assert!(!td.is_new_at("north korea fires ballistic missile toward east sea", t0 + 3600),
+            "same news cycle → duplicate");
+        assert!(td.is_new_at("north korea fires ballistic missile toward east sea",
+            t0 + TITLE_DEDUP_TTL_S + 1),
+            "past the TTL the same headline is a new edition, not a copy");
+        assert!(!td.is_new_at("north korea fires ballistic missile toward east sea",
+            t0 + TITLE_DEDUP_TTL_S + 3600),
+            "the refreshed key blocks again within the new window");
+    }
+
+    // ── entry_to_article (through a real feed parse) ──────────────────────────
+
+    fn entries_from_rss(items: &str) -> Vec<feed_rs::model::Entry> {
+        let xml = format!(
+            "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>t</title>{items}</channel></rss>");
+        feed_rs::parser::parse(xml.as_bytes()).expect("test feed parses").entries
+    }
+
+    #[test]
+    fn entry_to_article_rejects_markup_titles_and_cleans_fields() {
+        // First item: the real skynews live-blog junk shape — the "title" is
+        // literally an anchor tag (audit-news C2). Second: entities + tracking URL.
+        let entries = entries_from_rss(
+            "<item><title>&lt;a href='https://news.sky.com/story/x?postid=1'&gt;Ukrainian man charged</title>\
+              <link>https://news.sky.com/story/x</link></item>\
+             <item><title>Hamas, Hezbollah &amp;amp; Houthis: what next</title>\
+              <link>https://timesofindia.com/world/a1.cms?utm_source=rss&amp;utm_medium=feed</link>\
+              <description>&lt;p&gt;Analysts said&lt;/p&gt; the axis is shifting</description></item>");
+        assert_eq!(entries.len(), 2);
+        assert!(entry_to_article(&entries[0], "skynews", SourceTier::Tier1).is_none(),
+            "a title that is literally markup must be rejected");
+        let a = entry_to_article(&entries[1], "timesofindia", SourceTier::Tier2)
+            .expect("clean entry ingests");
+        assert_eq!(a.title, "Hamas, Hezbollah & Houthis: what next", "entities decoded in title");
+        assert_eq!(a.url, "https://timesofindia.com/world/a1.cms", "tracking params stripped from stored URL");
+        assert_eq!(a.body, "Analysts said the axis is shifting", "tags stripped from body");
+    }
+
+    #[test]
+    fn entry_to_article_strips_gnews_suffix_only_for_gnews() {
+        let entries = entries_from_rss(
+            "<item><title>North Korea conducts third missile launch - Reuters</title>\
+              <link>https://news.google.com/rss/articles/CBMi123</link></item>");
+        let g = entry_to_article(&entries[0], "gnews", SourceTier::Tier2).unwrap();
+        assert_eq!(g.title, "North Korea conducts third missile launch",
+            "gnews outlet suffix stripped before dedup keys and storage");
+        let r = entry_to_article(&entries[0], "nknews", SourceTier::Tier2).unwrap();
+        assert_eq!(r.title, "North Korea conducts third missile launch - Reuters",
+            "publisher feeds keep their titles verbatim");
     }
 
     // ── SourceHealth ──────────────────────────────────────────────────────────

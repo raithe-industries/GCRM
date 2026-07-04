@@ -452,10 +452,18 @@ async fn get_sources(State(state): State<ServerState>) -> impl IntoResponse {
         "source": f.source,
         "tier":   f.tier as u8,
     })).collect();
+    // GNews/GDELT are search APIs, not RSS_FEEDS entries — without this block a
+    // dark loop (e.g. GDELT 429-throttled for days) was invisible here, only
+    // inferable from a silently empty store. (audit-news c)
+    let search_apis = state.app_state.search_api_health.lock().await.clone();
     Json(json!({
         "active_sources":     counts,
         "configured_sources": configured,
         "total_configured":   RSS_FEEDS.len(),
+        "search_apis":        search_apis,
+        "search_apis_note":   "GNews/GDELT poll-loop health. Timestamps are RFC3339 UTC; \
+                               consecutive_failures counts attempts since the last successful \
+                               fetch+parse (0 = healthy).",
     }))
 }
 
@@ -1725,7 +1733,7 @@ mod tests {
     fn dashboard_renders_iw_board() {
         // The I&W board (indicators::evaluate) is computed and served at
         // data.indicators, and the methodology page advertises it ("an I&W board
-        // tracks thirteen deterministic observable warning conditions"). It must
+        // tracks twelve deterministic observable warning conditions"). It must
         // actually be rendered, so the operator can see WHICH danger conditions
         // have tripped — the "why" behind the headline, not just how high.
         assert!(DASHBOARD_HTML.contains("id=\"iw-board\""), "I&W board container missing");

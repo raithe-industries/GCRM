@@ -450,23 +450,45 @@ fn make_event_from_llm(article: &RawArticle, x: &LlmExtraction) -> GeopoliticalE
 
 /// Fast check: does the article title contain geopolitical trigger terms?
 /// Used to decide whether to run LLM on articles the keyword gate rejected.
+/// This gate feeds the (deliberately narrow, VRAM-capped) LLM worker pool, so a
+/// phantom trigger is a real dispatch cost — the short tokens below therefore
+/// match whole-word only, mirroring processor::BOUNDARY_ACTOR_PATS. Country
+/// stems stay substring-matched on purpose: they must catch their adjective
+/// forms ("Iranian", "Russian"). (audit-news d2)
 fn has_geopolitical_trigger(title: &str) -> bool {
     let t = title.to_lowercase();
-    // Great powers / key actors
+    // Great powers / key actors — substring (stems + multiword phrases are safe)
     const ACTORS: &[&str] = &[
         "china", "russia", "united states", "iran", "north korea", "israel",
-        "ukraine", "taiwan", "nato", "pentagon", "kremlin", "beijing", "moscow",
+        "ukraine", "taiwan", "pentagon", "kremlin", "beijing", "moscow",
         "white house", "xi jinping", "putin", "trump", "zelensky", "netanyahu",
-        "hezbollah", "hamas", "houthi", "pla", "irgc",
+        "hezbollah", "hamas", "houthi",
     ];
-    // Conflict / escalation terms
+    // Short actor tokens that hide inside ordinary words: `pla`⊂plan/plant/display,
+    // `nato`⊂senator, `irgc` kept with its peers — whole-word matched.
+    const ACTORS_WORD: &[&str] = &["pla", "irgc", "nato"];
+    // Conflict / escalation terms — substring (deliberate stems: "escalat",
+    // "sanction", "strike"→"airstrikes" etc.)
     const TERMS: &[&str] = &[
-        "war", "attack", "strike", "invasion", "missile", "nuclear", "troops",
+        "attack", "strike", "invasion", "missile", "nuclear", "troops",
         "conflict", "crisis", "sanction", "threat", "escalat", "ceasefire",
-        "military", "bomb", "deploy", "weapon", "assassination", "coup",
-        "blockade", "detained", "hostage", "cyber", "hack", "intelligence",
+        "military", "deploy", "weapon", "assassination",
+        "blockade", "detained", "hostage", "cyber", "intelligence",
+        // Compound war/bomb/hack derivatives the whole-word list below can't reach —
+        // substring-safe (no common English word contains them incidentally).
+        "warfare", "warhead", "warship", "warplane", "wartime", "bomber", "hacker",
     ];
-    ACTORS.iter().any(|a| t.contains(a)) || TERMS.iter().any(|t2| t.contains(t2))
+    // Short terms that hide inside common words (`war`⊂warning/award, `coup`⊂
+    // couple/coupon, `hack`⊂shack) — whole-word matched, with the morphology
+    // spelled out so the old substring recall (bombing/hacked headlines) is kept.
+    const TERMS_WORD: &[&str] = &[
+        "war", "wars", "coup", "coups", "bomb", "bombs", "bombed", "bombing",
+        "hack", "hacked", "hacking",
+    ];
+    ACTORS.iter().any(|a| t.contains(a))
+        || ACTORS_WORD.iter().any(|a| crate::processor::contains_word(&t, a))
+        || TERMS.iter().any(|w| t.contains(w))
+        || TERMS_WORD.iter().any(|w| crate::processor::contains_word(&t, w))
 }
 
 // ── wait_for_sidecar stub ─────────────────────────────────────────────────────
@@ -515,6 +537,44 @@ mod tests {
         assert!(is_great_power("RUSSIA"));
         assert!(is_great_power("United States"));
         assert!(is_great_power("PLA"));
+    }
+
+    // ── has_geopolitical_trigger word boundaries ──────────────────────────────
+
+    #[test]
+    fn geopolitical_trigger_short_tokens_do_not_fire_inside_ordinary_words() {
+        // The trigger gates dispatch into the deliberately narrow (VRAM-capped) LLM
+        // worker pool, so a phantom match is real cost: "pla"⊂plan/plant/display,
+        // "war"⊂warning/award, "coup"⊂couple/coupon, "nato"⊂senator were all
+        // dispatching junk (audit-news d2). None of these titles is geopolitical.
+        for title in [
+            "Solar plant opens ahead of plan",
+            "Severe weather warning for the coast",
+            "Couple wins award for local coupon app",
+            "Senator unveils display of new stadium",
+            "Company shack conversions win design prize",
+        ] {
+            assert!(!has_geopolitical_trigger(title),
+                "'{title}' must not trigger the LLM dispatch gate");
+        }
+    }
+
+    #[test]
+    fn geopolitical_trigger_whole_words_and_morphology_still_fire() {
+        // Whole-word uses — and the spelled-out morphology (bombing/hacked) that
+        // substring matching used to cover — must keep firing.
+        for title in [
+            "PLA drills encircle the island",
+            "War fears grow on the peninsula",
+            "Coup attempt reported in the capital",
+            "City bombing kills dozens",
+            "Government systems hacked overnight",
+            "NATO ministers meet in emergency session",
+            "Iranian officials detained two foreign nationals", // country stem keeps adjective recall
+        ] {
+            assert!(has_geopolitical_trigger(title),
+                "'{title}' must trigger the LLM dispatch gate");
+        }
     }
 
     // ── NlpSidecarHandle shutdown signal ──────────────────────────────────────

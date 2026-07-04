@@ -430,8 +430,9 @@ fn event_keywords() -> Vec<(EventType, Vec<&'static str>)> {
     vec![
         (EventType::MilitaryStrike, vec![
             "airstrike","air strike","bombing","bombardment","artillery","shelling",
-            "rocket attack","drone strike","killed","destroyed","hit","attack","offensive",
-            "assault","raid","targeted strike","precision strike",
+            "rocket attack","drone strike","killed","destroyed","hit","hits","hitting",
+            "attack","offensive",
+            "assault","raid","raids","raided","raiding","targeted strike","precision strike",
         ]),
         (EventType::TroopDeployment, vec![
             "deployed","deployment","troops","soldiers","mobilised","mobilized",
@@ -552,7 +553,11 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("killed",                0.15),
             ("bomb",                  0.15),
             ("fire",                  0.10),
+            ("fires",                 0.10),
+            ("fired",                 0.10),
             ("shot",                  0.10),
+            ("shots",                 0.10),
+            ("gunfire",               0.10),
         ]),
         ("nuclear_posture", vec![
             // Definitive
@@ -640,6 +645,7 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("proposal",              0.10),
             ("respond",               0.10),
             ("deal",                  0.10),
+            ("deals",                 0.10),
         ]),
         ("economic_warfare", vec![
             // Definitive
@@ -740,10 +746,11 @@ const MIN_DOMAIN_SIGNAL: f64 = 0.5;
 ///   "forces"  ⊄ "reinforces / enforces / workforces" (military ← generic prose)
 ///   "atomic"  ⊄ "anatomical / subatomic / diatomic"  (nuclear  ← unrelated; w=0.65 ≥ threshold → tags ALONE)
 ///   "respond" ⊄ "correspondent / corresponding"      (diplomatic ← generic prose)
-///   "deal"    ⊄ "ideal"                              (diplomatic ← generic prose)
+///   "deal"    ⊄ "ideal"                              (diplomatic ← generic prose; "deal"/"deals"
+///                                                     enforce this via `BOUNDARY_DOMAIN_KWS` whole-word)
 /// Multi-word keywords keep substring matching (they cannot hide mid-token); only these exact bare
 /// keywords are boundary-restricted, every other domain keyword is unchanged.
-const WORD_START_DOMAIN_KWS: &[&str] = &["rocket", "forces", "atomic", "respond", "deal"];
+const WORD_START_DOMAIN_KWS: &[&str] = &["rocket", "forces", "atomic", "respond"];
 
 // ── Escalation phrases ────────────────────────────────────────────────────────
 
@@ -774,7 +781,7 @@ const CONCILIATORY_WORDS: &[&str] = &[
 /// for short actor acronyms (`pla`, `cia`, `nato`…) that as bare substrings hide inside ordinary
 /// words (`plan`, `official`, `senator`) and phantom-tag actors. Both args assumed lowercased;
 /// internal hyphens (e.g. "de-escalation") are fine — only the ends are boundary-checked.
-fn find_word(haystack: &str, needle: &str) -> Option<usize> {
+pub(crate) fn find_word(haystack: &str, needle: &str) -> Option<usize> {
     let hb = haystack.as_bytes();
     let nlen = needle.len();
     haystack.match_indices(needle).find_map(|(i, _)| {
@@ -786,10 +793,10 @@ fn find_word(haystack: &str, needle: &str) -> Option<usize> {
 }
 
 /// True if `needle` occurs in `haystack` as a whole word — so the hostile token "fire" does NOT
-/// match inside "ceasefire" and "war" does not match "warning". Used only for the sentiment
-/// lexicons, where naive substring matching let a ceasefire headline score as hostile (the "fire"
-/// token) and inflate the news-flow tone. (audit processor-4)
-fn contains_word(haystack: &str, needle: &str) -> bool {
+/// match inside "ceasefire" and "war" does not match "warning". Used for the sentiment lexicons
+/// (audit processor-4), the boundary keyword lists below, and the nlp_sidecar dispatch gate —
+/// everywhere naive substring matching let ordinary words cast phantom signal.
+pub(crate) fn contains_word(haystack: &str, needle: &str) -> bool {
     find_word(haystack, needle).is_some()
 }
 
@@ -802,6 +809,30 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
 fn starts_word(haystack: &str, needle: &str) -> bool {
     let hb = haystack.as_bytes();
     haystack.match_indices(needle).any(|(i, _)| i == 0 || !hb[i - 1].is_ascii_alphanumeric())
+}
+
+/// Event keywords that must match as whole words: `hit`⊂`white house/architect` cast a
+/// MilitaryStrike classification vote on every White-House story, `raid`⊂`afraid`. The
+/// inflected forms are enumerated (they hide inside words too: `hits`⊂`whitsunday`,
+/// `raids`⊂`afraids` typos) so the boundary fix keeps the substring era's recall on the
+/// most common wire shapes ("missile hits…", "troops raided…"). All other event keywords
+/// stay substring/phrase-matched on purpose (stems catch derived forms).
+const BOUNDARY_EVENT_KWS: &[&str] = &["hit", "hits", "hitting", "raid", "raids", "raided", "raiding"];
+
+/// Weighted-domain tokens that must match as whole words: the ambient `fire`⊂`ceasefire/
+/// wildfire`, `shot`⊂`screenshot`, `deal`⊂`ordeal` are individually below the tag gate but
+/// accumulate through noisy-OR, inflating military/diplomatic magnitude on unrelated or
+/// de-escalatory stories. Inflections enumerated for the same recall reason as the event
+/// list above ("warning shots fired" must keep its ambient credit). "deal"/"deals" live here
+/// rather than in `WORD_START_DOMAIN_KWS` (word-start would re-admit nothing wanted beyond
+/// "dealings" while whole-word keeps `ideal`/`ordeal` excluded — same documented cases).
+/// All other domain tokens stay substring-matched on purpose.
+const BOUNDARY_DOMAIN_KWS: &[&str] = &["fire", "fires", "fired", "shot", "shots", "deal", "deals"];
+
+/// Keyword hit test honouring a boundary list: tokens in `boundary` match whole-word only,
+/// everything else keeps deliberate substring/phrase matching.
+fn kw_hit(tl: &str, kw: &str, boundary: &[&str]) -> bool {
+    if boundary.contains(&kw) { contains_word(tl, kw) } else { tl.contains(kw) }
 }
 
 // ── Nuclear / WMD / civilian indicator terms ─────────────────────────────────
@@ -839,15 +870,24 @@ fn severity_base(et: &EventType) -> f64 {
 
 // ── Actor entity dictionary ───────────────────────────────────────────────────
 
-/// Actor patterns that are short acronyms/initialisms and MUST be matched as whole words. As bare
-/// substrings they hide inside ordinary English words and phantom-tag actors — and for
-/// `pla`/`cia`/`fbi`/`nato` that fabricates GREAT-POWER involvement, biasing the index UP (the
-/// false-alarm direction): `pla`⊂`plan/plant/display`, `cia`⊂`official/special/financial`,
-/// `nato`⊂`senator`, `isis`⊂`crisis`, `quad`⊂`squad`, `idf`⊂`midfield`. Country/proper-noun stems
-/// are deliberately NOT here — they SHOULD prefix-match their adjective forms (`russia`→`russian`,
-/// `iran`→`iranian`), which the dictionary otherwise catches only via explicit phrases.
-const BOUNDARY_ACTOR_PATS: &[&str] =
-    &["pla", "cia", "fbi", "idf", "mi6", "irgc", "isis", "isil", "aukus", "quad", "nato", "dprk"];
+/// Actor patterns that MUST be matched as whole words. Two classes with the same failure mode:
+/// as bare substrings they hide inside ordinary English words and phantom-tag actors — and for
+/// `pla`/`cia`/`fbi`/`nato`/`putin`/`trump` that fabricates GREAT-POWER involvement, biasing the
+/// index UP (the false-alarm direction).
+///   (1) Short acronyms/initialisms: `pla`⊂`plan/plant/display`, `cia`⊂`official/special/
+///       financial`, `nato`⊂`senator`, `isis`⊂`crisis`, `quad`⊂`squad`, `idf`⊂`midfield`.
+///   (2) Person/militia/org names, which — unlike country stems — have no adjective/derived
+///       forms to lose: `putin`⊂`disputing/computing`, `hamas`⊂`bahamas`, `trump`⊂`trumpeted`,
+///       `cuba`-class hazards; the rest (`biden`, `mossad`, `wagner`, …) included on the same
+///       rationale even where no common carrier word exists today.
+/// Country/proper-noun stems are deliberately NOT here — they SHOULD prefix-match their
+/// adjective forms (`russia`→`russian`, `iran`→`iranian`), which the dictionary otherwise
+/// catches only via explicit phrases.
+const BOUNDARY_ACTOR_PATS: &[&str] = &[
+    "pla", "cia", "fbi", "idf", "mi6", "irgc", "isis", "isil", "aukus", "quad", "nato", "dprk",
+    "putin", "zelensky", "biden", "trump", "netanyahu", "khamenei", "mossad", "wagner",
+    "hezbollah", "hamas", "houthis", "houthi",
+];
 
 fn actor_entity_patterns() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -891,6 +931,7 @@ fn actor_entity_patterns() -> Vec<(&'static str, &'static str)> {
         ("hezbollah",  "Hezbollah"),
         ("hamas",      "Hamas"),
         ("houthis",    "Houthis"),
+        ("houthi",     "Houthis"), // singular — the plural-only pattern missed "Houthi missile…"
         ("isis",       "ISIS"),
         ("isil",       "ISIS"),
         ("wagner",     "Wagner Group"),
@@ -1098,7 +1139,7 @@ impl NlpProcessor {
         let mut best       = EventType::Unknown;
         let mut best_score = 0.0_f64;
         for (et, kws) in &self.event_kws {
-            let n = kws.iter().filter(|kw| tl.contains(*kw)).count();
+            let n = kws.iter().filter(|kw| kw_hit(tl, kw, BOUNDARY_EVENT_KWS)).count();
             if n == 0 { continue; }
             let score = n as f64 * severity_base(et);
             if score > best_score {
@@ -1124,11 +1165,13 @@ impl NlpProcessor {
             let mut any_match     = false;
             for (kw, w) in kw_weights {
                 // Short bare keywords match at a word start (kills mid-token false alarms like
-                // "skyrocket"→rocket); every other keyword keeps substring matching.
+                // "skyrocket"→rocket, keeps plural/tense forms); the enumerated ambient tokens
+                // match whole-word (kw_hit → BOUNDARY_DOMAIN_KWS); everything else keeps
+                // deliberate substring matching.
                 let hit = if WORD_START_DOMAIN_KWS.contains(kw) {
                     starts_word(tl, kw)
                 } else {
-                    tl.contains(*kw)
+                    kw_hit(tl, kw, BOUNDARY_DOMAIN_KWS)
                 };
                 if hit {
                     any_match = true;
@@ -1506,6 +1549,89 @@ mod tests {
         assert!(proc.score_domains("the atomic arsenal was placed on alert")
             .contains_key("nuclear_posture"),
             "'atomic' as a whole word must still tag nuclear_posture");
+    }
+
+    #[test]
+    fn actor_person_names_do_not_match_inside_ordinary_words() {
+        // Person/militia names have the same substring failure mode as the acronyms
+        // (audit-news d1): putin⊂disputing, hamas⊂Bahamas, trump⊂trumpeted — matching
+        // them fabricates actors and great-power involvement (the false-alarm
+        // direction). "forces clash" supplies the kinetic signal so process() emits.
+        let mut proc = NlpProcessor::new();
+        let article = make_article(
+            "Forces clash as parties keep disputing the Bahamas summit outcome",
+            "Officials trumpeted the deal despite the standoff",
+        );
+        let event = proc.process(&article).unwrap();
+        assert!(!event.great_power_involved,
+            "no great power is named; disputing/trumpeted must not tag Putin/Trump");
+        for phantom in ["Russia", "United States", "Hamas"] {
+            assert!(!event.actors.iter().any(|a| a == phantom),
+                "phantom actor {phantom} matched inside an ordinary word");
+        }
+    }
+
+    #[test]
+    fn actor_person_names_still_match_as_whole_words() {
+        // The boundary fix must not lose a legitimate whole-word person mention.
+        let mut proc = NlpProcessor::new();
+        let article = make_article(
+            "Putin orders missile strike as Hamas fighters clash",
+            "",
+        );
+        let event = proc.process(&article).unwrap();
+        assert!(event.actors.iter().any(|a| a == "Russia"), "whole-word 'Putin' must tag Russia");
+        assert!(event.actors.iter().any(|a| a == "Hamas"), "whole-word 'Hamas' must still tag");
+        assert!(event.great_power_involved, "Putin → Russia is a great power");
+    }
+
+    #[test]
+    fn houthi_singular_matches_and_country_stems_keep_adjective_recall() {
+        // The dictionary was plural-only ("houthis"), so "Houthi missile…" — the far more
+        // common attributive form — tagged no actor at all: a coverage hole in the
+        // false-CALM direction. Country stems must meanwhile KEEP substring matching
+        // (russia→russian), the documented d5b7ba1 decision this extends.
+        let mut proc = NlpProcessor::new();
+        let article = make_article(
+            "Houthi missile strike hits vessel as Russian forces mass",
+            "",
+        );
+        let event = proc.process(&article).unwrap();
+        assert!(event.actors.iter().any(|a| a == "Houthis"),
+            "singular 'Houthi' must resolve to the Houthis actor");
+        assert!(event.actor_ids.iter().any(|a| a == "russia_military"),
+            "'Russian forces' must still match via the substring stem");
+    }
+
+    #[test]
+    fn event_keywords_hit_and_raid_match_whole_words_only() {
+        // "hit"⊂"white house"/"architect" cast a MilitaryStrike classification vote on
+        // every White-House story and "raid"⊂"afraid" — phantom votes in the
+        // false-alarm direction (audit-news d3). Real whole-word uses must still classify.
+        let proc = NlpProcessor::new();
+        assert_eq!(proc.classify("the architect of the white house budget proposal"),
+            EventType::Unknown, "hit/raid inside architect/white house must cast no vote");
+        assert_eq!(proc.classify("residents afraid after the storm"),
+            EventType::Unknown, "'afraid' must not classify as a raid");
+        assert_eq!(proc.classify("missiles hit the base in a dawn raid"),
+            EventType::MilitaryStrike, "whole-word hit/raid must still classify");
+    }
+
+    #[test]
+    fn ambient_domain_tokens_match_whole_words_only() {
+        // The ambient weighted tokens fire(0.10)/shot(0.10)/deal(0.10) hid inside
+        // ceasefire/wildfire, screenshot, ordeal and accumulated through noisy-OR,
+        // inflating military/diplomatic magnitude on unrelated or de-escalatory
+        // stories (audit-news d4). Every other token keeps substring matching.
+        let proc = NlpProcessor::new();
+        let signals = proc.score_domains("a screenshot documented the family's ordeal after the wildfire");
+        assert!(signals.is_empty(),
+            "fire/shot/deal inside wildfire/screenshot/ordeal must contribute no domain signal, got {signals:?}");
+        // Whole-word uses still count toward their domains (below the tag gate alone,
+        // so combine with a stronger keyword to verify they still accumulate).
+        let with = proc.score_domains("troops opened fire in combat near the advance");
+        assert!(with.contains_key("military_escalation"),
+            "whole-word 'fire' must still accumulate with troops/combat/advance");
     }
 
     #[test]

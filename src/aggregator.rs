@@ -302,6 +302,9 @@ pub struct StoredArticle {
 pub struct ArticleStore {
     pub articles:   VecDeque<StoredArticle>,
     pub index:      HashMap<String, usize>,   // id → absolute insertion counter
+    /// canonical url → article id, for update-in-place on re-ingest of a known
+    /// URL (live-blog title/body edits). Empty-URL articles are not indexed.
+    url_index:      HashMap<String, String>,
     front_counter:  usize,                    // absolute index of deque[0]
     total_inserted: usize,                    // next absolute index to assign
     pub max_size:   usize,
@@ -312,6 +315,7 @@ impl ArticleStore {
         Self {
             articles:      VecDeque::new(),
             index:         HashMap::new(),
+            url_index:     HashMap::new(),
             front_counter: 0,
             total_inserted: 0,
             max_size,
@@ -320,16 +324,75 @@ impl ArticleStore {
 
     pub fn push(&mut self, article: StoredArticle) {
         if self.articles.len() >= self.max_size {
-            // O(1): pop oldest from front, remove its index entry
+            // O(1): pop oldest from front, remove its index entries
             if let Some(evicted) = self.articles.pop_front() {
                 self.index.remove(&evicted.id);
+                // Only unmap the URL if it still points at the evicted row — a
+                // newer row may have legitimately reclaimed the same URL.
+                if self.url_index.get(&evicted.url).is_some_and(|id| *id == evicted.id) {
+                    self.url_index.remove(&evicted.url);
+                }
                 self.front_counter += 1;
             }
         }
         // Record absolute position
         self.index.insert(article.id.clone(), self.total_inserted);
+        if !article.url.is_empty() {
+            self.url_index.insert(article.url.clone(), article.id.clone());
+        }
         self.total_inserted += 1;
         self.articles.push_back(article);
+    }
+
+    /// Update-in-place for a re-ingested canonical URL (live-blog title/body
+    /// edits): refresh title/body/published_at/ingested_at on the EXISTING row —
+    /// id and domain_tags survive — and return a clone for the JSONL archive
+    /// (same id, so the boot loader's last-occurrence-wins keeps the newest
+    /// content). None when the URL isn't in the store: the caller inserts
+    /// normally. An incoming published_at OLDER than the stored one is refused —
+    /// a stale syndicated copy must not clobber the newest edit.
+    pub fn update_by_url(
+        &mut self,
+        url:          &str,
+        source:       &str,
+        title:        &str,
+        body:         &str,
+        published_at: &str,
+        ingested_at:  &str,
+    ) -> Option<StoredArticle> {
+        if url.is_empty() { return None; }
+        let id = self.url_index.get(url)?.clone();
+        let &abs_pos = self.index.get(&id)?;
+        let slot = abs_pos.wrapping_sub(self.front_counter);
+        let art = self.articles.get_mut(slot)?;
+        if art.id != id {
+            warn!(
+                "ArticleStore::update_by_url: index desync — slot {slot} has id='{}', \
+                 expected '{id}'. Skipping update to prevent silent data corruption.",
+                art.id
+            );
+            return None;
+        }
+        // Same-URL, DIFFERENT source = a syndicated/search-loop copy of an article this
+        // store already carries (GDELT surfaces the exact publisher URLs the RSS roster
+        // stored, with page-<title> furniture and a scrape-time date that always reads
+        // "newer") — NOT an edit. Keep the original untouched; the caller treats Some as
+        // handled so no duplicate row is inserted. Only the owning feed updates its rows.
+        if art.source != source { return Some(art.clone()); }
+        // Both timestamps are RFC3339; when both parse, refuse to go backwards.
+        // (Unparseable timestamps allow the update — newest ingest wins.)
+        let older = chrono::DateTime::parse_from_rfc3339(published_at).ok()
+            .zip(chrono::DateTime::parse_from_rfc3339(&art.published_at).ok())
+            .is_some_and(|(new, old)| new < old);
+        if older { return Some(art.clone()); } // keep stored content; re-archive as-is
+        art.title        = title.to_string();
+        // A degenerate re-fetch (title-only entry) must not blank a real excerpt.
+        if !body.trim().is_empty() || art.body.trim().is_empty() {
+            art.body = body.to_string();
+        }
+        art.published_at = published_at.to_string();
+        art.ingested_at  = ingested_at.to_string();
+        Some(art.clone())
     }
 
     /// Apply NLP domain tags to an article by ID.
@@ -664,10 +727,20 @@ pub async fn load_articles(max_size: usize) -> ArticleStore {
     }
 
     let mut store = ArticleStore::new(max_size);
+    // Canonicalize archived URLs (rows written before URL hygiene carry tracking
+    // params) and keep only the NEWEST row per canonical URL: the archive holds
+    // one append per live-blog title edit under a fresh id each, so replaying all
+    // of them resurrected the exact duplicate rows the live path now updates in
+    // place. (audit-news L2/L3)
+    let mut rows: Vec<StoredArticle> = Vec::with_capacity(order.len());
     for id in &order {
-        if let Some(a) = latest.remove(id) {
-            store.push(a);
+        if let Some(mut a) = latest.remove(id) {
+            a.url = crate::ingestor::canonicalize_url(&a.url);
+            rows.push(a);
         }
+    }
+    for a in dedupe_newest_per_url(rows) {
+        store.push(a);
     }
     if store.len() == 0 {
         info!("ArticleStore: no article archive found — starting empty");
@@ -675,6 +748,53 @@ pub async fn load_articles(max_size: usize) -> ArticleStore {
         info!("ArticleStore: restored {} articles from archive", store.len());
     }
     store
+}
+
+/// Keep only the newest row per canonical URL, preserving input order otherwise.
+/// "Newest" = the LAST occurrence in the (chronologically appended) archive
+/// replay — each live-blog edit was appended after the row it superseded. Rows
+/// with an empty URL are always kept: there is nothing to key them on.
+fn dedupe_newest_per_url(rows: Vec<StoredArticle>) -> Vec<StoredArticle> {
+    let keep: Vec<bool> = {
+        let mut last_for_url: HashMap<&str, usize> = HashMap::new();
+        for (i, a) in rows.iter().enumerate() {
+            if !a.url.is_empty() { last_for_url.insert(a.url.as_str(), i); }
+        }
+        rows.iter().enumerate()
+            .map(|(i, a)| a.url.is_empty() || last_for_url.get(a.url.as_str()) == Some(&i))
+            .collect()
+    };
+    rows.into_iter().zip(keep).filter(|(_, k)| *k).map(|(a, _)| a).collect()
+}
+
+/// Boot helper for the ingest dedup caches: the (url, title, source) keys of
+/// archived articles from `oldest_days_back`..=`newest_days_back` days ago,
+/// oldest day first (load_articles itself covers today + yesterday). Keys only —
+/// the article STORE retention is unchanged. Exists because slow feeds
+/// (think-tanks, journals) keep entries live for a week+, so a dedup cache
+/// seeded with only two days re-stored anything older after every restart.
+pub async fn load_archived_article_keys(
+    oldest_days_back: u32,
+    newest_days_back: u32,
+) -> Vec<(String, String, String)> {
+    let today = log_date();
+    let mut keys: Vec<(String, String, String)> = Vec::new();
+    for back in (newest_days_back..=oldest_days_back).rev() {
+        let Some(date) = today.checked_sub_days(chrono::Days::new(back as u64)) else { continue };
+        let path = PathBuf::from(article_path_for_date(&date));
+        if !path.exists() { continue; }
+        match tokio::fs::read_to_string(&path).await {
+            Ok(text) => {
+                for line in text.lines() {
+                    if let Ok(a) = serde_json::from_str::<StoredArticle>(line) {
+                        keys.push((a.url, a.title, a.source));
+                    }
+                }
+            }
+            Err(e) => warn!("Archive key read failed for {}: {e}", path.display()),
+        }
+    }
+    keys
 }
 
 /// Boot loader: restores the Bayesian event window from the date-rotated event
@@ -728,6 +848,24 @@ pub async fn load_events() -> Vec<GeopoliticalEvent> {
     events
 }
 
+// ── Search-API loop health ──────────────────────────────────────────────────────
+
+/// Health of one search-API poll loop (gnews / gdelt), written by the ingestor
+/// and served verbatim in GET /api/sources. Exists because a dark loop was
+/// previously invisible: /api/sources listed RSS feeds only, so GDELT could sit
+/// 429-throttled for days with nothing on the wire saying so. (audit-news c)
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct SearchApiHealth {
+    /// RFC3339 UTC of the last successful fetch+parse (None = none since boot).
+    pub last_success_at:      Option<String>,
+    /// RFC3339 UTC of the most recent attempt, success or failure.
+    pub last_attempt_at:      Option<String>,
+    /// Attempts failed in a row since the last success (0 = healthy).
+    pub consecutive_failures: u32,
+    /// Error text of the most recent failure (cleared on success).
+    pub last_error:           Option<String>,
+}
+
 // ── Shared application state ──────────────────────────────────────────────────
 
 pub type SharedState = Arc<AppState>;
@@ -750,6 +888,9 @@ pub struct AppState {
     /// Cached AI analyst brief (v2 Phase 4) — regenerated periodically by the brief
     /// task, served at GET {base}/api/brief. None until the first generation.
     pub analyst_brief:     Mutex<Option<serde_json::Value>>,
+    /// GNews/GDELT poll-loop health — written by the ingestor loops after every
+    /// attempt, served in GET /api/sources so a dark search API is visible.
+    pub search_api_health: Mutex<HashMap<String, SearchApiHealth>>,
 }
 
 impl AppState {
@@ -764,6 +905,7 @@ impl AppState {
             analyst_brief:      Mutex::new(None),
             epoch_store:        Mutex::new(EpochStore::new()),
             last_calibrated_at: Mutex::new(None),
+            search_api_health:  Mutex::new(HashMap::new()),
         })
     }
 }
@@ -1646,6 +1788,122 @@ mod tests {
         let mut store = ArticleStore::new(3);
         for i in 0..5 { store.push(make_article(&format!("a{i}"), "bbc")); }
         assert_eq!(store.len(), 3);
+    }
+
+    #[test]
+    fn article_store_update_by_url_updates_in_place() {
+        // A re-ingested canonical URL is the SAME article after a live-blog edit
+        // (559 dup URLs / 834 extra rows lived in the store); it must refresh the
+        // existing row — same id, tags preserved — not add a new one. (audit-news L2)
+        let mut store = ArticleStore::new(100);
+        let mut a = make_article("live1", "bbc");
+        a.domain_tags = vec!["military_escalation".into()];
+        let url = a.url.clone();
+        store.push(a);
+        let newer = "2027-01-01T00:00:00+00:00";
+        let updated = store.update_by_url(&url, "bbc", "Edited headline", "new body", newer, newer)
+            .expect("known URL must update, not insert");
+        assert_eq!(store.len(), 1, "update-in-place must not grow the store");
+        assert_eq!(updated.id, "live1", "the row keeps its identity");
+        assert_eq!(updated.title, "Edited headline");
+        assert_eq!(updated.published_at, newer);
+        assert_eq!(updated.domain_tags, vec!["military_escalation".to_string()],
+            "NLP tags from the first pass survive the edit");
+    }
+
+    #[test]
+    fn article_store_update_by_url_refuses_older_published_at() {
+        // A stale syndicated copy (older published_at) must not clobber the newest
+        // edit — the returned clone keeps the stored content.
+        let mut store = ArticleStore::new(100);
+        let mut a = make_article("live2", "bbc");
+        a.published_at = "2026-06-01T00:00:00+00:00".to_string();
+        let url = a.url.clone();
+        store.push(a);
+        let kept = store.update_by_url(&url, "bbc", "Stale title", "stale", "2026-01-01T00:00:00+00:00", "x")
+            .expect("known URL still resolves");
+        assert_eq!(kept.title, "Headline live2", "older copy must not overwrite the stored row");
+    }
+
+    #[test]
+    fn article_store_update_by_url_refuses_cross_source_clobber() {
+        // GDELT surfaces the exact publisher URLs the RSS roster already stored, with
+        // page-<title> furniture and a scrape-time date that always reads newer. A
+        // same-URL hit from a DIFFERENT source is a syndicated copy, not an edit — the
+        // stored row must survive untouched (title, body, source, published_at), and
+        // the Some return tells the caller it is handled (no duplicate row inserted).
+        let mut store = ArticleStore::new(100);
+        let mut a = make_article("live3", "guardian");
+        a.body = "clean 500-char excerpt".to_string();
+        a.published_at = "2026-07-03T09:00:00+00:00".to_string();
+        let url = a.url.clone();
+        store.push(a);
+        let kept = store.update_by_url(&url, "gdelt",
+            "NATO summit opens | Ukraine | The Guardian", "20260703T101500Z",
+            "2026-07-03T10:15:00+00:00", "2026-07-03T10:15:00+00:00")
+            .expect("known URL resolves so the caller does not insert a duplicate");
+        assert_eq!(kept.title, "Headline live3", "cross-source hit must not retitle the row");
+        assert_eq!(kept.body, "clean 500-char excerpt", "cross-source hit must not clobber the excerpt");
+        assert_eq!(kept.source, "guardian", "attribution unchanged");
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn article_store_update_by_url_keeps_excerpt_when_refetch_body_is_empty() {
+        // A degenerate same-feed re-fetch (title-only entry) updates the headline but
+        // must not blank a real excerpt the operator/LLM already benefits from.
+        let mut store = ArticleStore::new(100);
+        let mut a = make_article("live4", "bbc");
+        a.body = "substantive excerpt".to_string();
+        a.published_at = "2026-07-03T09:00:00+00:00".to_string();
+        let url = a.url.clone();
+        store.push(a);
+        let u = store.update_by_url(&url, "bbc", "New headline", "   ",
+            "2026-07-03T10:00:00+00:00", "2026-07-03T10:00:00+00:00").unwrap();
+        assert_eq!(u.title, "New headline", "same-source edit still lands");
+        assert_eq!(u.body, "substantive excerpt", "an empty re-fetch body must not erase the excerpt");
+    }
+
+    #[test]
+    fn article_store_update_by_url_unknown_or_empty_url_is_none() {
+        let mut store = ArticleStore::new(100);
+        store.push(make_article("a1", "bbc"));
+        assert!(store.update_by_url("https://example.com/other", "bbc", "t", "b", "p", "i").is_none(),
+            "unknown URL must fall through to a normal insert");
+        assert!(store.update_by_url("", "bbc", "t", "b", "p", "i").is_none(),
+            "empty URLs are not indexed (GDELT rows can lack one)");
+    }
+
+    #[test]
+    fn article_store_url_index_cleared_on_eviction() {
+        // Once a row rotates out, its URL must stop resolving — otherwise
+        // update_by_url would chase a dangling id instead of inserting fresh.
+        let mut store = ArticleStore::new(2);
+        let first_url = make_article("a0", "bbc").url.clone();
+        for i in 0..3 { store.push(make_article(&format!("a{i}"), "bbc")); } // a0 evicted
+        assert!(store.update_by_url(&first_url, "bbc", "t", "b", "p", "i").is_none(),
+            "evicted row's URL must not resolve to an update");
+    }
+
+    #[test]
+    fn dedupe_newest_per_url_keeps_last_row_per_url() {
+        // The archive holds one append per live-blog edit (fresh id each, same URL);
+        // a reload must keep only the newest — otherwise every restart resurrected
+        // the duplicate rows the live path now updates in place. (audit-news L2)
+        let mut edit1 = make_article("e1", "bbc");
+        let mut edit2 = make_article("e2", "bbc");
+        edit1.url = "https://bbc.co.uk/news/live/x".to_string();
+        edit2.url = "https://bbc.co.uk/news/live/x".to_string();
+        edit2.title = "Newest headline".to_string();
+        let mut no_url = make_article("n1", "gdelt");
+        no_url.url = String::new();
+        let rows = vec![edit1, make_article("solo", "npr"), edit2, no_url];
+        let out = dedupe_newest_per_url(rows);
+        let ids: Vec<&str> = out.iter().map(|a| a.id.as_str()).collect();
+        assert!(!ids.contains(&"e1"), "superseded live-blog row must be dropped");
+        assert!(ids.contains(&"e2"), "the newest edit survives");
+        assert!(ids.contains(&"solo"), "unique URLs are untouched");
+        assert!(ids.contains(&"n1"), "empty-URL rows are always kept");
     }
 
     #[test]

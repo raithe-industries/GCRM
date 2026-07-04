@@ -470,6 +470,7 @@ pub fn normalize_actor(raw: &str) -> String {
         ("hezbollah",                  "hezbollah"),
         ("hamas",                      "hamas"),
         ("houthis",                    "houthis"),
+        ("houthi",                     "houthis"),
         ("isis",                       "isis"),
         ("isil",                       "isis"),
         // ── Leaders ────────────────────────────────────────────────────────
@@ -1413,6 +1414,7 @@ mod tests {
         assert_eq!(normalize_actor("hezbollah"),              "hezbollah");
         assert_eq!(normalize_actor("hamas"),                  "hamas");
         assert_eq!(normalize_actor("houthis"),                "houthis");
+        assert_eq!(normalize_actor("houthi"),                 "houthis"); // singular pattern, same id
         assert_eq!(normalize_actor("isis"),                   "isis");
         assert_eq!(normalize_actor("isil"),                   "isis");
         assert_eq!(normalize_actor("aukus"),                  "aukus");
