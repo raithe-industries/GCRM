@@ -1477,10 +1477,14 @@ impl Aggregator {
                 }
             }
 
-            // Update shared state and broadcast regardless of warmup — live UI always current
-            let json_snap = snapshot_to_json(&snapshot);
-            *self.state.latest_snapshot.lock().await = Some(json_snap);
-
+            // Broadcast regardless of warmup — live UI always current. The supervised
+            // broadcaster (server::broadcast_snapshots) is the SINGLE writer of
+            // `latest_snapshot`: it enriches every snapshot it receives (trend_6h,
+            // uncertainty, momentum_lead, epistemic, model_calibrated_at) and stores
+            // the result. Writing the raw snapshot_to_json here as well raced that
+            // enriched write — every batch opened a window where /api/latest served a
+            // payload with NO trend_6h (the eyes gate caught exactly that on a cold
+            // boot, 2026-07-04). One writer, one payload shape.
             if let Err(e) = self.snapshot_tx.send(snapshot).await {
                 warn!("Snapshot channel closed: {e}");
             }
