@@ -1025,6 +1025,23 @@ function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0]
 // fall back to this tab's session buffer only if the field is absent (older
 // backend / pre-warmup). Returns {delta, samples, span} (span in s, may be null).
 function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null,lead:s.lead||'',leadThen:s.lead_then||'',leadShifted:s.lead_shifted===true,pegged:s.pegged===true};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
+// Measured lead-lag verdict for the momentum gauge (server field momentum_lead, from
+// EpochStore::momentum_lead_lag). Turns the "leading" LABEL into an EARNED statement: 'leads'
+// appends a compact visible suffix (leads P ~30m) and a full tooltip; 'no_lead'/insufficient
+// stay honest in the tooltip and add no visible claim. Returns {vis, tip}.
+function momLead(d){
+  const ll=d&&d.momentum_lead;
+  if(!ll||typeof ll!=='object') return {vis:'',tip:'lead over the headline P not yet measured'};
+  const winH=Math.round((ll.window_secs||0)/3600);
+  if(ll.verdict==='leads'){
+    const m=Math.round((ll.lead_secs||0)/60), lab=m>=60?((m/60)%1?(m/60).toFixed(1):(m/60).toFixed(0))+'h':m+'m';
+    return {vis:' · leads P ~'+lab,
+      tip:'MEASURED to lead the headline P by ~'+lab+' ('+(ll.hit_pct||0).toFixed(0)+'% directional hit over '+winH+'h, '+(ll.pairs||0)+' decisive samples) — an earned verdict, not an assertion'};
+  }
+  if(ll.verdict==='no_lead')
+    return {vis:'',tip:'direction shown, but NOT measured to lead the headline P over the last '+winH+'h (best '+(ll.hit_pct||0).toFixed(0)+'% directional hit) — an honest null, not a claim'};
+  return {vis:'',tip:'lead over the headline P not yet measurable (too few decisive-momentum episodes in the durable ring)'};
+}
 // Amber, not the neutral ~0 grey: a PEGGED read is the model railed at its ceiling, the
 // opposite of a reassuring flat line.
 const PEGGED_COLOR='#E0922E';
@@ -1148,12 +1165,15 @@ function applyData(d){
   const _gs=document.getElementById('gauge-saturated');if(_gs)_gs.style.display=(d.meta&&d.meta.breadth_saturated)?'block':'none';
   // Systemic news-flow direction (LEADING): which way the whole board's coverage is tilting, the
   // heat-weighted mean of the per-theater momentum. Turns before the lagging headline delta; shown
-  // only when decisively one-sided (|m| ≥ 0.25). Driven by couplers.systemic_momentum.
+  // only when decisively one-sided (|m| ≥ 0.25). Driven by couplers.systemic_momentum. The "leading"
+  // claim is now MEASURED (momLead → server field momentum_lead / EpochStore::momentum_lead_lag):
+  // an earned verdict, not an assertion.
   const _gm=document.getElementById('gauge-momentum');
   if(_gm){
     const sm=(d.couplers&&typeof d.couplers.systemic_momentum==='number')?d.couplers.systemic_momentum:0;
-    if(sm<=-0.25){_gm.style.color='#1D9E75';_gm.title='news flow de-escalating — ceasefires/talks dominate recent coverage across active theaters (heat-weighted momentum '+sm.toFixed(2)+'); a leading signal, distinct from the lagging headline delta';_gm.textContent='⇩ news flow de-escalating';_gm.style.display='block';}
-    else if(sm>=0.25){_gm.style.color='#E24B4A';_gm.title='news flow escalating — escalatory moves dominate recent coverage across active theaters (heat-weighted momentum +'+sm.toFixed(2)+'); a leading signal, distinct from the lagging headline delta';_gm.textContent='⇧ news flow escalating';_gm.style.display='block';}
+    const _ll=momLead(d);
+    if(sm<=-0.25){_gm.style.color='#1D9E75';_gm.title='news flow de-escalating — ceasefires/talks dominate recent coverage across active theaters (heat-weighted momentum '+sm.toFixed(2)+'); '+_ll.tip;_gm.textContent='⇩ news flow de-escalating'+_ll.vis;_gm.style.display='block';}
+    else if(sm>=0.25){_gm.style.color='#E24B4A';_gm.title='news flow escalating — escalatory moves dominate recent coverage across active theaters (heat-weighted momentum +'+sm.toFixed(2)+'); '+_ll.tip;_gm.textContent='⇧ news flow escalating'+_ll.vis;_gm.style.display='block';}
     else {_gm.style.display='none';_gm.textContent='';}
   }
   // Honesty layer: render the headline INTERVAL (a range, not a point) and the error posture.

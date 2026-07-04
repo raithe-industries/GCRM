@@ -228,6 +228,11 @@ pub async fn broadcast_snapshots(
             }
             data["trend_6h"] = t6;
             data["uncertainty"] = uncertainty;
+            // Honesty layer: the momentum gauge is LABELLED "leading". Measure it — does momentum
+            // actually precede the realized P over the durable ring? — so the operator sees an
+            // EARNED verdict (leads ~L / no measurable lead / insufficient history), never a bare
+            // assertion. Diagnostic only; never feeds P. (EpochStore::momentum_lead_lag.)
+            data["momentum_lead"] = es.momentum_lead_lag();
         }
         data["epistemic"] = serde_json::json!({
             "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
@@ -720,6 +725,20 @@ mod tests {
         assert!(DASHBOARD_HTML.contains("⇩ news flow de-escalating")
             && DASHBOARD_HTML.contains("⇧ news flow escalating"),
             "the readout must name both the de-escalation and escalation systemic directions");
+    }
+
+    #[test]
+    fn dashboard_renders_the_measured_momentum_lead_verdict() {
+        // HONESTY: the momentum gauge is LABELLED "leading". The dashboard must render the
+        // MEASURED verdict (server field momentum_lead / EpochStore::momentum_lead_lag), not the
+        // old bare "a leading signal" assertion. Lock the consumer (momLead reads d.momentum_lead)
+        // and confirm the unearned assertion is gone.
+        assert!(DASHBOARD_HTML.contains("momLead") && DASHBOARD_HTML.contains("d.momentum_lead"),
+            "the readout must consume the server-measured momentum_lead verdict");
+        assert!(DASHBOARD_HTML.contains("leads P ~"),
+            "a confirmed lead must surface the measured lead time");
+        assert!(!DASHBOARD_HTML.contains("a leading signal, distinct from the lagging headline delta"),
+            "the unearned 'a leading signal' assertion must be replaced by the measured verdict");
     }
 
     #[test]

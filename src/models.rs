@@ -998,6 +998,13 @@ pub struct TimelineEntry {
     /// quiet world. `#[serde(default)]` keeps older persisted entries (pre-field) loadable.
     #[serde(default)]
     pub lead:      String,
+    /// Systemic escalation momentum at this tick (`couplers.systemic_momentum` ∈ [−1,+1]) —
+    /// stored in the durable ring so the lead-lag diagnostic can measure whether this
+    /// "leading" gauge actually PRECEDES the realized headline P over history, rather than
+    /// merely asserting it does. `#[serde(default)]` keeps older persisted entries (pre-field)
+    /// loadable — they read momentum 0 and are simply not counted as decisive samples.
+    #[serde(default)]
+    pub mom:       f64,
 }
 
 impl TimelineEntry {
@@ -1012,6 +1019,7 @@ impl TimelineEntry {
             events:   snap.events_in_window,
             delta:    (snap.delta_annual * 1e8).round() / 1e8,
             lead:     lead_theater(&snap.theaters),
+            mom:      (snap.couplers.systemic_momentum * 1e3).round() / 1e3,
         }
     }
 }
@@ -1245,6 +1253,20 @@ mod tests {
         assert_eq!(TimelineEntry::from_snapshot(&snap).lead, "US/Israel-Iran");
         // A quiet snapshot records an empty lead (round-trips through serde default).
         assert_eq!(TimelineEntry::from_snapshot(&RiskSnapshot::default()).lead, "");
+    }
+
+    #[test]
+    fn timeline_entry_records_systemic_momentum_for_the_lead_lag_diagnostic() {
+        // The durable ring must carry `mom` so EpochStore::momentum_lead_lag can MEASURE whether
+        // momentum leads P, instead of the dashboard merely asserting it does.
+        let mut snap = RiskSnapshot::default();
+        snap.couplers.systemic_momentum = 0.4237;
+        let e = TimelineEntry::from_snapshot(&snap);
+        assert!((e.mom - 0.424).abs() < 1e-9, "mom rounded to 1e-3: {}", e.mom);
+        // Older persisted entries predate the field → serde default 0.0, still loadable.
+        let old: TimelineEntry =
+            serde_json::from_str(r#"{"t":"2026-01-01T00:00:00Z","p_annual":0.3,"p_30day":0.01,"alert":"guarded","elevated":0,"regime":1.0,"events":0,"delta":0.0}"#).unwrap();
+        assert_eq!(old.mom, 0.0);
     }
 
     #[test]

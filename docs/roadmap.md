@@ -267,6 +267,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   events directly so the four anchors are bit-identical. Locked by
   `domain_keywords_match_at_word_start_not_mid_token` (+ `_still_match_plural_and_tense_forms`). See
   improvement-log 2026-07-04.
+- [x] **1.9 The "leading" momentum claim is MEASURED, not asserted** — **DONE 2026-07-04.**
+  `systemic_momentum` (3.18) is labelled a LEADING read at four operator surfaces ("a leading
+  signal, distinct from the lagging headline delta"), but nothing had ever tested whether it
+  actually PRECEDES the realized P — an unearned pillar-1 claim. Added `mom` to the durable
+  `TimelineEntry` (records momentum per tick) and `EpochStore::momentum_lead_lag` — a server-side
+  lead-lag diagnostic that, over the durable ring, measures whether the SIGN of momentum at `t`
+  predicts the sign of the realized P move over the next `L` (candidate lags 15m–4h), across
+  decisive-momentum / real-move episodes only. Conservative verdict: `leads` (with the measured
+  lead time + directional-hit %) only when a lag clears 60% on ≥12 samples; else an honest
+  `no_lead` null or `insufficient`. The dashboard momentum gauge now renders the MEASURED verdict
+  (`leads P ~30m`) in place of the bare assertion. Diagnostic only — never feeds `l_sys`/P, touches
+  no fitted constant. Locked by `momentum_lead_lag_recovers_a_planted_6step_lead` (fails-without:
+  breaking the verdict threshold flips it off `leads`), `_reports_an_honest_null_when_momentum_does_not_lead`,
+  `_insufficient_when_no_decisive_history`, `_tolerates_entries_missing_the_mom_field`,
+  `timeline_entry_records_systemic_momentum_for_the_lead_lag_diagnostic`,
+  `dashboard_renders_the_measured_momentum_lead_verdict`. FOLLOW-UP [candidate]: the per-theater
+  ladder-chip tooltip still says "a leading signal, distinct from the heat trend" (a direction≠level
+  claim, definitionally true) — a per-theater lead-lag measurement could earn that one too. See
+  improvement-log 2026-07-04.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.5 Live-read freshness watchdog** — **DONE 2026-06-13.** The header status hard-asserted

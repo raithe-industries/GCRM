@@ -22,6 +22,59 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-04 — honesty/awareness (MATH-ANALYTIC) — the momentum "leading" claim is now MEASURED, not asserted
+- Item: roadmap 1.9 (new) — standing lane 1 MATH-ANALYTIC: "lead-lag evidence that systemic_momentum
+  actually LEADS the headline P."
+- Defect (pillar-1 HONESTY): `couplers.systemic_momentum` (the 3.18 systemic escalation-momentum
+  gauge) is LABELLED a leading indicator — the model comment (models.rs:851) and FOUR operator
+  surfaces assert "a leading signal, distinct from the lagging headline delta." But the system had
+  never measured whether momentum actually PRECEDES the realized P. The "leading" word was an
+  unbacked assertion — exactly the pillar-1 failure mode ("the number must mean what it says").
+- Change (T1 — a NEW computed gauge from NEW durable input):
+  (a) `TimelineEntry` gains `mom` (systemic_momentum at each tick, rounded 1e-3, `#[serde(default)]`
+      for back-compat) so the durable ring records the momentum history the study needs — previously
+      only `p_annual` was persisted, so lead-lag was uncomputable.
+  (b) `EpochStore::momentum_lead_lag` — a server-side diagnostic over the durable ring (48h window,
+      5-min stride to defeat 1 Hz autocorrelation). For each candidate lag L ∈ {15m,30m,1h,2h,4h} it
+      pairs each decisive-momentum tick (|m|≥0.05) with the P sample ~L later and asks whether
+      sign(m·t) predicted the sign of the realized move p(t+L)−p(t) (only real moves, |Δp|≥0.2pp,
+      count). Reports the full lead-lag PROFILE + a conservative verdict: `leads` (with the measured
+      lead time and directional-hit %) ONLY when a lag clears 60% on ≥12 samples; else an honest
+      `no_lead` null, or `insufficient`. Diagnostic thresholds only — never feed `l_sys`/P, touch no
+      fitted constant.
+  (c) Surfaced as `data.momentum_lead` (server.rs, same locked block as trend_6h/uncertainty); the
+      dashboard momentum gauge (`momLead`) now renders the MEASURED verdict — a compact "leads P ~30m"
+      suffix + a tooltip that says leads / honest-null / not-yet-measurable — in place of the bare
+      "a leading signal…" assertion, which is deleted from that surface.
+- Metric moved: new computed gauge (the measured lead-lag verdict) — the "leading" label is now
+  earned per-read instead of asserted. NO calibration constant touched; the backtest never routes
+  through the epoch ring, so the four anchors are bit-identical (`cargo test backtest` green,
+  current_2026 60.01% on the 60% centre, Brier 0.00092 / in-band 4/4 unchanged).
+- Proof: `cargo build --release` clean; `cargo test --release` **543 passed / 0 failed / 3 ignored**
+  (gcrm target; was 537, +6 lock tests); src/ clippy 0 warnings. Lock
+  `momentum_lead_lag_recovers_a_planted_6step_lead` proven fails-without-change: forcing
+  `LEAD_HIT_THRESHOLD` to an unreachable 1.01 makes the planted-lead ring read `no_lead` and the test
+  FAILS (panicked at the verdict assert); restored 0.60 → green. Companions lock the honest-null
+  path, the insufficient path, back-compat with pre-`mom` entries, the TimelineEntry field, and the
+  dashboard consuming `d.momentum_lead` while the old assertion is gone.
+- Tier: T1 (new computed gauge: a quantity newly computed FROM NEW durable input — the momentum
+  lead-lag verdict; not a relocation of an existing field) · Touched: engine-behavior (new durable
+  field + new server-computed diagnostic, both locked; the lock fails when the verdict logic is
+  broken) · Lock-fails-without-change: yes (threshold-break proof above) · Counts: none of the three
+  frontier counters (Live-sources/Map-layers/Monitors) moved — a math-analytic honesty/awareness
+  gauge · consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) the lead-lag thresholds (`MOM_DEADBAND` 0.05, `DP_DEADBAND`
+  0.002, `LEAD_HIT_THRESHOLD` 0.60, `MOM_LL_MIN_PAIRS` 12, window/stride/lags) are DIAGNOSTIC
+  parameters — they gate a display verdict and never touch P or any fitted constant; tune only with a
+  clear rationale, not to force a flattering verdict. (2) The diagnostic recognises SAME-SIGN lead
+  only — an anti-correlated (inverse) momentum reads `no_lead`, not a claim; that is a known,
+  acceptable limitation (it never overclaims). (3) The live `leads/no_lead/insufficient` value is
+  data-dependent and can only be observed on the running service (the ring is empty in-sandbox); the
+  MATH is what the cloud locks — do not "fix" a sandbox `insufficient` verdict. (4) The per-theater
+  ladder-chip momentum tooltip still says "a leading signal, distinct from the heat trend" — that is
+  a direction≠level claim (definitionally true), deliberately left; earning it would need a
+  per-theater lead-lag measure (roadmap 1.9 FOLLOW-UP).
+
 ## 2026-07-03 — OPERATOR SESSION (Robert-directed; not a routine run) — guardrails-light retirement · news-pipeline hygiene · map dedup/honesty · routine-docs overhaul
 - Item: operator session across four audit lanes (audit-indicators / audit-news / audit-map /
   audit-routines), implemented in-session under Robert's direction 2026-07-03. One coherent

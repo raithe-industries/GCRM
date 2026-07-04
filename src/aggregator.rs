@@ -631,7 +631,165 @@ impl EpochStore {
                       for irreducible forecast uncertainty, widened when data quality is low",
         })
     }
+
+    /// Lead-lag diagnostic — does the systemic momentum gauge actually PRECEDE the realized
+    /// headline P, as its "leading" label claims? Measured server-side over the durable ring so
+    /// the operator sees an EARNED statement, not an unbacked assertion. Default window/lags.
+    pub fn momentum_lead_lag(&self) -> serde_json::Value {
+        self.momentum_lead_lag_window(
+            Utc::now(),
+            MOM_LL_WINDOW_SECS,
+            MOM_LL_STRIDE_SECS,
+            MOM_LL_LAGS,
+        )
+    }
+
+    /// Testable core of [`momentum_lead_lag`]. Builds a stride-decimated ascending series of
+    /// `(secs, p_annual, mom)` over the window, then for each candidate lag `L` measures whether
+    /// the SIGN of the momentum at time `t` predicts the SIGN of the forward move
+    /// `p(t+L) − p(t)`. A pair counts only when the momentum is decisive (`|m| ≥ MOM_DEADBAND`)
+    /// AND the forward move is real (`|Δp| ≥ DP_DEADBAND`) — near-zero momentum has no direction
+    /// to test and a flat P has no move to predict. Reports the full lead-lag profile plus a
+    /// conservative verdict. `leads` only when the best lag clears `LEAD_HIT_THRESHOLD` on
+    /// `>= MOM_LL_MIN_PAIRS` decisive samples (momentum's direction reliably preceded the P move);
+    /// `no_lead` when there were enough decisive samples but no lag beat the threshold (the
+    /// direction did NOT reliably lead in this window — an honest null result); `insufficient`
+    /// when the history holds too few decisive-momentum episodes to test.
+    /// Decimation to one sample per `stride_secs` keeps 1 Hz autocorrelated ticks from inflating
+    /// the sample count. Touches no fitted constant and never feeds P — pure diagnostic.
+    pub fn momentum_lead_lag_window(
+        &self,
+        now: DateTime<Utc>,
+        window_secs: i64,
+        stride_secs: i64,
+        lags_secs: &[i64],
+    ) -> serde_json::Value {
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        // Stride-decimated ascending series: (secs_since_cutoff, p_annual, mom).
+        let mut series: Vec<(i64, f64, f64)> = Vec::new();
+        let mut last_kept: Option<i64> = None;
+        for e in self.ring.iter() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue,
+            };
+            if t < cutoff || t > now {
+                continue;
+            }
+            let p = match e.get("p_annual").and_then(|v| v.as_f64()) {
+                Some(p) => p,
+                None => continue,
+            };
+            let m = e.get("mom").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let secs = (t - cutoff).num_seconds();
+            if let Some(lk) = last_kept {
+                if secs - lk < stride_secs {
+                    continue;
+                }
+            }
+            last_kept = Some(secs);
+            series.push((secs, p, m));
+        }
+
+        // For each lag, pair sample i with the sample nearest t_i+L (within ±stride tolerance)
+        // via a forward two-pointer over the ascending series.
+        let tol = stride_secs;
+        let mut profile: Vec<serde_json::Value> = Vec::with_capacity(lags_secs.len());
+        let mut best: Option<(i64, f64, usize)> = None; // (lag, hit, pairs)
+        for &lag in lags_secs {
+            let mut j = 0usize;
+            let mut considered = 0usize;
+            let mut agree = 0usize;
+            for i in 0..series.len() {
+                let (ti, pi, mi) = series[i];
+                if mi.abs() < MOM_DEADBAND {
+                    continue; // momentum has no decisive direction to test
+                }
+                let target = ti + lag;
+                while j + 1 < series.len() && series[j].0 < target {
+                    j += 1;
+                }
+                // pick the closer of series[j] and series[j-1] to `target`
+                let cand = if j > 0 && (target - series[j - 1].0).abs() < (series[j].0 - target).abs() {
+                    j - 1
+                } else {
+                    j
+                };
+                if (series[cand].0 - target).abs() > tol {
+                    continue; // no sample near t+L
+                }
+                let dp = series[cand].1 - pi;
+                if dp.abs() < DP_DEADBAND {
+                    continue; // P did not actually move → nothing to predict
+                }
+                considered += 1;
+                if (mi > 0.0) == (dp > 0.0) {
+                    agree += 1;
+                }
+            }
+            let hit = if considered > 0 { agree as f64 / considered as f64 } else { 0.0 };
+            profile.push(serde_json::json!({
+                "lag_secs": lag,
+                "hit_pct":  (hit * 100.0 * 1e1).round() / 1e1,
+                "pairs":    considered,
+            }));
+            if considered >= MOM_LL_MIN_PAIRS {
+                let better = match best {
+                    // higher hit wins; tie → shorter lag (earliest detectable lead)
+                    Some((bl, bh, _)) => hit > bh + 1e-9 || (( hit - bh).abs() <= 1e-9 && lag < bl),
+                    None => true,
+                };
+                if better {
+                    best = Some((lag, hit, considered));
+                }
+            }
+        }
+
+        match best {
+            Some((lag, hit, pairs)) => {
+                let verdict = if hit >= LEAD_HIT_THRESHOLD { "leads" } else { "no_lead" };
+                serde_json::json!({
+                    "available":   true,
+                    "verdict":     verdict,
+                    "lead_secs":   lag,
+                    "hit_pct":     (hit * 100.0 * 1e1).round() / 1e1,
+                    "pairs":       pairs,
+                    "window_secs": window_secs,
+                    "profile":     profile,
+                    "basis": "sign of systemic momentum at t vs sign of the realized P move over \
+                              the next L, across decisive-momentum episodes in the durable ring; \
+                              'leads' only when a lag clears the directional-hit threshold on \
+                              enough samples — never asserted",
+                })
+            }
+            None => serde_json::json!({
+                "available":   false,
+                "verdict":     "insufficient",
+                "window_secs": window_secs,
+                "profile":     profile,
+                "basis": "too few decisive-momentum episodes in the durable ring to test whether \
+                          momentum leads the headline P",
+            }),
+        }
+    }
 }
+
+// Lead-lag diagnostic parameters (DISPLAY/diagnostic only — none touches P or any fitted
+// calibration constant). Window is long (the durable ring holds ~4 days) so decisive-momentum
+// episodes accumulate; stride decimates 1 Hz autocorrelated ticks; the deadbands screen out
+// directionless momentum and flat-P stretches; the threshold/min-pairs keep the "leads" verdict
+// conservative — an honest null ("no_lead") is reported rather than a flattering claim.
+const MOM_LL_WINDOW_SECS: i64 = 48 * 3600;
+const MOM_LL_STRIDE_SECS: i64 = 300; // one sample per 5 min
+const MOM_LL_LAGS: &[i64] = &[15 * 60, 30 * 60, 60 * 60, 120 * 60, 240 * 60];
+const MOM_DEADBAND: f64 = 0.05;      // |momentum| below this has no decisive direction
+const DP_DEADBAND: f64 = 0.002;      // |Δp| below this (0.2pp) is not a real move
+const MOM_LL_MIN_PAIRS: usize = 12;  // decisive samples required to judge a lag
+const LEAD_HIT_THRESHOLD: f64 = 0.60; // directional-hit rate to earn the "leads" verdict
 
 /// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
 /// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
@@ -2242,6 +2400,98 @@ mod tests {
         let tr = es.trend_window(0.50, Utc::now(), 6 * 3600, 2);
         assert_eq!(tr["available"], false);
         assert_eq!(tr["samples"], 0);
+    }
+
+    // ── EpochStore::momentum_lead_lag — the "leading" claim is MEASURED, not asserted ──────
+    // A deterministic hash gives each 5-min tick an independent momentum sign; these lock the
+    // diagnostic that decides whether that momentum actually PRECEDES the realized P.
+
+    /// Independent ±1 per index (no period-6 structure that would let a wrong lag correlate).
+    fn ll_dir(k: usize) -> f64 {
+        if ((k as u64).wrapping_mul(2654435761) >> 13) & 1 == 0 { 1.0 } else { -1.0 }
+    }
+
+    #[test]
+    fn momentum_lead_lag_recovers_a_planted_6step_lead() {
+        // Plant the relationship p(t+1800s) − p(t) = +0.003·sign(mom(t)) EXACTLY (6 ticks @300s),
+        // with momentum otherwise independent tick-to-tick. Only the 1800s lag should score ~100%.
+        let now = Utc::now();
+        let n = 300usize;
+        let base = now - chrono::Duration::seconds(300 * n as i64);
+        // s[k+6] − s[k] = dir(k) ⇒ p rises/falls 6 ticks AFTER momentum turns.
+        let mut s = vec![0f64; n + 6];
+        for k in 0..n { s[k + 6] = s[k] + ll_dir(k); }
+        let mut es = EpochStore::new();
+        for k in 0..n {
+            let t = base + chrono::Duration::seconds(300 * k as i64);
+            es.push(serde_json::json!({
+                "t": t.to_rfc3339(),
+                "p_annual": 0.30 + 0.003 * s[k],
+                "mom": 0.3 * ll_dir(k),
+            }));
+        }
+        let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], true);
+        assert_eq!(v["verdict"], "leads", "planted forward relationship must read as a lead");
+        assert_eq!(v["lead_secs"], 1800, "the winning lag must be the 6-tick (1800s) plant");
+        assert!(v["hit_pct"].as_f64().unwrap() >= 95.0, "hit% at the planted lag: {v:?}");
+        assert!(v["pairs"].as_u64().unwrap() >= MOM_LL_MIN_PAIRS as u64);
+    }
+
+    #[test]
+    fn momentum_lead_lag_reports_an_honest_null_when_momentum_does_not_lead() {
+        // Decisive momentum, but P is an independent random walk — no lag should beat chance.
+        let now = Utc::now();
+        let n = 300usize;
+        let base = now - chrono::Duration::seconds(300 * n as i64);
+        let mut rw = 0f64;
+        let mut es = EpochStore::new();
+        for k in 0..n {
+            // walk driven by a DIFFERENT hash stream than the momentum sign → uncorrelated
+            rw += if ((k as u64).wrapping_mul(40503).wrapping_add(7) >> 5) & 1 == 0 { 1.0 } else { -1.0 };
+            let t = base + chrono::Duration::seconds(300 * k as i64);
+            es.push(serde_json::json!({
+                "t": t.to_rfc3339(),
+                "p_annual": 0.30 + 0.003 * rw,
+                "mom": 0.3 * ll_dir(k),
+            }));
+        }
+        let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], true, "enough decisive samples to judge");
+        assert_eq!(v["verdict"], "no_lead", "unrelated P must NOT be dressed up as a lead: {v:?}");
+        assert!(v["hit_pct"].as_f64().unwrap() < 60.0, "best hit stayed below threshold: {v:?}");
+    }
+
+    #[test]
+    fn momentum_lead_lag_insufficient_when_no_decisive_history() {
+        // Empty ring, and a ring of directionless (mom≈0) ticks, both read "insufficient".
+        let es = EpochStore::new();
+        let v = es.momentum_lead_lag_window(Utc::now(), 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], false);
+        assert_eq!(v["verdict"], "insufficient");
+
+        let now = Utc::now();
+        let mut es2 = EpochStore::new();
+        for k in 0..100 {
+            let t = now - chrono::Duration::seconds(300 * (100 - k) as i64);
+            es2.push(serde_json::json!({"t": t.to_rfc3339(), "p_annual": 0.30, "mom": 0.0}));
+        }
+        let v2 = es2.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v2["available"], false, "no decisive momentum ⇒ nothing to test: {v2:?}");
+    }
+
+    #[test]
+    fn momentum_lead_lag_tolerates_entries_missing_the_mom_field() {
+        // Older persisted entries predate `mom`; they must load (read momentum 0) and simply
+        // not count as decisive — never panic.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for k in 0..50 {
+            let t = now - chrono::Duration::seconds(300 * (50 - k) as i64);
+            es.push(serde_json::json!({"t": t.to_rfc3339(), "p_annual": 0.30 + 0.01 * k as f64}));
+        }
+        let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
+        assert_eq!(v["available"], false); // no `mom` ⇒ no decisive samples
     }
 
     // ── load_epoch ────────────────────────────────────────────────────────────
