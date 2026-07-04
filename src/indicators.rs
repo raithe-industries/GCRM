@@ -141,16 +141,16 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             theater: None, detail: "No theater data".into() },
     };
 
-    // 3b. Crisis diplomacy breaking down — the `diplomatic_breakdown` modality elevated in
-    //     ANY theater (recalled ambassadors, walked-out talks, severed crisis-communication
-    //     channels). This is the classic 1914 leading warning: when the off-ramps close, a
-    //     crisis loses its brakes. The model already scores it (a weight-1.0 modality in
-    //     DOMAIN_WEIGHTS that feeds the headline) and the cross-domain light COUNTS it, but
-    //     no board light NAMED it — so a diplomatic collapse short of a 3-modality
-    //     cross-domain trip went dark on the operator's at-a-glance board. Same global-max
-    //     idiom and 0.45 "meaningfully elevated" bar as the nuclear/energy lights (the
-    //     per-modality signaling tier, above the model's faint 0.32 elevation line), naming
-    //     the hottest theater and a near-miss on a clear read.
+    // 4. Crisis diplomacy breaking down — the `diplomatic_breakdown` modality elevated in
+    //    ANY theater (recalled ambassadors, walked-out talks, severed crisis-communication
+    //    channels). This is the classic 1914 leading warning: when the off-ramps close, a
+    //    crisis loses its brakes. The model already scores it (a weight-1.0 modality in
+    //    DOMAIN_WEIGHTS that feeds the headline) and the cross-domain light COUNTS it, but
+    //    no board light NAMED it — so a diplomatic collapse short of a 3-modality
+    //    cross-domain trip went dark on the operator's at-a-glance board. Same global-max
+    //    idiom and 0.45 "meaningfully elevated" bar as the nuclear/energy lights (the
+    //    per-modality signaling tier, above the model's faint 0.32 elevation line), naming
+    //    the hottest theater and a near-miss on a clear read.
     let diplo = theaters.iter().map(|t| (t, modality(t, "diplomatic_breakdown")))
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let ind_diplomatic = match diplo {
@@ -167,19 +167,19 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             theater: None, detail: "No theater data".into() },
     };
 
-    // 3c. Cyber / critical-infrastructure attack — the `cyber_info_ops` modality elevated
-    //     in ANY theater (attacks on power grids, financial systems, military C2, undersea
-    //     cables, or a coordinated info-ops campaign). This is the modern leading edge of
-    //     great-power conflict: cyber strikes on critical infrastructure routinely PRECEDE
-    //     kinetic action (degrade the adversary's command-and-control before the first shot).
-    //     `cyber_info_ops` is a tracked modality (weight 0.9 in DOMAIN_WEIGHTS that feeds the
-    //     headline) and the cross-domain light COUNTS it, but — unlike the other four
-    //     modalities (military→gp_kinetic, nuclear→nuclear_signaling, economic→energy_chokepoint,
-    //     diplomatic→diplomatic_breakdown) — no board light NAMED it, so a cyber/infrastructure
-    //     escalation short of a 3-modality cross-domain trip went dark on the operator's
-    //     at-a-glance board. Same global-max idiom and 0.45 "meaningfully elevated" bar as the
-    //     nuclear/energy/diplomatic lights, naming the hottest theater and a near-miss on a clear
-    //     read. Not apex (the apex set is reserved for great-power-WAR configurations).
+    // 5. Cyber / critical-infrastructure attack — the `cyber_info_ops` modality elevated
+    //    in ANY theater (attacks on power grids, financial systems, military C2, undersea
+    //    cables, or a coordinated info-ops campaign). This is the modern leading edge of
+    //    great-power conflict: cyber strikes on critical infrastructure routinely PRECEDE
+    //    kinetic action (degrade the adversary's command-and-control before the first shot).
+    //    `cyber_info_ops` is a tracked modality (weight 0.9 in DOMAIN_WEIGHTS that feeds the
+    //    headline) and the cross-domain light COUNTS it, but — unlike the other four
+    //    modalities (military→gp_kinetic, nuclear→nuclear_signaling, economic→energy_chokepoint,
+    //    diplomatic→diplomatic_breakdown) — no board light NAMED it, so a cyber/infrastructure
+    //    escalation short of a 3-modality cross-domain trip went dark on the operator's
+    //    at-a-glance board. Same global-max idiom and 0.45 "meaningfully elevated" bar as the
+    //    nuclear/energy/diplomatic lights, naming the hottest theater and a near-miss on a clear
+    //    read. Not apex (the apex set is reserved for great-power-WAR configurations).
     let cyber = theaters.iter().map(|t| (t, modality(t, "cyber_info_ops")))
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let ind_cyber = match cyber {
@@ -196,79 +196,15 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
             theater: None, detail: "No theater data".into() },
     };
 
-    // 4. Multiple theaters concurrently hot.
+    // 6. Multiple theaters concurrently hot.
     let ind_concurrency = Indicator {
         id: "multi_theater", label: "Multiple theaters concurrently hot",
         tripped: c.concurrency >= 1.8, theater: None,
         detail: format!("{:.1} theaters hot", c.concurrency),
     };
 
-    // 5. Multiple great powers entangled.
-    let ind_gp_entangle = Indicator {
-        id: "gp_entanglement", label: "Multiple great powers entangled",
-        tripped: c.gp_entanglement >= 0.60, theater: None,
-        detail: format!("entanglement {:.2}", c.gp_entanglement),
-    };
-
-    // 6. Mutual-defense alliance invoked. Name the theater carrying the
-    //    collective-defense signal (same theater-attribution idiom as the kinetic /
-    //    nuclear / chokepoint / cross-domain lights), so the operator can see WHERE
-    //    Article 5 tripped rather than a bare global "Article 5 / collective-defense
-    //    signal". The coupler `alliance_activation` is derived from these theaters'
-    //    `alliance_invoked` flags, so it is > 0.0 exactly when some theater is found.
-    //    Pick the HOTTEST alliance-invoked theater (not merely the first in list
-    //    order): a HOT invocation is what drives `alliance_activation` to its 1.0
-    //    apex, so naming the hottest keeps the label pointed at the theater actually
-    //    carrying the signal rather than a cold invocation that happens to sort first.
-    let alliance_theater = theaters.iter()
-        .filter(|t| t.alliance_invoked)
-        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
-    let ind_alliance = Indicator {
-        id: "alliance_invoked", label: "Mutual-defense alliance invoked",
-        tripped: c.alliance_activation > 0.0,
-        theater: alliance_theater.map(|t| t.label.clone()),
-        detail: match alliance_theater {
-            Some(t) => format!("Article 5 / collective-defense signal: {}", t.label),
-            None => "None".into(),
-        },
-    };
-
-    // 7. Arms-control guardrails collapsed.
-    let ind_guardrails = Indicator {
-        id: "guardrails", label: "Arms-control guardrails collapsed",
-        tripped: c.guardrail_collapse >= 0.70, theater: None,
-        detail: format!("guardrail collapse {:.2}", c.guardrail_collapse),
-    };
-
-    // 8. Cross-domain escalation within a single theater (≥3 modalities elevated).
-    //    On a clear reading, surface the hottest near-miss (how many modalities the
-    //    leading theater has elevated, against the 3 needed) — same legibility idiom as
-    //    the nuclear/energy lights — so a theater sitting at 2/3 (one axis from tripping)
-    //    is distinguishable from a quiet board, rather than a bare "No theater with 3+".
-    //    "Elevated" here is the MODEL's `ELEVATION_THRESHOLD` (the same cutoff that feeds
-    //    the intra-theater co-occurrence amplifier and that the dashboard draws as the
-    //    "elevated" line), counted over the model's own modality set `DOMAIN_WEIGHTS` —
-    //    not a hardcoded value/list. So the board's "cross-domain" reading can never drift
-    //    from what the headline number calls elevated, even if either is recalibrated.
-    let cross = theaters.iter().map(|t| {
-        let n = crate::bayesian::DOMAIN_WEIGHTS.iter()
-            .filter(|(m, _)| modality(t, m) >= crate::models::ELEVATION_THRESHOLD)
-            .count();
-        (t, n)
-    }).max_by_key(|(_, n)| *n);
-    let ind_cross = match cross {
-        Some((t, n)) if n >= 3 => Indicator {
-            id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: true,
-            theater: Some(t.label.clone()), detail: format!("{} modalities elevated in {}", n, t.label) },
-        Some((t, n)) => Indicator {
-            id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: false,
-            theater: None, detail: format!("Below threshold (max {} {}/3 modalities)", t.label, n) },
-        None => Indicator { id: "cross_domain", label: "Cross-domain escalation in one theater",
-            tripped: false, theater: None, detail: "No theater data".into() },
-    };
-
-    // 10. Active escalation at a flashpoint — a theater already at Crisis or above that
-    //    is ALSO rising this tick. The other nine lights are all LEVEL reads; none flags
+    // 7. Active escalation at a flashpoint — a theater already at Crisis or above that
+    //    is ALSO rising this tick. The other eleven lights are all LEVEL reads; none flags
     //    VELOCITY-at-altitude — a hot flashpoint getting *worse* — which is the classic
     //    I&W leading indicator (the I&W method is fundamentally about detecting CHANGE,
     //    not just standing level). It reuses the MODEL's own classification — the rung
@@ -308,7 +244,75 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         },
     };
 
-    // 9. Nuclear-brink configuration (direct ≥2-great-power nuclear confrontation).
+    // 8. Multiple great powers entangled.
+    let ind_gp_entangle = Indicator {
+        id: "gp_entanglement", label: "Multiple great powers entangled",
+        tripped: c.gp_entanglement >= 0.60, theater: None,
+        detail: format!("entanglement {:.2}", c.gp_entanglement),
+    };
+
+    // 9. Mutual-defense alliance invoked. Name the theater carrying the
+    //    collective-defense signal (same theater-attribution idiom as the kinetic /
+    //    nuclear / chokepoint / cross-domain lights), so the operator can see WHERE
+    //    Article 5 tripped rather than a bare global "Article 5 / collective-defense
+    //    signal". The coupler `alliance_activation` is derived from these theaters'
+    //    `alliance_invoked` flags, so it is > 0.0 exactly when some theater is found.
+    //    Pick the HOTTEST alliance-invoked theater (not merely the first in list
+    //    order): a HOT invocation is what drives `alliance_activation` to its 1.0
+    //    apex, so naming the hottest keeps the label pointed at the theater actually
+    //    carrying the signal rather than a cold invocation that happens to sort first.
+    let alliance_theater = theaters.iter()
+        .filter(|t| t.alliance_invoked)
+        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
+    let ind_alliance = Indicator {
+        id: "alliance_invoked", label: "Mutual-defense alliance invoked",
+        tripped: c.alliance_activation > 0.0,
+        theater: alliance_theater.map(|t| t.label.clone()),
+        detail: match alliance_theater {
+            Some(t) => format!("Article 5 / collective-defense signal: {}", t.label),
+            None => "None".into(),
+        },
+    };
+
+    // (Retired 2026-07-03: the "Arms-control guardrails collapsed" light. It was the one
+    // light on the board that observed NOTHING — `couplers.guardrail_collapse` is a pure
+    // function of the operator-typed regime config (bayesian::guardrail_from_regime over
+    // the regime multiplier; theater.rs never computes it), so the light only ever echoed
+    // settings.yml back at the operator. Its 0.70 trip needs a regime product ≥ 3.8, which
+    // the 2026-06-30 regime de-double-count made unreachable (active structural product
+    // 2.90 → collapse frozen at 0.475). The VALUE keeps its full engine role — the l_sys
+    // guardrail amplifier, dominant-coupler naming, and the regime inspector panel — only
+    // the dead board light went. Do not re-add it: this board is for OBSERVABLE warning
+    // conditions, and a config echo can never be one.)
+
+    // 10. Cross-domain escalation within a single theater (≥3 modalities elevated).
+    //    On a clear reading, surface the hottest near-miss (how many modalities the
+    //    leading theater has elevated, against the 3 needed) — same legibility idiom as
+    //    the nuclear/energy lights — so a theater sitting at 2/3 (one axis from tripping)
+    //    is distinguishable from a quiet board, rather than a bare "No theater with 3+".
+    //    "Elevated" here is the MODEL's `ELEVATION_THRESHOLD` (the same cutoff that feeds
+    //    the intra-theater co-occurrence amplifier and that the dashboard draws as the
+    //    "elevated" line), counted over the model's own modality set `DOMAIN_WEIGHTS` —
+    //    not a hardcoded value/list. So the board's "cross-domain" reading can never drift
+    //    from what the headline number calls elevated, even if either is recalibrated.
+    let cross = theaters.iter().map(|t| {
+        let n = crate::bayesian::DOMAIN_WEIGHTS.iter()
+            .filter(|(m, _)| modality(t, m) >= crate::models::ELEVATION_THRESHOLD)
+            .count();
+        (t, n)
+    }).max_by_key(|(_, n)| *n);
+    let ind_cross = match cross {
+        Some((t, n)) if n >= 3 => Indicator {
+            id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: true,
+            theater: Some(t.label.clone()), detail: format!("{} modalities elevated in {}", n, t.label) },
+        Some((t, n)) => Indicator {
+            id: "cross_domain", label: "Cross-domain escalation in one theater", tripped: false,
+            theater: None, detail: format!("Below threshold (max {} {}/3 modalities)", t.label, n) },
+        None => Indicator { id: "cross_domain", label: "Cross-domain escalation in one theater",
+            tripped: false, theater: None, detail: "No theater data".into() },
+    };
+
+    // 11. Nuclear-brink configuration (direct ≥2-great-power nuclear confrontation).
     // Uses the SAME `theater_is_nuclear_brink` predicate as the systemic amplifier
     // (theater.rs), so this board light trips on exactly the state where the headline's
     // 1.70× apex amplifier engages — the number and the board can never disagree about
@@ -327,7 +331,7 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
                               None => "No direct nuclear-superpower brink".into() },
     };
 
-    // 11. Seismic event consistent with a nuclear test. The strongest PHYSICAL nuclear
+    // 12. Seismic event consistent with a nuclear test. The strongest PHYSICAL nuclear
     // indicator — a shallow event at a known test site that has cleared the natural-
     // earthquake discriminator (no aftershock sequence, or a CTBTO statement). Sourced
     // from the seismic monitor's own `SeismicAlert::is_test_consistent` determination
@@ -354,8 +358,7 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     };
 
     vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_diplomatic, ind_cyber, ind_concurrency,
-         ind_escalating, ind_gp_entangle, ind_alliance, ind_guardrails, ind_cross, ind_brink,
-         ind_seismic]
+         ind_escalating, ind_gp_entangle, ind_alliance, ind_cross, ind_brink, ind_seismic]
 }
 
 #[cfg(test)]
@@ -409,8 +412,29 @@ mod tests {
     fn empty_snapshot_trips_nothing() {
         let snap = RiskSnapshot::default();
         let inds = evaluate(&snap);
-        assert_eq!(inds.len(), 13);
+        assert_eq!(inds.len(), 12);
         assert!(inds.iter().all(|i| !i.tripped));
+    }
+
+    #[test]
+    fn guardrails_board_light_stays_retired() {
+        // Retired 2026-07-03: the "Arms-control guardrails collapsed" light observed only
+        // operator config — `couplers.guardrail_collapse` is a pure function of the regime
+        // multiplier (bayesian::guardrail_from_regime), and the 2026-06-30 regime
+        // de-double-count froze it at 0.475, far below its 0.70 trip. The value keeps its
+        // engine role (l_sys amplifier, dominant-coupler naming, regime panel); the BOARD
+        // is for observable warning conditions only. Lock the light out so a future
+        // improve run doesn't re-add a config echo — even with the coupler railed at 1.0,
+        // no board light may read it.
+        let snap = RiskSnapshot {
+            couplers: SystemicCouplers { guardrail_collapse: 1.0, ..Default::default() },
+            ..Default::default()
+        };
+        let inds = evaluate(&snap);
+        assert!(inds.iter().all(|i| i.id != "guardrails"),
+            "the retired guardrails board light must not come back (it observes only settings.yml)");
+        assert!(inds.iter().all(|i| !i.tripped),
+            "a railed guardrail_collapse coupler alone must trip nothing on the board");
     }
 
     #[test]
@@ -438,7 +462,6 @@ mod tests {
         assert!(trip("energy_chokepoint"));
         assert!(trip("multi_theater"));
         assert!(trip("gp_entanglement"));
-        assert!(trip("guardrails"));
         assert!(trip("cross_domain"));
         assert!(trip("nuclear_brink"), "nato_russia has nuclear 0.80 + US & Russia → brink");
     }
@@ -901,7 +924,7 @@ mod tests {
     #[test]
     fn active_escalation_requires_velocity_not_just_level() {
         // A hot but NON-rising theater must read CLEAR — standing level alone is not
-        // escalation (the other nine lights already cover level). The clear detail must
+        // escalation (the other eleven lights already cover level). The clear detail must
         // surface the hottest theater that IS rising at all, even one below Crisis, so a
         // sub-Crisis flashpoint heating up stays visible rather than hidden.
         let mut hot_stable = theater("nato_russia", EscalationRung::LimitedWar, true,
