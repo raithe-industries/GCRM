@@ -2516,11 +2516,11 @@ mod tests {
         let mut s = vec![0f64; n + 6];
         for k in 0..n { s[k + 6] = s[k] + ll_dir(k); }
         let mut es = EpochStore::new();
-        for k in 0..n {
+        for (k, sk) in s.iter().enumerate().take(n) {
             let t = base + chrono::Duration::seconds(300 * k as i64);
             es.push(serde_json::json!({
                 "t": t.to_rfc3339(),
-                "p_annual": 0.30 + 0.003 * s[k],
+                "p_annual": 0.30 + 0.003 * sk,
                 "mom": 0.3 * ll_dir(k),
             }));
         }
