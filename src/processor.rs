@@ -666,7 +666,27 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("blockade",              0.70),
             ("trade war",             0.70),
             ("embargo",               0.70),
+            // Strait / chokepoint weaponization — the coercion the "Energy / chokepoint
+            // weaponized" board light exists to see. The list above indexes SANCTIONS-era
+            // economic war (embargoes, tariffs, export bans); a chokepoint is weaponized
+            // through TRANSIT control — closure threats, mining, selective tolls,
+            // tanker seizures — and none of that phrasing hit any keyword, so 2026
+            // Hormuz fee-regime coverage scored zero here and the light stayed dark
+            // while ships were literally turning around (operator-confirmed blind spot,
+            // 2026-07-04). Both word orders where headlines use both.
+            ("strait closure",        0.95),
+            ("closure of the strait", 0.95),
+            ("close the strait",      0.95),
+            ("closing the strait",    0.95),
+            ("mining the strait",     0.95),
+            ("hormuz fee",            0.85),
+            ("transit fee",           0.80),
+            ("passage fee",           0.80),
+            ("tanker seizure",        0.85),
+            ("seized tanker",         0.85),
+            ("tankers seized",        0.85),
             // Moderate
+            ("chokepoint",            0.70),
             ("tariffs",               0.45),
             ("sanctions",             0.35),
         ]),
@@ -1536,6 +1556,29 @@ mod tests {
             "'skyrocketed'/'reinforces' must not tag military_escalation, got {sig:?}");
         assert!(!sig.contains_key("nuclear_posture"),
             "'anatomical' must not tag nuclear_posture, got {sig:?}");
+    }
+
+    #[test]
+    fn chokepoint_weaponization_phrasing_scores_economic_warfare() {
+        // The 2026 Hormuz reality arrives as a fee/transit-denial regime, not an
+        // embargo: these live-window headline shapes must feed economic_warfare so
+        // the "Energy / chokepoint weaponized" light can see the canonical case its
+        // own design comment names.
+        let proc = NlpProcessor::new();
+        for tl in [
+            "Iran's envoy says friendly nations to get special Hormuz fee treatment",
+            "Tehran threatens closure of the Strait of Hormuz over strikes",
+            "Iran begins mining the strait as tankers reroute",
+            "Two tankers seized near the Gulf as transit fee demands spread",
+        ] {
+            let sig = proc.score_domains(&tl.to_lowercase()); // production lowercases first
+            let v = sig.get("economic_warfare").copied().unwrap_or(0.0);
+            assert!(v >= 0.70, "chokepoint coercion must score economic_warfare >= 0.70: {tl:?} -> {sig:?}");
+        }
+        // Geography or ordinary commerce alone is NOT weaponization — no false fire.
+        let benign = proc.score_domains("shipping volumes through the strait of hormuz rose as port fees fell");
+        assert!(benign.get("economic_warfare").copied().unwrap_or(0.0) < 0.45,
+            "place name + ordinary fees must not read as weaponization, got {benign:?}");
     }
 
     #[test]
