@@ -77,6 +77,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `jma_quake` | Earthquake | JMA (Japan Meteorological Agency) | **seismic-intensity earthquakes** — JMA's open `bosai/quake/data/list.json` (the rolling list of recent quake bulletins), filtered to events with an observed **JMA Shindo intensity** (`maxi`) on Japan's national 0–7 scale (`1,2,3,4,5-,5+,6-,6+,7`). NOT another USGS/EMSC *detection* catalogue: filtered to a Shindo it's a **human-impact** product — only quakes that produced measurable shaking — over **Japan / the NW-Pacific** (a key non-North-America theatre). One dot per quake at its inline `cod` (an ISO-6709 string `+lat+lon-depth/` — no geometry join). **Deduped by `eid`** (JMA issues several bulletins per quake: intensity flash → hypocentre+intensity → updates), keeping the loudest Shindo. Bulletins with no hypocentre (`cod` empty — the `震度速報` flash) or no observed Shindo (a hypocentre-only notice for an unfelt quake) are dropped — exactly what USGS/EMSC already carry. Severity = Shindo ladder (1 → 0.15, 5+ → 0.75, 7 → 1.0). **Signal-meaningful** (Shindo is a defined ground-shaking scale, each level a named effect — baseline-relative, not a raw number; a distinct national scale from Indonesia's MMI). Chip = "Shindo 5+ · M6.1". Auth-free JSON (attribution "気象庁/JMA"); empty array (quiet window) = 0 events, not an error. **Path A** (prod fetches the live `list.json`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the `nehemiaharchives/jma-quake-api` `JmaQuakeData.kt` data class: `cod/mag/maxi/anm/en_anm/ttl/en_ttl/eid/at` fields confirmed). Complements `bmkg_quake` (Indonesia MMI) — same `bosai` host already proven live by `jma_typhoon`. |
 | `geonet_quake` | Earthquake | GeoNet / GNS Science (New Zealand) | **felt earthquakes** — GeoNet's open `quake?MMI=3` GeoJSON, filtered server-side to quakes whose **computed Modified-Mercalli intensity** (`mmi`, the calculated shaking at the closest locality) reaches the felt threshold. NOT another USGS/EMSC *detection* catalogue: filtered to a felt MMI it's a **human-impact** product — only quakes that actually shook people — over **New Zealand / the SW-Pacific** (a seismically very active plate boundary the global catalogues carry only sparsely at small magnitudes). One dot per quake at its inline `Point` `[lon,lat]` (no geometry join). Retracted quakes (`quality == "deleted"`) and any feature below the MMI-3 floor / without geometry are dropped, so a quiet window (empty `features`) = 0 events, not an error. Records may omit `time` (real GeoNet behaviour) → "now" fallback so a live-but-timeless quake still plots. Severity = MMI ladder aligned with `bmkg_quake` (3 → 0.3, 6 → 0.7, 8 → 0.95, 9+ → 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named human effect — baseline-relative, not a raw number; same scale as Indonesia's `bmkg_quake`, distinct national body + geography). Chip = "Felt MMI 5 · M5.9". Auth-free GeoJSON (CC BY 3.0 NZ, credit "GeoNet / GNS Science"; `Accept: application/vnd.geo+json;version=2`). **Path A** (prod fetches the live `quake?MMI=3`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the real `exxamalte/python-aio-geojson-geonetnz-quakes` `tests/fixtures/quakes-1.json` capture: `publicID/time/depth/magnitude/mmi/locality/quality` fields + a record that omits `time`, corroborated by GeoNet's official API docs). Same `api.geonet.org.nz` host already proven live in prod by `geonet_volcano`. Completes the felt-intensity seismic trio: `bmkg_quake` (Indonesia MMI) + `jma_quake` (Japan Shindo) + `geonet_quake` (NZ MMI). |
 | `odlinfo` | Other (Radiation) | BfS (Germany) | **ambient gamma dose rate** — the Bundesamt für Strahlenschutz ODL-Info **OGC WFS opendata** layer `odlinfo_odl_1h_latest` (`imis.bfs.de/ogc/opendata/ows`, `outputFormat=application/json`): a GeoJSON `FeatureCollection`, one `Point` per one of ~1,700 fixed stations across Germany carrying its latest 1-hour mean dose rate in `value` (µSv/h, `Gamma-ODL-Brutto` = cosmic + terrestrial), an ISO `end_measure`, `id`/`kenn`/`name`/`plz`, and `site_status` (1 in operation / 2 defective / 3 test). Opens a **radiation / nuclear-monitoring modality no other feed carries** — a first-order WWIII-risk observable (reactor release / detonation / dispersal) over a NATO frontline state. **Signal-meaningful where a raw gauge isn't** (resolves the ECCC-hydrometric trap at its root): a dose rate in µSv/h has a **universal natural-background baseline** (~0.05–0.20 µSv/h everywhere), so an elevation is interpretable *without* a per-station table. The connector plots **only stations elevated above background** (`value` ≥ 0.3 µSv/h, clearing normal + local geology); all background stations drop, so an all-normal network — the healthy peacetime state — is 0 events, not an error, and the layer lights up precisely when radiation rises (the `usgs_volcano` / `nwps_flood` drop-the-all-clear pattern). Non-operational stations (defective/test) drop so a stuck/garbage reading can't false-alarm. Severity ladder: above-normal 0.4 (≥0.3) → elevated 0.5 (≥0.5) → high 0.7 (≥1.0) → very high 0.9 (≥10) → extreme 1.0 (≥100). Chip = "0.45 µSv/h · Above normal" / "3.10 µSv/h · High". `EventKind::Other` (the catch-all for a new modality before it earns a first-class variant → renders in the "Other Signals" layer; promoting it to a first-class Radiation layer is the self-improvement routine's lane). **Path A** (prod fetches the live WFS; the host 403s web fetch in-sandbox so endpoint + schema are anchored to committed GitHub bytes — the authoritative `bundesAPI/strahlenschutz-api` `openapi.yaml`: server `imis.bfs.de/ogc/opendata/ows`, **no security scheme (auth-free)**, FeatureCollection of ExtendedFeature with `value`/`unit "µSv/h"`/`id`/`kenn`/`name`/`end_measure`/`site_status`/`nuclide "Gamma-ODL-Brutto"`/`duration "1h"` + Point `[lon,lat]`, example value 0.124). Auth-free open data, Datenlizenz Deutschland – Namensnennung 2.0 (credit "© Bundesamt für Strahlenschutz (BfS)"). |
+| `stuk_radiation` | Other (Radiation) | STUK / FMI (Finland) | **external radiation dose rate** — Finland's ~255-station automatic monitoring network (10-min cadence), served through the **Finnish Meteorological Institute open-data WFS** (`opendata.fmi.fi`, producer STUK). Reads the stored query `stuk::observations::external-radiation::multipointcoverage` — a WFS 2.0 GML **multipoint coverage**: `gml:Point` members give each station's name + `gml:pos` ("lat lon"), `gmlcov:positions` lists "lat lon epoch" per measurement, `gml:doubleOrNilReasonTupleList` the dose-rate value (µSv/h, NaN-aware), index-aligned. Extends the **radiation / nuclear-monitoring modality** (opened by `odlinfo`, Germany) to a **NATO frontline state with the EU's longest Russia border + two operating NPPs (Loviisa, Olkiluoto)** — a first-order WWIII-risk geography. **Signal-meaningful via the universal baseline** (same argument as `odlinfo`): Finnish natural background is 0.05–0.30 µSv/h (STUK), so an elevation is interpretable without a per-station table. Plots **only stations elevated above background** (`value` ≥ 0.3 µSv/h, at the top of Finnish background, one notch below STUK's own 0.4 µSv/h automatic-network **alarm level**); per station the **newest** in-window reading wins (a station that was elevated but is now normal correctly drops), background/NaN readings drop, so an all-normal network — healthy peacetime — is 0 events, not an error. **Identical severity ladder + chip to `odlinfo`** (above-normal 0.4 → elevated 0.5 → high 0.7 → very high 0.9 → extreme 1.0; chip "0.62 µSv/h · Elevated"). `EventKind::Other` ("Other Signals" layer; a first-class `Radiation` EventKind is the self-improvement routine's lane). **Path A** (prod fetches the live WFS; the host 403s web fetch in-sandbox so endpoint + stored-query id + wire schema + **auth model** are anchored to committed GitHub bytes — STUK's own official client `StukFi/opendata` `wfs_scripts/{fmi_utils,process_data}.py`, off `raw.githubusercontent.com`: the exact URL, a **plain keyless `urlopen`** (auth-free), and the gml:Point/gmlcov:positions/doubleOrNilReasonTupleList parse; unit + background + alarm level from STUK's public "Radiation today" docs). Auth-free open data, credit "STUK / Ilmatieteenlaitos (FMI)". |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -233,11 +234,18 @@ Bias each run toward the least-covered axis below.
   gamma dose rate**, WFS opendata, Path A) — a genuinely new war-risk modality (reactor release /
   detonation / dispersal detection) over a NATO frontline state; plots only stations elevated above
   the universal µSv/h natural-background baseline, so it's dark in peacetime and lights up on a real
-  rise. Gaps now: (a) **radiation OUTSIDE Germany** — **Finland STUK** (~255 stations; auth-free
-  values but the surfaced JSON API is fronted by a third party `Apitalks`, not a STUK-direct
-  endpoint — verify a direct auth-free STUK/`ilmatieteenlaitos` feed before adopting), **Ireland EPA**
-  (~23 stations), or another national dose-rate network with a direct auth-free geocoded µSv/h product;
-  the EU JRC **EURDEP** aggregate is access-restricted (not auth-free). (b) **promote to a first-class
+  rise. **EXTENDED 2026-07-05 with `stuk_radiation`** (**Finland STUK external dose rate via the FMI
+  open-data WFS**, Path A) — the prior run's adoption condition ("verify a direct auth-free
+  STUK/`ilmatieteenlaitos` feed" — the `Apitalks` wrapper was the disqualified path) is now met: the
+  **FMI / Ilmatieteenlaitos open-data WFS** (`opendata.fmi.fi`, producer STUK) IS that direct feed, and
+  STUK's own official `StukFi/opendata` client confirms the keyless request + GML schema. Radiation now
+  spans two national networks (Germany BfS + Finland STUK) over the NATO/Russia frontier. Gaps now:
+  (a) **radiation still OUTSIDE Germany + Finland** — **Ireland EPA** (`data.epa.ie` Radiation Monitoring
+  Open Data API, REM format, ~23 stations — verify a direct auth-free geocoded µSv/h product), Norway
+  **DSA**, Sweden **SSM**, Netherlands **RIVM** (NMR ~160 points — but the surfaced access is a WMS/
+  interpolation product, not a per-station auth-free µSv/h API; verify), or another national dose-rate
+  network with a direct auth-free geocoded µSv/h product; the EU JRC **EURDEP** aggregate is
+  access-restricted (not auth-free). (b) **promote to a first-class
   `Radiation` EventKind + map layer** — currently rides `EventKind::Other` ("Other Signals", default-off);
   that promotion (ee_core enum + ee_view layer + colour/label) is the **self-improvement routine's lane**,
   not this one. Note: **US EPA RadNet is REJECTED for the map** — it publishes gamma **gross count rate**
@@ -252,6 +260,59 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-05 (Signal Hunter)** — **adopted `stuk_radiation` (STUK Finland external radiation dose rate
+  via the FMI open-data WFS), Path A** — extends the radiation / nuclear-monitoring modality to
+  **Finland: a NATO frontline state with the EU's longest Russia border + two operating NPPs (Loviisa,
+  Olkiluoto)** — arguably the single most nuclear-relevant NATO frontier for WWIII risk.
+  **Candidate ranking this run (biased to the top mission gaps), all genuinely evaluated:** (1)
+  **Asian-theater maritime security (Taiwan Strait / Hormuz — the #1 gap after `asam` died):** ReCAAP ISC
+  (web search confirms **reports + Re-VAMP dashboard only, no JSON/machine-readable incident feed**), IMB
+  PRC (licensing/scrape-ban), no auth-free national AIS outside the Baltic (all hits — AISHub/VesselFinder/
+  VesselAPI — are keyed or require registration) — all still blocked. (2) **Taiwan military-posture:** MND
+  publishes daily PLA incursion counts but **no official geocoded JSON API** (only PDFs + third-party
+  trackers ChinaPower/PLATracker); geometry-anchoring failure mode — blocked. (3) **conflict freshness /
+  the `acled_aggregated` refresh (the layer is DARK — snapshot's newest WEEK 2026-03-07 is ~17 weeks stale,
+  so the 42-day age gate empties it):** NOT taken — a faithful refresh needs the real ~100-row regional
+  aggregate as verbatim recent bytes, and web fetch **summarizes** (won't return exact CSV); the ACLED
+  aggregated download stays registration-gated. Fabricating counts would break the honesty bar (same
+  binding judgment as the two prior runs). Remains an open lane for a run with real byte access. (4)
+  **radiation OUTSIDE Germany (explicit `odlinfo` follow-up gap):** **Finland STUK** cleared all six bars —
+  landed. **Network re-probed fresh:** the egress block is unchanged — the live WFS
+  `opendata.fmi.fi/wfs`, `stuk.fi`, and every gov host **403 via web fetch**; only `raw.githubusercontent.com`
+  serves (curl in-sandbox). **Anchoring (the GitHub-bytes technique, same as `odlinfo`):** endpoint +
+  stored-query id + wire schema + **auth model** confirmed from committed bytes — STUK's own official
+  open-data client `StukFi/opendata` (`wfs_scripts/fmi_utils.py` + `process_data.py`, fetched off
+  GitHub-raw): request URL
+  `https://opendata.fmi.fi/wfs/eng?request=GetFeature&storedquery_id=stuk::observations::external-radiation::multipointcoverage&starttime=…&endtime=…`,
+  a **plain keyless `urlopen`** (no key/header → auth-free), and the exact GML parse — `gml:Point`
+  members (name + `gml:pos` "lat lon"), `gmlcov:positions` ("lat lon epoch" per measurement),
+  `gml:doubleOrNilReasonTupleList` (dose-rate value, NaN-aware, index-aligned). **Unit + baseline
+  confirmed** from STUK's public "Radiation today" docs: **µSv/h**, Finnish natural background
+  **0.05–0.30 µSv/h**, STUK automatic-network **alarm level 0.4 µSv/h**, ~255 stations at 10-min cadence.
+  Clears all six bars: **authoritative** (STUK = Finland's Radiation and Nuclear Safety Authority; served
+  by FMI, the national met institute); **auth-free** (FMI open data, keyless — proven by STUK's own client);
+  **machine-readable** GML multipoint coverage; **geocoded** (inline `gml:pos` per station — no external
+  join); **fresh** (10-min cadence; all-normal network = 0 events, not an error); **non-duplicative**
+  (Finland/Russia frontier radiation — distinct authority + geography from the German BfS network).
+  **Signal-meaningful (same universal-baseline call as `odlinfo`):** µSv/h has a universal natural
+  background, so the connector plots ONLY stations elevated above it (`value` ≥ 0.3, at the top of Finnish
+  background, one notch below STUK's 0.4 alarm) and, per station, keeps the **newest** in-window reading
+  (a station that was elevated but is now normal correctly drops); **identical severity ladder + chip to
+  `odlinfo`** (above-normal 0.4 → extreme 1.0; chip "0.62 µSv/h · Elevated"). New
+  `vendor/ee-sources/src/stuk_radiation.rs` (fetch builds a 1-hour window at call time; pure
+  `parse_stuk_radiation` hand-parses the GML — no heavy XML dep — with an ExceptionReport/malformed error,
+  a positions↔values misalignment error, and a no-parseable-timestamp drift tripwire; 6 offline tests:
+  real-shape fixture keeps 2 elevated stations and drops normal + dedup-now-normal + NaN, all-normal =
+  Ok/empty, exception+403-HTML error, misalignment error, severity/band ladder, chip). Registered in
+  `lib.rs`; wired `src/osint.rs` (`fetch_one("stuk_radiation", …, 12)` + count/cap row cap 400 +
+  `feed_detail` arm + osint chip test); SRC_LABEL `STUK · FMI (Finland)` in `dashboard.html`.
+  `EventKind::Other` ("Other Signals" layer; a first-class `Radiation` EventKind is the self-improvement
+  routine's lane). **`cargo build --release` green; full workspace `cargo test` green (gcrm 564 / 0 failed /
+  4 ignored; ee-sources 154 incl. stuk_radiation 6/6; ee-correlate 79; ee-view 60; ee-core 9).** Next:
+  radiation outside Germany+Finland (Ireland EPA `data.epa.ie` if a direct auth-free µSv/h product; Norway
+  DSA / Sweden SSM / Netherlands RIVM); the Asian-maritime / Taiwan-posture / global-NOTAM / ACLED-refresh
+  lanes remain open per the gap notes above.
 
 - **2026-07-04 (Signal Hunter)** — **adopted `odlinfo` (BfS Germany ambient gamma dose rate), Path A** —
   a new authoritative geocoded layer opening a **radiation / nuclear-monitoring modality no feed carried**,

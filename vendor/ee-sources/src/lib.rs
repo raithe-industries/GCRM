@@ -27,6 +27,7 @@ pub mod navcanada;
 pub mod nhc;
 pub mod nwps_flood;
 pub mod spc_storm_reports;
+pub mod stuk_radiation;
 pub mod ucdp_ged;
 pub mod usgs_volcano;
 pub mod eccc_alerts;
@@ -99,6 +100,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(awc_sigmet::AwcSigmet),           // International SIGMETs (NOAA AWC, en-route aviation hazards)
         Box::new(spc_storm_reports::SpcStormReports), // Severe-storm reports (NOAA SPC, confirmed tornado/hail/wind)
         Box::new(odlinfo::Odlinfo), // Radiation: gamma dose rate above natural background (BfS ODL, Germany)
+        Box::new(stuk_radiation::StukRadiation), // Radiation: external dose rate above background (STUK/FMI, Finland)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),
