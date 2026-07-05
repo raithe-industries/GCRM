@@ -957,6 +957,9 @@ impl Ingestor {
                     let url = canonicalize_url(
                         &entry.links.first().map(|l| l.href.clone()).unwrap_or_default());
                     if url.is_empty() || done.contains(&url) { continue; }
+                    // Shorts: sub-minute clips/teasers — near-zero transcript value,
+                    // pure feed clutter. The full story arrives as a normal upload.
+                    if video::is_short(&url) { done.insert(url); continue; }
                     let published = match entry.published.or(entry.updated) {
                         Some(p) => p,
                         None => continue,
@@ -974,6 +977,23 @@ impl Ingestor {
                     if !ing.titles.lock().await.is_new(&title) { done.insert(url); continue; }
                     match video::fetch_transcript(&url).await {
                         Ok(Some(transcript)) => {
+                            // Relevance gate: broadcast channels mix missions — sports,
+                            // royals, celebrations. Keep a video only when the TITLE or
+                            // the TRANSCRIPT carries a geopolitical trigger (actors +
+                            // conflict terms — the same gate that dispatches the LLM on
+                            // keyword-missed wire copy). Deliberately BROAD, not the
+                            // domain-keyword lexicon: the proven-valuable analyst
+                            // register ("the strait is not open") scores zero keywords
+                            // but names its actors, and a false keep costs one harmless
+                            // untagged row while a false drop loses real signal.
+                            if !crate::nlp_sidecar::has_geopolitical_trigger(&title)
+                                && !crate::nlp_sidecar::has_geopolitical_trigger(&transcript)
+                            {
+                                debug!("video {}: off-mission, skipped \"{}\"", ch.source,
+                                       title.chars().take(60).collect::<String>());
+                                done.insert(url);
+                                continue;
+                            }
                             let article = RawArticle::new(
                                 url.clone(), title.clone(), transcript,
                                 ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),

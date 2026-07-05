@@ -455,7 +455,7 @@ fn make_event_from_llm(article: &RawArticle, x: &LlmExtraction) -> GeopoliticalE
 /// match whole-word only, mirroring processor::BOUNDARY_ACTOR_PATS. Country
 /// stems stay substring-matched on purpose: they must catch their adjective
 /// forms ("Iranian", "Russian"). (audit-news d2)
-fn has_geopolitical_trigger(title: &str) -> bool {
+pub(crate) fn has_geopolitical_trigger(title: &str) -> bool {
     let t = title.to_lowercase();
     // Great powers / key actors — substring (stems + multiword phrases are safe)
     const ACTORS: &[&str] = &[

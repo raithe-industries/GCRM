@@ -79,6 +79,13 @@ pub fn ytdlp_bin() -> PathBuf {
     PathBuf::from("yt-dlp")
 }
 
+/// YouTube Shorts are sub-minute vertical clips/teasers — transcript value near
+/// zero, feed-clutter value high (the first live cycle ingested a football short).
+/// The full story, when there is one, arrives as a normal upload. Skipped pre-fetch.
+pub fn is_short(url: &str) -> bool {
+    url.contains("/shorts/")
+}
+
 /// A channel's auth-free Atom feed (no API key; the same URL YouTube has served
 /// since 2015, also used by podcast apps — a stable public contract).
 pub fn channel_feed_url(channel_id: &str) -> String {
@@ -239,6 +246,12 @@ mod tests {
             "has reopened the Strait of Hormuz. Crude the Strait of Hormuz is not open. Traffic has not normalized"
         );
         assert!(!flat.contains('<') && !flat.contains("-->"), "tags/timing must not survive");
+    }
+
+    #[test]
+    fn shorts_urls_are_recognized() {
+        assert!(is_short("https://www.youtube.com/shorts/IeMD9bNZFp4"));
+        assert!(!is_short("https://www.youtube.com/watch?v=koCXfHeX6_k"));
     }
 
     #[test]
