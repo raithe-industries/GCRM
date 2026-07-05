@@ -87,6 +87,28 @@ pub fn ytdlp_bin() -> PathBuf {
     PathBuf::from("yt-dlp")
 }
 
+/// Strip a trailing "| Channel Name" (or "– Channel") suffix broadcast channels
+/// append to video titles ("… | DW News"). Wire copy of the same story carries no
+/// such tail, so the suffix depressed video↔wire corroboration similarity and made
+/// same-story pairs double-count into modality weight (measured 2026-07-05: 11 of
+/// 38 live video rows sat just under the merge bar). Mirrors the gnews outlet-
+/// suffix strip at text ingest. Conservative: only a short trailing segment goes.
+pub fn strip_channel_suffix(title: &str) -> &str {
+    for sep in [" | ", " – ", " — "] {
+        if let Some(pos) = title.rfind(sep) {
+            let tail = &title[pos + sep.len()..];
+            let looks_like_channel = !tail.is_empty()
+                && tail.chars().count() <= 24
+                && !tail.contains('?')
+                && tail.chars().next().is_some_and(|c| c.is_uppercase());
+            if looks_like_channel && pos > title.len() / 2 {
+                return title[..pos].trim_end();
+            }
+        }
+    }
+    title
+}
+
 /// YouTube Shorts are sub-minute vertical clips/teasers — transcript value near
 /// zero, feed-clutter value high (the first live cycle ingested a football short).
 /// The full story, when there is one, arrives as a normal upload. Skipped pre-fetch.
@@ -325,6 +347,19 @@ mod tests {
             "has reopened the Strait of Hormuz. Crude the Strait of Hormuz is not open. Traffic has not normalized"
         );
         assert!(!flat.contains('<') && !flat.contains("-->"), "tags/timing must not survive");
+    }
+
+    #[test]
+    fn channel_suffix_is_stripped_but_real_titles_survive() {
+        assert_eq!(strip_channel_suffix("America's Independence Day celebrations | DW News"),
+                   "America's Independence Day celebrations");
+        assert_eq!(strip_channel_suffix("Divided we celebrate: America's 250th birthday | DW News"),
+                   "Divided we celebrate: America's 250th birthday");
+        // A pipe mid-title or a long/question tail is content, not a channel tag.
+        assert_eq!(strip_channel_suffix("Unity | or political divide across the nation today"),
+                   "Unity | or political divide across the nation today");
+        assert_eq!(strip_channel_suffix("America's 250th birthday: Unity or political divide?"),
+                   "America's 250th birthday: Unity or political divide?");
     }
 
     #[test]

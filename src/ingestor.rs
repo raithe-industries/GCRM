@@ -975,7 +975,9 @@ impl Ingestor {
                     // unbounded 90s subprocesses and starve the other channels — the
                     // exact scenario the cap exists for. (xhigh review finding 15)
                     if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
-                    let Some(title) = entry.title.as_ref().map(|t| sanitize_feed_text(t.content.trim())) else { continue };
+                    let Some(title) = entry.title.as_ref().map(|t| {
+                        video::strip_channel_suffix(&sanitize_feed_text(t.content.trim())).to_string()
+                    }) else { continue };
                     if title.is_empty() { continue; }
                     let url = canonicalize_url(
                         &entry.links.first().map(|l| l.href.clone()).unwrap_or_default());

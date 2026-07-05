@@ -31,6 +31,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 
 ---
 
+- [ ] **[candidate] 1.x Video↔wire corroboration threshold (duplicate weight)** — measured
+  2026-07-05 on the first live night: 7/38 video rows cleared the 0.40 trigram corroboration
+  bar against wire titles while ~11 clearly-same-story pairs (Mali attacks 0.40-boundary,
+  Ukraine drone strikes 0.29, Trump address 0.33) sat below it — those double-count into
+  modality weight instead of merging as corroboration. Channel-suffix stripping (landed
+  same night) recovers part of the gap. REMAINING: fit a cross-modal (video↔wire) merge
+  threshold on a WEEK of labeled pairs — do NOT hand-tune on 11 samples; alternatively
+  corroborate video on title+lead-transcript-sentence trigrams. Gate: labeled-pair
+  precision/recall table in the log entry; the threshold change must show measured
+  over-merge risk < measured double-count reduction. (Operator-directed: "duplicates must
+  be found and removed appropriately from weight.")
+
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
 - [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now
   scores the live model against Robert's anchored band CENTRES with proper scoring rules
