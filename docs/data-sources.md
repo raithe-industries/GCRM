@@ -78,6 +78,7 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 | `geonet_quake` | Earthquake | GeoNet / GNS Science (New Zealand) | **felt earthquakes** — GeoNet's open `quake?MMI=3` GeoJSON, filtered server-side to quakes whose **computed Modified-Mercalli intensity** (`mmi`, the calculated shaking at the closest locality) reaches the felt threshold. NOT another USGS/EMSC *detection* catalogue: filtered to a felt MMI it's a **human-impact** product — only quakes that actually shook people — over **New Zealand / the SW-Pacific** (a seismically very active plate boundary the global catalogues carry only sparsely at small magnitudes). One dot per quake at its inline `Point` `[lon,lat]` (no geometry join). Retracted quakes (`quality == "deleted"`) and any feature below the MMI-3 floor / without geometry are dropped, so a quiet window (empty `features`) = 0 events, not an error. Records may omit `time` (real GeoNet behaviour) → "now" fallback so a live-but-timeless quake still plots. Severity = MMI ladder aligned with `bmkg_quake` (3 → 0.3, 6 → 0.7, 8 → 0.95, 9+ → 1.0). **Signal-meaningful** (MMI is a defined ground-shaking scale, each level a named human effect — baseline-relative, not a raw number; same scale as Indonesia's `bmkg_quake`, distinct national body + geography). Chip = "Felt MMI 5 · M5.9". Auth-free GeoJSON (CC BY 3.0 NZ, credit "GeoNet / GNS Science"; `Accept: application/vnd.geo+json;version=2`). **Path A** (prod fetches the live `quake?MMI=3`; the host 403s web fetch in-sandbox so the schema is anchored to committed GitHub bytes — the real `exxamalte/python-aio-geojson-geonetnz-quakes` `tests/fixtures/quakes-1.json` capture: `publicID/time/depth/magnitude/mmi/locality/quality` fields + a record that omits `time`, corroborated by GeoNet's official API docs). Same `api.geonet.org.nz` host already proven live in prod by `geonet_volcano`. Completes the felt-intensity seismic trio: `bmkg_quake` (Indonesia MMI) + `jma_quake` (Japan Shindo) + `geonet_quake` (NZ MMI). |
 | `odlinfo` | Other (Radiation) | BfS (Germany) | **ambient gamma dose rate** — the Bundesamt für Strahlenschutz ODL-Info **OGC WFS opendata** layer `odlinfo_odl_1h_latest` (`imis.bfs.de/ogc/opendata/ows`, `outputFormat=application/json`): a GeoJSON `FeatureCollection`, one `Point` per one of ~1,700 fixed stations across Germany carrying its latest 1-hour mean dose rate in `value` (µSv/h, `Gamma-ODL-Brutto` = cosmic + terrestrial), an ISO `end_measure`, `id`/`kenn`/`name`/`plz`, and `site_status` (1 in operation / 2 defective / 3 test). Opens a **radiation / nuclear-monitoring modality no other feed carries** — a first-order WWIII-risk observable (reactor release / detonation / dispersal) over a NATO frontline state. **Signal-meaningful where a raw gauge isn't** (resolves the ECCC-hydrometric trap at its root): a dose rate in µSv/h has a **universal natural-background baseline** (~0.05–0.20 µSv/h everywhere), so an elevation is interpretable *without* a per-station table. The connector plots **only stations elevated above background** (`value` ≥ 0.3 µSv/h, clearing normal + local geology); all background stations drop, so an all-normal network — the healthy peacetime state — is 0 events, not an error, and the layer lights up precisely when radiation rises (the `usgs_volcano` / `nwps_flood` drop-the-all-clear pattern). Non-operational stations (defective/test) drop so a stuck/garbage reading can't false-alarm. Severity ladder: above-normal 0.4 (≥0.3) → elevated 0.5 (≥0.5) → high 0.7 (≥1.0) → very high 0.9 (≥10) → extreme 1.0 (≥100). Chip = "0.45 µSv/h · Above normal" / "3.10 µSv/h · High". `EventKind::Other` (the catch-all for a new modality before it earns a first-class variant → renders in the "Other Signals" layer; promoting it to a first-class Radiation layer is the self-improvement routine's lane). **Path A** (prod fetches the live WFS; the host 403s web fetch in-sandbox so endpoint + schema are anchored to committed GitHub bytes — the authoritative `bundesAPI/strahlenschutz-api` `openapi.yaml`: server `imis.bfs.de/ogc/opendata/ows`, **no security scheme (auth-free)**, FeatureCollection of ExtendedFeature with `value`/`unit "µSv/h"`/`id`/`kenn`/`name`/`end_measure`/`site_status`/`nuclide "Gamma-ODL-Brutto"`/`duration "1h"` + Point `[lon,lat]`, example value 0.124). Auth-free open data, Datenlizenz Deutschland – Namensnennung 2.0 (credit "© Bundesamt für Strahlenschutz (BfS)"). |
 | `stuk_radiation` | Other (Radiation) | STUK / FMI (Finland) | **external radiation dose rate** — Finland's ~255-station automatic monitoring network (10-min cadence), served through the **Finnish Meteorological Institute open-data WFS** (`opendata.fmi.fi`, producer STUK). Reads the stored query `stuk::observations::external-radiation::multipointcoverage` — a WFS 2.0 GML **multipoint coverage**: `gml:Point` members give each station's name + `gml:pos` ("lat lon"), `gmlcov:positions` lists "lat lon epoch" per measurement, `gml:doubleOrNilReasonTupleList` the dose-rate value (µSv/h, NaN-aware), index-aligned. Extends the **radiation / nuclear-monitoring modality** (opened by `odlinfo`, Germany) to a **NATO frontline state with the EU's longest Russia border + two operating NPPs (Loviisa, Olkiluoto)** — a first-order WWIII-risk geography. **Signal-meaningful via the universal baseline** (same argument as `odlinfo`): Finnish natural background is 0.05–0.30 µSv/h (STUK), so an elevation is interpretable without a per-station table. Plots **only stations elevated above background** (`value` ≥ 0.3 µSv/h, at the top of Finnish background, one notch below STUK's own 0.4 µSv/h automatic-network **alarm level**); per station the **newest** in-window reading wins (a station that was elevated but is now normal correctly drops), background/NaN readings drop, so an all-normal network — healthy peacetime — is 0 events, not an error. **Identical severity ladder + chip to `odlinfo`** (above-normal 0.4 → elevated 0.5 → high 0.7 → very high 0.9 → extreme 1.0; chip "0.62 µSv/h · Elevated"). `EventKind::Other` ("Other Signals" layer; a first-class `Radiation` EventKind is the self-improvement routine's lane). **Path A** (prod fetches the live WFS; the host 403s web fetch in-sandbox so endpoint + stored-query id + wire schema + **auth model** are anchored to committed GitHub bytes — STUK's own official client `StukFi/opendata` `wfs_scripts/{fmi_utils,process_data}.py`, off `raw.githubusercontent.com`: the exact URL, a **plain keyless `urlopen`** (auth-free), and the gml:Point/gmlcov:positions/doubleOrNilReasonTupleList parse; unit + background + alarm level from STUK's public "Radiation today" docs). Auth-free open data, credit "STUK / Ilmatieteenlaitos (FMI)". |
+| `teleray` | Other (Radiation) | IRSN / ASNR (France) | **ambient gamma dose rate** — France's national **Téléray** dose-rate alert network (~470 beacons across mainland France + the DROM-COM overseas territories, 10-min cadence), read through the **OGC API - Features** endpoint `api.teleray.asnr.fr/wfs/collections/measures/items` (`f=json&limit=2000&sortby=-time`) — a GeoJSON `FeatureCollection`, one `Point` feature per recent per-station reading carrying the ambient gamma **dose-equivalent rate in nSv/h** (`doseRateNet`, net of the probe's own `bruitdefond`; `doseRateRaw` the raw reading), station `irsnId`/`libelle`, ISO `measurementDate`, and a `measState`/`validation` flag. **Third national network in the radiation / nuclear-monitoring modality** (after `odlinfo` Germany + `stuk_radiation` Finland), extending it to **Europe's largest nuclear power — 56 operating reactors (~70% of French electricity) plus the La Hague reprocessing complex**: a first-order WWIII-risk observable (reactor release / strike on nuclear infrastructure / detonation / dispersal). Distinct authority (IRSN/ASNR) + geography (all of France + overseas), no overlap with the German/Finnish networks. **Signal-meaningful via the universal µSv/h baseline** (same call as `odlinfo`/`stuk_radiation`): French natural background ~0.06–0.12 µSv/h (60–120 nSv/h); the connector converts nSv/h→µSv/h and plots **only stations elevated above background** (≥ 0.3 µSv/h), **deduped per station keeping the newest reading** (a station back to background correctly drops even if an older reading in the batch was elevated), defective probes (`measState` defect tokens) dropped, so an all-normal network — healthy peacetime — is 0 events, not an error. **Identical severity ladder + chip to `odlinfo`/`stuk_radiation`** (above-normal 0.4 → extreme 1.0; chip "0.45 µSv/h · Above normal" / "3.10 µSv/h · High"). `EventKind::Other` ("Other Signals" layer; a first-class `Radiation` EventKind is the self-improvement routine's lane). **Path A** (prod fetches the live OGC API; the host 403s web fetch in-sandbox so endpoint + query params + **auth model** + field schema are anchored to committed GitHub bytes — the open-source `kalisio/k-teleray` client `jobfile.js`: the exact `…/measures/items?limit=2000&sortby=-time` request via a **keyless HTTP call** (auth-free), reading GeoJSON features whose properties carry `irsnId`/`measurementDate`/`doseRateRaw`/`doseRateNet`/`bruitdefond`/`validation`/`measState`/`libelle` and whose geometry is the station `Point`; unit/station-count/10-min cadence from IRSN/ASNR public Téléray docs). Auth-free open data, credit "IRSN / ASNR — Téléray". |
 | `acled` | Conflict | ACLED | global armed conflict — **DORMANT as a live event feed**: Open access has NO event API (confirmed by ACLED 2026-06-14; the event API needs a paid license). The free *aggregated weekly* slice is now **LANDED as `acled_aggregated`** (Path-B snapshot, see above); this `acled` connector stays dormant for the day a paid event key is set. |
 
 **Registry catalog only (NON-geo, deliberately NOT on the map):**
@@ -238,14 +239,19 @@ Bias each run toward the least-covered axis below.
   open-data WFS**, Path A) — the prior run's adoption condition ("verify a direct auth-free
   STUK/`ilmatieteenlaitos` feed" — the `Apitalks` wrapper was the disqualified path) is now met: the
   **FMI / Ilmatieteenlaitos open-data WFS** (`opendata.fmi.fi`, producer STUK) IS that direct feed, and
-  STUK's own official `StukFi/opendata` client confirms the keyless request + GML schema. Radiation now
-  spans two national networks (Germany BfS + Finland STUK) over the NATO/Russia frontier. Gaps now:
-  (a) **radiation still OUTSIDE Germany + Finland** — **Ireland EPA** (`data.epa.ie` Radiation Monitoring
-  Open Data API, REM format, ~23 stations — verify a direct auth-free geocoded µSv/h product), Norway
-  **DSA**, Sweden **SSM**, Netherlands **RIVM** (NMR ~160 points — but the surfaced access is a WMS/
-  interpolation product, not a per-station auth-free µSv/h API; verify), or another national dose-rate
-  network with a direct auth-free geocoded µSv/h product; the EU JRC **EURDEP** aggregate is
-  access-restricted (not auth-free). (b) **promote to a first-class
+  STUK's own official `StukFi/opendata` client confirms the keyless request + GML schema. **EXTENDED
+  2026-07-05 with `teleray`** (**France IRSN/ASNR Téléray ambient gamma dose rate**, OGC API - Features,
+  Path A, anchored to the `kalisio/k-teleray` client). Radiation now spans **three** national networks
+  (Germany BfS + Finland STUK + France IRSN/ASNR), adding **Europe's largest nuclear power** (56 reactors
+  + La Hague reprocessing; ~470 beacons over France + overseas). Gaps now:
+  (a) **radiation still OUTSIDE Germany + Finland + France** — leads triaged 2026-07-05: **Ireland EPA**
+  `data.epa.ie/radmon/api/v1` is the WRONG product (ERIC **lab-sample activity** in REM format — `is_mda`/
+  `Value`/`Uncertainty` in Bq — NOT a real-time gamma **dose-rate** network; the live dose-rate map "MapMon"
+  has no documented open API) → deferred until a MapMon backend surfaces; **Sweden SSM** (`karttjanst.ssm.se/
+  gammastationer`, 28-station Baltic/Russia-frontier net — HIGH value) and **Norway DSA** Radnett (33 stations,
+  Kola frontier) both have an **opaque map backend + no committed consumer to anchor** → blocked this run,
+  re-attempt if a backend JSON/committed client surfaces; Netherlands **RIVM** WMS-only (no per-station µSv/h
+  API); the EU JRC **EURDEP** aggregate is access-restricted (not auth-free). (b) **promote to a first-class
   `Radiation` EventKind + map layer** — currently rides `EventKind::Other` ("Other Signals", default-off);
   that promotion (ee_core enum + ee_view layer + colour/label) is the **self-improvement routine's lane**,
   not this one. Note: **US EPA RadNet is REJECTED for the map** — it publishes gamma **gross count rate**
@@ -260,6 +266,61 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-05 (Signal Hunter, second run)** — **adopted `teleray` (France IRSN/ASNR Téléray ambient gamma
+  dose rate via the OGC API - Features endpoint), Path A** — a **third national radiation network**, extending
+  the radiation / nuclear-monitoring modality to **Europe's largest nuclear power: France (56 operating reactors
+  ~70% of electricity + the La Hague reprocessing complex), ~470 beacons over mainland France + the DROM-COM**.
+  **Candidate ranking this run (biased to the top mission gaps), all genuinely evaluated before landing:**
+  (1) **military-posture observables (#1 gap) via NGA MSI `broadcast-warn`** (NAVAREA/HYDROLANT/HYDROPAC —
+  naval exercises / live-fire / missile-test / GPS-interference / closure warnings): re-verified to the SOURCE
+  level this run. A new lead — NGA MSI now offers a **GeoJSON** message export (SeaLagom confirms "structured
+  geometry in GeoJSON") — suggested the prior "geometry-in-free-text" block might be resolved, so I chased an
+  anchorable structured-geometry schema: the **official `ngageoint/mage-server` NGA-MSI plugin** (`src/nga-msi.ts`
+  + `src/topics/`) implements **only `asam` + `modu`** topics — **no broadcast-warn transformer exists** — and no
+  other committed consumer parses broadcast-warn geometry (its geometry is by NAVAREA subregion polygon join, coarse
+  ocean centroids). So broadcast-warn stays **unanchorable this run** (can't build an honest offline fixture without
+  real structured-geometry bytes) — the prior non-binding ruling holds. **BLOCKED.** (2) **Asian-theater maritime
+  (Taiwan/Hormuz):** ReCAAP (no JSON incident feed), IMB PRC (license), no auth-free national AIS outside the Baltic
+  — unchanged, **BLOCKED.** (3) **global NOTAM:** FAA/ICAO keyed — **BLOCKED.** (4) **conflict freshness / the
+  `acled_aggregated` refresh** (snapshot's newest WEEK 2026-03-07 now ~17 weeks stale → aged out, layer DARK): NOT
+  taken — a faithful refresh needs the real ~100-row aggregate as **verbatim bytes** and the ACLED download stays
+  registration-gated while web fetch summarizes CSVs; fabricating rows breaks the honesty bar (same binding judgment
+  as the four prior runs). Open lane for a run with real byte access. (5) **radiation OUTSIDE Germany+Finland**
+  (the explicit `odlinfo`/`stuk` follow-up gap): triaged **Ireland EPA** (documented `data.epa.ie/radmon` API turned
+  out to be ERIC **lab-sample activity**, not the live dose-rate network — wrong product; MapMon has no open API),
+  **Sweden SSM** (Baltic-frontier, high value, but opaque map backend + no committed anchor), **Norway DSA** (Kola
+  frontier, same opacity) — and pivoted to **France IRSN/ASNR Téléray**, which cleared all six bars with a clean
+  committed anchor. **Network re-probed fresh:** the egress block is unchanged — the live OGC API `api.teleray.asnr.fr`,
+  `msi.nga.mil`, `data.epa.ie`, `karttjanst.ssm.se`, unpkg/jsdelivr/api.github.com and every gov host **403 via
+  web fetch**; only `raw.githubusercontent.com` serves. **Anchoring (the GitHub-bytes technique, same as `odlinfo`/
+  `stuk`):** endpoint + query params + **auth model** + field schema confirmed from committed bytes — the open-source
+  `kalisio/k-teleray` client (`README.md` + `jobfile.js`, off GitHub-raw): request
+  `…/wfs/collections/measures/items?limit=2000&sortby=-time` via a **keyless HTTP call** (no key/header → auth-free),
+  GeoJSON features whose `properties` carry `irsnId`/`measurementDate`/`doseRateRaw`/`doseRateNet`/`bruitdefond`/
+  `validation`/`measState`/`libelle` and whose geometry is the station `Point` (k-teleray derives its station catalogue
+  by de-duping these features on `irsnId` → confirms measure features carry geometry, so a **single fetch, no join**).
+  Unit (**nSv/h**), ~470 stations and the 10-min cadence from IRSN/ASNR public Téléray docs. Clears all six bars:
+  **authoritative** (IRSN/ASNR = France's Radiation Protection & Nuclear Safety authority); **auth-free** (keyless,
+  per k-teleray); **machine-readable** GeoJSON (OGC API - Features); **geocoded** (inline Point per station — no join);
+  **fresh** (10-min cadence; all-normal network = 0 events, not an error); **non-duplicative** (France/nuclear-Europe
+  radiation — distinct authority + geography from BfS/STUK). **Signal-meaningful (universal-baseline call as `odlinfo`/
+  `stuk`):** converts nSv/h→µSv/h and plots ONLY stations ≥ 0.3 µSv/h (French background ~0.06–0.12), **deduped per
+  station keeping the NEWEST reading** (a station back to background correctly drops even if an older reading in the
+  batch was elevated — the load-bearing dedup-before-floor fix, caught by the fixture test), defective probes dropped;
+  **identical severity ladder + chip to `odlinfo`/`stuk`** (above-normal 0.4 → extreme 1.0; chip "0.45 µSv/h · Above
+  normal"). New `vendor/ee-sources/src/teleray.rs` (single OGC-API fetch; pure `parse_teleray` hand-parses the GeoJSON —
+  no heavy dep — with a missing-`features` error, an ISO-`measurementDate` drop with a total-drift tripwire, net→raw
+  dose fallback, and a best-effort defect-state guard; 7 offline tests: real-shape fixture keeps 3 elevated stations and
+  drops normal + dedup-now-normal + defective + no-geometry, all-normal = Ok/empty, raw fallback, mixed/total
+  timestamp-drift, error-on-bad-input, severity/band ladder, chip). Registered in `lib.rs`; wired `src/osint.rs`
+  (`fetch_one("teleray", …, 12)` + count/cap row cap 400 + `feed_detail` arm + osint chip test); SRC_LABEL
+  `IRSN · Téléray (France)` in `dashboard.html`. `EventKind::Other` ("Other Signals" layer; a first-class `Radiation`
+  EventKind is the self-improvement routine's lane). **`cargo build --release` green; full workspace `cargo test` green
+  (gcrm 571 / 0 failed / 4 ignored; ee-sources 161 incl. teleray 7/7; ee-correlate 79; ee-view 60; ee-core 9); clippy
+  clean on the touched crates.** Next: radiation outside DE+FI+FR (Sweden SSM / Norway DSA if a backend JSON or committed
+  client surfaces; Ireland MapMon backend); the military-posture (broadcast-warn geometry), Asian-maritime, global-NOTAM,
+  and ACLED-refresh lanes remain open per the gap notes above.
 
 - **2026-07-05 (Signal Hunter)** — **adopted `stuk_radiation` (STUK Finland external radiation dose rate
   via the FMI open-data WFS), Path A** — extends the radiation / nuclear-monitoring modality to

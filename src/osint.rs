@@ -431,6 +431,10 @@ fn feed_detail(e: &Event) -> Option<String> {
         // reading + band, e.g. "0.45 µSv/h · Above normal" — same universal-baseline
         // read as odlinfo, over the NATO/Russia frontline.
         "stuk_radiation" => ee_sources::stuk_radiation::dose_chip(&e.raw),
+        // IRSN/ASNR Téléray (France) ambient gamma dose rate above natural background:
+        // the µSv/h reading + band, e.g. "0.45 µSv/h · Above normal" — same
+        // universal-baseline read as odlinfo/stuk, over Europe's largest nuclear power.
+        "teleray" => ee_sources::teleray::dose_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -746,6 +750,7 @@ async fn feeds_payload() -> Value {
         nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
+        teleray::Teleray,
         ucdp_ged::UcdpGed, usgs::Usgs,
         usgs_volcano::UsgsVolcano,
     };
@@ -758,7 +763,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, fr_radiation) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -873,6 +878,11 @@ async fn feeds_payload() -> Value {
         // network = 0 events. Extends the radiation/nuclear-monitoring modality to the
         // NATO/Russia frontline (Finland's eastern border + Loviisa/Olkiluoto NPPs).
         fetch_one("stuk_radiation", StukRadiation, 12),
+        // IRSN / ASNR Téléray (France) — ambient gamma dose rate; only stations elevated
+        // above natural background (µSv/h, a universal baseline; reported nSv/h) plot, so
+        // an all-normal network = 0 events. Extends the radiation/nuclear-monitoring
+        // modality to Europe's largest nuclear power (56 reactors + La Hague reprocessing).
+        fetch_one("teleray", Teleray, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -930,6 +940,9 @@ async fn feeds_payload() -> Value {
         // Finland's ~255-station network; a real event can light up many at once, so
         // allow the same generous headroom as the German network before truncation.
         (fi_radiation.0, fi_radiation.1, "stuk_radiation", 400),
+        // France's ~470-station Téléray network; a real event can light up many at once,
+        // so allow the same generous headroom as the other radiation networks.
+        (fr_radiation.0, fr_radiation.1, "teleray", 400),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
@@ -1624,6 +1637,28 @@ mod tests {
         // `raw` is the flat properties object the STUK connector stores.
         let e = mk(json!({"value": 0.62, "unit": "µSv/h"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("0.62 µSv/h · Elevated"));
+        let e = mk(json!({"value": 0.45, "unit": "µSv/h"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("0.45 µSv/h · Above normal"));
+    }
+
+    #[test]
+    fn teleray_chip_surfaces_dose_rate_and_band() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "teleray-x".into(),
+            source_id: "teleray".into(),
+            kind: EventKind::Other,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(48.85, 2.35),
+            severity: Severity::new(0.7),
+            url: None,
+            raw,
+        };
+        // `raw` is the flat properties object the Téléray connector stores (value in µSv/h).
+        let e = mk(json!({"value": 3.1, "unit": "µSv/h"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("3.10 µSv/h · High"));
         let e = mk(json!({"value": 0.45, "unit": "µSv/h"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("0.45 µSv/h · Above normal"));
     }
