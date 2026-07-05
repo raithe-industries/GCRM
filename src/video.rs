@@ -42,6 +42,9 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCoMdktPbSTixAyNGwb-UYkQ", source: "skynews-video",      tier: SourceTier::Tier1 },
     VideoChannel { channel_id: "UCknLrEdhRCp1aegoMqRaCZg", source: "dwnews-video",       tier: SourceTier::Tier1 },
     VideoChannel { channel_id: "UCNye-wNBqNL5ZzHSJj3l8Bg", source: "aljazeera-video",    tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UC16niRr50-MSBwiO3YDb3RA", source: "bbc-video",          tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UCIALMKvObZNtJ6AmdCLP7Lg", source: "bloombergtv-video",  tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCSPEjw8F2nQDtmUKPFNF7_A", source: "nhkworld-video",     tier: SourceTier::Tier1 },
 ];
 
 /// Poll cadence. Broadcast channels upload a handful of clips per hour at most; 15
@@ -51,8 +54,13 @@ pub const VIDEO_POLL_SECS: u64 = 900;
 /// the article window/dedup already hold recent history.
 pub const VIDEO_MAX_AGE_HOURS: i64 = 24;
 /// Transcript cap fed into the article body. The NLP path reads at most ~6000 chars
-/// (processor truncation), so storing more is dead weight.
+/// (processor truncation), so storing more is dead weight — but the cap is applied
+/// via [`condense_transcript`], which packs the budget with SIGNAL-bearing sentences
+/// rather than blindly keeping the first five minutes of a long video.
 pub const TRANSCRIPT_MAX_CHARS: usize = 6000;
+/// Bound on the raw flattened transcript read from disk (memory hygiene; ~40 min of
+/// speech). Condensation reduces it to [`TRANSCRIPT_MAX_CHARS`].
+pub const TRANSCRIPT_RAW_CAP: usize = 40_000;
 /// yt-dlp subprocess budget per video (subtitle-only fetches run 2-10s normally).
 pub const YTDLP_TIMEOUT_SECS: u64 = 90;
 /// Per-cycle ceiling on NEW videos transcribed per channel, so a backfill or a
@@ -178,7 +186,7 @@ pub async fn fetch_transcript(video_url: &str) -> anyhow::Result<Option<String>>
                 while let Some(ent) = rd.next_entry().await? {
                     if ent.path().extension().and_then(|e| e.to_str()) == Some("vtt") {
                         let vtt = tokio::fs::read_to_string(ent.path()).await?;
-                        let flat: String = flatten_vtt(&vtt).chars().take(TRANSCRIPT_MAX_CHARS).collect();
+                        let flat: String = flatten_vtt(&vtt).chars().take(TRANSCRIPT_RAW_CAP).collect();
                         if !flat.trim().is_empty() {
                             transcript = Some(flat);
                         }
@@ -201,6 +209,70 @@ pub async fn fetch_transcript(video_url: &str) -> anyhow::Result<Option<String>>
         }
         Ok(Ok(_)) => Ok(transcript), // success; None = no captions yet
     }
+}
+
+/// Pack `max_chars` with the transcript's SIGNAL-bearing sentences. Long analyst
+/// videos bury the load-bearing line mid-stream (the 2026-07-04 proof: "the Strait
+/// of Hormuz is not open" arrived minutes into a market segment) — a blind head
+/// truncation feeds the NLP/enricher the greeting instead. Sentences carrying a
+/// geopolitical trigger (actors + conflict terms) are kept first, in order, with
+/// elisions marked "…"; remaining budget fills with leading context. Pure.
+pub fn condense_transcript(flat: &str, max_chars: usize) -> String {
+    if flat.chars().count() <= max_chars {
+        return flat.to_string();
+    }
+    // Sentence-ish split; auto-captions carry sparse punctuation, so fall back to
+    // fixed windows when boundaries are rare.
+    let mut sentences: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let bytes = flat.as_bytes();
+    for (i, b) in bytes.iter().enumerate() {
+        if matches!(b, b'.' | b'?' | b'!') && bytes.get(i + 1).is_none_or(|n| *n == b' ') {
+            if let Some(s) = flat.get(start..=i) {
+                if !s.trim().is_empty() { sentences.push(s.trim()); }
+            }
+            start = i + 1;
+        }
+    }
+    if let Some(tail) = flat.get(start..) {
+        if !tail.trim().is_empty() { sentences.push(tail.trim()); }
+    }
+    if sentences.len() < 4 {
+        sentences = flat
+            .as_bytes()
+            .chunks(400)
+            .filter_map(|c| std::str::from_utf8(c).ok())
+            .collect();
+    }
+    let signal: Vec<bool> = sentences
+        .iter()
+        .map(|s| crate::nlp_sidecar::has_geopolitical_trigger(s))
+        .collect();
+    let mut kept: Vec<usize> = (0..sentences.len()).filter(|&i| signal[i]).collect();
+    let mut used: usize = kept.iter().map(|&i| sentences[i].chars().count() + 2).sum();
+    // Fill the remaining budget with leading context sentences (in order).
+    for i in 0..sentences.len() {
+        if used >= max_chars { break; }
+        if !signal[i] {
+            let cost = sentences[i].chars().count() + 2;
+            if used + cost <= max_chars {
+                kept.push(i);
+                used += cost;
+            }
+        }
+    }
+    kept.sort_unstable();
+    let mut out = String::with_capacity(max_chars.min(used) + 16);
+    let mut prev: Option<usize> = None;
+    for &i in &kept {
+        if out.chars().count() + sentences[i].chars().count() + 2 > max_chars { break; }
+        if let Some(p) = prev {
+            out.push_str(if i == p + 1 { " " } else { " … " });
+        }
+        out.push_str(sentences[i]);
+        prev = Some(i);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -253,6 +325,25 @@ mod tests {
             "has reopened the Strait of Hormuz. Crude the Strait of Hormuz is not open. Traffic has not normalized"
         );
         assert!(!flat.contains('<') && !flat.contains("-->"), "tags/timing must not survive");
+    }
+
+    #[test]
+    fn condense_keeps_the_buried_signal_sentence() {
+        // The Nuttall property: the load-bearing line sits deep in a long transcript
+        // — head-truncation must not lose it.
+        let filler = "The market opened mixed today and analysts discussed portfolio balance. ".repeat(120);
+        let signal = "The Strait of Hormuz is not open and Iran controls transit.";
+        let long = format!("{filler}{signal} More closing remarks about earnings follow here.");
+        let out = condense_transcript(&long, 2000);
+        assert!(out.contains("Strait of Hormuz"), "buried signal sentence must survive: {out:?}");
+        assert!(out.chars().count() <= 2000);
+        assert!(out.contains(" … "), "elision must be marked, not silent");
+    }
+
+    #[test]
+    fn condense_short_transcript_is_untouched() {
+        let s = "Iran warns tankers near the strait. Traffic slows.";
+        assert_eq!(condense_transcript(s, 6000), s);
     }
 
     #[test]

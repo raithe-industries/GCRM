@@ -1006,7 +1006,10 @@ impl Ingestor {
                     if ing.titles.lock().await.contains(&title) { done.insert(url); continue; }
                     attempted += 1;
                     match video::fetch_transcript(&url).await {
-                        Ok(Some(transcript)) => {
+                        Ok(Some(raw_transcript)) => {
+                            // Signal-dense condensation: pack the NLP/enricher budget
+                            // with trigger-bearing sentences, not the first N minutes.
+                            let transcript = video::condense_transcript(&raw_transcript, video::TRANSCRIPT_MAX_CHARS);
                             // Relevance gate: broadcast channels mix missions — sports,
                             // royals, celebrations. Keep a video only when the TITLE or
                             // the TRANSCRIPT carries a geopolitical trigger (actors +
