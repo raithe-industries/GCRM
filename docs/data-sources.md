@@ -301,6 +301,21 @@ deferred, and the green-proof. Append; never rewrite history.
   (Finland STUK if a STUK-direct auth-free feed exists; Ireland EPA; EURDEP is access-restricted); the
   maritime-security / global-NOTAM / ACLED-refresh lanes remain open per the gap notes above.
 
+- **2026-07-04 (local watch, night)** — **VIDEO-NEWS TRANSCRIPT INGESTION lands, DORMANT (operator-directed).**
+  New `src/video.rs` + `Ingestor::video_loop`: a curated YouTube channel watchlist (4 channels whose
+  text outlets already hold Tier-1/2 roster slots: BNN Bloomberg, Sky News, DW News, Al Jazeera EN)
+  is discovered via the auth-free channel Atom feeds, new uploads' auto-captions pulled with a local
+  `yt-dlp` (subtitles only, never the video), VTT-flattened, and fed through the NORMAL article
+  pipeline — same dedup/NLP/LLM-enricher/store/dashboard row (title → YouTube link, channel as
+  source, upload time as timestamp; no dashboard changes needed). Rationale: analyst/broadcast video
+  carries signal wire text lacks — proven same-day by a BNN transcript disputing "Hormuz reopened"
+  headlines with satellite-checked "traffic has not normalized" claims, scoring ZERO domain-keyword
+  hits (the enricher is the classifier for this register). **Dormant by default** (keyed-feed
+  pattern): enable with `GCRM_VIDEO_SOURCES=1` in `secrets.env`; needs `yt-dlp` (installed at
+  `~/.local/bin/yt-dlp` → `~/.local/share/gcrm-video/venv`). Local-only (cloud sandbox cannot reach
+  YouTube). Green-proof: 5 offline fixture tests + `#[ignore]` live test (1,079-word transcript
+  end-to-end in 3s); full suite green. Age gate 24h, 3 videos/channel/cycle, 15-min cadence,
+  90s yt-dlp budget, no-caption uploads retried until captioned or aged out.
 - **2026-07-04 (local watch, evening)** — **`awc_sigmet` duplicate-issuance collapse.** A live map
   duplicate audit (896 quakes across 7 seismic feeds: ZERO same-time cross-feed duplicates — the
   cross-feed dedup verified clean) surfaced exactly one duplicate class: the AWC international-SIGMET

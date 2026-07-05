@@ -901,8 +901,103 @@ impl Ingestor {
         let rss   = tokio::spawn(Self::rss_loop(Arc::clone(&ingestor)));
         let gnews = tokio::spawn(Self::gnews_loop(Arc::clone(&ingestor)));
         let gdelt = tokio::spawn(Self::gdelt_loop(Arc::clone(&ingestor)));
+        let video = tokio::spawn(Self::video_loop(Arc::clone(&ingestor)));
 
-        let _ = tokio::join!(rss, gnews, gdelt);
+        let _ = tokio::join!(rss, gnews, gdelt, video);
+    }
+
+    // ── Video loop — YouTube channel transcripts as articles (src/video.rs) ───
+    //
+    // DORMANT unless GCRM_VIDEO_SOURCES=1: the loop exits immediately when the
+    // operator has not opted in, so shipping this costs prod nothing. When live,
+    // each cycle polls the watchlist channels' Atom feeds, pulls captions for
+    // NEW recent uploads via a local yt-dlp (subtitles only), and feeds the
+    // flattened transcript through the exact article path wire copy uses —
+    // same dedup, same NLP, same enricher, same store, same dashboard row
+    // (title → YouTube link, channel as source, upload time as timestamp).
+    async fn video_loop(ing: Arc<Self>) {
+        use crate::video;
+        if !video::enabled() {
+            info!("Video sources: dormant (set GCRM_VIDEO_SOURCES=1 to enable {} channels)",
+                  video::VIDEO_CHANNELS.len());
+            return;
+        }
+        let client = match build_client(20) {
+            Ok(c) => c,
+            Err(e) => { warn!("Video sources: client build failed: {e}"); return; }
+        };
+        info!("Video sources: LIVE — {} channels, {}s cycle, yt-dlp at {}",
+              video::VIDEO_CHANNELS.len(), video::VIDEO_POLL_SECS,
+              video::ytdlp_bin().display());
+        // Videos already transcribed (or aged out) this process lifetime; the
+        // article-store URL dedup covers restarts. A no-caption video is NOT
+        // marked done, so it retries each cycle until captions appear or the
+        // age gate closes over it.
+        let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            for ch in video::VIDEO_CHANNELS {
+                let feed_url = video::channel_feed_url(ch.channel_id);
+                let bytes = match client.get(&feed_url).send().await {
+                    Ok(r) if r.status().is_success() => match read_body_capped(r, MAX_FEED_BODY_BYTES).await {
+                        Ok(b) => b,
+                        Err(e) => { debug!("video {}: body: {e}", ch.source); continue; }
+                    },
+                    Ok(r) => { debug!("video {}: HTTP {}", ch.source, r.status()); continue; }
+                    Err(e) => { debug!("video {}: {e}", ch.source); continue; }
+                };
+                let parsed = match feed_rs::parser::parse(bytes.as_ref()) {
+                    Ok(f) => f,
+                    Err(e) => { debug!("video {}: parse: {e}", ch.source); continue; }
+                };
+                let mut transcribed = 0usize;
+                for entry in parsed.entries.iter() {
+                    if transcribed >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
+                    let Some(title) = entry.title.as_ref().map(|t| sanitize_feed_text(t.content.trim())) else { continue };
+                    if title.is_empty() { continue; }
+                    let url = canonicalize_url(
+                        &entry.links.first().map(|l| l.href.clone()).unwrap_or_default());
+                    if url.is_empty() || done.contains(&url) { continue; }
+                    let published = match entry.published.or(entry.updated) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let age = chrono::Utc::now() - published;
+                    if age > chrono::Duration::hours(video::VIDEO_MAX_AGE_HOURS) {
+                        done.insert(url); // aged out — never transcribe
+                        continue;
+                    }
+                    // Dedup BEFORE the expensive transcript fetch (is_new marks on
+                    // check, same as the RSS path; a video that later fails
+                    // transcription retries with these marks already set, which
+                    // store_article's URL update-in-place tolerates).
+                    if !ing.seen.lock().await.is_new(&url, &title) { done.insert(url); continue; }
+                    if !ing.titles.lock().await.is_new(&title) { done.insert(url); continue; }
+                    match video::fetch_transcript(&url).await {
+                        Ok(Some(transcript)) => {
+                            let article = RawArticle::new(
+                                url.clone(), title.clone(), transcript,
+                                ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
+                            );
+                            ing.store_article(&article).await;
+                            if ing.article_tx.send(article).await.is_err() {
+                                warn!("video {}: article channel closed", ch.source);
+                                return;
+                            }
+                            done.insert(url);
+                            transcribed += 1;
+                            info!("video {}: ingested \"{}\"", ch.source, title.chars().take(80).collect::<String>());
+                        }
+                        Ok(None) => {
+                            debug!("video {}: no captions yet for \"{}\"", ch.source, title.chars().take(60).collect::<String>());
+                        }
+                        Err(e) => {
+                            warn!("video {}: transcript fetch failed: {e}", ch.source);
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(video::VIDEO_POLL_SECS)).await;
+        }
     }
 
     // ── RSS loop — parallel per-feed fetching ─────────────────────────────────
