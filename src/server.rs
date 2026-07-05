@@ -866,8 +866,9 @@ mod tests {
         // chip) — dropping either silently re-buries the source.
         assert!(DASHBOARD_HTML.contains("art-vid"),
             "the ▶ VIDEO row badge is gone — video rows become indistinguishable from wire copy");
-        assert!(DASHBOARD_HTML.contains("art-video-btn") && DASHBOARD_HTML.contains("toggleVideoOnly"),
-            "the video-only filter chip is gone — video signal can no longer be isolated");
+        assert!(DASHBOARD_HTML.contains("tab-video") && DASHBOARD_HTML.contains("panel-video"),
+            "the Video tab is gone — video signal can no longer be isolated (operator-specified \
+             first-class tab beside Articles, 2026-07-05)");
     }
 
     #[test]
