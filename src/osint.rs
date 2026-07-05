@@ -54,6 +54,23 @@ impl PayloadCache {
     /// multi-second upstream fan-out, so on every TTL expiry one unlucky viewer (and every
     /// other concurrent viewer queued behind the lock) ate the full fan-out latency — a
     /// periodic head-of-line stall for all viewers. (audit osint-1 / xcut_net-3)
+    /// Reset-on-drop guard for the `refreshing` single-flight flag: the winning
+    /// builder can be CANCELLED (an axum handler future is dropped when its client
+    /// disconnects mid-fan-out — the eyes-gate timeout does exactly this) or panic;
+    /// either used to leave the flag stuck true forever, wedging every subsequent
+    /// cold caller in the poll loop with a takeover branch that could never fire.
+    /// Drop runs on success, error, panic-unwind AND future-drop, so the flag is
+    /// always released. (xhigh review finding 2)
+    fn flight_guard(&'static self) -> impl Drop {
+        struct FlightGuard(&'static std::sync::atomic::AtomicBool);
+        impl Drop for FlightGuard {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        FlightGuard(&self.refreshing)
+    }
+
     async fn get_or_refresh<F, Fut>(&'static self, build: F) -> Value
     where
         F: FnOnce() -> Fut + Send + 'static,
@@ -77,9 +94,9 @@ impl PayloadCache {
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
                 {
+                    let _flight = self.flight_guard(); // releases on cancel/panic too
                     let fresh = build().await;
                     *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
-                    self.refreshing.store(false, Ordering::Release);
                     fresh
                 } else {
                     // Another cold build is in flight — poll for its result. Bounded by
@@ -98,9 +115,9 @@ impl PayloadCache {
                                 .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                                 .is_ok()
                             {
+                                let _flight = self.flight_guard();
                                 let fresh = build().await;
                                 *self.inner.lock().await = Some((Instant::now(), fresh.clone()));
-                                self.refreshing.store(false, Ordering::Release);
                                 return fresh;
                             }
                         }
@@ -125,9 +142,9 @@ impl PayloadCache {
             return; // a refresh is already in flight
         }
         tokio::spawn(async move {
+            let _flight = self.flight_guard(); // a panicking build must not wedge refreshes
             let fresh = build().await;
             *self.inner.lock().await = Some((Instant::now(), fresh));
-            self.refreshing.store(false, Ordering::Release);
         });
     }
 }

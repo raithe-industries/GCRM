@@ -167,24 +167,31 @@ pub async fn fetch_transcript(video_url: &str) -> anyhow::Result<Option<String>>
         .output();
     let out = tokio::time::timeout(Duration::from_secs(YTDLP_TIMEOUT_SECS), run).await;
 
-    let mut transcript: Option<String> = None;
-    if let Ok(Ok(o)) = &out {
-        if o.status.success() {
-            // yt-dlp names the file cap.<lang>.vtt — take the first vtt it produced.
-            let mut rd = tokio::fs::read_dir(&dir).await?;
-            while let Some(ent) = rd.next_entry().await? {
-                if ent.path().extension().and_then(|e| e.to_str()) == Some("vtt") {
-                    let vtt = tokio::fs::read_to_string(ent.path()).await?;
-                    let flat: String = flatten_vtt(&vtt).chars().take(TRANSCRIPT_MAX_CHARS).collect();
-                    if !flat.trim().is_empty() {
-                        transcript = Some(flat);
+    // Read inside an inner block so ANY error still reaches the cleanup below —
+    // a bare `?` here leaked the per-video temp dir. (xhigh review finding 14)
+    let read_vtt = async {
+        let mut transcript: Option<String> = None;
+        if let Ok(Ok(o)) = &out {
+            if o.status.success() {
+                // yt-dlp names the file cap.<lang>.vtt — take the first vtt produced.
+                let mut rd = tokio::fs::read_dir(&dir).await?;
+                while let Some(ent) = rd.next_entry().await? {
+                    if ent.path().extension().and_then(|e| e.to_str()) == Some("vtt") {
+                        let vtt = tokio::fs::read_to_string(ent.path()).await?;
+                        let flat: String = flatten_vtt(&vtt).chars().take(TRANSCRIPT_MAX_CHARS).collect();
+                        if !flat.trim().is_empty() {
+                            transcript = Some(flat);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
+        anyhow::Ok(transcript)
     }
-    let _ = tokio::fs::remove_dir_all(&dir).await; // best-effort cleanup
+    .await;
+    let _ = tokio::fs::remove_dir_all(&dir).await; // best-effort cleanup, every path
+    let transcript = read_vtt?;
 
     match out {
         Err(_) => anyhow::bail!("yt-dlp timed out after {YTDLP_TIMEOUT_SECS}s"),

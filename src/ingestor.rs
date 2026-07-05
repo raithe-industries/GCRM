@@ -389,6 +389,15 @@ impl SeenCache {
         true
     }
 
+    /// Non-marking membership probe: is this (url, title) already recorded? Unlike
+    /// `is_new` this NEVER writes — callers that may abandon an item (the video loop
+    /// probing before an expensive transcript fetch that can legitimately fail-and-
+    /// retry) must not poison the cache for the item's later successful ingest or
+    /// for an identically-titled wire article. (xhigh review findings 1+3)
+    pub fn contains(&self, url: &str, title: &str) -> bool {
+        self.cache.contains(&Self::key(url, title))
+    }
+
     /// Mark a (url, title) as already-seen without reporting novelty. Used at boot
     /// to seed the cache from disk-restored articles so live re-fetches of the same
     /// stories aren't stored a second time (the dedup cache is not itself persisted).
@@ -494,6 +503,16 @@ impl TitleDedup {
             }
         }
         true
+    }
+
+    /// Non-marking membership probe (TTL-aware): is this title currently deduped?
+    /// Never writes — see SeenCache::contains for why the video loop needs this.
+    pub fn contains(&self, title: &str) -> bool {
+        let Some(k) = Self::key(title) else { return false; };
+        match self.cache.get(&k) {
+            Some(&at) => chrono::Utc::now().timestamp() - at <= TITLE_DEDUP_TTL_S,
+            None => false,
+        }
     }
 
     /// Boot seeding: mark a title as already stored without reporting novelty.
@@ -949,9 +968,13 @@ impl Ingestor {
                     Ok(f) => f,
                     Err(e) => { debug!("video {}: parse: {e}", ch.source); continue; }
                 };
-                let mut transcribed = 0usize;
+                let mut attempted = 0usize;
                 for entry in parsed.entries.iter() {
-                    if transcribed >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
+                    // Cap ATTEMPTS (yt-dlp subprocess launches), not successes: a
+                    // livestream-clip flood of uncaptioned uploads would otherwise run
+                    // unbounded 90s subprocesses and starve the other channels — the
+                    // exact scenario the cap exists for. (xhigh review finding 15)
+                    if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
                     let Some(title) = entry.title.as_ref().map(|t| sanitize_feed_text(t.content.trim())) else { continue };
                     if title.is_empty() { continue; }
                     let url = canonicalize_url(
@@ -969,12 +992,19 @@ impl Ingestor {
                         done.insert(url); // aged out — never transcribe
                         continue;
                     }
-                    // Dedup BEFORE the expensive transcript fetch (is_new marks on
-                    // check, same as the RSS path; a video that later fails
-                    // transcription retries with these marks already set, which
-                    // store_article's URL update-in-place tolerates).
-                    if !ing.seen.lock().await.is_new(&url, &title) { done.insert(url); continue; }
-                    if !ing.titles.lock().await.is_new(&title) { done.insert(url); continue; }
+                    // Dedup probe BEFORE the expensive transcript fetch — via the
+                    // NON-MARKING `contains`, never `is_new`: marking here poisoned
+                    // both caches for any video that then failed to ingest (no
+                    // captions yet / off-mission / fetch error), which (a) killed the
+                    // designed retry-until-captioned — the next cycle read the mark
+                    // as "duplicate" and permanently done-marked the upload — and
+                    // (b) suppressed an identically-titled REAL wire article for the
+                    // dedup TTL, a story then existing in no form in the feed.
+                    // Marks are recorded only at successful store below.
+                    // (xhigh review findings 1+3)
+                    if ing.seen.lock().await.contains(&url, &title) { done.insert(url); continue; }
+                    if ing.titles.lock().await.contains(&title) { done.insert(url); continue; }
+                    attempted += 1;
                     match video::fetch_transcript(&url).await {
                         Ok(Some(transcript)) => {
                             // Relevance gate: broadcast channels mix missions — sports,
@@ -998,13 +1028,15 @@ impl Ingestor {
                                 url.clone(), title.clone(), transcript,
                                 ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
                             );
+                            // Successful ingest: NOW record the dedup marks.
+                            let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
+                            let _ = ing.titles.lock().await.is_new(&article.title);
                             ing.store_article(&article).await;
                             if ing.article_tx.send(article).await.is_err() {
                                 warn!("video {}: article channel closed", ch.source);
                                 return;
                             }
                             done.insert(url);
-                            transcribed += 1;
                             info!("video {}: ingested \"{}\"", ch.source, title.chars().take(80).collect::<String>());
                         }
                         Ok(None) => {
