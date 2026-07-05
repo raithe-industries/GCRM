@@ -45,6 +45,12 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UC16niRr50-MSBwiO3YDb3RA", source: "bbc-video",          tier: SourceTier::Tier1 },
     VideoChannel { channel_id: "UCIALMKvObZNtJ6AmdCLP7Lg", source: "bloombergtv-video",  tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCSPEjw8F2nQDtmUKPFNF7_A", source: "nhkworld-video",     tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UChqUTb7kYRX8-EiaN3XFrSQ", source: "reuters-video",      tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UC52X5wxOL_s5yw0dQk7NtgA", source: "ap-video",           tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UCQfwfsi5VrQ8yKZ-UWmAEFg", source: "france24-video",     tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UC83jt4dlz1Gjl58fzQrrKZg", source: "cna-video",          tier: SourceTier::Tier1 },
+    VideoChannel { channel_id: "UC7fWeaHhqgM4Ry-RMpM2YYw", source: "trtworld-video",     tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UC_gUM8rL-Lrg6O3adPW9K1g", source: "wion-video",         tier: SourceTier::Tier2 },
 ];
 
 /// Poll cadence. Broadcast channels upload a handful of clips per hour at most; 15
