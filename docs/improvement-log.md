@@ -22,6 +22,57 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-05 — honesty/awareness (VISUAL-ANALYTIC) — the read now says WHERE it sits in its recent range (durable, not a per-tab "session peak")
+- Item: roadmap 2.8 (new) — standing lane 2 VISUAL-ANALYTIC; fixes a pillar-1 legibility defect + adds a pillar-3 gauge.
+- Defect (pillar-1 HONESTY + pillar-3 AWARENESS): the context strip showed "Session peak / Session
+  low", computed CLIENT-side from `sessionPeak`/`sessionLow` — a per-tab min/max seeded from whatever
+  timeline the tab happened to bootstrap. Two operators with different uptime saw different "peaks";
+  a fresh tab (or one whose bootstrap seed a UI refactor dropped) read hi==lo==current — a false
+  "flat at its own value". This is the exact fragility class `trend_6h` was moved server-side to kill.
+  And nowhere did the operator see WHERE the current read sits in its range — a 60% that is a
+  multi-day HIGH (fresh territory) reads identically to a 60% range-bound for days (plateau).
+- Change (durable server-side range + a new position gauge; diagnostic only):
+  (a) `EpochStore::read_range` / `read_range_window(current_p, now, window_secs, min_samples)`
+      (aggregator.rs) — computed off the durable ring over a FIXED 24h window (same injection
+      discipline as trend_window/uncertainty_window): the min/max band `[lo,hi]` PLUS the read's
+      POSITION — `pct_rank` (share of window reads ≤ current) and a plain `position` tag
+      (near-high/upper/mid/lower/near-low). Flat guard: a band narrower than `FLAT_RANGE_PP` (0.3pp)
+      reports `position:"flat"` so a dead-flat series is never called "at its high". Honest-null
+      (`available:false`) below `READ_RANGE_MIN_SAMPLES` (30) — a cold ring never fabricates a range.
+      Position tag keys on the percentile rank, not the raw min/max fraction, so one transient spike
+      in `hi` can't mislabel a genuinely high read.
+  (b) Served as `data.read_range` (server.rs, same locked block as trend_6h/uncertainty/momentum_lead).
+  (c) Dashboard: context strip relabeled "Session peak/low" → durable "24h high/low" + a new
+      "Position" readout (`renderReadRange` consuming `d.read_range`), colored near-high=red/upper=amber;
+      falls back to the per-tab session extent only when the server field is absent. `context-strip`
+      gains `flex-wrap` so the extra item stays legible on a narrow viewport (pillar-2).
+- Metric moved: new server-computed gauge (recent-range position) replacing a fragile, mislabeled
+  per-tab client value; +6 tests (564 → 570). NO calibration constant touched — read_range is computed
+  AFTER P is final and never feeds it; the four anchors are bit-identical (`cargo test backtest` green,
+  Brier 0.00092 / RMSE 3.04pp / in-band 4/4 unchanged, current_2026 on its 60% centre).
+- Proof: `cargo build --release` clean; `cargo test --release` **570 passed / 0 failed / 4 ignored**;
+  `cargo clippy --release -p gcrm` 0 warnings from src/ (the 7 ee-sources warnings are the signal-hunter
+  vendor lane, pre-existing, not this diff). Locks proven fails-without-change TWICE: raising the
+  near-high threshold to an unreachable 101 → `read_range_window_positions_the_read_at_a_fresh_high`
+  (+`_ignores_entries_older_than_the_window`) panic "left: mid / right: near-high"; setting
+  `FLAT_RANGE_PP` to 0.0 → `_flat_band_makes_no_high_low_claim` panics (a dead-flat band claims a
+  high). Both restored → green.
+- Tier: T1-leaning (a durable server-computed gauge — the read's position within its recent range —
+  computed from the durable ring, the trend_6h/momentum_lead_lag precedent; ALSO a pillar-1 honesty
+  repair, replacing a mislabeled per-tab "session peak" that drifted with uptime and lied on a fresh
+  tab) · Touched: engine-behavior (new server-side diagnostic + the client now consumes it; the lock
+  fails when the position/flat logic is broken) · Lock-fails-without-change: yes (threshold + flat-guard
+  panics shown above) · Counts: none of Live-sources/Map-layers/Monitors moved — a legibility/awareness
+  gauge · consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `read_range` is DIAGNOSTIC — the 24h window, 30-sample floor,
+  and 0.3pp flat threshold gate a DISPLAY readout and never touch P or any fitted constant; tune only
+  with a rationale, never to force a flattering "high". (2) The window (24h) fits comfortably inside
+  the durable ring (~4 days at 1 Hz); if the ring cap ever shrinks below 24h the gauge just reports a
+  shorter actual `span_secs` and stays honest. (3) The live `position`/`pct_rank` value is
+  data-dependent (needs a populated ring) and is exercised only on synthetic scenarios in-sandbox;
+  do not "fix" a sandbox honest-null. (4) The per-tab `sessionPeak`/`sessionLow` fallback is retained
+  ONLY for the degraded no-server-field case — do not restore it as the primary source.
+
 ## 2026-07-05 — awareness (MATH-ANALYTIC) — the headline now names its LOAD-BEARING modality
 - Item: roadmap 1.10 (new) — standing lane 1 MATH-ANALYTIC: "per-theater sensitivity/ablation reads
   (which modality moves the read and by how much)." Realised at the SYSTEMIC level (the headline).

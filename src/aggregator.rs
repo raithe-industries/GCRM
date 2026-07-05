@@ -641,6 +641,104 @@ impl EpochStore {
         })
     }
 
+    /// Where the current read sits within its RECENT RANGE, computed server-side from the durable
+    /// ring — a durable, well-defined replacement for the per-tab "session peak/low" the browser
+    /// used to compute from whatever timeline it happened to bootstrap. That client value drifted
+    /// with tab uptime (two operators saw different "peaks") and a fresh tab, or one whose bootstrap
+    /// seed was dropped by a UI refactor, read hi==lo==current — a false "flat at its own value".
+    /// The window is FIXED here, off the full durable ring, so the range means the same thing for
+    /// everyone regardless of when they opened the page.
+    ///
+    /// Reports the range `[lo, hi]` over the last `window_secs` of reads AND the current read's
+    /// POSITION in it: a percentile rank (`pct_rank` — the share of window reads at or below the
+    /// current one) plus a plain-language `position` tag. This lets the operator distinguish a "60%
+    /// that is a multi-day HIGH" (fresh territory) from a "60% RANGE-BOUND for days" (sustained
+    /// plateau) from a "60% near the LOW of a higher band" (de-escalating) — context neither the
+    /// bare headline nor the 6h delta can give. When the range is essentially flat
+    /// (`hi − lo < FLAT_RANGE_PP`), no high/low is claimed (`position:"flat"`): a stable read is not
+    /// "at its high". Honest-null (`available:false`) below `min_samples`. Diagnostic only —
+    /// computed after P is final, it never feeds P or any fitted constant.
+    pub fn read_range(&self, current_p: f64) -> serde_json::Value {
+        self.read_range_window(current_p, Utc::now(), READ_RANGE_WINDOW_SECS, READ_RANGE_MIN_SAMPLES)
+    }
+
+    /// Testable core of [`read_range`]: caller injects `now`, the window length and the minimum
+    /// sample count (same injection discipline as [`trend_window`] / [`uncertainty_window`]).
+    pub fn read_range_window(
+        &self,
+        current_p: f64,
+        now: DateTime<Utc>,
+        window_secs: i64,
+        min_samples: usize,
+    ) -> serde_json::Value {
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        let mut ps: Vec<f64> = Vec::new();
+        let mut oldest: Option<DateTime<Utc>> = None;
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue,
+            };
+            if t < cutoff {
+                break;
+            }
+            if let Some(p) = e.get("p_annual").and_then(|v| v.as_f64()) {
+                ps.push(p);
+                oldest = Some(t); // ends at the oldest in-window tick → the true span
+            }
+        }
+        if ps.len() < min_samples {
+            return serde_json::json!({
+                "available": false,
+                "samples":   ps.len(),
+                "span_secs": 0,
+            });
+        }
+        // Range = observed min/max (the "high/low" the operator expects). Position = the percentile
+        // RANK of the current read among the window's reads — robust to a single transient spike
+        // that would otherwise set `hi` far above everything and make every later read read "low".
+        let lo = ps.iter().cloned().fold(f64::INFINITY, f64::min);
+        let hi = ps.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let n = ps.len() as f64;
+        let at_or_below = ps.iter().filter(|&&p| p <= current_p).count() as f64;
+        let pct_rank = (at_or_below / n * 100.0 * 1e1).round() / 1e1;
+        let span_secs = oldest.map(|o| (now - o).num_seconds().max(0)).unwrap_or(0);
+        let flat = (hi - lo) < FLAT_RANGE_PP / 100.0;
+        // Position tag off the percentile rank (not the raw min/max fraction), so a lone spike in
+        // `hi` cannot mislabel a genuinely high read as "mid". Flat range → no high/low claim.
+        let position = if flat {
+            "flat"
+        } else if pct_rank >= 90.0 {
+            "near-high"
+        } else if pct_rank >= 66.0 {
+            "upper"
+        } else if pct_rank > 33.0 {
+            "mid"
+        } else if pct_rank > 10.0 {
+            "lower"
+        } else {
+            "near-low"
+        };
+        let r6 = |x: f64| (x * 1e6).round() / 1e6;
+        let p2 = |x: f64| (x * 100.0 * 1e2).round() / 1e2;
+        serde_json::json!({
+            "available": true,
+            "lo":        r6(lo),
+            "hi":        r6(hi),
+            "lo_pct":    p2(lo),
+            "hi_pct":    p2(hi),
+            "pct_rank":  pct_rank,
+            "position":  position,
+            "flat":      flat,
+            "span_secs": span_secs,
+            "samples":   ps.len(),
+        })
+    }
+
     /// Stride-cached public entry: the window scan reads the whole 48h series, its
     /// answer can only change once per [`MOM_LL_STRIDE_SECS`], and it runs on the 1 Hz
     /// broadcast path under the shared epoch_store lock — so recompute at most once
@@ -874,6 +972,15 @@ const LEAD_HIT_THRESHOLD: f64 = 0.60; // directional-hit rate to earn the "leads
 const LEAD_BASELINE_MARGIN: f64 = 0.10; // best lag must beat the contemporaneous baseline by this
 const MOM_LL_MIN_EPISODES: usize = 3;   // distinct decisive episodes required to claim a lead
 const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an episode (1 dip tolerated)
+
+// Recent-range positioning parameters (DISPLAY/diagnostic only — none touches P or any fitted
+// constant). Fixed 24h window off the durable ring (holds ~4 days), so the "high/low" band means
+// the same for every operator regardless of tab uptime. `MIN_SAMPLES` keeps a cold-start ring from
+// publishing a degenerate range where hi==lo==current. `FLAT_RANGE_PP`: a band narrower than this
+// (0.3 percentage points) is reported as flat/range-bound rather than claiming a high or a low.
+const READ_RANGE_WINDOW_SECS: i64 = 24 * 3600;
+const READ_RANGE_MIN_SAMPLES: usize = 30;
+const FLAT_RANGE_PP: f64 = 0.3;
 
 /// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
 /// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
@@ -2494,6 +2601,90 @@ mod tests {
         let tr = es.trend_window(0.50, Utc::now(), 6 * 3600, 2);
         assert_eq!(tr["available"], false);
         assert_eq!(tr["samples"], 0);
+    }
+
+    // ── EpochStore::read_range / read_range_window — WHERE the read sits in its recent band ──
+    // Locks the durable, server-side recent-range positioning the dashboard renders as the 24h
+    // high/low + "Position" readout, replacing the fragile per-tab session peak/low. If the range
+    // math or its shape breaks, these go red and the change can't ship.
+
+    #[test]
+    fn read_range_window_positions_the_read_at_a_fresh_high() {
+        // A read sitting above every other in-window sample must report the true min/max band, a
+        // top percentile rank, and the "near-high" tag — the multi-day-high state the operator
+        // could not previously distinguish from a range-bound plateau.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for (i, p) in [0.40, 0.42, 0.41, 0.45, 0.44, 0.50, 0.55].iter().enumerate() {
+            es.push(epoch_at(3600 * (10 - i as i64), now, *p)); // all inside 24h, ascending age→recency
+        }
+        let r = es.read_range_window(0.60, now, 24 * 3600, 5);
+        assert_eq!(r["available"], true);
+        assert!((r["lo"].as_f64().unwrap() - 0.40).abs() < 1e-9, "lo must be the window minimum");
+        assert!((r["hi"].as_f64().unwrap() - 0.55).abs() < 1e-9, "hi must be the window maximum");
+        // 0.60 is at or above all 7 samples → 100th percentile.
+        assert!((r["pct_rank"].as_f64().unwrap() - 100.0).abs() < 1e-6);
+        assert_eq!(r["position"], "near-high");
+        assert_eq!(r["flat"], false);
+    }
+
+    #[test]
+    fn read_range_window_positions_a_low_read_near_the_bottom() {
+        // Symmetric: a read below the band reads "near-low", not "flat" and not "high".
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for (i, p) in [0.40, 0.45, 0.50, 0.55, 0.60, 0.62].iter().enumerate() {
+            es.push(epoch_at(3600 * (8 - i as i64), now, *p));
+        }
+        let r = es.read_range_window(0.39, now, 24 * 3600, 5);
+        assert_eq!(r["available"], true);
+        // 0.39 is below every sample → 0th percentile.
+        assert!(r["pct_rank"].as_f64().unwrap() < 1e-6);
+        assert_eq!(r["position"], "near-low");
+    }
+
+    #[test]
+    fn read_range_window_flat_band_makes_no_high_low_claim() {
+        // A band narrower than FLAT_RANGE_PP (0.3pp) is range-bound: the read is NOT "at its high"
+        // just because it happens to be the max of a dead-flat series. This is the honesty guard
+        // against the fresh-tab hi==lo==current lie the client session peak/low used to tell.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..40 {
+            es.push(epoch_at(3600 * 20 - 60 * i, now, 0.500 + 0.0005 * (i % 2) as f64)); // ±0.05pp
+        }
+        let r = es.read_range_window(0.5005, now, 24 * 3600, 30);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["flat"], true, "a sub-0.3pp band must read flat");
+        assert_eq!(r["position"], "flat");
+    }
+
+    #[test]
+    fn read_range_window_honest_null_below_min_samples() {
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..5 {
+            es.push(epoch_at(60 * (i + 1), now, 0.40 + 0.01 * i as f64));
+        }
+        let r = es.read_range_window(0.45, now, 24 * 3600, 30); // only 5 < 30
+        assert_eq!(r["available"], false, "too few samples must not fabricate a range");
+        assert_eq!(r["span_secs"], 0);
+    }
+
+    #[test]
+    fn read_range_window_ignores_entries_older_than_the_window() {
+        // A read that looks like a high against only recent data must not be dragged down by an
+        // out-of-window spike (and vice versa): the band is the LAST 24h, nothing older.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(epoch_at(30 * 3600, now, 0.90)); // 30h ago — OUTSIDE the 24h window, must be ignored
+        for i in 0..6 {
+            es.push(epoch_at(3600 * (6 - i), now, 0.40 + 0.01 * i as f64)); // 0.40..0.45 within window
+        }
+        let r = es.read_range_window(0.46, now, 24 * 3600, 5);
+        assert_eq!(r["available"], true);
+        assert!((r["hi"].as_f64().unwrap() - 0.45).abs() < 1e-9, "the 30h-old 0.90 spike must be excluded");
+        assert_eq!(r["position"], "near-high");
     }
 
     // ── EpochStore::momentum_lead_lag — the "leading" claim is MEASURED, not asserted ──────

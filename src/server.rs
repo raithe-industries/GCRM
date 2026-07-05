@@ -241,6 +241,13 @@ pub async fn broadcast_snapshots(
                 // EARNED verdict (leads ~L / no measurable lead / insufficient history), never a bare
                 // assertion. Diagnostic only; never feeds P. (EpochStore::momentum_lead_lag.)
                 data["momentum_lead"] = es.momentum_lead_lag();
+                // Awareness layer: WHERE the current read sits within its recent range (24h high/low
+                // + the read's position in that band), computed server-side from the durable ring so
+                // it means the same for every operator — replacing the per-tab "session peak/low" the
+                // browser used to compute from whatever timeline it bootstrapped. A stable 60% that is
+                // a multi-day HIGH is a different state than one range-bound for days; the bare number
+                // and the 6h delta show neither. Diagnostic only; never feeds P. (EpochStore::read_range.)
+                data["read_range"] = es.read_range(snap.p_wwiii_annual);
             }
             data["epistemic"] = serde_json::json!({
                 "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
@@ -767,6 +774,23 @@ mod tests {
             "a named load-bearing modality must state its leave-one-out P drop");
         assert!(DASHBOARD_HTML.contains("diffuse — no single modality carries the headline"),
             "a diffuse read must be named honestly instead of over-attributing to one modality");
+    }
+
+    #[test]
+    fn dashboard_renders_the_durable_recent_range_position() {
+        // HONESTY + AWARENESS: the context strip must consume the durable, server-computed recent
+        // range (server field read_range / EpochStore::read_range) — the 24h high/low + the read's
+        // POSITION in it — not the per-tab "session peak/low" that drifted with tab uptime. Lock the
+        // consumer + the honest 24h labels, and confirm the old mislabeled "Session peak/low" copy
+        // is gone.
+        assert!(DASHBOARD_HTML.contains("renderReadRange") && DASHBOARD_HTML.contains("d.read_range"),
+            "the readout must consume the server-provided read_range positioning");
+        assert!(DASHBOARD_HTML.contains("ca-pos"),
+            "the context strip must carry the read-position element");
+        assert!(DASHBOARD_HTML.contains("24h high") && DASHBOARD_HTML.contains("24h low"),
+            "the recent-range band must be honestly labeled as the durable 24h high/low");
+        assert!(!DASHBOARD_HTML.contains("Session peak") && !DASHBOARD_HTML.contains("Session low"),
+            "the mislabeled per-tab 'Session peak/low' copy must be replaced by the durable 24h band");
     }
 
     #[test]

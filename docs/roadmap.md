@@ -323,6 +323,27 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   modalities are close, so a genuinely two-dimensional crisis reads as such.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
+  peak")** — **DONE 2026-07-05.** The context strip showed "Session peak / Session low", computed
+  client-side from `sessionPeak`/`sessionLow` — a per-tab min/max that drifted with tab uptime (two
+  operators saw different "peaks") and, on a fresh tab or after a UI refactor dropped the bootstrap
+  seed, read hi==lo==current (a false "flat at its own value") — the same fragility class trend_6h
+  was created to kill. Added `EpochStore::read_range` / `read_range_window` — server-computed off the
+  durable ring over a FIXED 24h window: the min/max band PLUS the current read's POSITION in it
+  (percentile rank + a plain tag: near-high / upper / mid / lower / near-low, or `flat` when the band
+  is narrower than 0.3pp, so a stable read is never called "at its high"). Served as `data.read_range`
+  (server.rs, same locked block as trend_6h/uncertainty/momentum_lead); the context strip now reads it
+  ("24h high/low" + a new "Position" readout), falling back to the per-tab session extent only if the
+  server field is absent. New AWARENESS the bare number and the 6h delta can't give (a 60% that is a
+  multi-day HIGH vs one range-bound for days). Diagnostic only — computed after P is final, never feeds
+  P or any fitted constant; the four anchors are bit-identical (Brier 0.00092 / in-band 4/4). Locked by
+  `read_range_window_positions_the_read_at_a_fresh_high` (fails-without: breaking the near-high
+  threshold → the fresh-high read mis-tags, test panics), `_positions_a_low_read_near_the_bottom`,
+  `_flat_band_makes_no_high_low_claim` (fails-without: dropping the flat guard → a dead-flat series
+  claims a high), `_honest_null_below_min_samples`, `_ignores_entries_older_than_the_window`, and the
+  dashboard consumer lock `dashboard_renders_the_durable_recent_range_position` (consumes
+  `d.read_range`, honest "24h high/low" labels, "Session peak/low" copy gone). See improvement-log
+  2026-07-05.
 - [x] **2.7 The eyes gate can SEE the I&W "why" board** — **STAGED 2026-07-04.** The deploy-time
   eyes gate (`deploy/eyes/smoke.mjs`) verified the timeline, domain chart, gauge and ladder, but
   never looked at the I&W board — the densest awareness surface and, per the code itself, "the why
