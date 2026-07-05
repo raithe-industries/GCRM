@@ -22,6 +22,59 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-05 — awareness (MATH-ANALYTIC) — the headline now names its LOAD-BEARING modality
+- Item: roadmap 1.10 (new) — standing lane 1 MATH-ANALYTIC: "per-theater sensitivity/ablation reads
+  (which modality moves the read and by how much)." Realised at the SYSTEMIC level (the headline).
+- Defect (pillar-3 AWARENESS): the systemic headline P is one opaque number. The operator could see
+  WHICH coupling channel amplifies it (`coupling_driver`) and each theater's own dominant modality
+  (`top_driver`), but nothing answered the systemic question "which KIND of force is holding up THIS
+  number, and by how much?" A 60% carried entirely by nuclear posture is a different epistemic state
+  than a 60% carried by broad kinetic concurrence, and the operator was told neither.
+- Change (T1 — a NEW computed gauge from a counterfactual over the scored board):
+  (a) `theater::heat_from_scores` refactored to delegate to a modality-score core
+      `heat_from_modality_scores(scores, suppress)` — ONE formula for both the live heat and the
+      counterfactual "heat without modality m", so the attribution can never drift from the number it
+      attributes.
+  (b) `theater::aggregate_l_sys(states, suppress)` — rebuilds the systemic likelihood (concurrency,
+      GP entanglement, alliance, nuclear brink, breadth) from the already-scored board, optionally
+      zeroing one modality. `aggregate_l_sys(states, None)` reproduces the live pre-guardrail `l_sys`
+      (drift-locked). A floor-HELD theater keeps its memory heat (modality-independent → cancels).
+  (c) `compute` Step 7b: leave-one-out over the five modalities — suppress each, map the resulting
+      `l_sys` back to P the SAME way the headline is mapped, and name the modality whose removal drops
+      P the most. Served as `load_bearing_modality` {modality, p_drop_pp, sorted profile, available};
+      `available=false` (honest null) when nothing moves the headline ≥0.1pp. Rendered on the
+      model-state footer (`f-loadbearing`) with an explicit "diffuse" copy for the null case.
+- Metric moved: NEW computed gauge (the systemic load-bearing modality + its headline-P marginal) —
+  awareness the operator did not have. NO calibration constant touched; the read is computed AFTER P
+  is final and never feeds it, so the four anchors are bit-identical (`cargo test backtest` green,
+  current_2026 on its 60% centre, Brier 0.00092 / in-band 4/4 unchanged). Test count 554 → 558 (+4).
+- Proof: `cargo build --release` clean; `cargo test --release` **558 passed / 0 failed / 4 ignored**;
+  `cargo clippy --release` 0 warnings. Lock `modality_sensitivity_names_the_load_bearing_modality`
+  proven fails-without-change: neutralising the suppression in `aggregate_l_sys` (making it a no-op)
+  makes every leave-one-out drop 0 → the test panics "suppressing the driving modality must lower
+  l_sys (got no drop)"; restored → green. Companions: `aggregate_l_sys_reproduces_the_live_l_sys`
+  (drift guard), `snapshot_attributes_the_cuba_headline_to_nuclear_posture` (end-to-end: Cuba's brink
+  headline attributes to nuclear_posture; empty board attributes nothing),
+  `dashboard_renders_the_load_bearing_modality`, and the served-JSON key assert in
+  `snapshot_to_json_has_required_keys`.
+- Tier: T1 (new computed gauge: a quantity newly computed from a counterfactual over the scored board —
+  the systemic load-bearing modality + its headline-P marginal; NOT a relocation of `coupling_driver`/
+  `top_driver`, which answer different questions) · Touched: engine-behavior (new server-computed
+  sensitivity + the `heat_from_modality_scores` refactor, both locked; the lock fails when suppression
+  is neutralised) · Lock-fails-without-change: yes (no-op-suppression panic shown above) · Counts: none
+  of Live-sources/Map-layers/Monitors moved — a math-analytic awareness gauge · consecutive_display_only=0
+  · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `aggregate_l_sys` is a faithful RECONSTRUCTION of `compute`'s
+  systemic aggregation from theater states — if you change the aggregation in either `compute` or
+  `aggregate_l_sys`, the drift-guard test `aggregate_l_sys_reproduces_the_live_l_sys` will fail; keep
+  them in lockstep (that is the point). (2) The 0.1pp `MIN_DROP_PP` display floor and the leave-one-out
+  method are DIAGNOSTIC — they gate a display verdict and never touch P or any fitted constant; the
+  headline P is computed BEFORE Step 7b and is not a function of this read. (3) Leave-one-out is a
+  MARGINAL attribution: with strong non-linear couplings the per-modality drops need not sum to the
+  headline — that is expected and honest (it measures each modality's removal effect, not an additive
+  share). (4) The live `available`/named-modality value is data-dependent (the running board); in the
+  sandbox it is exercised only on synthetic scenarios.
+
 ## 2026-07-04 — legibility (VISUAL-ANALYTIC) — the eyes gate can now SEE the I&W "why" board
 - Item: roadmap 2.7 (new) — standing lane 2 VISUAL-ANALYTIC: "strengthen deploy/eyes/smoke.mjs with
   checks for surfaces that exist but are unverified (the I&W board renders 12 cells…)."

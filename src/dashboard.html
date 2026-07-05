@@ -579,7 +579,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     </div>
     <div class="formula">
       Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, flat)</span> · systemic L = <span id="f-lik">—</span> · guardrail collapse = <span id="f-guard">—</span><br>
-      P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span>
+      P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span><br>
+      <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span>
     </div>
     <div class="meta-pills" id="meta-row"></div>
   </div>
@@ -1306,6 +1307,12 @@ function applyData(d){
   document.getElementById('f-guard').textContent=((d.couplers&&d.couplers.guardrail_collapse)||0).toFixed(2);
   const cdrv=(d.couplers&&d.couplers.coupling_driver)||'';
   document.getElementById('f-lik').textContent='coupling ×'+((d.couplers&&d.couplers.coupling_multiplier)||1).toFixed(2)+' · '+elev+'/5 modalities'+(cdrv?' · led by '+cdrv:'');
+  // Load-bearing modality (leave-one-out sensitivity): which KIND of force is holding up the
+  // systemic headline, and by how much. The label maps the modality id through the same DID/DSHORT
+  // table the domain grid uses. When the read is diffuse (available=false) we say so rather than
+  // naming a modality — a headline no single modality carries must not be attributed to one.
+  const _lb=d.load_bearing_modality;const _lbe=document.getElementById('f-loadbearing');
+  if(_lbe){if(_lb&&_lb.available&&_lb.modality){const _i=DID.indexOf(_lb.modality);const _nm=_i>=0?DSHORT[_i]:_lb.modality.replace(/_/g,' ');_lbe.textContent=_nm+' (−'+(_lb.p_drop_pp||0).toFixed(2)+'pp if its evidence vanished)';}else{_lbe.textContent='diffuse — no single modality carries the headline';}}
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];

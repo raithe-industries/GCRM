@@ -867,6 +867,35 @@ pub struct SystemicCouplers {
     pub systemic_momentum:   f64,
 }
 
+// ── Modality sensitivity (load-bearing modality) ───────────────────────────────
+
+/// Systemic modality-SENSITIVITY read: which of the five orthogonal modalities is
+/// LOAD-BEARING for the headline right now, measured by leave-one-out. The engine
+/// recomputes the systemic likelihood with each modality's evidence suppressed and maps
+/// it back to P the same way; the modality whose removal drops the headline P the most is
+/// the load-bearing one, and `p_drop_pp` is that drop in percentage points. This answers a
+/// question no existing field does — `coupling_driver` names the dominant COUPLING channel
+/// (brink/entanglement/breadth/alliance) and per-theater `top_driver` names each theater's
+/// largest weighted modality, but neither says which KIND of force is holding up the
+/// SYSTEMIC number, nor by how much. A pure diagnostic read-out of a counterfactual over the
+/// already-scored board: it never feeds `l_sys`/P and touches no fitted constant. Empty /
+/// `available = false` when the board is too quiet for any modality to carry a meaningful
+/// share of the headline. `#[serde(default)]` keeps older persisted snapshots loadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModalitySensitivity {
+    /// The load-bearing modality id (e.g. "nuclear_posture"). Empty when unavailable.
+    pub modality:   String,
+    /// Headline annual-P drop, in percentage points, if that modality's evidence vanished.
+    pub p_drop_pp:  f64,
+    /// Per-modality leave-one-out profile: (modality id, headline-P drop in pp), so the
+    /// operator can see the full attribution, not just the top term. Sorted largest-first.
+    #[serde(default)]
+    pub profile:    Vec<(String, f64)>,
+    /// False when no modality's removal moves the headline by the display floor — the read
+    /// is diffuse / the board is quiet, so naming one load-bearing modality would overclaim.
+    pub available:  bool,
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -927,6 +956,12 @@ pub struct RiskSnapshot {
     #[serde(default)]
     pub driver: String,
 
+    /// Which modality is LOAD-BEARING for the headline (leave-one-out sensitivity) — the
+    /// systemic "which kind of force is holding up this number, and by how much". Computed in
+    /// `compute` AFTER P is final, purely from the already-scored board; never feeds P.
+    #[serde(default)]
+    pub load_bearing_modality: ModalitySensitivity,
+
     /// True when the seismic monitor holds a live event the detector judges
     /// consistent with a nuclear test — near a known test site AND past the
     /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
@@ -975,6 +1010,7 @@ impl Default for RiskSnapshot {
             theaters: vec![],
             couplers: SystemicCouplers::default(),
             driver: String::new(),
+            load_bearing_modality: ModalitySensitivity::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
         }

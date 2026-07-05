@@ -292,6 +292,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   measured only at the systemic gauge"). What remains open is only the optional per-theater
   lead-lag measurement itself. See
   improvement-log 2026-07-04.
+- [x] **1.10 Load-bearing modality — leave-one-out sensitivity of the HEADLINE** — **DONE 2026-07-05.**
+  The systemic headline P had no answer to "which KIND of force is holding this number up, and by how
+  much." `coupling_driver` names the coupling CHANNEL (brink/entanglement/breadth/alliance) and
+  per-theater `top_driver` names each theater's own largest modality — neither attributes the SYSTEMIC
+  headline to a modality. Added `theater::aggregate_l_sys(states, suppress)` (rebuilds `l_sys` from the
+  already-scored board via the shared `heat_from_modality_scores` core, optionally zeroing one
+  modality) and computed a leave-one-out in `compute` (Step 7b): suppress each modality, map back to P
+  the same way, name the one whose removal drops the headline P the most (`load_bearing_modality`:
+  modality + `p_drop_pp` + full sorted profile + `available`). Honest-null (`available=false`) when no
+  modality moves the headline ≥0.1pp. Diagnostic only — never feeds P, touches no fitted constant; the
+  four anchors are bit-identical. Rendered on the model-state footer (`f-loadbearing`). Locked by
+  `modality_sensitivity_names_the_load_bearing_modality` (fails when suppression is a no-op),
+  `aggregate_l_sys_reproduces_the_live_l_sys` (drift guard vs the live engine),
+  `snapshot_attributes_the_cuba_headline_to_nuclear_posture` (end-to-end through `compute`),
+  `dashboard_renders_the_load_bearing_modality`, + the served-JSON key assert. See improvement-log
+  2026-07-05. FOLLOW-UP [candidate]: surface the top-2 profile entries (not just the leader) when two
+  modalities are close, so a genuinely two-dimensional crisis reads as such.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.7 The eyes gate can SEE the I&W "why" board** — **STAGED 2026-07-04.** The deploy-time

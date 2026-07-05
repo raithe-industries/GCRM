@@ -907,6 +907,42 @@ impl BayesianRiskEngine {
         snap.p_wwiii_30day  = ((1.0 - (1.0 - raw).powf(30.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
         snap.p_wwiii_90day  = ((1.0 - (1.0 - raw).powf(90.0 / DAYS_PER_YEAR)) * 1e8).round() / 1e8;
 
+        // ── Step 7b: Modality sensitivity (AWARENESS — which modality is load-bearing) ──
+        // Leave-one-out over the already-scored board: recompute l_sys with each modality's
+        // evidence suppressed and map it back to P the SAME way the headline is mapped, then name
+        // the modality whose removal drops the headline P the most. Answers the systemic "which
+        // KIND of force is holding up this number, and by how much" — distinct from
+        // `coupling_driver` (the coupling CHANNEL) and per-theater `top_driver` (a theater's own
+        // largest modality); neither attributes the SYSTEMIC headline to a modality. Pure
+        // diagnostic: computed from `snap.theaters` (the exact board the headline was built on),
+        // it never feeds P and touches no fitted constant. Suppressing evidence can only lower
+        // `l_sys`, so every drop is ≥ 0.
+        {
+            let p_of_lsys = |l: f64| -> f64 {
+                let la = l * (1.0 + GUARDRAIL_AMPLIFIER * guardrail);
+                sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * la).min(FORECAST_PROB_CEILING)
+            };
+            let p_base = p_of_lsys(crate::theater::aggregate_l_sys(&snap.theaters, None));
+            let mut profile: Vec<(String, f64)> = Vec::new();
+            for m in crate::theater::modality_ids() {
+                let p_sup = p_of_lsys(crate::theater::aggregate_l_sys(&snap.theaters, Some(m)));
+                let drop_pp = ((p_base - p_sup).max(0.0) * 100.0 * 1e2).round() / 1e2;
+                profile.push((m.to_string(), drop_pp));
+            }
+            profile.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            // Display floor: below this the headline is diffuse across modalities (or the board is
+            // quiet) and naming one load-bearing modality would overclaim (pillar-1 honesty).
+            const MIN_DROP_PP: f64 = 0.1;
+            let top = profile.first().cloned().unwrap_or_default();
+            let available = top.1 >= MIN_DROP_PP;
+            snap.load_bearing_modality = crate::models::ModalitySensitivity {
+                modality:  if available { top.0 } else { String::new() },
+                p_drop_pp: if available { top.1 } else { 0.0 },
+                profile,
+                available,
+            };
+        }
+
         // ── Step 8: Delta (change since the PREVIOUS snapshot) ──
         // The first tick after a (re)start has no real previous snapshot, so its delta is
         // 0 (a stable "─"), not the cold-start seed differenced into a phantom jump. From

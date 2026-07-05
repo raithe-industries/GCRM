@@ -223,6 +223,93 @@ pub fn theater_is_nuclear_brink(t: &TheaterState) -> bool {
         && distinct_great_powers(&t.top_actors) >= BRINK_MIN_GREAT_POWERS
 }
 
+/// The five orthogonal modalities the leave-one-out sensitivity ablates, in the canonical
+/// `DOMAIN_WEIGHTS` order. (`DOMAIN_WEIGHTS` is the single source of truth; this is only a
+/// convenience for iterating modality ids.)
+pub fn modality_ids() -> Vec<&'static str> {
+    DOMAIN_WEIGHTS.iter().map(|(m, _)| *m).collect()
+}
+
+/// Recompute the systemic likelihood `l_sys` from an ALREADY-SCORED theater board, optionally
+/// SUPPRESSING one modality (forcing its per-theater score to 0) to measure how load-bearing
+/// that modality is for the headline — the modality-sensitivity leave-one-out. It re-derives
+/// each theater's counterfactual heat from its `modality_scores` via the SAME
+/// [`heat_from_modality_scores`] core the live engine uses, then rebuilds concurrency,
+/// great-power entanglement, alliance activation and the nuclear brink from that counterfactual
+/// board — mirroring `compute`'s systemic aggregation exactly. Consequently
+/// `aggregate_l_sys(states, None)` reproduces the live pre-guardrail `l_sys` (locked by
+/// `aggregate_l_sys_reproduces_the_live_l_sys`), and the honest marginal of a modality is
+/// `aggregate_l_sys(states, None) − aggregate_l_sys(states, Some(m))`.
+///
+/// A floor-HELD theater keeps its displayed `heat`: that heat is a remembered war-state
+/// (memory, not current evidence), so suppressing a LIVE modality cannot lower it — it is
+/// modality-independent and cancels out of the marginal. Diagnostic only: never feeds P and
+/// touches no fitted constant. Monotone — suppressing evidence can only lower `l_sys`.
+pub fn aggregate_l_sys(states: &[TheaterState], suppress: Option<&str>) -> f64 {
+    // Counterfactual per-theater heat under the suppression.
+    let heat_of = |s: &TheaterState| -> f64 {
+        if s.held_by_floor {
+            s.heat // memory heat — modality-independent (identical in baseline and every suppression)
+        } else {
+            heat_from_modality_scores(&s.modality_scores, suppress).min(1.0)
+        }
+    };
+
+    // Concurrency: fractional count of simultaneously-hot theaters (mirrors `compute`).
+    let concurrency: f64 = states.iter()
+        .map(|s| smoothstep(heat_of(s), HOT_HEAT - HOT_RAMP, HOT_HEAT + HOT_RAMP))
+        .sum();
+
+    // Great-power entanglement: distinct great powers active across HOT theaters.
+    let mut gp_set: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    for s in states {
+        if heat_of(s) >= HOT_HEAT {
+            for a in &s.top_actors {
+                if let Some(lbl) = great_power_label(a) { gp_set.insert(lbl); }
+            }
+        }
+    }
+    let gp_entanglement = (gp_set.len() as f64 / GP_ENTANGLEMENT_SATURATION).min(1.0);
+
+    // Alliance activation: any mutual-defense invocation, doubled in a hot theater.
+    let alliance_activation = if states.iter().any(|s| s.alliance_invoked && heat_of(s) >= HOT_HEAT) {
+        1.0
+    } else if states.iter().any(|s| s.alliance_invoked) {
+        0.5
+    } else {
+        0.0
+    };
+
+    // Hottest theater drives the base intensity.
+    let max_heat = states.iter().map(&heat_of).fold(0.0_f64, f64::max);
+
+    // Nuclear brink: the most acute brink-eligible theater's ramped posture. Suppressing
+    // "nuclear_posture" zeroes every theater's nuclear score, so the brink amplifier vanishes —
+    // exactly the counterfactual "if nuclear posture were absent". Mirrors `compute`'s brink.
+    let nuc_of = |s: &TheaterState| -> f64 {
+        if suppress == Some("nuclear_posture") {
+            0.0
+        } else {
+            s.modality_scores.get("nuclear_posture").copied().unwrap_or(0.0)
+        }
+    };
+    let brink = states.iter()
+        .filter(|s| nuc_of(s) >= BRINK_NUCLEAR_THRESHOLD
+            && distinct_great_powers(&s.top_actors) >= BRINK_MIN_GREAT_POWERS)
+        .map(nuc_of)
+        .fold(None::<f64>, |acc, n| Some(acc.map_or(n, |a| a.max(n))))
+        .map(|n| smoothstep(n, BRINK_NUCLEAR_THRESHOLD, BRINK_NUCLEAR_FULL))
+        .unwrap_or(0.0);
+
+    let coupling_multiplier =
+        1.0 + COUPLING_GP_WEIGHT * gp_entanglement + COUPLING_ALLIANCE_WEIGHT * alliance_activation;
+    let breadth          = (concurrency - 1.0).max(0.0);
+    let concurrency_mult = 1.0 + BREADTH_ASYMPTOTE * (1.0 - (-breadth / BREADTH_EFOLD).exp());
+    let brink_mult       = 1.0 + BRINK_AMPLIFIER * brink;
+
+    max_heat * brink_mult * coupling_multiplier * concurrency_mult
+}
+
 /// Whether the SYSTEMIC read's leading driver is a remembered war-state rather than fresh
 /// fighting. The systemic index is monotone in theater heat, so the highest-heat theater is its
 /// dominant contributor; this returns true when that lead theater's `heat` is `held_by_floor` —
@@ -281,10 +368,28 @@ fn max_weighted_sum() -> f64 {
 /// maximum possible, amplified by the shared intra-theater co-occurrence boost, capped at 1.0.
 /// Factored out so the fast read and the slow war-state floor use the IDENTICAL formula.
 fn heat_from_scores(scores: &HashMap<String, DomainScore>) -> f64 {
+    // Delegate to the modality-score core so the LIVE heat and the modality-sensitivity
+    // leave-one-out reconstruction (`aggregate_l_sys`) can never diverge — one formula.
+    let ms: HashMap<String, f64> = scores.iter().map(|(k, d)| (k.clone(), d.score)).collect();
+    heat_from_modality_scores(&ms, None)
+}
+
+/// Modality-score core of [`heat_from_scores`]: theater heat as a function of only the
+/// per-modality scores, with an optional SUPPRESSED modality (its score forced to 0). The
+/// live `heat_from_scores` calls it with `suppress = None`; the modality-sensitivity
+/// leave-one-out ([`aggregate_l_sys`]) calls it with `suppress = Some(m)`. Because BOTH the
+/// live heat and the counterfactual "heat without modality m" flow through this one formula,
+/// the sensitivity read can never drift from the number it is attributing.
+fn heat_from_modality_scores(scores: &HashMap<String, f64>, suppress: Option<&str>) -> f64 {
+    let score_of = |m: &str| -> f64 {
+        if Some(m) == suppress { 0.0 } else { scores.get(m).copied().unwrap_or(0.0) }
+    };
     let weighted: f64 = DOMAIN_WEIGHTS.iter()
-        .map(|(m, _)| scores.get(*m).map(|d| d.score * domain_weight(m)).unwrap_or(0.0))
+        .map(|(m, _)| score_of(m) * domain_weight(m))
         .sum();
-    let soft_elev: f64 = scores.values().map(|d| soft_elevation_weight(d.score)).sum();
+    let soft_elev: f64 = scores.iter()
+        .map(|(m, v)| soft_elevation_weight(if Some(m.as_str()) == suppress { 0.0 } else { *v }))
+        .sum();
     let cooc = co_occurrence_boost(soft_elev);
     // Soft saturation (was a HARD min(1.0)): the clamp railed every busy theater at 1.0 from ~38%
     // of the true max signal, so the systemic read lost top-end resolution and the live 5-theater
@@ -951,6 +1056,70 @@ mod tests {
         e.actor_ids = actors.iter().map(|s| s.to_string()).collect();
         e.great_power_involved = gp;
         e
+    }
+
+    #[test]
+    fn aggregate_l_sys_reproduces_the_live_l_sys() {
+        // DRIFT GUARD for the modality-sensitivity reconstruction: `aggregate_l_sys(states, None)`
+        // rebuilds the systemic likelihood from the already-scored board, and it MUST reproduce the
+        // engine's own pre-guardrail `l_sys` — otherwise the leave-one-out marginal would be
+        // attributing a number the operator never sees. Scored on a FRESH engine (no persistence
+        // floor), so every theater's displayed heat is its live fast-read and the reconstruction is
+        // exact to rounding. If a future edit changes `compute`'s aggregation but not this helper (or
+        // vice-versa), this test fails — the two can never silently diverge.
+        let mut evs = Vec::new();
+        evs.extend((0..8).map(|_| ev("us_iran", "military_escalation", 0.9, 0.9, &["united_states", "iran"], true)));
+        evs.extend((0..4).map(|_| ev("nato_russia", "diplomatic_breakdown", 0.7, 0.7, &["russia", "nato"], true)));
+        let out = TheaterEngine::new().compute(&evs);
+        let recon = aggregate_l_sys(&out.theaters, None);
+        assert!((recon - out.l_sys).abs() < 1e-3,
+            "aggregate_l_sys(None) must reproduce the live l_sys: recon={recon:.6} live={:.6}", out.l_sys);
+    }
+
+    #[test]
+    fn modality_sensitivity_names_the_load_bearing_modality() {
+        // The leave-one-out sensitivity must identify WHICH modality is holding up the systemic
+        // likelihood. Suppressing a modality can only LOWER l_sys (monotone), and the modality whose
+        // suppression lowers it the MOST is the load-bearing one.
+        //
+        // (a) A single hot theater driven by KINETIC force: military_escalation is load-bearing, and
+        //     suppressing a modality with no evidence (nuclear_posture) changes nothing.
+        let kin: Vec<_> = (0..8)
+            .map(|_| ev("us_iran", "military_escalation", 0.92, 0.92, &["united_states", "iran"], true))
+            .collect();
+        let states = TheaterEngine::new().compute(&kin).theaters;
+        let base = aggregate_l_sys(&states, None);
+        let drop_of = |m: &str| base - aggregate_l_sys(&states, Some(m));
+        assert!(drop_of("military_escalation") > 0.0,
+            "suppressing the driving modality must lower l_sys (got no drop)");
+        assert!(drop_of("nuclear_posture").abs() < 1e-9,
+            "suppressing a modality with zero evidence must not move l_sys");
+        let winner = modality_ids().into_iter()
+            .max_by(|a, b| drop_of(a).partial_cmp(&drop_of(b)).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+        assert_eq!(winner, "military_escalation",
+            "kinetic-driven theater → military_escalation is load-bearing, got {winner}");
+
+        // (b) A nuclear-brink board (two great powers, extreme nuclear posture): removing
+        //     nuclear_posture collapses the brink amplifier — the single largest l_sys term — so
+        //     nuclear_posture is unmistakably load-bearing even though kinetic evidence is also high.
+        let mut brink = Vec::new();
+        brink.extend((0..10).map(|_| ev("nato_russia", "nuclear_posture", 0.98, 0.98, &["united_states", "russia"], true)));
+        brink.extend((0..10).map(|_| ev("nato_russia", "military_escalation", 0.85, 0.85, &["united_states", "russia"], true)));
+        let bstates = TheaterEngine::new().compute(&brink).theaters;
+        let bbase = aggregate_l_sys(&bstates, None);
+        let bdrop = |m: &str| bbase - aggregate_l_sys(&bstates, Some(m));
+        let bwinner = modality_ids().into_iter()
+            .max_by(|a, b| bdrop(a).partial_cmp(&bdrop(b)).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+        assert_eq!(bwinner, "nuclear_posture",
+            "a nuclear-brink board must read nuclear_posture as load-bearing, got {bwinner}");
+        assert!(bdrop("nuclear_posture") > bdrop("military_escalation"),
+            "removing the brink modality must drop l_sys more than removing kinetic force");
+
+        // (c) A quiet board attributes nothing — every suppression leaves l_sys at ~0.
+        let quiet = aggregate_l_sys(&TheaterEngine::new().compute(&[]).theaters, None);
+        assert!(quiet.abs() < 1e-9, "a quiet board has ~0 systemic likelihood to attribute");
     }
 
     #[test]

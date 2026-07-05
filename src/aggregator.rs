@@ -177,6 +177,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         },
         "theaters": snap.theaters,
         "couplers": snap.couplers,
+        // Which modality is LOAD-BEARING for the headline (leave-one-out sensitivity) — the
+        // systemic "which kind of force is holding up this number, and by how much". Diagnostic;
+        // never feeds P. Top-level so a consumer needn't dig into the snapshot struct.
+        "load_bearing_modality": snap.load_bearing_modality,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -669,6 +673,7 @@ impl EpochStore {
     ///  3. the winning pairs must span ≥ [`MOM_LL_MIN_EPISODES`] distinct decisive-momentum
     ///     episodes (sign-change/deadband-separated runs) — otherwise `insufficient_episodes`
     ///     (one episode cannot distinguish lead from coincidence).
+    ///
     /// `no_lead` stays the honest null when enough samples exist but no lag clears the
     /// threshold; `insufficient` when there is too little decisive history to test at all.
     /// Decimation to one sample per `stride_secs` keeps 1 Hz autocorrelated ticks from
@@ -1704,6 +1709,12 @@ mod tests {
         assert!(v["co_occurrence"]["elevated_count"].is_number());
         assert!(v["alert"]["level"].is_string());
         assert!(v["meta"]["events_in_window"].is_number());
+        // The modality-sensitivity read (load-bearing modality) is on the served contract.
+        assert!(v["load_bearing_modality"].is_object(), "load_bearing_modality must be served");
+        assert!(v["load_bearing_modality"]["available"].is_boolean(),
+            "load_bearing_modality must carry an availability flag");
+        assert!(v["load_bearing_modality"]["profile"].is_array(),
+            "load_bearing_modality must carry the per-modality attribution profile");
     }
 
     // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────

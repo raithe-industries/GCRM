@@ -410,6 +410,32 @@ fn persistence_floor_is_band_neutral_at_peak_freshness() {
 }
 
 #[test]
+fn snapshot_attributes_the_cuba_headline_to_nuclear_posture() {
+    // End-to-end lock for the modality-sensitivity read through `compute`: the Cuba nuclear-brink
+    // analog's headline must attribute to `nuclear_posture` — removing that modality collapses the
+    // +70% brink amplifier, the single largest l_sys term. Proves the leave-one-out is wired from
+    // the scored board through P and reaches the snapshot. Diagnostic only: the headline P itself is
+    // unchanged by this read (it is computed before Step 7b and pinned by the `bands_*` tests).
+    let s = run(cuba_1962().0, &cuba_1962().1);
+    let lb = &s.load_bearing_modality;
+    assert!(lb.available, "the Cuba brink headline must have an attributable load-bearing modality");
+    assert_eq!(lb.modality, "nuclear_posture",
+        "Cuba's headline is held up by nuclear posture, got {}", lb.modality);
+    assert!(lb.p_drop_pp > 0.0, "a load-bearing modality must carry a positive headline P drop");
+    assert_eq!(lb.profile.len(), 5, "the attribution profile must cover all five modalities");
+    // The profile is sorted largest-first and its top entry is the named modality.
+    assert_eq!(lb.profile[0].0, lb.modality, "profile must be sorted with the load-bearing modality first");
+
+    // An EMPTY board attributes nothing — with no events the headline sits at the flat baseline
+    // and no modality carries it, so naming one would overclaim (available=false).
+    let empty_snap = run(1.0, &[]);
+    assert!(!empty_snap.load_bearing_modality.available,
+        "an empty board must not name a load-bearing modality");
+    assert!(empty_snap.load_bearing_modality.modality.is_empty(),
+        "an empty board's load-bearing modality id must be blank");
+}
+
+#[test]
 fn ordering_holds() {
     let q = p_of(quiet());
     let u = p_of(ukraine_2022());

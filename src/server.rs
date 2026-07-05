@@ -754,6 +754,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_the_load_bearing_modality() {
+        // AWARENESS: the model-state footer must surface WHICH modality is load-bearing for the
+        // headline (the leave-one-out sensitivity, server field load_bearing_modality) and, honestly,
+        // say "diffuse" when no single modality carries the number. Lock the render element + the
+        // consumer of the server field, and the honest-null copy.
+        assert!(DASHBOARD_HTML.contains("f-loadbearing"),
+            "the model-state footer must carry the load-bearing-modality element");
+        assert!(DASHBOARD_HTML.contains("d.load_bearing_modality"),
+            "the readout must read the server-provided load_bearing_modality sensitivity");
+        assert!(DASHBOARD_HTML.contains("if its evidence vanished"),
+            "a named load-bearing modality must state its leave-one-out P drop");
+        assert!(DASHBOARD_HTML.contains("diffuse — no single modality carries the headline"),
+            "a diffuse read must be named honestly instead of over-attributing to one modality");
+    }
+
+    #[test]
     fn dashboard_map_popup_flags_a_floor_held_theater_not_a_live_read() {
         // Honesty/awareness on the MAP surface: the world-map flashpoint popup is the only
         // operator surface that must not paint a floor-held theater (a remembered war-state
