@@ -573,9 +573,9 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="context-strip">
       <div class="ca">Baseline: <span>0.10%</span></div>
       <div class="ca">Hist avg (2026): <span>~1.7%</span></div>
-      <div class="ca" title="Highest annual P(WWIII) over the last 24h — server-computed from the durable timeline (EpochStore::read_range), the same band for every operator (not a per-tab session peak).">24h high: <span id="ca-peak">—</span></div>
+      <div class="ca" id="ca-peak-box" title="Highest annual P(WWIII) over the last 24h — server-computed from the durable timeline (EpochStore::read_range), the same band for every operator (not a per-tab session peak)."><span id="ca-peak-label">24h high</span>: <span id="ca-peak">—</span></div>
       <div class="ca">6h change: <span id="ca-6h">—</span></div>
-      <div class="ca" title="Lowest annual P(WWIII) over the last 24h — server-computed from the durable timeline.">24h low: <span id="ca-low">—</span></div>
+      <div class="ca" id="ca-low-box" title="Lowest annual P(WWIII) over the last 24h — server-computed from the durable timeline."><span id="ca-low-label">24h low</span>: <span id="ca-low">—</span></div>
       <div class="ca" title="Where the live read sits within its 24h range: percentile rank of the current P among the last 24h of reads, so a fresh multi-day high reads differently from a read that has been range-bound. Diagnostic only — never feeds the number.">Position: <span id="ca-pos">—</span></div>
     </div>
     <div class="formula">
@@ -1034,18 +1034,32 @@ function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==
 // WHERE the live read sits in it (percentile rank + a plain tag). Falls back to the session extent —
 // honestly a degraded, tab-local value — only if the server field is absent. See EpochStore::read_range.
 const POS_LABEL={'near-high':'near 24h high','upper':'upper range','mid':'mid-range','lower':'lower range','near-low':'near 24h low','flat':'range-bound'};
+// Tooltips carried in JS so the degraded (session) fallback can honestly rewrite them — a per-tab
+// value must never sit under the durable "24h" tooltip either.
+const RANGE_TIP_HI='Highest annual P(WWIII) over the last 24h — server-computed from the durable timeline (EpochStore::read_range), the same band for every operator (not a per-tab session peak).';
+const RANGE_TIP_LO='Lowest annual P(WWIII) over the last 24h — server-computed from the durable timeline.';
+const RANGE_TIP_DEGRADED='Durable 24h range not yet available (cold timeline / older backend) — showing THIS browser tab’s own session high/low instead. That drifts with how long the tab has been open and is not comparable between operators; it is not the durable 24h band.';
 function renderReadRange(d,pA){
   const r=d&&d.read_range,posEl=document.getElementById('ca-pos');
+  const peakLbl=document.getElementById('ca-peak-label'),lowLbl=document.getElementById('ca-low-label');
+  const peakBox=document.getElementById('ca-peak-box'),lowBox=document.getElementById('ca-low-box');
   if(r&&r.available){
     document.getElementById('ca-peak').textContent=(r.hi*100).toFixed(3)+'%';
     document.getElementById('ca-low').textContent=(r.lo*100).toFixed(3)+'%';
+    // Durable server range: the label + tooltip say 24h (and repair any prior degraded relabel).
+    if(peakLbl)peakLbl.textContent='24h high';if(lowLbl)lowLbl.textContent='24h low';
+    if(peakBox)peakBox.title=RANGE_TIP_HI;if(lowBox)lowBox.title=RANGE_TIP_LO;
     if(posEl){const lbl=POS_LABEL[r.position]||'—';
       posEl.textContent=r.flat?lbl:lbl+' · '+Math.round(r.pct_rank)+'th pct';
       posEl.style.color=(r.position==='near-high')?'var(--red)':(r.position==='upper')?'var(--amber)':'var(--t2)';}
   }else{
-    // Degraded: no durable server range yet (older backend / cold ring). Show this tab's own extent.
+    // Degraded: no durable server range yet (older backend / cold ring). We fall back to THIS tab's
+    // own session extent — so the label must say 'session', never '24h'. Labeling a per-tab value
+    // "24h high" is the exact mislabel run 2.8 removed; do not silently reintroduce it here.
     document.getElementById('ca-peak').textContent=(sessionPeak*100).toFixed(3)+'%';
     document.getElementById('ca-low').textContent=(sessionLow*100).toFixed(3)+'%';
+    if(peakLbl)peakLbl.textContent='session high';if(lowLbl)lowLbl.textContent='session low';
+    if(peakBox)peakBox.title=RANGE_TIP_DEGRADED;if(lowBox)lowBox.title=RANGE_TIP_DEGRADED;
     if(posEl){posEl.textContent='—';posEl.style.color='var(--t2)';}
   }
 }

@@ -194,6 +194,39 @@ if (latest) {
   }
 }
 
+// 8) NEWEST AWARENESS SURFACES — the durable recent-range readout (context strip) and the
+//    load-bearing-modality footer both render from the live snapshot and both initialize to the
+//    "—" placeholder in static HTML. A client refactor that dropped or crashed renderReadRange or
+//    the model-state footer would leave those placeholders up, shipping a BLIND surface the gate
+//    never looked at — the same regression class as the "6h Trend = —" and empty-I&W-board bugs.
+//    Assert each populates to a real, non-placeholder value once the snapshot lands. We assert
+//    only "not stuck on the placeholder" — no opinion on the value, and any honest-null copy
+//    (a session fallback %, "diffuse …", "held by …") counts as rendered, so a healthy prod in
+//    any state passes; only a genuinely un-rendered surface fails.
+if (latest) {
+  const settled = async (sel) => {
+    let txt = null;
+    for (let i = 0; i < 15; i++) {                 // ≈ 15 × 500ms ≈ 7.5s, mirrors the I&W poll
+      txt = await page.$eval(sel, (el) => el.textContent).catch(() => null);
+      txt = txt == null ? null : txt.trim();
+      if (txt && txt !== '—') break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    return txt;
+  };
+  const clip = (t) => (t.length > 56 ? t.slice(0, 56) + '…' : t);
+
+  const peak = await settled('#ca-peak');
+  if (peak == null) fail.push('#ca-peak (recent-range readout) missing — context-strip range surface not rendered');
+  else if (peak === '' || peak === '—') fail.push('#ca-peak stuck on the "—" placeholder — renderReadRange did not populate the recent-range band');
+  else ok(`recent-range readout populated (#ca-peak = "${peak}")`);
+
+  const lb = await settled('#f-loadbearing');
+  if (lb == null) fail.push('#f-loadbearing (load-bearing modality) missing — model-state footer not rendered');
+  else if (lb === '' || lb === '—') fail.push('#f-loadbearing stuck on the "—" placeholder — the load-bearing modality footer did not render');
+  else ok(`load-bearing modality footer populated (#f-loadbearing = "${clip(lb)}")`);
+}
+
 await browser.close();
 
 if (fail.length) {

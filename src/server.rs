@@ -791,6 +791,15 @@ mod tests {
             "the recent-range band must be honestly labeled as the durable 24h high/low");
         assert!(!DASHBOARD_HTML.contains("Session peak") && !DASHBOARD_HTML.contains("Session low"),
             "the mislabeled per-tab 'Session peak/low' copy must be replaced by the durable 24h band");
+        // HONESTY (fallback path): when the durable server range is absent (cold ring / older
+        // backend), renderReadRange falls back to THIS tab's session extent — and it must RELABEL
+        // to 'session high/low', never leave the per-tab value under the durable "24h" label. That
+        // silent mislabel is exactly what run 2.8 removed; guard it from creeping back in the
+        // degraded branch. The relabel targets need their own label elements to rewrite.
+        assert!(DASHBOARD_HTML.contains("ca-peak-label") && DASHBOARD_HTML.contains("ca-low-label"),
+            "the range labels must be addressable so the degraded fallback can relabel them");
+        assert!(DASHBOARD_HTML.contains("session high") && DASHBOARD_HTML.contains("session low"),
+            "the degraded per-tab fallback must relabel to 'session high/low', never claim '24h'");
     }
 
     #[test]

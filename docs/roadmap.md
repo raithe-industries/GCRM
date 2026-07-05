@@ -344,6 +344,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   dashboard consumer lock `dashboard_renders_the_durable_recent_range_position` (consumes
   `d.read_range`, honest "24h high/low" labels, "Session peak/low" copy gone). See improvement-log
   2026-07-05.
+  - **FOLLOW-UP DONE 2026-07-05 (evening):** closed the one honesty gap the fallback left open — when
+    the durable server range is absent (cold ring / older backend), `renderReadRange` populated
+    `ca-peak`/`ca-low` with the per-tab `sessionPeak`/`sessionLow` but the label still read "24h
+    high/low", silently reintroducing the exact mislabel 2.8 removed. The label now FOLLOWS the data
+    source: durable → "24h high/low", degraded → "session high/low" (with a tooltip saying the durable
+    band is not yet available and this is a tab-local value). Locked by the extended
+    `dashboard_renders_the_durable_recent_range_position` ("session high/low" relabel + addressable
+    `ca-peak-label`/`ca-low-label`; fails-without proven). AND the eyes gate now watches both newest
+    awareness surfaces (`#ca-peak` recent-range + `#f-loadbearing`) for the "—"-placeholder blind-surface
+    regression. See improvement-log 2026-07-05 (evening).
 - [x] **2.7 The eyes gate can SEE the I&W "why" board** — **STAGED 2026-07-04.** The deploy-time
   eyes gate (`deploy/eyes/smoke.mjs`) verified the timeline, domain chart, gauge and ladder, but
   never looked at the I&W board — the densest awareness surface and, per the code itself, "the why

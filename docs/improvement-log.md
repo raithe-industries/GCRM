@@ -22,7 +22,50 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
-## 2026-07-05 — honesty/awareness (VISUAL-ANALYTIC) — the read now says WHERE it sits in its recent range (durable, not a per-tab "session peak")
+## 2026-07-05 (late) — honesty/legibility (VISUAL-ANALYTIC) — the recent-range label follows its data source; the eyes gate now watches both newest awareness surfaces
+- Item: roadmap 2.8 FOLLOW-UP (this evening's read_range work) + standing lane 2 VISUAL-ANALYTIC.
+- Diagnosis: the last two runs shipped two new awareness surfaces — the durable `read_range` context
+  strip (2.8) and the `load_bearing_modality` footer (1.10) — but (a) the eyes gate, the system's own
+  eyes, was BLIND to both (`grep` of smoke.mjs: zero assertions on `#ca-peak`/`#f-loadbearing`), and
+  (b) `read_range`'s client fallback silently reintroduced the exact mislabel 2.8 removed.
+- Defect (pillar-1 HONESTY): when the durable server range is absent (cold ring `available:false`, or
+  an older backend during the deploy window), `renderReadRange` populated `ca-peak`/`ca-low` with the
+  per-tab `sessionPeak`/`sessionLow` — but the visible label still read "24h high"/"24h low" and kept
+  the durable "server-computed 24h" tooltip. So a fresh/cold operator saw a tab-local session extent
+  presented as the durable 24h band — the precise per-tab-under-a-durable-label lie 2.8 was created to
+  kill, silently re-entering through the fallback branch.
+- Change:
+  (a) HONESTY: the range labels are now addressable (`ca-peak-label` / `ca-low-label`) and the JS
+      REWRITES them to match the data source — durable server range → "24h high/low" (+ the durable
+      tooltip); degraded fallback → "session high/low" (+ a tooltip stating the durable band is not yet
+      available and this is a per-tab value not comparable between operators). A per-tab number can no
+      longer sit under a "24h" label. Position (`ca-pos`) stays honestly "—" in the degraded case.
+  (b) VERIFICATION: smoke.mjs (eyes gate) gains section 8 — after the snapshot lands it polls
+      `#ca-peak` (recent-range readout) and `#f-loadbearing` (load-bearing footer) and fails only if
+      either is stuck on the "—" placeholder (a dropped/crashed render → a blind surface, the
+      6h-Trend/empty-I&W regression class). Any honest-null copy (session %, "diffuse …", "held by …")
+      counts as rendered, so a healthy prod in any state passes — no false rollback.
+- Metric moved: a pillar-1 honesty repair on the recent-range fallback + eyes-gate coverage of the two
+  newest awareness surfaces (was 0). No new gauge/source/theater; no engine or calibration constant
+  touched — dashboard-render + gate only. Test count unchanged at 571 (assertions added to an existing
+  lock, not a new test).
+- Proof: `cargo build --release` clean; `cargo test --release` **571 passed / 0 failed / 4 ignored**;
+  `cargo clippy --release -p gcrm` — 0 warnings from src/ (the 8 remaining are vendor/ee-sources, the
+  signal-hunter lane, pre-existing). `node --check smoke.mjs` OK. Lock proven fails-without-change:
+  `git stash push -- src/dashboard.html` → `dashboard_renders_the_durable_recent_range_position`
+  FAILS (the "session high/low" relabel + `ca-peak-label`/`ca-low-label` asserts) ; restored → passes.
+- Tier: T3 (honesty/legibility polish of an already-visible observable — a mislabel repair — plus
+  eyes-gate verification infra; not a new SEE/COMPUTE frontier) · Touched: display-only (dashboard
+  render behavior + deploy gate; no engine/source/calibration) · Lock-fails-without-change: yes
+  (stash proof above) · Counts: none of Live-sources/Map-layers/Monitors moved · consecutive_display_only=1
+  · display_only_in_last_7=2 (AT the 2-of-7 cap — the NEXT run must be T1/T2 or a structured NO-OP,
+  not a 3rd display-only) · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) The recent-range label is now DATA-DEPENDENT — durable→"24h",
+  degraded→"session". Do not hard-revert the label to a static "24h" string; the fallback would mislabel
+  again. (2) The eyes section-8 checks assert only "not stuck on '—'", never a specific value — keep it
+  that way so an honest-null read (cold ring, diffuse headline) never triggers a rollback. (3) Display-only
+  cap is now AT 2-of-7: the next run owes a value-tier item (a math-analytic diagnostic, a monitor rung,
+  or — cross-lane — a new signal), not another polish.
 - Item: roadmap 2.8 (new) — standing lane 2 VISUAL-ANALYTIC; fixes a pillar-1 legibility defect + adds a pillar-3 gauge.
 - Defect (pillar-1 HONESTY + pillar-3 AWARENESS): the context strip showed "Session peak / Session
   low", computed CLIENT-side from `sessionPeak`/`sessionLow` — a per-tab min/max seeded from whatever
