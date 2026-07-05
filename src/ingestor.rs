@@ -921,8 +921,9 @@ impl Ingestor {
         let gnews = tokio::spawn(Self::gnews_loop(Arc::clone(&ingestor)));
         let gdelt = tokio::spawn(Self::gdelt_loop(Arc::clone(&ingestor)));
         let video = tokio::spawn(Self::video_loop(Arc::clone(&ingestor)));
+        let live  = tokio::spawn(Self::livestream_loop(Arc::clone(&ingestor)));
 
-        let _ = tokio::join!(rss, gnews, gdelt, video);
+        let _ = tokio::join!(rss, gnews, gdelt, video, live);
     }
 
     // ── Video loop — YouTube channel transcripts as articles (src/video.rs) ───
@@ -1054,6 +1055,56 @@ impl Ingestor {
                 }
             }
             tokio::time::sleep(Duration::from_secs(video::VIDEO_POLL_SECS)).await;
+        }
+    }
+
+    // ── Live-stream loop — rolling broadcast transcripts (src/livestream.rs) ──
+    //
+    // DORMANT unless GCRM_LIVESTREAM_SOURCES=1. One article per stream (the plain
+    // watch page URL), UPDATED in place per transcribed window via the store's
+    // live-blog path — a rolling "what the channel is saying right now" row; every
+    // window still flows through NLP/enricher as fresh evidence. Relevance-gated
+    // like video: a window with no geopolitical trigger is skipped, not stored.
+    async fn livestream_loop(ing: Arc<Self>) {
+        use crate::livestream;
+        if !livestream::enabled() {
+            info!("Live-stream sources: dormant (set GCRM_LIVESTREAM_SOURCES=1 to enable {} streams)",
+                  livestream::LIVE_STREAMS.len());
+            return;
+        }
+        info!("Live-stream sources: LIVE — {} streams, {}s cycle, whisper at {}",
+              livestream::LIVE_STREAMS.len(), livestream::LIVESTREAM_POLL_SECS,
+              livestream::whisper_bin().display());
+        loop {
+            for st in livestream::LIVE_STREAMS {
+                match livestream::capture_transcript(st.page).await {
+                    Ok(Some(win)) => {
+                        if !crate::nlp_sidecar::has_geopolitical_trigger(&win) {
+                            debug!("live {}: window off-mission, skipped", st.source);
+                            continue;
+                        }
+                        let label = st.source.trim_end_matches("-live");
+                        let title = livestream::live_title(label, &win);
+                        let body  = crate::video::condense_transcript(&win, crate::video::TRANSCRIPT_MAX_CHARS);
+                        let article = RawArticle::new(
+                            st.page.to_string(), title.clone(), body,
+                            st.source.to_string(), st.tier, chrono::Utc::now(),
+                        );
+                        let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
+                        let _ = ing.titles.lock().await.is_new(&article.title);
+                        ing.store_article(&article).await; // same URL → update-in-place
+                        if ing.article_tx.send(article).await.is_err() {
+                            warn!("live {}: article channel closed", st.source);
+                            return;
+                        }
+                        info!("live {}: window ingested \"{}\"", st.source,
+                              title.chars().take(90).collect::<String>());
+                    }
+                    Ok(None) => debug!("live {}: not streaming / empty window", st.source),
+                    Err(e) => warn!("live {}: {e}", st.source),
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(livestream::LIVESTREAM_POLL_SECS)).await;
         }
     }
 

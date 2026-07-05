@@ -51,6 +51,8 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UC83jt4dlz1Gjl58fzQrrKZg", source: "cna-video",          tier: SourceTier::Tier1 },
     VideoChannel { channel_id: "UC7fWeaHhqgM4Ry-RMpM2YYw", source: "trtworld-video",     tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UC_gUM8rL-Lrg6O3adPW9K1g", source: "wion-video",         tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCzuqE7-t13O4NIDYJfakrhw", source: "democracynow-video", tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCVG72F2Q5yCmLQfctNK6M2A", source: "zeteo-video",        tier: SourceTier::Tier2 },
 ];
 
 /// Poll cadence. Broadcast channels upload a handful of clips per hour at most; 15

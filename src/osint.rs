@@ -750,7 +750,6 @@ async fn feeds_payload() -> Value {
         nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
-        teleray::Teleray,
         ucdp_ged::UcdpGed, usgs::Usgs,
         usgs_volcano::UsgsVolcano,
     };
@@ -763,7 +762,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, fr_radiation) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -878,11 +877,11 @@ async fn feeds_payload() -> Value {
         // network = 0 events. Extends the radiation/nuclear-monitoring modality to the
         // NATO/Russia frontline (Finland's eastern border + Loviisa/Olkiluoto NPPs).
         fetch_one("stuk_radiation", StukRadiation, 12),
-        // IRSN / ASNR Téléray (France) — ambient gamma dose rate; only stations elevated
-        // above natural background (µSv/h, a universal baseline; reported nSv/h) plot, so
-        // an all-normal network = 0 events. Extends the radiation/nuclear-monitoring
-        // modality to Europe's largest nuclear power (56 reactors + La Hague reprocessing).
-        fetch_one("teleray", Teleray, 12),
+        // (The live `teleray` fetch was removed 2026-07-05, hours after adoption: the
+        //  adopted host api.teleray.asnr.fr serves a Kubernetes ingress FAKE certificate
+        //  (TLS-invalid), and the site's real data path runs through a JWT-gated Kalisio
+        //  gateway — not auth-free. Radiation stays covered by odlinfo (DE) + stuk (FI);
+        //  the connector stays for the day ASNR fixes the public host. See data-sources.md.)
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -942,7 +941,6 @@ async fn feeds_payload() -> Value {
         (fi_radiation.0, fi_radiation.1, "stuk_radiation", 400),
         // France's ~470-station Téléray network; a real event can light up many at once,
         // so allow the same generous headroom as the other radiation networks.
-        (fr_radiation.0, fr_radiation.1, "teleray", 400),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.

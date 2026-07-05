@@ -37,6 +37,7 @@ mod llm_enricher;
 mod models;
 mod nlp_sidecar;
 mod osint;
+mod livestream;
 mod video;
 mod processor;
 mod server;

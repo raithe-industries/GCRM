@@ -267,6 +267,30 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-05 (local watch, morning)** — **`teleray` LIVE → DORMANT: upstream TLS/auth broken**
+  (hours after adoption; the ASAM/first-rebuild lesson applied). The adopted host
+  `api.teleray.asnr.fr` serves a Kubernetes ingress FAKE certificate (subject "Acme Co /
+  Kubernetes Ingress Controller Fake Certificate" — TLS-invalid from any verifying client);
+  the SPA's real data path runs through a JWT-gated Kalisio gateway (`gatewayJwt` in the app
+  bundle) — NOT auth-free. `teleray.asnr.fr` itself has a valid cert but 404s every probed
+  API shape. Action: fan-out fetch removed (tombstone in osint.rs), connector/chip/tests kept;
+  RETRY when ASNR fixes the public host (the agency is mid IRSN→ASNR migration — likely
+  transient misconfiguration, unlike ASAM's dead product). Radiation modality stays covered:
+  odlinfo (DE) + stuk_radiation (FI) both live.
+- **2026-07-05 (local watch, morning)** — **VIDEO ROSTER 7→15** (operator-directed): Reuters, AP,
+  France 24 EN, CNA, TRT World, WION (wire/state-broadcast; weekend/overnight coverage no longer
+  clusters on one 24/7 channel) + Democracy Now! and Zeteo (operator-nominated independent
+  analysis/interview outlets, Tier2). **LIVE-STREAM TRANSCRIPTION lands DORMANT**
+  (`src/livestream.rs` + `Ingestor::livestream_loop`, `GCRM_LIVESTREAM_SOURCES=1` to enable):
+  Al Jazeera EN + DW 24/7 streams → yt-dlp live-URL resolve → ffmpeg 120s window → CPU
+  faster-whisper (int8 base, nice'd, GPU untouched) → relevance gate → ONE rolling article per
+  stream (update-in-place). Proven end-to-end 2026-07-05 (60s of live AJ transcribed accurately;
+  ~17s CPU per minute of audio). ANALYST-CHANNEL SHORTLIST (pending operator sign-off, weekly
+  cadence Tier2/3 candidates): Perun (defense economics), CaspianReport (geopolitics), Ward
+  Carroll (US naval), Anders Puck Nielsen (maritime/Russia) — each an editorial-trust decision.
+  DEFERRED: Telegram/X war-channel video — highest raw signal, but needs a source-trust and
+  verification framework first (unverified combat footage scored as evidence would violate
+  pillar-1); revisit with a design, not ad-hoc adoption.
 - **2026-07-05 (Signal Hunter, second run)** — **adopted `teleray` (France IRSN/ASNR Téléray ambient gamma
   dose rate via the OGC API - Features endpoint), Path A** — a **third national radiation network**, extending
   the radiation / nuclear-monitoring modality to **Europe's largest nuclear power: France (56 operating reactors
