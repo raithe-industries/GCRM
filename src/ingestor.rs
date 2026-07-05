@@ -735,7 +735,11 @@ pub(crate) fn sanitize_feed_text(s: &str) -> String {
     let stripped = strip_html_tags(s);
     let decoded  = decode_html_entities(&stripped);
     let cut      = strip_boilerplate_tail(&decoded);
-    cut.split_whitespace().collect::<Vec<_>>().join(" ")
+    let joined   = cut.split_whitespace().collect::<Vec<_>>().join(" ");
+    // feed-rs 2.x's own sanitizer eats the '&' of a DOUBLE-encoded ampersand
+    // (&amp;amp; → "amp;") before this code ever sees the text — repair the
+    // orphaned entity tail. " amp; " is not a token legitimate headlines produce.
+    joined.replace(" amp; ", " & ")
 }
 
 /// The exact title form the ingest path keys dedup on: sanitized, and for gnews
@@ -789,6 +793,14 @@ fn is_junk_entry(source: &str, url: &str, title: &str) -> bool {
 // especially for military and diplomatic events where context is distributed
 // across multiple sentences.
 
+/// Parse a feed WITHOUT feed-rs 2.x's built-in content sanitizer: it mangles
+/// ENCODED markup destructively ("&lt;p&gt;text" → "ptext", "&amp;amp;" → "amp;")
+/// before this module's own sanitation — which handles those shapes correctly —
+/// ever sees the text. Parity with the feed-rs 1.x raw-content behavior.
+pub(crate) fn parse_feed_raw(bytes: &[u8]) -> Result<feed_rs::model::Feed, feed_rs::parser::ParseFeedError> {
+    feed_rs::parser::Builder::new().sanitize_content(false).build().parse(bytes)
+}
+
 fn entry_to_article(
     entry:  &feed_rs::model::Entry,
     source: &str,
@@ -798,7 +810,9 @@ fn entry_to_article(
     if raw_title.is_empty() { return None; }
     // skynews live-blog junk: the "title" is literally an "<a href=…>…" tag —
     // nothing meaningful survives sanitation, so reject the entry outright.
-    if raw_title.starts_with('<') { return None; }
+    // feed-rs 2.x strips the angle brackets but leaves the tag guts inline
+    // ("a href='…'Headline"), so match that mangled shape too.
+    if raw_title.starts_with('<') || raw_title.starts_with("a href=") { return None; }
 
     let mut title: String = sanitize_feed_text(&raw_title).chars().take(500).collect();
     if source == "gnews" {
@@ -965,7 +979,7 @@ impl Ingestor {
                     Ok(r) => { debug!("video {}: HTTP {}", ch.source, r.status()); continue; }
                     Err(e) => { debug!("video {}: {e}", ch.source); continue; }
                 };
-                let parsed = match feed_rs::parser::parse(bytes.as_ref()) {
+                let parsed = match parse_feed_raw(bytes.as_ref()) {
                     Ok(f) => f,
                     Err(e) => { debug!("video {}: parse: {e}", ch.source); continue; }
                 };
@@ -1037,6 +1051,34 @@ impl Ingestor {
                             // Successful ingest: NOW record the dedup marks.
                             let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
                             let _ = ing.titles.lock().await.is_new(&article.title);
+                            // Labeled-pair collection (roadmap: cross-modal merge threshold):
+                            // log video↔wire title pairs in the ambiguous similarity band to
+                            // logs/video-pairs-<date>.jsonl for the operator's later labeling.
+                            // Data collection only — never feeds the model.
+                            {
+                                let store = ing.state.article_store.lock().await;
+                                let mut pairs: Vec<String> = Vec::new();
+                                for w in store.query(400, None, None) {
+                                    if w.source.ends_with("-video") || w.source.ends_with("-live") { continue; }
+                                    let s = video::title_trigram_jaccard(&article.title, &w.title);
+                                    if s >= video::PAIR_LOG_BAND.0 && s <= video::PAIR_LOG_BAND.1 {
+                                        pairs.push(serde_json::json!({
+                                            "t": chrono::Utc::now().to_rfc3339(),
+                                            "sim": (s * 1e3).round() / 1e3,
+                                            "video_source": article.source, "video_title": article.title,
+                                            "wire_source": w.source, "wire_title": w.title,
+                                        }).to_string());
+                                    }
+                                }
+                                drop(store);
+                                if !pairs.is_empty() {
+                                    let path = format!("logs/video-pairs-{}.jsonl", chrono::Utc::now().format("%Y-%m-%d"));
+                                    if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await {
+                                        use tokio::io::AsyncWriteExt;
+                                        let _ = f.write_all((pairs.join("\n") + "\n").as_bytes()).await;
+                                    }
+                                }
+                            }
                             ing.store_article(&article).await;
                             if ing.article_tx.send(article).await.is_err() {
                                 warn!("video {}: article channel closed", ch.source);
@@ -1217,7 +1259,7 @@ impl Ingestor {
                 return Err(());
             }
         };
-        let parsed = match feed_rs::parser::parse(bytes.as_ref()) {
+        let parsed = match parse_feed_raw(bytes.as_ref()) {
             Ok(f)  => f,
             Err(e) => {
                 self.health.lock().await.record_failure(source);
@@ -1298,7 +1340,7 @@ impl Ingestor {
                         ingestor.note_search_api("gnews", Some(format!("body: {e}"))).await;
                         debug!("GNews body: {e}");
                     }
-                    Ok(bytes) => match feed_rs::parser::parse(bytes.as_ref()) {
+                    Ok(bytes) => match parse_feed_raw(bytes.as_ref()) {
                         Err(e) => {
                             ingestor.health.lock().await.record_failure("gnews");
                             ingestor.note_search_api("gnews", Some(format!("parse: {e}"))).await;
@@ -1776,7 +1818,7 @@ mod tests {
     fn entries_from_rss(items: &str) -> Vec<feed_rs::model::Entry> {
         let xml = format!(
             "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>t</title>{items}</channel></rss>");
-        feed_rs::parser::parse(xml.as_bytes()).expect("test feed parses").entries
+        parse_feed_raw(xml.as_bytes()).expect("test feed parses").entries
     }
 
     #[test]
@@ -1790,8 +1832,10 @@ mod tests {
               <link>https://timesofindia.com/world/a1.cms?utm_source=rss&amp;utm_medium=feed</link>\
               <description>&lt;p&gt;Analysts said&lt;/p&gt; the axis is shifting</description></item>");
         assert_eq!(entries.len(), 2);
+        // feed-rs 2.x hands the markup title through as "a href='…'Ukrainian man
+        // charged" (brackets stripped, tag guts inline) — still junk, still rejected.
         assert!(entry_to_article(&entries[0], "skynews", SourceTier::Tier1).is_none(),
-            "a title that is literally markup must be rejected");
+            "a title that is (mangled) markup must be rejected");
         let a = entry_to_article(&entries[1], "timesofindia", SourceTier::Tier2)
             .expect("clean entry ingests");
         assert_eq!(a.title, "Hamas, Hezbollah & Houthis: what next", "entities decoded in title");
@@ -1997,7 +2041,7 @@ mod tests {
             return Err(format!("HTTP {status}"));
         }
         let bytes = resp.bytes().await.map_err(|e| format!("body: {e}"))?;
-        let feed  = feed_rs::parser::parse(bytes.as_ref()).map_err(|e| format!("parse: {e}"))?;
+        let feed  = parse_feed_raw(bytes.as_ref()).map_err(|e| format!("parse: {e}"))?;
         if feed.entries.is_empty() {
             return Err("parsed but 0 entries".to_string());
         }

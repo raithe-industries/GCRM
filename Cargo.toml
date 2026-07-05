@@ -43,7 +43,7 @@ tokio-tungstenite = { version = "0.21", features = ["native-tls"] } # WebSocket
 
 # ── HTTP / feeds ───────────────────────────────────────────────────────────────
 reqwest  = { version = "0.11", features = ["json", "native-tls", "gzip", "brotli", "deflate"] }
-feed-rs  = "1"                                                     # RSS / Atom parser
+feed-rs  = { path = "vendor/feed-rs" }  # vendored 2.3.1, quick-xml 0.37->0.41 (RUSTSEC-2026-0194/0195; upstream dormant since 2024-12)                                                     # RSS / Atom parser
 
 # ── Web framework ──────────────────────────────────────────────────────────────
 axum     = { version = "0.7",  features = ["ws", "macros"] }
