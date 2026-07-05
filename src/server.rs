@@ -825,6 +825,19 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_keeps_video_rows_discoverable() {
+        // Video-transcript articles are low-volume signal drowned in high-volume wire
+        // flow (first live night: 35 rows buried at scroll positions 72+ read as
+        // "zero video" to the operator). The feed must keep them identifiable at a
+        // glance (the ▶ VIDEO badge) and isolatable in one click (the video-only
+        // chip) — dropping either silently re-buries the source.
+        assert!(DASHBOARD_HTML.contains("art-vid"),
+            "the ▶ VIDEO row badge is gone — video rows become indistinguishable from wire copy");
+        assert!(DASHBOARD_HTML.contains("art-video-btn") && DASHBOARD_HTML.contains("toggleVideoOnly"),
+            "the video-only filter chip is gone — video signal can no longer be isolated");
+    }
+
+    #[test]
     fn dashboard_renders_6h_trend_lead_shift() {
         // Awareness (pillar 3 — show WHERE): the 6h-trend sub-line must surface a relocation
         // of the hottest theater (`lead→X (was Y)`) when the server flags `lead_shifted`. The
