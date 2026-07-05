@@ -680,13 +680,14 @@ fn weighted_domain_keyword_map() -> Vec<(&'static str, Vec<(&'static str, f64)>)
             ("closing the strait",    0.95),
             ("mining the strait",     0.95),
             ("hormuz fee",            0.85),
-            ("transit fee",           0.80),
-            ("passage fee",           0.80),
             ("tanker seizure",        0.85),
             ("seized tanker",         0.85),
             ("tankers seized",        0.85),
+            // (bare "chokepoint" / "transit fee" / "passage fee" were pruned: Panama-
+            //  drought and Suez-pricing trade journalism scored 0.70-0.80 with zero
+            //  coercion — the chokepoint PAIR RULE below carries that vocabulary with
+            //  a place-name requirement instead. xhigh review finding 10)
             // Moderate
-            ("chokepoint",            0.70),
             ("tariffs",               0.45),
             ("sanctions",             0.35),
         ]),
@@ -1170,6 +1171,43 @@ impl NlpProcessor {
         best
     }
 
+    /// Chokepoint-coercion PAIR rule: a named maritime chokepoint co-occurring with a
+    /// coercion/effect term reads as transit coercion (weight 0.80, noisy-OR-merged into
+    /// economic_warfare). Neither half alone scores: "strait of hormuz" in trade-volume
+    /// reporting is geography, "blockade" without a chokepoint is already covered by the
+    /// flat lexicon. This carries the 2026 Hormuz register — fee regimes, ship U-turns,
+    /// leverage-as-weapon — that sanctions-era keywords cannot see, without the generic
+    /// false fires the pruned bare phrases caused (Panama drought, Suez pricing).
+    fn chokepoint_pair_score(tl: &str) -> Option<f64> {
+        // Straits with NO legitimate toll authority: ANY fee/toll talk there is
+        // coercion by definition (Iran cannot lawfully charge for Hormuz passage).
+        const STRAITS: &[&str] = &[
+            "strait of hormuz", "hormuz strait", "bab-el-mandeb", "bab el-mandeb",
+            "strait of malacca", "malacca strait", "taiwan strait", "kerch strait",
+            "red sea shipping", "gulf of aden",
+        ];
+        // Tolled waterways (canal/strait authorities charge lawfully): fee/toll news
+        // there is ordinary pricing — only HARD coercion pairs (the Suez-fee-increase
+        // false fire the pruned generics caused).
+        const TOLLED: &[&str] = &["suez canal", "panama canal", "bosphorus"];
+        const HARD_COERCION: &[&str] = &[
+            "closure", "closing", "closed", "shut", "blockade", "mining", "mined",
+            "naval mine", "seize", "seized", "seizure", "weapon", "leverage",
+            "u-turn", "turn back", "turning back", "harass", "attack", "missile",
+            "drone", "deny passage", "denied passage", "suspend transit",
+            "reroute", "rerouting", "avoid",
+        ];
+        const FEE_COERCION: &[&str] = &["toll", "fee"];
+        let hard = HARD_COERCION.iter().any(|c| tl.contains(c));
+        if STRAITS.iter().any(|c| tl.contains(c)) {
+            return (hard || FEE_COERCION.iter().any(|c| tl.contains(c))).then_some(0.80);
+        }
+        if TOLLED.iter().any(|c| tl.contains(c)) {
+            return hard.then_some(0.80);
+        }
+        None
+    }
+
     fn score_domains(&self, tl: &str) -> std::collections::HashMap<String, f64> {
         let mut out = std::collections::HashMap::new();
         for (domain, kw_weights) in &self.domain_map {
@@ -1203,6 +1241,13 @@ impl NlpProcessor {
             if signal >= MIN_DOMAIN_SIGNAL {
                 out.insert(domain.to_string(), (signal * 1e4).round() / 1e4);
             }
+        }
+        // Chokepoint PAIR rule (see chokepoint_pair_score): merged noisy-OR into
+        // economic_warfare so it composes with, never overrides, keyword evidence.
+        if let Some(w) = Self::chokepoint_pair_score(tl) {
+            let prev = out.get("economic_warfare").copied().unwrap_or(0.0);
+            let merged = 1.0 - (1.0 - prev) * (1.0 - w);
+            out.insert("economic_warfare".to_string(), (merged * 1e4).round() / 1e4);
         }
         out
     }
@@ -1569,16 +1614,27 @@ mod tests {
             "Iran's envoy says friendly nations to get special Hormuz fee treatment",
             "Tehran threatens closure of the Strait of Hormuz over strikes",
             "Iran begins mining the strait as tankers reroute",
-            "Two tankers seized near the Gulf as transit fee demands spread",
+            "Two tankers seized near the Gulf as escalation spreads",
+            // Pair-rule register (place-name + coercion/effect term) — the live
+            // 2026 headlines the flat lexicon cannot see:
+            "Medvedev says Strait of Hormuz gives Iran leverage comparable to nuclear weapon",
+            "Several ships make sharp U-turn, not passing through Strait of Hormuz",
         ] {
             let sig = proc.score_domains(&tl.to_lowercase()); // production lowercases first
             let v = sig.get("economic_warfare").copied().unwrap_or(0.0);
             assert!(v >= 0.70, "chokepoint coercion must score economic_warfare >= 0.70: {tl:?} -> {sig:?}");
         }
-        // Geography or ordinary commerce alone is NOT weaponization — no false fire.
-        let benign = proc.score_domains("shipping volumes through the strait of hormuz rose as port fees fell");
-        assert!(benign.get("economic_warfare").copied().unwrap_or(0.0) < 0.45,
-            "place name + ordinary fees must not read as weaponization, got {benign:?}");
+        // Trade journalism about chokepoints is NOT weaponization — the pruned
+        // generics used to false-fire on exactly these (xhigh review finding 10).
+        for benign_tl in [
+            "panama canal chokepoint strains global shipping as drought cuts crossings",
+            "suez canal transit fee increase announced for 2027",
+            "shipping volumes through the strait of hormuz rose this quarter",
+        ] {
+            let benign = proc.score_domains(benign_tl);
+            assert!(benign.get("economic_warfare").copied().unwrap_or(0.0) < 0.45,
+                "trade journalism must not read as weaponization: {benign_tl:?} -> {benign:?}");
+        }
     }
 
     #[test]

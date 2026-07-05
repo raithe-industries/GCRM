@@ -644,8 +644,17 @@ fn dedup_earthquakes(events: &mut Vec<Event>) -> HashMap<String, String> {
             if events[j].source_id == events[i].source_id {
                 continue;
             }
+            // Magnitude scales differ across agencies (JMA Mj / GeoNet ML / NRCan
+            // MN vs USGS-EMSC Mw): great events diverge by ~1 unit between scales
+            // (Tohoku: Mj 8.4 vs Mw 9.0), so a strict ±0.7 across catalogues
+            // re-introduced the double-plot for exactly the biggest quakes (xhigh
+            // review finding 7). Same-family pairs (both global Mw-reporting
+            // catalogues) keep ±0.7; cross-scale pairs get ±1.2 — still far below
+            // the mainshock/aftershock gaps the guard exists to keep apart.
+            let global = |e: &Event| matches!(e.source_id.as_str(), "usgs" | "emsc" | "gdacs");
+            let tol = if global(&events[i]) && global(&events[j]) { 0.7 } else { 1.2 };
             match (quake_guard_magnitude(&events[i]), quake_guard_magnitude(&events[j])) {
-                (Some(mi), Some(mj)) if (mi - mj).abs() <= 0.7 => {}
+                (Some(mi), Some(mj)) if (mi - mj).abs() <= tol => {}
                 _ => continue,
             }
             claimed[j] = true;

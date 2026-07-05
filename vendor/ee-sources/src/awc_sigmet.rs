@@ -31,7 +31,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use ee_core::{Event, EventKind, Geo, Severity, Source, SourceMeta};
 use serde_json::Value;
-use std::collections::HashSet;
 use std::time::Duration;
 
 /// NOAA AWC international-SIGMET source.
@@ -228,9 +227,12 @@ pub fn parse_awc_sigmet(json: &str) -> anyhow::Result<Vec<Event>> {
     let mut out = Vec::with_capacity(features.len());
     // The AWC aggregate sometimes carries the SAME issuance twice as byte-identical
     // features (observed live 2026-07-04: WIII/FAOR/SAME series each ×2), so a map
-    // rebuild plotted stacked twin dots with colliding ids. Collapse on the synthetic
-    // identity key (fir+series+hazard+from) — first record wins.
-    let mut seen: HashSet<String> = HashSet::new();
+    // rebuild plotted stacked twin dots with colliding ids. Collapse ONLY when the
+    // feature is genuinely identical (same properties fingerprint): two DISTINCT
+    // issuances can legitimately share the synthetic key (a FIR with no seriesId
+    // issuing two same-hazard SIGMETs at one validTimeFrom) and both are real
+    // hazards — those keep both dots, with a disambiguated id. (review finding 8)
+    let mut seen: std::collections::HashMap<String, (String, u32)> = std::collections::HashMap::new();
     for f in features {
         let props = f.get("properties").cloned().unwrap_or(Value::Null);
 
@@ -266,9 +268,17 @@ pub fn parse_awc_sigmet(json: &str) -> anyhow::Result<Vec<Event>> {
         let series = prop_str(&props, "seriesId").unwrap_or("");
         let from = prop_str(&props, "validTimeFrom").unwrap_or("");
         let fir_id = prop_str(&props, "firId").unwrap_or("fir");
-        let id = format!("awc-sigmet-{fir_id}-{series}-{hazard}-{from}");
-        if !seen.insert(id.clone()) {
-            continue; // upstream duplicate of an already-emitted issuance
+        let mut id = format!("awc-sigmet-{fir_id}-{series}-{hazard}-{from}");
+        let fingerprint = props.to_string();
+        match seen.get_mut(&id) {
+            Some((fp, _)) if *fp == fingerprint => continue, // true upstream duplicate
+            Some((_, n)) => {
+                *n += 1;
+                id = format!("{id}-{n}"); // distinct issuance sharing the key — keep it
+            }
+            None => {
+                seen.insert(id.clone(), (fingerprint, 1));
+            }
         }
 
         out.push(Event {
@@ -367,6 +377,32 @@ mod tests {
         assert_eq!(ev.len(), 3, "duplicate upstream issuance must collapse, not double-plot");
         assert_eq!(ev[0].id, "awc-sigmet-SBRE--TS-2020-03-16T08:00:00Z");
         assert_ne!(ev[1].id, ev[0].id, "distinct issuances keep distinct ids");
+    }
+
+    #[test]
+    fn distinct_issuances_sharing_the_key_both_survive_with_unique_ids() {
+        // A FIR with no seriesId can issue two same-hazard SIGMETs at one
+        // validTimeFrom covering DIFFERENT areas — both are real hazards. Only
+        // byte-identical repeats collapse; key-sharing distinct features keep
+        // both dots with disambiguated ids. (xhigh review finding 8)
+        let mut root: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let feats = root.get_mut("features").unwrap().as_array_mut().unwrap();
+        let mut variant = feats[0].clone();
+        // same identity fields, different area: shift the polygon east by ~2°
+        if let Some(ring) = variant.pointer_mut("/geometry/coordinates/0").and_then(|v| v.as_array_mut()) {
+            for p in ring.iter_mut() {
+                if let Some(lon) = p.get_mut(0) { *lon = serde_json::json!(lon.as_f64().unwrap() + 2.0); }
+            }
+        }
+        // and a different raw text so the properties fingerprint differs
+        if let Some(o) = variant.get_mut("properties").and_then(|p| p.as_object_mut()) {
+            o.insert("rawSigmet".into(), serde_json::json!("SECOND AREA"));
+        }
+        feats.insert(1, variant);
+        let ev = parse_awc_sigmet(&root.to_string()).unwrap();
+        assert_eq!(ev.len(), 4, "the distinct second issuance must survive: {:?}",
+                   ev.iter().map(|e| e.id.clone()).collect::<Vec<_>>());
+        assert_ne!(ev[0].id, ev[1].id, "shared-key distinct issuances get unique ids");
     }
 
     #[test]

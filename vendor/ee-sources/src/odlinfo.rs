@@ -138,6 +138,7 @@ pub fn parse_odlinfo(json: &str) -> anyhow::Result<Vec<Event>> {
         .ok_or_else(|| anyhow::anyhow!("odlinfo: missing 'features' array"))?;
 
     let mut out = Vec::with_capacity(features.len());
+    let mut unreadable_time = 0usize;
     for f in features {
         let props = f.get("properties").cloned().unwrap_or(Value::Null);
 
@@ -189,6 +190,7 @@ pub fn parse_odlinfo(json: &str) -> anyhow::Result<Vec<Event>> {
             .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
             .map(|dt| dt.with_timezone(&Utc))
         else {
+            unreadable_time += 1; // counted: see the format-drift tripwire below
             continue;
         };
 
@@ -224,6 +226,17 @@ pub fn parse_odlinfo(json: &str) -> anyhow::Result<Vec<Event>> {
             url,
             raw: props,
         });
+    }
+    // Format-drift tripwire: if elevated operational readings existed but EVERY one
+    // had an unreadable end_measure, the upstream timestamp serialization has drifted
+    // — returning Ok([]) would silently blank the radiation layer forever (an empty
+    // network is normal here, so nothing downstream would notice). Erroring instead
+    // routes it through feed-health/last-good where it is operator-visible. A MIX of
+    // readable and unreadable stays a partial success. (xhigh review finding 9)
+    if out.is_empty() && unreadable_time > 0 {
+        anyhow::bail!(
+            "odlinfo: {unreadable_time} elevated reading(s) with unreadable end_measure and none readable — upstream timestamp format drift?"
+        );
     }
     Ok(out)
 }
@@ -345,6 +358,20 @@ mod tests {
         let ev = parse_odlinfo(json).unwrap();
         assert_eq!(ev.len(), 1, "only the timestamped elevated reading plots");
         assert_eq!(ev[0].id, "odlinfo-DEZ0003");
+    }
+
+    #[test]
+    fn all_elevated_readings_with_unreadable_time_is_an_error_not_an_empty_layer() {
+        // Upstream timestamp drift must be VISIBLE: if every elevated reading has an
+        // unreadable end_measure, Ok([]) would silently blank the radiation layer
+        // (empty is the normal all-quiet state) — this must error into feed-health.
+        let json = r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[9.0,50.0]},
+           "properties":{"id":"DEZ0001","kenn":"1","name":"A","value":0.62,"unit":"µSv/h","site_status":1,"end_measure":"1720000000000"}},
+          {"type":"Feature","geometry":{"type":"Point","coordinates":[9.5,50.5]},
+           "properties":{"id":"DEZ0002","kenn":"2","name":"B","value":0.71,"unit":"µSv/h","site_status":1}}
+        ]}"#;
+        assert!(parse_odlinfo(json).is_err(), "total timestamp drift must be an error");
     }
 
     #[test]
