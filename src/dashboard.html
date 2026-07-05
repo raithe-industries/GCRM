@@ -1045,6 +1045,8 @@ function momLead(d){
     return {vis:'',tip:'moves WITH the headline P ('+(ll.hit_pct||0).toFixed(0)+'% directional hit ≈ '+(ll.baseline_hit_pct||0).toFixed(0)+'% contemporaneous baseline) — simultaneous co-movement, not a measured lead'};
   if(ll.verdict==='insufficient_episodes')
     return {vis:'',tip:'directional hit clears the bar but the evidence spans only '+(ll.episodes||0)+' momentum episode(s) — one episode cannot distinguish lead from coincidence; verdict withheld'};
+  if(ll.verdict==='insufficient_baseline')
+    return {vis:'',tip:'directional hit clears the bar but the contemporaneous baseline had too few judgeable pairs ('+(ll.pairs||0)+' at lag vs a sparse one-stride control) — the lead cannot be verified against simultaneity; verdict withheld, not asserted'};
   if(ll.verdict==='no_lead')
     return {vis:'',tip:'direction shown, but NOT measured to lead the headline P over the last '+winH+'h (best '+(ll.hit_pct||0).toFixed(0)+'% directional hit) — an honest null, not a claim'};
   return {vis:'',tip:'lead over the headline P not yet measurable (too few decisive-momentum episodes in the durable ring)'};
@@ -1313,7 +1315,10 @@ function applyData(d){
   // table the domain grid uses. When the read is diffuse (available=false) we say so rather than
   // naming a modality — a headline no single modality carries must not be attributed to one.
   const _lb=d.load_bearing_modality;const _lbe=document.getElementById('f-loadbearing');
-  if(_lbe){if(_lb&&_lb.available&&_lb.modality){const _i=DID.indexOf(_lb.modality);const _nm=_i>=0?DSHORT[_i]:_lb.modality.replace(/_/g,' ');_lbe.textContent=_nm+' (−'+(_lb.p_drop_pp||0).toFixed(2)+'pp if its evidence vanished)';}else{_lbe.textContent='diffuse — no single modality carries the headline';}}
+  if(_lbe){const _pegged=!!(d.trend_6h&&d.trend_6h.pegged);const _held=!!(d.meta&&d.meta.read_held_by_floor);
+    if(_lb&&_lb.available&&_lb.modality){const _i=DID.indexOf(_lb.modality);const _nm=_i>=0?DSHORT[_i]:_lb.modality.replace(/_/g,' ');_lbe.textContent=_nm+' (−'+(_lb.p_drop_pp||0).toFixed(2)+'pp if its evidence vanished'+(_pegged?'; pre-ceiling attribution — the served headline is pegged':'')+')';}
+    else if(_held){_lbe.textContent='held by war-state memory (persistence floor) — live modality evidence is not what carries the headline';}
+    else{_lbe.textContent='diffuse — no single modality carries the headline';}}
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];

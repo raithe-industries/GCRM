@@ -918,9 +918,14 @@ impl BayesianRiskEngine {
         // it never feeds P and touches no fitted constant. Suppressing evidence can only lower
         // `l_sys`, so every drop is ≥ 0.
         {
+            // UNCLAMPED map: attribution must survive the ceiling. Through the served
+            // .min(0.90) clamp, a pegged headline absorbed every marginal (all drops
+            // read 0.00pp -> "diffuse" at exactly the maximally-driven state — xhigh
+            // review finding 4). The profile therefore measures the PRE-CEILING read;
+            // the dashboard footnotes that basis whenever the headline is pegged.
             let p_of_lsys = |l: f64| -> f64 {
                 let la = l * (1.0 + GUARDRAIL_AMPLIFIER * guardrail);
-                sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * la).min(FORECAST_PROB_CEILING)
+                sigmoid(prior_logodds + EVIDENCE_GAIN_SYS * la)
             };
             let p_base = p_of_lsys(crate::theater::aggregate_l_sys(&snap.theaters, None));
             let mut profile: Vec<(String, f64)> = Vec::new();
@@ -930,11 +935,17 @@ impl BayesianRiskEngine {
                 profile.push((m.to_string(), drop_pp));
             }
             profile.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            // Display floor: below this the headline is diffuse across modalities (or the board is
-            // quiet) and naming one load-bearing modality would overclaim (pillar-1 honesty).
-            const MIN_DROP_PP: f64 = 0.1;
+            // Display floor: RELATIVE to the board's elevation above the flat baseline,
+            // with a small absolute backstop. A fixed 0.1pp floor read a calm-period
+            // board as "diffuse" even when one modality carried over half of a 0.15pp
+            // elevation (xhigh review finding 12): what "load-bearing" must mean is a
+            // large share of whatever elevation exists, at any P scale.
+            const MIN_DROP_ABS_PP: f64 = 0.1;
+            const MIN_DROP_SHARE: f64 = 0.25; // of the elevation above the flat baseline
+            let elevation_pp = ((p_base - sigmoid(prior_logodds)).max(0.0)) * 100.0;
+            let min_drop_pp = MIN_DROP_ABS_PP.min((MIN_DROP_SHARE * elevation_pp).max(1e-3));
             let top = profile.first().cloned().unwrap_or_default();
-            let available = top.1 >= MIN_DROP_PP;
+            let available = top.1 >= min_drop_pp;
             snap.load_bearing_modality = crate::models::ModalitySensitivity {
                 modality:  if available { top.0 } else { String::new() },
                 p_drop_pp: if available { top.1 } else { 0.0 },

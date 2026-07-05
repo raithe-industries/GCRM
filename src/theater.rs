@@ -251,7 +251,11 @@ pub fn aggregate_l_sys(states: &[TheaterState], suppress: Option<&str>) -> f64 {
         if s.held_by_floor {
             s.heat // memory heat — modality-independent (identical in baseline and every suppression)
         } else {
-            heat_from_modality_scores(&s.modality_scores, suppress).min(1.0)
+            // Round exactly as score_theater rounds the SERVED heat (1e-4): an
+            // unrounded recomputation can straddle the HOT_HEAT boundary the served
+            // board already crossed, silently shifting gp/concurrency and measuring
+            // the marginals against a headline the operator never saw (finding 11).
+            (heat_from_modality_scores(&s.modality_scores, suppress).min(1.0) * 1e4).round() / 1e4
         }
     };
 

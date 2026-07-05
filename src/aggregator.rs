@@ -718,7 +718,12 @@ impl EpochStore {
         // or a sub-deadband gap starts a new one. Episode id 0 = not decisive.
         let mut series: Vec<(i64, f64, f64, u32)> = Vec::with_capacity(rev.len() / 4 + 1);
         let mut last_kept: Option<i64> = None;
-        let (mut ep, mut last_sign): (u32, i8) = (0, 0);
+        // Episode = maximal same-sign decisive run. A single-stride dip below the
+        // deadband does NOT close an episode (one soft sample inside a sustained
+        // move would otherwise split it in two and inflate the count toward the
+        // >=3-episode gate — xhigh review finding 13); a dip of >= MOM_EPISODE_GAP
+        // strides or a sign flip does.
+        let (mut ep, mut last_sign, mut gap): (u32, i8, u32) = (0, 0, 0);
         for &(secs, p, m) in rev.iter().rev() {
             if let Some(lk) = last_kept {
                 if secs - lk < stride_secs {
@@ -727,10 +732,18 @@ impl EpochStore {
             }
             last_kept = Some(secs);
             let sign: i8 = if m >= MOM_DEADBAND { 1 } else if m <= -MOM_DEADBAND { -1 } else { 0 };
-            if sign != 0 && sign != last_sign {
-                ep += 1;
+            if sign == 0 {
+                gap += 1;
+                if gap >= MOM_EPISODE_GAP {
+                    last_sign = 0; // long lull — the run is over
+                }
+            } else {
+                if sign != last_sign {
+                    ep += 1;
+                }
+                last_sign = sign;
+                gap = 0;
             }
-            last_sign = sign;
             series.push((secs, p, m, if sign == 0 { 0 } else { ep }));
         }
 
@@ -801,9 +814,16 @@ impl EpochStore {
 
         match best {
             Some((lag, hit, pairs, eps)) => {
+                // FAIL CLOSED at every control: "leads" is only minted when the
+                // contemporaneous baseline was actually JUDGEABLE and beaten. A slow
+                // steady P (every 300s move under the dp deadband) starves the
+                // baseline of pairs; granting "leads" then would assert a control
+                // that was never evaluated (xhigh review finding 5).
                 let verdict = if hit < LEAD_HIT_THRESHOLD {
                     "no_lead"
-                } else if b_pairs >= MOM_LL_MIN_PAIRS && hit - b_hit < LEAD_BASELINE_MARGIN {
+                } else if b_pairs < MOM_LL_MIN_PAIRS {
+                    "insufficient_baseline"
+                } else if hit - b_hit < LEAD_BASELINE_MARGIN {
                     "coincident"
                 } else if eps < MOM_LL_MIN_EPISODES {
                     "insufficient_episodes"
@@ -853,6 +873,7 @@ const MOM_LL_MIN_PAIRS: usize = 12;  // decisive samples required to judge a lag
 const LEAD_HIT_THRESHOLD: f64 = 0.60; // directional-hit rate to earn the "leads" verdict
 const LEAD_BASELINE_MARGIN: f64 = 0.10; // best lag must beat the contemporaneous baseline by this
 const MOM_LL_MIN_EPISODES: usize = 3;   // distinct decisive episodes required to claim a lead
+const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an episode (1 dip tolerated)
 
 /// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
 /// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
@@ -2617,8 +2638,9 @@ mod tests {
         let v = es.momentum_lead_lag_window(now, 48 * 3600, 300, MOM_LL_LAGS);
         assert_eq!(v["available"], true);
         assert_eq!(
-            v["verdict"], "insufficient_episodes",
-            "two episodes must withhold the lead verdict: {v:?}"
+            v["verdict"], "insufficient_baseline",
+            "sparse evidence must withhold the lead verdict fail-closed (the 8-pair \
+             baseline is unjudgeable, checked before the episode floor): {v:?}"
         );
         assert_eq!(v["episodes"], 2, "episode segmentation counts the two runs: {v:?}");
         assert!(v["pairs"].as_u64().unwrap() >= MOM_LL_MIN_PAIRS as u64);
