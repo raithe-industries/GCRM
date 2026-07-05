@@ -267,6 +267,22 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-05 (local watch, evening)** — **RUSTSEC-2026-0194/0195 RESOLVED (operator-approved):**
+  feed-rs 1.5.3 → **vendored 2.3.1** (`vendor/feed-rs`) with quick-xml **0.31 → 0.41** (the patched
+  line). Two surgical vendor patches restore feed-rs 1.x text semantics: (1) quick-xml ≥0.36 emits
+  entities as GeneralRef events that feed-rs silently dropped ("&lt;p&gt;x" → "px" — encoded markup
+  destroyed in every RSS description); the vendored xml layer now resolves predefined + numeric
+  entities to text. (2) item `description` uses plain text capture (handle_text), not
+  handle_encoded's re-parse. Green-proof: 575/0 unit; **103/103 live RSS feeds parse** under the
+  migrated parser (ignored liveness test, full network); cargo audit **0 vulnerabilities** (only
+  the 3 known leave-as-is warnings) — the daily 00:47 audit alert retires. Upstream feed-rs is
+  dormant (2024-12); revisit the vendor patch if it revives.
+- **2026-07-05 (local watch, evening)** — **Analyst channels ADOPTED (operator sign-off): roster
+  17→21**: perun-video, caspianreport-video, wardcarroll-video, anderspuck-video (all Tier2,
+  weekly-cadence defense/geopolitics depth). **Labeled-pair collection STARTED** for the
+  cross-modal corroboration threshold (roadmap candidate): each roster-video ingest logs
+  ambiguous-band (0.25–0.55 trigram) video↔wire title pairs to `logs/video-pairs-<date>.jsonl`
+  for operator labeling — data collection only, never feeds the model.
 - **2026-07-05 (local watch, morning)** — **`teleray` LIVE → DORMANT: upstream TLS/auth broken**
   (hours after adoption; the ASAM/first-rebuild lesson applied). The adopted host
   `api.teleray.asnr.fr` serves a Kubernetes ingress FAKE certificate (subject "Acme Co /

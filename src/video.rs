@@ -54,6 +54,11 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCzuqE7-t13O4NIDYJfakrhw", source: "democracynow-video", tier: SourceTier::Tier1 }, // operator tier call 2026-07-05
     VideoChannel { channel_id: "UCVG72F2Q5yCmLQfctNK6M2A", source: "zeteo-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCi7Zk9baY1tvdlgxIML8MXg", source: "ctvnews-video",      tier: SourceTier::Tier1 }, // operator-nominated 2026-07-05
+    // Analyst channels — operator-approved shortlist 2026-07-05 (weekly-cadence depth).
+    VideoChannel { channel_id: "UCC3ehuUksTyQ7bbjGntmx3Q", source: "perun-video",        tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCwnKziETDbHJtx78nIkfYug", source: "caspianreport-video", tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCiUteckG37fXz0g5h8iZ_0g", source: "wardcarroll-video",  tier: SourceTier::Tier2 },
+    VideoChannel { channel_id: "UCPPfK7Nq_yQR84rn1wcTXBg", source: "anderspuck-video",   tier: SourceTier::Tier2 },
 ];
 
 /// Poll cadence. Broadcast channels upload a handful of clips per hour at most; 15
@@ -306,6 +311,28 @@ pub fn condense_transcript(flat: &str, max_chars: usize) -> String {
     out
 }
 
+/// Trigram-Jaccard title similarity (the corroboration detector's measure, replicated
+/// here for DATA COLLECTION ONLY): video↔wire same-story pairs in the ambiguous band
+/// are logged for the operator's labeled-pair fit of a cross-modal merge threshold
+/// (roadmap candidate; measured 2026-07-05: 7/38 mergeable at 0.40, ~11 just under).
+/// Never feeds the model.
+pub fn title_trigram_jaccard(a: &str, b: &str) -> f64 {
+    fn tris(s: &str) -> std::collections::HashSet<String> {
+        let norm: String = s.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+        let norm = norm.split_whitespace().collect::<Vec<_>>().join(" ");
+        let ch: Vec<char> = norm.chars().collect();
+        (0..ch.len().saturating_sub(2)).map(|i| ch[i..i + 3].iter().collect()).collect()
+    }
+    let (a, b) = (tris(a), tris(b));
+    let inter = a.intersection(&b).count() as f64;
+    let uni = a.union(&b).count() as f64;
+    if uni == 0.0 { 0.0 } else { inter / uni }
+}
+
+/// The ambiguous band worth a human label: below = clearly different stories,
+/// above = the detector already merges.
+pub const PAIR_LOG_BAND: (f64, f64) = (0.25, 0.55);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +415,17 @@ mod tests {
     fn condense_short_transcript_is_untouched() {
         let s = "Iran warns tankers near the strait. Traffic slows.";
         assert_eq!(condense_transcript(s, 6000), s);
+    }
+
+    #[test]
+    fn trigram_jaccard_orders_same_story_above_unrelated() {
+        let v = "Rebels launch coordinated attacks across Mali";
+        let w_same = "New wave of coordinated rebel attacks hits Mali";
+        let w_diff = "Taylor Swift and Travis Kelce are married";
+        let s1 = title_trigram_jaccard(v, w_same);
+        let s2 = title_trigram_jaccard(v, w_diff);
+        assert!(s1 > PAIR_LOG_BAND.0 && s1 > s2 + 0.2, "same-story must land in/above the band: {s1} vs {s2}");
+        assert!(s2 < PAIR_LOG_BAND.0, "unrelated stays below the band: {s2}");
     }
 
     #[test]
