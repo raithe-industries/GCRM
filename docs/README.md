@@ -27,7 +27,7 @@ The system is transparent about its limitations: the probability output is a cal
 GCRM is written entirely in Rust with zero Python runtime dependencies. The system is organized as a concurrent async pipeline with clearly separated modules connected by Tokio mpsc channels:
 
 ```
-Ingestor (RSS / GNews / GDELT)
+Ingestor (RSS / GNews / GDELT / Video transcripts)
   → mpsc::channel<RawArticle>
   → NlpSidecar (pure Rust NlpProcessor + optional LlmEnricher)
   → mpsc::channel<GeopoliticalEvent>
@@ -44,16 +44,22 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 |--------|------|---------|
 | **Entry Point** | `main.rs` | Pipeline wiring, settings, signal handling, task orchestration |
 | **Models** | `models.rs` | Shared types: `RawArticle`, `GeopoliticalEvent`, `RiskSnapshot`, `DomainScore`, actor normalization, region resolution, source tiers |
-| **Ingestor** | `ingestor.rs` | Parallel RSS polling (103 feeds, all simultaneous), GNews search, GDELT API integration, deduplication cache, self-healing source health tracking |
+| **Ingestor** | `ingestor.rs` | Parallel RSS polling (103 feeds, all simultaneous), GNews search, GDELT API integration, YouTube-transcript video loop (`video.rs`, opt-in), deduplication cache, self-healing source health tracking |
 | **Processor** | `processor.rs` | Pure Rust NLP: MinHash LSH deduplication, event classification, weighted domain tagging, severity/escalation/sentiment scoring, actor extraction |
 | **NLP Sidecar** | `nlp_sidecar.rs` | Pipeline runner for the NLP processor and LLM enricher with graceful shutdown and dedup cache persistence |
-| **LLM Enricher** | `llm_enricher.rs` | Optional Ollama integration — classifies articles against 8 domains via local LLM, merges with keyword scores, falls back silently if unavailable |
+| **LLM Enricher** | `llm_enricher.rs` | Optional Ollama integration — classifies articles against the five modalities via local LLM, merges with keyword scores, falls back silently if unavailable |
 | **Bayesian Engine** | `bayesian.rs` | Domain scoring, regime multiplier, actor tracking, anomaly detection, risk index computation |
 | **Aggregator** | `aggregator.rs` | Event window management, corroboration detection, timeline persistence (JSONL), warmup gate, shared state management |
 | **Detector** | `detector.rs` | Seismic anomaly detection, CTBTO monitoring, nuclear news monitoring, test site registry, alert fusion |
 | **API** | `api.rs` | Operator endpoints: regime factor management, manual event assertion, rate limiting, audit logging, calibration timestamping |
 | **Server** | `server.rs` | Axum HTTP server, WebSocket broadcast, dashboard HTML, public API routes, base-path routing |
 | **OSINT Map** | `osint.rs` | World-map situational-awareness overlay: live public feeds (USGS / NASA EONET / GDACS / NWS / OpenSky) → GeoJSON, theater flashpoints, layer registry + base-map catalogue, and the Finance Radar; serves `/api/map` + `/api/finance`. Display-only — **not** an input to the risk index. |
+| **Theater Engine** | `theater.rs` | The v2 core: theaters × five orthogonal modalities × systemic couplers (great-power entanglement, alliance activation, concurrency, nuclear-brink amplifier) → the systemic likelihood behind the headline P |
+| **I&W Board** | `indicators.rs` | The 12-light Indications & Warning board — the "why" behind the number (each light trips on the model's own state, never asserted) |
+| **Video Sources** | `video.rs` | YouTube channel watchlist → yt-dlp auto-captions → transcripts through the normal article pipeline (opt-in via `GCRM_VIDEO_SOURCES=1`) |
+| **Calibration** | `backtest.rs` | The fitted calibration bands (quiet / Ukraine 2022 / current / Cuba 1962) every change must keep green |
+| **Analyst Brief** | `brief.rs` | `/api/brief` — a structured analyst brief generated from the live snapshot |
+| **Backfill** | `backfill.rs` | One-shot archive migration subcommand |
 
 ---
 
@@ -61,7 +67,7 @@ Each stage runs as an independent Tokio task. Failures in one stage do not casca
 
 ### 1. Ingestion Layer
 
-GCRM polls 103 RSS feeds from Tier-1 and Tier-2 international news organizations fully in parallel (all feeds fetched simultaneously, 8-second timeout). It also queries Google News RSS (every 12 seconds) and the GDELT Project API (every 20 seconds) for supplementary coverage. The feed roster is treated as a stated source base, not a live ratio — every feed is verified-live and the roster is curated, not scored.
+GCRM polls 103 RSS feeds from Tier-1 and Tier-2 international news organizations fully in parallel (all feeds fetched simultaneously, 8-second timeout). It also queries Google News RSS (every 4 minutes) and the GDELT Project API (every ~6.7 minutes) for supplementary coverage, and — when the operator opts in — polls a curated YouTube channel watchlist whose new uploads are transcribed (auto-captions via a local yt-dlp) and ingested through the same article path. The feed roster is treated as a stated source base, not a live ratio — every feed is verified-live and the roster is curated, not scored.
 
 Sources are classified into three credibility tiers:
 - **Tier 1** (credibility weight 1.00): Wire services, verified international outlets (BBC, NYT, WaPo, Al Jazeera, Foreign Policy, Defense News, Bellingcat, Crisis Group, Arms Control Association, FAS)
@@ -76,7 +82,7 @@ Every article passes through a pure Rust NLP processor with no external model de
 
 - **MinHash LSH Deduplication**: Near-duplicate titles are detected using a 64-element MinHash signature divided into 16 bands of 4 rows, providing ~80× speedup over naive O(n²) trigram comparison.
 - **Event Classification**: Keyword scoring across 14 event types (MilitaryStrike, NuclearTest, MissileLaunch, CyberAttack, AllianceInvocation, WmdUse, etc.).
-- **Weighted Domain Tagging**: Articles are scored against 8 risk domains using a weighted keyword dictionary. Definitive keywords carry high weight (e.g. "nuclear test" = 0.90); ambient keywords carry low weight (e.g. "military" = 0.10). A minimum signal threshold (0.035) prevents noise articles from tagging domains.
+- **Weighted Domain Tagging**: Articles are scored against the five orthogonal modalities (military escalation, nuclear posture, economic warfare, cyber/info ops, diplomatic breakdown) using a weighted keyword dictionary. Definitive keywords carry high weight (e.g. "nuclear test" = 0.90); ambient keywords carry low weight (e.g. "military" = 0.10). A minimum signal threshold (0.035) prevents noise articles from tagging domains.
 - **Actor Extraction**: A 65+ entry entity dictionary maps raw text mentions to canonical actor IDs using longest-match-wins substring search. Great-power involvement (US, Russia, China, NATO) is flagged for elevated scoring.
 - **Severity, Escalation, and Sentiment Scoring**: Each event receives a composite severity score based on event type, casualties, nuclear/WMD indicators, escalation language density, and hostile-vs-conciliatory word balance.
 
@@ -84,7 +90,7 @@ Every article passes through a pure Rust NLP processor with no external model de
 
 A local LLM (`qwen2.5:7b` via Ollama) runs a second pass on each article:
 
-- **Path A** — keyword scoring produced an event: LLM scores the same article against all 8 domains and merges into the keyword result, taking the max of each domain score. LLM scores are discounted 10% before merging, so a keyword definitive hit (1.0) always outweighs LLM estimates.
+- **Path A** — keyword scoring produced an event: LLM scores the same article against the five modalities and merges into the keyword result, taking the max of each domain score. LLM scores are discounted 10% before merging, so a keyword definitive hit (1.0) always outweighs LLM estimates.
 - **Path B** — keyword gate found nothing but the title contains geopolitical trigger terms: LLM is used as the sole gate. An article passes only if the LLM assigns at least one domain a score ≥ 0.45.
 - Falls back silently to keyword-only on timeout, connection error, or malformed JSON — no disruption to the pipeline.
 - Temperature 0.05 (near-deterministic); `format: "json"` forces Ollama to return valid JSON.
@@ -97,19 +103,19 @@ Events enter a time-windowed buffer (up to 500,000 events, 4-year max age). A co
 
 ### 4. Bayesian Risk Engine
 
-The core computation:
+The core computation (v2, logistic):
 
 ```
-P_risk = P₀_adj × (1 + L × SCALING_FACTOR)   clamped to [0, 0.85]
+P_risk = sigmoid( logit(P₀) + β × L_sys )   clamped to [0, 0.90]
 ```
 
 Where:
-- **P₀_adj** = HISTORICAL_ANCHOR × regime_multiplier = (2/2026) × Π(active regime factors)
-- **L** = weighted_domain_sum / max_weighted_sum × co_occurrence_boost
+- **P₀** = BASELINE_ANNUAL = 1.5%/yr — a calibrated quiet-year baseline fitted in the Phase-3 backtest (a FLAT prior; regime factors no longer multiply it)
+- **L_sys** = the systemic likelihood from the theater engine: per-theater heat over the five modalities, combined through the systemic couplers (great-power entanglement, alliance activation, multi-theater concurrency with diminishing returns, and the nuclear-brink amplifier). Operator-adjustable regime factors enter here as a guardrail amplifier, on the likelihood side.
 
-The historical anchor (2 world wars / 2026 years ≈ 0.0987%/yr) provides the Bayesian prior. Regime factors are operator-adjustable multipliers reflecting structural conditions (active wars, arms control collapse, nuclear posture changes, deterrence status). The likelihood ratio L is computed from domain scores weighted by strategic importance (nuclear posture weighted 3.0×, great-power conflict 2.0×, etc.).
+Modalities are weighted by strategic importance (nuclear posture 3.0× at the top). Co-occurrence amplification applies non-linear boosts when several modalities are simultaneously elevated: 2 → 1.25×, 3 → 1.60×, 4 → 2.10×, 5 → 2.60× (saturating — computed on a soft, fractional elevated count). This captures the compounding danger of simultaneous crises without letting breadth alone saturate the read.
 
-Co-occurrence amplification applies non-linear boosts when multiple domains are simultaneously elevated: 2 elevated → 1.3×, 3 → 2.0×, 5+ → 5.0×. This captures the compounding danger of simultaneous crises.
+All of these shapes are FITTED: four calibration bands (quiet ≈ 2%, Ukraine 2022 ≈ 39%, current-2026 ≈ 60%, Cuba 1962 ≈ 80%) are locked by tests and every change must keep them green.
 
 Domain-specific exponential decay ensures recent events matter more, with each half-life set to how long that modality's STATE persists without fresh confirmation — not how long a single news pulse trends. An active kinetic war is a sustained strategic state, so military escalation persists at a 72-hour half-life (a peer of nuclear posture at 72 hours); economic warfare lingers longest at 96 hours, diplomatic breakdown at 48, and genuinely episodic cyber/info ops at 24. This keeps the systemic read stable across an overnight news lull while still cooling over a multi-day silence — the signature of a real de-escalation.
 
@@ -140,9 +146,9 @@ All alerts are honestly labeled "SEISMIC ANOMALY" until official confirmation.
 An Axum web server serves a real-time dashboard via WebSocket. The dashboard is publicly accessible at **raithe.ca/risk** and displays:
 
 - Live P(WWIII) annualized probability with trend delta
-- 8 domain risk scores with elevation indicators
-- Historical timeline chart (Chart.js, starts clean on restart)
-- Situational-awareness **world map** (MapLibre) beside the timeline: theater flashpoints + toggleable OSINT layers (earthquakes, wildfires/storms, disasters, US weather, aircraft over North America + Europe) from free public feeds, plus a 7-segment **Finance Radar**
+- Five modality scores with elevation indicators, the theater ladder, and the 12-light I&W board
+- Historical timeline chart (Chart.js; persists across restarts from the durable epoch archive)
+- Situational-awareness **world map** (MapLibre) beside the timeline: theater flashpoints + toggleable OSINT layers from ~38 vendored ee-sources feeds (multi-catalogue + felt-intensity earthquakes, volcano alert levels, wildfires, storms and SIGMETs, floods, radiation, AIS vessels, conflict events, road/border/NOTAM layers and more), plus a 7-segment **Finance Radar**
 - Nuclear alert status
 - Article feed sorted by publication time, newest first
 - Regime factor panel with operator controls (key-protected)
@@ -171,6 +177,8 @@ The following endpoints are publicly accessible (no key required):
 | `GET /risk/api/nuclear` | Seismic alert status |
 | `GET /risk/api/map` | OSINT world-map payload: live feeds (GeoJSON), theater flashpoints, layer registry, base-map catalogue. Display overlay — not a model input. |
 | `GET /risk/api/finance` | Finance Radar: 7-segment market-stress composite from a public market basket |
+| `GET /risk/api/brief` | Structured analyst brief from the live snapshot |
+| `GET /risk/methodology` | Model methodology page |
 | `GET /risk/api/health` | Process health check |
 | `WS  /risk/ws` | WebSocket: live snapshots + article updates |
 
@@ -228,10 +236,10 @@ sudo systemctl restart gcrm.service
 
 ## Test Suite
 
-GCRM ships with **284 unit tests** covering every module. All tests pass.
+GCRM ships with **550+ unit tests** covering every module (the count grows with nearly every change; 554 passed / 4 ignored as of 2026-07-04 — the ignored four are live-network proofs run manually).
 
 ```
-cargo test → 284 passed; 0 failed; 0 ignored
+cargo test → 554 passed; 0 failed; 4 ignored
 ```
 
 Tests cover: model constants, actor normalization, region resolution, deduplication, domain tagging, Bayesian engine, corroboration, API key validation and rate limiting, seismic detector geometry, server routes and dashboard HTML content.
@@ -245,11 +253,17 @@ GCRM/
 ├── src/
 │   ├── main.rs           — Entry point, pipeline wiring
 │   ├── models.rs         — Shared types and constants
-│   ├── ingestor.rs       — RSS/GNews/GDELT ingestion
+│   ├── ingestor.rs       — RSS/GNews/GDELT/video ingestion
+│   ├── video.rs          — YouTube-transcript source (opt-in)
 │   ├── processor.rs      — Pure Rust NLP processor
 │   ├── nlp_sidecar.rs    — NLP pipeline runner
 │   ├── llm_enricher.rs   — Optional Ollama LLM enrichment layer
 │   ├── bayesian.rs       — Risk computation engine
+│   ├── theater.rs        — Theater × modality × coupler systemic engine
+│   ├── indicators.rs     — 12-light I&W board
+│   ├── backtest.rs       — Fitted calibration bands
+│   ├── brief.rs          — Analyst brief endpoint
+│   ├── backfill.rs       — Archive migration subcommand
 │   ├── aggregator.rs     — Event window, timeline, warmup gate
 │   ├── detector.rs       — Seismic/nuclear monitoring
 │   ├── api.rs            — Operator API

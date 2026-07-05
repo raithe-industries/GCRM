@@ -6,7 +6,7 @@
 // reproduction, or distribution is strictly prohibited.
 // ------------------------------------------------------------
 
-// src/ingestor.rs — RSS / GNews / GDELT ingestion
+// src/ingestor.rs — RSS / GNews / GDELT / video-transcript ingestion
 // Uses reqwest + feed-rs instead of aiohttp + feedparser.
 //
 // Upgrade changes applied in this version:

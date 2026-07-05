@@ -276,15 +276,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   predicts the sign of the realized P move over the next `L` (candidate lags 15m–4h), across
   decisive-momentum / real-move episodes only. Conservative verdict: `leads` (with the measured
   lead time + directional-hit %) only when a lag clears 60% on ≥12 samples; else an honest
-  `no_lead` null or `insufficient`. The dashboard momentum gauge now renders the MEASURED verdict
+  `no_lead` null or `insufficient`. **PROGRESS 2026-07-04 (fdb07f8): the verdict is now 5-valued
+  and triple-gated — `leads` additionally requires beating the contemporaneous one-stride
+  baseline by ≥10pp (else `coincident`) and ≥3 distinct sign-separated momentum episodes (else
+  `insufficient_episodes`); payload +`baseline_hit_pct`/+`episodes`; the public entry is
+  stride-cached (300s). New locks: `_contemporaneous_comovement_is_coincident_not_a_lead`,
+  `_two_episode_evidence_withholds_the_lead_verdict`.** The dashboard momentum gauge now renders the MEASURED verdict
   (`leads P ~30m`) in place of the bare assertion. Diagnostic only — never feeds `l_sys`/P, touches
   no fitted constant. Locked by `momentum_lead_lag_recovers_a_planted_6step_lead` (fails-without:
   breaking the verdict threshold flips it off `leads`), `_reports_an_honest_null_when_momentum_does_not_lead`,
   `_insufficient_when_no_decisive_history`, `_tolerates_entries_missing_the_mom_field`,
   `timeline_entry_records_systemic_momentum_for_the_lead_lag_diagnostic`,
-  `dashboard_renders_the_measured_momentum_lead_verdict`. FOLLOW-UP [candidate]: the per-theater
-  ladder-chip tooltip still says "a leading signal, distinct from the heat trend" (a direction≠level
-  claim, definitionally true) — a per-theater lead-lag measurement could earn that one too. See
+  `dashboard_renders_the_measured_momentum_lead_verdict`. FOLLOW-UP [candidate]: the per-theater ladder-chip tooltip *used to say* "a leading signal" —
+  that unearned copy was REMOVED by fdb07f8 (2026-07-04; it now reads "the direction of coverage…
+  measured only at the systemic gauge"). What remains open is only the optional per-theater
+  lead-lag measurement itself. See
   improvement-log 2026-07-04.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
@@ -611,7 +617,7 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   global-max-over-theaters idiom and 0.45 signaling bar as the nuclear/energy/diplomatic lights, naming
   the hottest theater and a near-miss on a clear read; NOT apex. The board renders generically off
   `data.indicators`, so no frontend edit; the methodology advertised count is LOCKED to the live
-  `evaluate().len()` (now "thirteen"). No engine/calibration path touched (bands 20/20 green, evidence
+  `evaluate().len()` (now "twelve" — the guardrails light was retired 2026-07-03). No engine/calibration path touched (bands 20/20 green, evidence
   bit-identical). Locked by `cyber_infrastructure_light_trips_and_names_the_hottest_theater` +
   `cyber_infrastructure_clear_surfaces_hottest_near_miss` (indicators) and the updated
   `empty_snapshot_trips_nothing` / `methodology_advertises_the_live_iw_board_count`. **All five tracked

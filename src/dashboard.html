@@ -1027,8 +1027,9 @@ function get6hDelta(pA){if(history6h.length<2)return null;return pA-history6h[0]
 function trend6h(d,pA){const s=d&&d.trend_6h;if(s&&s.available&&typeof s.delta==='number')return{delta:s.delta,samples:s.samples||history6h.length,span:typeof s.span_secs==='number'?s.span_secs:null,lead:s.lead||'',leadThen:s.lead_then||'',leadShifted:s.lead_shifted===true,pegged:s.pegged===true};const b=get6hDelta(pA);return b===null?null:{delta:b,samples:history6h.length,span:null};}
 // Measured lead-lag verdict for the momentum gauge (server field momentum_lead, from
 // EpochStore::momentum_lead_lag). Turns the "leading" LABEL into an EARNED statement: 'leads'
-// appends a compact visible suffix (leads P ~30m) and a full tooltip; 'no_lead'/insufficient
-// stay honest in the tooltip and add no visible claim. Returns {vis, tip}.
+// appends a compact visible suffix (leads P ~30m) and a full tooltip; 'no_lead'/'coincident'/
+// 'insufficient_episodes'/insufficient stay honest in the tooltip and add no visible claim.
+// Returns {vis, tip}.
 function momLead(d){
   const ll=d&&d.momentum_lead;
   if(!ll||typeof ll!=='object') return {vis:'',tip:'lead over the headline P not yet measured'};

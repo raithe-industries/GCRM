@@ -88,7 +88,7 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
       sign(m·t) predicted the sign of the realized move p(t+L)−p(t) (only real moves, |Δp|≥0.2pp,
       count). Reports the full lead-lag PROFILE + a conservative verdict: `leads` (with the measured
       lead time and directional-hit %) ONLY when a lag clears 60% on ≥12 samples; else an honest
-      `no_lead` null, or `insufficient`. Diagnostic thresholds only — never feed `l_sys`/P, touch no
+      `no_lead` null, or `insufficient` **[SUPERSEDED same-day by fdb07f8: the verdict is now 5-valued and triple-gated — a +10pp contemporaneous-baseline requirement (else `coincident`) and a ≥3-episode floor (else `insufficient_episodes`); payload +`baseline_hit_pct`/+`episodes`; stride-cached 300s]**. Diagnostic thresholds only — never feed `l_sys`/P, touch no
       fitted constant.
   (c) Surfaced as `data.momentum_lead` (server.rs, same locked block as trend_6h/uncertainty); the
       dashboard momentum gauge (`momLead`) now renders the MEASURED verdict — a compact "leads P ~30m"
@@ -119,7 +119,7 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
   acceptable limitation (it never overclaims). (3) The live `leads/no_lead/insufficient` value is
   data-dependent and can only be observed on the running service (the ring is empty in-sandbox); the
   MATH is what the cloud locks — do not "fix" a sandbox `insufficient` verdict. (4) The per-theater
-  ladder-chip momentum tooltip still says "a leading signal, distinct from the heat trend" — that is
+  ladder-chip momentum tooltip SAID "a leading signal, distinct from the heat trend" — SUPERSEDED same-day: fdb07f8 replaced that copy with "the direction of coverage… (whether momentum LEADS P is measured only at the systemic gauge)". It was
   a direction≠level claim (definitionally true), deliberately left; earning it would need a
   per-theater lead-lag measure (roadmap 1.9 FOLLOW-UP).
 
