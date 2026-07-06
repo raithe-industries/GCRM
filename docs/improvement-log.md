@@ -22,6 +22,62 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-06 (evening) — awareness (MATH-ANALYTIC) — the headline now says HOW LONG it has held its alert band (the TIME axis)
+- Item: roadmap 1.13 (new) — standing lane 1 MATH-ANALYTIC. A new computed gauge from the durable ring.
+- Diagnosis (AWARENESS weakest of the three, per mission WHERE/WHY over HOW-MUCH): the recent runs
+  gave the operator how HIGH (level), whether MOVING (delta/trend/momentum), WHERE in the numeric range
+  (`read_range`), WHICH force/theater (load-bearing), and whether the band HOLDS (band_coverage) — but
+  the TIME axis of the state was entirely unshown. A flash spike into Critical and a Critical entrenched
+  for days rendered identically; entrenchment (how long the read has SUSTAINED a severity) is a distinct,
+  operator-critical read that none of the existing fields carry. `grep` confirmed no dwell/time-at-level/
+  duration gauge anywhere in src or the dashboard.
+- Change (new server-computed AWARENESS gauge; diagnostic only, never feeds P):
+  (a) `EpochStore::alert_dwell` / `alert_dwell_window` (aggregator.rs, beside the other ring diagnostics):
+      walking the durable ring newest→oldest, the CONTIGUOUS run of ticks whose alert band is at OR ABOVE
+      the current one, reported as `now − (oldest tick in that run)`. "At or above" (not exact-level) so a
+      read that climbed Elevated→Critical still answers "time since we last dropped below this severity"
+      when asked at the Elevated floor — the operator-meaningful entrenchment horizon. The run BREAKS on
+      the first below-band tick (a real boundary → `capped:false`), and FAILS CLOSED on an unparseable
+      timestamp or a MISSING/unknown `alert` field (never extends the dwell across a tick it cannot
+      confirm — honesty over a flattering-longer number). When it reaches the ring edge without a boundary,
+      `capped:true` and the dwell is a FLOOR (`≥`) — the true dwell began before the stored horizon.
+      Honest-null (`available:false`) below 3 contiguous in-band ticks or on an unknown current-alert token.
+      `alert_rank` (normal<elevated<critical) kept in sync with `AlertLevel`.
+  (b) Served top-level as `data.alert_dwell` (server.rs, the band_coverage precedent), from
+      `snap.alert_level`.
+  (c) Dashboard: a context-strip readout (`#ca-dwell`, "At level: ≥3d 4h @ Critical"), red/amber-tinted by
+      band, `≥`-prefixed and tooltip-explained when capped, and HIDDEN on honest-null so a cold ring never
+      fabricates a duration or shows a per-tab guess.
+  (d) Eyes gate (deploy): `#ca-dwell` must EXIST, and WHEN its box is visible must carry a well-formed
+      dwell string (`[≥]Xd Yh @ Level`), never a stuck "—" — locks structure+format without false-rolling a
+      cold ring (a hidden box passes as honest-null).
+- Metric moved: new server-computed AWARENESS gauge (the TIME the read has sustained its alert band —
+  entrenchment), the first read on the state's duration. +6 tests (587 → 593 passed). NO calibration
+  constant touched — computed after P is final, never feeds it; the four anchors are bit-identical
+  (`cargo test backtest` green: 24/24; bands quiet/Ukraine/current_2026=60%/Cuba all in-band).
+- Proof: `cargo build --release` clean (warnings are vendored feed-rs). `cargo test --release`
+  **593 passed / 0 failed / 5 ignored**. `cargo clippy --release -p gcrm` — 0 warnings from touched src/
+  files. `node --check deploy/eyes/smoke.mjs` OK. Lock proven fails-without-change: neutering the band
+  predicate `Some(r) if r >= cur_rank` → `== cur_rank` (exact-level instead of at-or-above) →
+  `alert_dwell_window_measures_time_at_or_above_current_band` FAILS (the two above-band Critical ticks stop
+  being counted, samples 4→wrong, dwell 240→wrong); restored → 593 green.
+- Tier: T1 (a NEW computed gauge — the sustained-dwell/entrenchment horizon of the current alert band, a
+  genuinely new quantity/units the existing fields do not carry; the TIME axis distinct from level/delta/
+  trend/range. NOT a restyle of the alert level: it computes a duration the level never carries, and the
+  at-or-above test is behaviorally locked against exact-level) · Touched: engine-behavior (new server-side
+  computation + client consumes it; the behavioral lock fails when the band predicate is neutered) ·
+  Lock-fails-without-change: yes (neutered-predicate proof above) · Counts: none of Live-sources/Map-layers/
+  Monitors moved — an awareness gauge · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `alert_dwell` is DIAGNOSTIC — read off the archived ring AFTER P is
+  final; it never touches P, the band, or a fitted constant. (2) The "at or above" (not exact-level)
+  semantics are deliberate and behaviorally locked — do NOT change to exact-level; that would make an
+  Elevated-floor query blind to the time already spent in Critical. (3) The fail-closed breaks (missing
+  `alert`, unparseable `t`) are honesty guards — an unconfirmable tick ENDS the run, it must never be
+  skipped to extend the dwell. (4) `capped:true` means the dwell is a FLOOR (`≥`); keep the `≥` prefix so
+  it is never read as an exact age. (5) `alert_rank` must stay in sync with `AlertLevel` — a new alert
+  level needs a rank here or dwell fails closed on it.
+
 ## 2026-07-06 (late) — honesty (MATH-ANALYTIC) — the uncertainty band now VALIDATES itself against the archived history
 - Item: roadmap 1.12 (new) — standing lane 1 MATH-ANALYTIC, the scorecard's open "calibration
   diagnostics beyond the four anchors (reliability/sharpness over the archived epoch history)".

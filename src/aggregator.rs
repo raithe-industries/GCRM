@@ -1002,6 +1002,81 @@ impl EpochStore {
         })
     }
 
+    /// Public entry: how long the headline has been CONTINUOUSLY at or above its current alert
+    /// band, read off the durable ring. The TIME dimension of the current state — orthogonal to
+    /// how HIGH (level), whether it is MOVING (delta/trend), and WHERE it sits in its numeric
+    /// range (`read_range`). An operator reads a flash spike into Critical differently from a
+    /// Critical that has held for days (entrenchment). Diagnostic only — reads the archived ring
+    /// AFTER P is final; never feeds P or any fitted constant.
+    pub fn alert_dwell(&self, current_alert: &str) -> serde_json::Value {
+        self.alert_dwell_window(current_alert, Utc::now(), ALERT_DWELL_MIN_SAMPLES)
+    }
+
+    /// Testable core of [`alert_dwell`]. Walking the ring newest→oldest, count the CONTIGUOUS run
+    /// of entries whose alert band is at or ABOVE the current one, and report `now − (oldest tick
+    /// in that run)` as the dwell. "At or above" (not exact-level) so a read that climbed
+    /// Elevated→Critical still reports the full time it has been *at least* Elevated when asked at
+    /// the Elevated floor — the operator-meaningful "time since we last dropped below this
+    /// severity". The run BREAKS on the first entry below the band, on an unparseable timestamp,
+    /// or on a MISSING/unknown alert field (fail-closed: an entry we cannot confirm held the band
+    /// ends the claim rather than silently extending it). When the run reaches the oldest ring
+    /// entry without ever dropping below, `capped:true` and the dwell is a FLOOR (the true dwell
+    /// began before the ring's horizon). Honest-null (`available:false`) below `min_samples` or
+    /// when the current alert is unknown. Touches no fitted constant and never feeds P.
+    pub fn alert_dwell_window(
+        &self,
+        current_alert: &str,
+        now: DateTime<Utc>,
+        min_samples: usize,
+    ) -> serde_json::Value {
+        let cur_rank = match alert_rank(current_alert) {
+            Some(r) => r,
+            None => return serde_json::json!({ "available": false, "reason": "unknown_alert" }),
+        };
+        let mut samples = 0usize;
+        let mut oldest_t: Option<DateTime<Utc>> = None;
+        let mut broke = false; // saw an entry BELOW the band → a real boundary, not the ring edge
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => break, // unparseable tick — fail closed, do not extend the run past it
+            };
+            if t > now {
+                continue; // ignore any future-dated tick (clock skew) without breaking the run
+            }
+            match e.get("alert").and_then(|v| v.as_str()).and_then(alert_rank) {
+                Some(r) if r >= cur_rank => {
+                    samples += 1;
+                    oldest_t = Some(t);
+                }
+                Some(_) => {
+                    broke = true;
+                    break;
+                }
+                None => break, // missing/unknown alert on an in-band-until-now run — fail closed
+            }
+        }
+        if samples < min_samples {
+            return serde_json::json!({
+                "available": false,
+                "samples":   samples,
+            });
+        }
+        let dwell_secs = oldest_t.map(|o| (now - o).num_seconds().max(0)).unwrap_or(0);
+        serde_json::json!({
+            "available":  true,
+            "level":      current_alert,
+            "dwell_secs": dwell_secs,
+            "samples":    samples,
+            // No boundary within the ring → the run began before the horizon; dwell is a floor.
+            "capped":     !broke,
+        })
+    }
+
     /// Stride-cached public entry: the window scan reads the whole 48h series, its
     /// answer can only change once per [`MOM_LL_STRIDE_SECS`], and it runs on the 1 Hz
     /// broadcast path under the shared epoch_store lock — so recompute at most once
@@ -1244,6 +1319,23 @@ const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an ep
 const READ_RANGE_WINDOW_SECS: i64 = 24 * 3600;
 const READ_RANGE_MIN_SAMPLES: usize = 30;
 const FLAT_RANGE_PP: f64 = 0.3;
+
+// Alert-dwell parameter (DISPLAY/diagnostic only — never touches P or any fitted constant). The
+// minimum contiguous in-band ticks before a dwell duration is claimed: below this the ring is too
+// thin to assert "held for", so the read is honest-null rather than reporting a near-zero span.
+const ALERT_DWELL_MIN_SAMPLES: usize = 3;
+
+/// Ordinal severity of a serialized alert level (`AlertLevel::Display`), so a dwell run can test
+/// "at or above the current band". `None` for any unknown token — the caller fails closed on it.
+/// Kept in sync with `AlertLevel` (normal < elevated < critical); a new level must be added here.
+fn alert_rank(s: &str) -> Option<u8> {
+    match s {
+        "normal" => Some(0),
+        "elevated" => Some(1),
+        "critical" => Some(2),
+        _ => None,
+    }
+}
 
 // Band-coverage parameters (DISPLAY/diagnostic only — none touches P or any fitted constant). This is
 // the honest self-VALIDATION of the published uncertainty band: does reality stay inside it? Over a
@@ -2968,6 +3060,99 @@ mod tests {
         let r = es.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
         assert_eq!(r["available"], false, "too few pairs must not fabricate a coverage read");
         assert_eq!(r["verdict"], "insufficient");
+    }
+
+    // ── Alert-band dwell (the TIME axis of the current state) ──────────────────────
+
+    fn dwell_entry(secs_ago: i64, now: DateTime<Utc>, alert: &str) -> serde_json::Value {
+        serde_json::json!({
+            "t": (now - chrono::Duration::seconds(secs_ago)).to_rfc3339(),
+            "p_annual": 0.05,
+            "alert": alert,
+        })
+    }
+
+    #[test]
+    fn alert_dwell_window_measures_time_at_or_above_current_band() {
+        // The read climbed normal→elevated→critical. Asked at the ELEVATED floor, the dwell must
+        // count the ENTIRE contiguous run that is at OR ABOVE elevated — including the two later
+        // CRITICAL ticks — and stop at the normal tick below the band. Exact-level matching would
+        // break at the first critical tick and report nothing, so this locks the "at or above"
+        // semantics, not just presence.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(dwell_entry(300, now, "normal")); // below the band → the boundary
+        es.push(dwell_entry(240, now, "elevated"));
+        es.push(dwell_entry(180, now, "elevated"));
+        es.push(dwell_entry(120, now, "critical"));
+        es.push(dwell_entry(60, now, "critical")); // newest
+        let r = es.alert_dwell_window("elevated", now, 3);
+        assert_eq!(r["available"], true, "an in-band run past the floor must produce a dwell");
+        assert_eq!(r["level"], "elevated");
+        assert_eq!(r["samples"], 4, "all four at-or-above-elevated ticks count (2 elevated + 2 critical)");
+        assert_eq!(r["dwell_secs"], 240, "dwell runs from the oldest in-band tick (240s ago) to now");
+        assert_eq!(r["capped"], false, "the run hit a normal tick below the band — a real boundary");
+    }
+
+    #[test]
+    fn alert_dwell_window_caps_when_the_run_reaches_the_ring_edge() {
+        // The whole ring is at or above the band with no lower tick before it — the dwell BEGAN
+        // before the stored horizon, so it is a FLOOR (`capped:true`), not an exact age.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for &s in &[200_i64, 150, 100, 50] {
+            es.push(dwell_entry(s, now, "critical"));
+        }
+        let r = es.alert_dwell_window("critical", now, 3);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["capped"], true, "no boundary within the ring → the dwell is a floor");
+        assert_eq!(r["dwell_secs"], 200, "floor spans the oldest stored in-band tick");
+        assert_eq!(r["samples"], 4);
+    }
+
+    #[test]
+    fn alert_dwell_window_honest_null_below_min_samples() {
+        // Too few contiguous in-band ticks to assert a duration → no fabricated dwell.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(dwell_entry(120, now, "critical"));
+        es.push(dwell_entry(60, now, "critical"));
+        let r = es.alert_dwell_window("critical", now, 3);
+        assert_eq!(r["available"], false, "2 ticks is below the 3-sample floor");
+        assert_eq!(r["samples"], 2);
+    }
+
+    #[test]
+    fn alert_dwell_window_fails_closed_on_a_missing_alert_field() {
+        // An entry we cannot confirm held the band (no `alert` field) ENDS the run rather than
+        // silently extending the dwell across it — fail closed, never overstate entrenchment.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        es.push(dwell_entry(300, now, "critical")); // older, but unreachable past the gap
+        es.push(serde_json::json!({ // in-run tick with NO alert field
+            "t": (now - chrono::Duration::seconds(240)).to_rfc3339(),
+            "p_annual": 0.05,
+        }));
+        es.push(dwell_entry(180, now, "critical"));
+        es.push(dwell_entry(120, now, "critical"));
+        es.push(dwell_entry(60, now, "critical")); // newest
+        let r = es.alert_dwell_window("critical", now, 2);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["samples"], 3, "the run stops at the missing-alert gap, not the older critical tick");
+        assert_eq!(r["dwell_secs"], 180, "dwell must not extend across the unconfirmable tick");
+    }
+
+    #[test]
+    fn alert_dwell_window_honest_null_on_unknown_alert() {
+        // An unrecognized current-alert token cannot be ranked → honest-null, never a guess.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for &s in &[200_i64, 150, 100, 50] {
+            es.push(dwell_entry(s, now, "critical"));
+        }
+        let r = es.alert_dwell_window("chartreuse", now, 3);
+        assert_eq!(r["available"], false);
+        assert_eq!(r["reason"], "unknown_alert");
     }
 
     // ── Honesty-layer uncertainty interval ────────────────────────────────────────

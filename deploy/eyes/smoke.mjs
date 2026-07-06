@@ -244,6 +244,24 @@ if (latest) {
       fail.push(`#gauge-band-cov rendered a malformed coverage line ("${clip(bc)}") — expected "band held N% of reads · <verdict> (n=P)"`);
     else ok(`band self-validation caption intact (#gauge-band-cov = "${bc ? clip(bc) : '(honest-null: thin ring)'}")`);
   }
+
+  // Alert-band dwell readout (#ca-dwell): the TIME the read has held at/above its current band.
+  // Honest-null (cold ring / older backend) HIDES its box, so we cannot demand non-"—". Instead:
+  // the node must EXIST (a dropped/renamed element fails), and WHEN its box is visible it must
+  // carry a well-formed dwell string ("[≥]Xd Yh @ Level"), never a stuck "—" or a stray token.
+  const dwEl = await page.$('#ca-dwell');
+  if (!dwEl) fail.push('#ca-dwell (alert-band dwell) missing — the "at level" duration readout was dropped from the DOM');
+  else {
+    const visible = await page.$eval('#ca-dwell-box', (el) => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).catch(() => false);
+    const dw = await page.$eval('#ca-dwell', (el) => el.textContent.trim()).catch(() => null);
+    if (!visible) ok('alert-band dwell honest-null (hidden: cold ring / no durable field)');
+    else if (!dw || dw === '—') fail.push('#ca-dwell box is visible but stuck on the "—" placeholder — renderDwell did not populate the dwell');
+    else if (!/^≥?\d+[dhms]( \d+[hm])? @ \w+$/.test(dw)) fail.push(`#ca-dwell rendered a malformed dwell ("${clip(dw)}") — expected "[≥]Xd Yh @ Level"`);
+    else ok(`alert-band dwell populated (#ca-dwell = "${clip(dw)}")`);
+  }
 }
 
 await browser.close();

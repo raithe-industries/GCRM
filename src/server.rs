@@ -255,6 +255,11 @@ pub async fn broadcast_snapshots(
                 // reconstruction omits the confidence-widening term, so the coverage is a conservative
                 // floor. Diagnostic only; never feeds P. (EpochStore::band_coverage.)
                 data["band_coverage"] = es.band_coverage();
+                // Awareness layer: how LONG the read has been continuously at or above its current
+                // alert band (EpochStore::alert_dwell), read off the durable ring. The TIME axis of
+                // the current state — a flash spike into Critical reads differently from a Critical
+                // that has held for days. Diagnostic only; never feeds P.
+                data["alert_dwell"] = es.alert_dwell(&snap.alert_level.to_string());
             }
             data["epistemic"] = serde_json::json!({
                 "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
@@ -812,6 +817,21 @@ mod tests {
             "the caption must read the server-provided band_coverage validation");
         assert!(DASHBOARD_HTML.contains("band held "),
             "a judged band must state the realized coverage share");
+    }
+
+    #[test]
+    fn dashboard_renders_the_alert_dwell() {
+        // AWARENESS (the TIME axis of the state): the context strip must consume the server-computed
+        // dwell (server field alert_dwell / EpochStore::alert_dwell) — how long the read has been
+        // continuously at or above its current alert band — so a flash spike reads differently from
+        // an entrenched, days-long Critical. Lock the render fn, the consumer of the server field, the
+        // element, and the honest-null hide (a cold ring must not fabricate a duration).
+        assert!(DASHBOARD_HTML.contains("renderDwell") && DASHBOARD_HTML.contains("d.alert_dwell"),
+            "the readout must consume the server-provided alert_dwell duration");
+        assert!(DASHBOARD_HTML.contains("ca-dwell"),
+            "the context strip must carry the dwell element");
+        assert!(DASHBOARD_HTML.contains("At level:"),
+            "the dwell readout must be labeled so the operator reads it as time-at-band");
     }
 
     #[test]

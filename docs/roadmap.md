@@ -357,6 +357,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   MUST breach — fails when the in-band membership check is neutered to always-covered),
   `band_coverage_window_reports_full_coverage_on_a_stable_series`, `band_coverage_window_honest_null_below_
   min_pairs`, + `dashboard_renders_the_band_coverage_validation`. See improvement-log 2026-07-06 (late).
+- [x] **1.13 Alert-band DWELL — the TIME axis of the current state** — **DONE 2026-07-06 (evening).**
+  The operator could see how HIGH the read is (alert level), whether it is MOVING (delta/trend),
+  and WHERE it sits in its numeric range (`read_range`) — but never how LONG it had held its current
+  severity. A flash spike into Critical and a Critical entrenched for days read identically. Added
+  `EpochStore::alert_dwell` (a new computed gauge from the durable ring): walking newest→oldest,
+  the CONTIGUOUS run of ticks at OR ABOVE the current alert band, reported as `now − oldest-in-run`.
+  "At or above" (not exact-level) = "time since we last dropped below this severity"; the run breaks
+  on the first below-band tick (a real boundary → `capped:false`), fails closed on an unparseable
+  timestamp or a MISSING/unknown `alert` field (never extends across a tick it cannot confirm), and
+  reports `capped:true` (a FLOOR) when it reaches the ring edge without a boundary. Honest-null below
+  3 contiguous ticks or on an unknown current-alert token. Diagnostic only — read AFTER P is final;
+  never feeds P or any fitted constant; anchors bit-identical (backtest 24/24). Served as
+  `data.alert_dwell`, rendered in the context strip (`#ca-dwell`, "At level: ≥3d 4h @ Critical",
+  hidden on honest-null), watched by the eyes gate. Locked by
+  `alert_dwell_window_measures_time_at_or_above_current_band` (fails when `>=` is neutered to `==`),
+  `_caps_when_the_run_reaches_the_ring_edge`, `_honest_null_below_min_samples`,
+  `_fails_closed_on_a_missing_alert_field`, `_honest_null_on_unknown_alert`,
+  `dashboard_renders_the_alert_dwell`. See improvement-log 2026-07-06 (evening).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
