@@ -143,7 +143,12 @@ Bias each run toward the least-covered axis below.
   machine-readable form (the PDF/para text needs a geometry anchor — same failure mode
   as `broadcast-warn` unless a KML/shapefile/API exists); (b) **IMB Piracy Reporting
   Centre live map** (icc-ccs.org — licensing/scrape-ban must be verified first);
-  (c) **ReCAAP ISC** (Asia piracy, official reports; check for JSON). The dormant
+  (c) **ReCAAP ISC** (Asia piracy, official reports; check for JSON — probed 2026-07-06 but
+  UNVERIFIED: `recaap.org` egress-policy-403 + web search outage that run, schema/auth not confirmed).
+  **NGA `broadcast-warn` (NAVAREA) ruled out 2026-07-06 as a Path-A feed:** though the MSI stack is
+  alive (unlike ASAM's removed product) it 200s only *with a WAF/browser session*, so a plain-client
+  connector would WAF-403 in prod — same wall that keeps `asam` dormant; needs a session-free path or a
+  non-WAF NAVAREA coordinator. The dormant
   `asam` connector's parser/severity ladder is reusable if any successor speaks a
   compatible schema. Also remaining: **live AIS traffic** outside the Baltic
   (positions, not incidents) — other
@@ -267,6 +272,35 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-06 (Signal Hunter)** — **HONEST NO-OP: dual verification-tool outage; nothing shippable
+  clears the six-point bar this run.** Ranked the mission gaps (military-posture observables >
+  Asian-theatre maritime > global NOTAM-class airspace > conflict freshness) and worked the top
+  candidates, each blocked by tooling, not by the source itself:
+  (1) **NGA Broadcast Warnings / NAVAREA** (`msi.nga.mil/api/publications/broadcast-warn`) — the
+  strongest lead (naval-exercise / missile-firing danger areas + live-fire closures worldwide, closes
+  BOTH military-posture and Asian-maritime). **Ruled out as a Path-A feed:** the host sits behind the
+  same NGA WAF that stranded `asam` (ledger-confirmed: `broadcast-warn` only 200s *with a valid WAF
+  session*), so a plain-client fetch (all our connectors use one) would WAF-403 in prod exactly as it
+  does here — same failure class as the dormant `asam`. Not adopted; revisit only if a browser-session-free
+  MSI path or an authoritative non-WAF NAVAREA coordinator surfaces.
+  (2) **ReCAAP ISC** (Asia piracy/sea-robbery, official intergovernmental body) — could not verify:
+  `recaap.org` is egress-policy-403 from this sandbox and **web search was in a sustained 529 outage all
+  run** (~20 min, ~18 attempts, every query), so its schema / auth-model / geometry could not be
+  confirmed and no committed consumer could be located to anchor. **Left unevaluated (not rejected)** —
+  re-attempt when web search recovers; the dormant `asam` parser + escalation ladder are reusable if the
+  schema is compatible.
+  (3) **ACLED `acled_aggregated` refresh** — the committed snapshot's newest `WEEK` is `2026-03-07`
+  (121 days old today); the connector's `MAX_ROW_AGE_DAYS = 42` gate against *today* is doing its job, so
+  the ACLED contribution to the Conflict layer is **currently dark (honestly empty), not painting stale
+  March heat as current**. Re-lighting it needs a fresh ACLED aggregate, but that download is a documented
+  **local** re-download job (acleddata.com / HDX are license-gated and egress-policy-403 from the cloud
+  sandbox) — not doable from here this run.
+  **Root cause of the no-op:** dual tool degradation — web search 529-overloaded the entire run (blocking
+  candidate discovery + committed-consumer anchoring) and the session egress policy 403s every non-GitHub
+  host via web fetch (only `raw.githubusercontent.com` + package registries reachable — confirmed via
+  `$HTTPS_PROXY/__agentproxy/status` `noProxy` list). Neither is fakeable around, and the bar forbids
+  fabricating a liveness check. No code touched; tree left clean; ledger-only commit. UCDP still carries
+  the Conflict layer live. Retry the NAVAREA-successor + ReCAAP leads next run once web search is back.
 - **2026-07-05 (local watch, evening)** — **RUSTSEC-2026-0194/0195 RESOLVED (operator-approved):**
   feed-rs 1.5.3 → **vendored 2.3.1** (`vendor/feed-rs`) with quick-xml **0.31 → 0.41** (the patched
   line). Two surgical vendor patches restore feed-rs 1.x text semantics: (1) quick-xml ≥0.36 emits
