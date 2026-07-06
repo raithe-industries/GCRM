@@ -35,8 +35,8 @@
 //! ## Path A (prod fetches live) — GitHub-anchored schema
 //! The live host 403s web fetch in-sandbox (as every gov host does), so endpoint,
 //! stored-query id, wire schema and **auth model** are anchored to committed bytes:
-//! STUK's own official open-data client `StukFi/opendata` (`wfs_scripts/fmi_utils.py`
-//! + `process_data.py`, fetched off `raw.githubusercontent.com`). It requests
+//! STUK's own official open-data client `StukFi/opendata` (`wfs_scripts/fmi_utils.py` +
+//! `process_data.py`, fetched off `raw.githubusercontent.com`). It requests
 //! `https://opendata.fmi.fi/wfs/eng?request=GetFeature&storedquery_id=stuk::observations::external-radiation::multipointcoverage&starttime=…&endtime=…`
 //! with a **plain keyless `urlopen`** (no key, no header → auth-free), and parses the
 //! GML exactly as here: `gml:Point` members give each station's `gml:name` +

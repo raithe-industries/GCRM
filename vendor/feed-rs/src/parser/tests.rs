@@ -37,12 +37,12 @@ fn serde_regression() {
     let fixture_root_dir = test::fixture_dir();
     find_fixture_files(&fixture_root_dir, |source_path, json_path| {
         // Parse the original fixture file
-        let data = fs::read(&source_path).unwrap();
+        let data = fs::read(source_path).unwrap();
         let parser = parser::Builder::default().sanitize_content(false).build();
         let mut feed = parser.parse(data.as_slice()).unwrap();
 
         // Parse the previously serialised form
-        let serde_data = fs::read(&json_path).unwrap();
+        let serde_data = fs::read(json_path).unwrap();
         let mut serde_feed = serde_json::from_slice(&serde_data).unwrap();
 
         // Basic check, and then try with replaced IDs too

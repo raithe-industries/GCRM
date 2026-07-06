@@ -431,6 +431,7 @@ impl ArticleStore {
     ///  - a syndicated wire story re-headlined by another outlet, or an outlet's
     ///    video twin of its own text story (the row is CLUTTER — the event
     ///    pipeline still sees the article, so corroboration credit is unaffected).
+    ///
     /// Measured threshold: every sampled pair ≥0.70 trigram-Jaccard was a true
     /// duplicate; distinct stories in the sample sat ≤0.55.
     pub fn near_duplicate_of(&self, title: &str, source: &str) -> NearDup {
