@@ -181,6 +181,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // systemic "which kind of force is holding up this number, and by how much". Diagnostic;
         // never feeds P. Top-level so a consumer needn't dig into the snapshot struct.
         "load_bearing_modality": snap.load_bearing_modality,
+        // Which THEATER is LOAD-BEARING for the headline (leave-one-out sensitivity) — the
+        // systemic "which flashpoint is holding up this number, and by how much". Diagnostic;
+        // never feeds P. Top-level, the load_bearing_modality precedent.
+        "load_bearing_theater": snap.load_bearing_theater,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -1843,6 +1847,12 @@ mod tests {
             "load_bearing_modality must carry an availability flag");
         assert!(v["load_bearing_modality"]["profile"].is_array(),
             "load_bearing_modality must carry the per-modality attribution profile");
+        // The theater-sensitivity read (load-bearing theater) is on the served contract.
+        assert!(v["load_bearing_theater"].is_object(), "load_bearing_theater must be served");
+        assert!(v["load_bearing_theater"]["available"].is_boolean(),
+            "load_bearing_theater must carry an availability flag");
+        assert!(v["load_bearing_theater"]["profile"].is_array(),
+            "load_bearing_theater must carry the per-theater attribution profile");
     }
 
     // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────

@@ -225,6 +225,11 @@ if (latest) {
   if (lb == null) fail.push('#f-loadbearing (load-bearing modality) missing — model-state footer not rendered');
   else if (lb === '' || lb === '—') fail.push('#f-loadbearing stuck on the "—" placeholder — the load-bearing modality footer did not render');
   else ok(`load-bearing modality footer populated (#f-loadbearing = "${clip(lb)}")`);
+
+  const lt = await settled('#f-loadtheater');
+  if (lt == null) fail.push('#f-loadtheater (load-bearing theater) missing — model-state footer not rendered');
+  else if (lt === '' || lt === '—') fail.push('#f-loadtheater stuck on the "—" placeholder — the load-bearing theater footer did not render');
+  else ok(`load-bearing theater footer populated (#f-loadtheater = "${clip(lt)}")`);
 }
 
 await browser.close();

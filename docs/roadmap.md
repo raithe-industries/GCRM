@@ -321,6 +321,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `dashboard_renders_the_load_bearing_modality`, + the served-JSON key assert. See improvement-log
   2026-07-05. FOLLOW-UP [candidate]: surface the top-2 profile entries (not just the leader) when two
   modalities are close, so a genuinely two-dimensional crisis reads as such.
+- [x] **1.11 Load-bearing THEATER — leave-one-out sensitivity of the HEADLINE (the WHERE)** — **DONE 2026-07-06.**
+  The place-analog of 1.10: the systemic headline named the HOTTEST theater (`driver`, raw heat) but had
+  no answer to "which FLASHPOINT is holding this number up, and by how much." Because the couplers
+  (concurrency, great-power entanglement, nuclear brink) are non-linear, the loudest theater is NOT
+  always the highest-LEVERAGE one — a cooler theater that is the sole brink or the sole second-great-power
+  contributor can drop P more when it leaves. Computed a leave-one-out over theaters in `compute`
+  (Step 7b, beside the modality read): remove each theater from the board, re-aggregate `l_sys` via the
+  existing `aggregate_l_sys`, map back to P the SAME way, name the theater whose absence drops the
+  headline P the most (`load_bearing_theater`: label + id + `p_drop_pp` + full sorted profile +
+  `available`, reusing the modality read's relative display floor). Honest-null when no theater carries a
+  meaningful share; "held by war-state memory" / "spread across theaters" copy otherwise. Diagnostic only
+  — never feeds P, touches no fitted constant; the four anchors are bit-identical. Rendered on the
+  model-state footer (`f-loadtheater`) and watched by the eyes gate (section 8). Locked by
+  `theater_sensitivity_names_the_highest_leverage_theater_not_the_loudest` (a synthetic board where the
+  brink theater outranks the hotter one — proves leverage≠heat), `snapshot_attributes_the_headline_to_a_
+  load_bearing_theater` (end-to-end through `compute`; fails when the compute block is stashed →
+  `available=false`), `dashboard_renders_the_load_bearing_theater`, + the served-JSON key assert. See
+  improvement-log 2026-07-06.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session

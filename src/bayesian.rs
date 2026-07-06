@@ -952,6 +952,37 @@ impl BayesianRiskEngine {
                 profile,
                 available,
             };
+
+            // ── Load-bearing THEATER (leave-one-out over the board) ──
+            // The place-analog of the modality read above: recompute l_sys with each theater
+            // REMOVED from the board and map it back to P the SAME way, then name the theater
+            // whose absence drops the headline the most. Answers WHERE the number comes from —
+            // distinct from `driver` (the HOTTEST theater by raw heat): the couplers are
+            // non-linear, so the highest-LEVERAGE theater (sole brink / sole 2nd great power)
+            // need not be the loudest. Same p_base, same unclamped map, same relative display
+            // floor — a pure counterfactual over `snap.theaters`; it never feeds P.
+            let mut tprofile: Vec<(String, String, f64)> = Vec::new();
+            for (i, t) in snap.theaters.iter().enumerate() {
+                // "if this theater were absent from the board": everything but index i.
+                let without: Vec<crate::models::TheaterState> = snap.theaters.iter()
+                    .enumerate().filter(|(j, _)| *j != i).map(|(_, s)| s.clone()).collect();
+                let p_sup = p_of_lsys(crate::theater::aggregate_l_sys(&without, None));
+                let drop_pp = ((p_base - p_sup).max(0.0) * 100.0 * 1e2).round() / 1e2;
+                tprofile.push((t.theater_id.clone(), t.label.clone(), drop_pp));
+            }
+            tprofile.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            let ttop = tprofile.first().cloned().unwrap_or_default();
+            // Reuse the modality read's display floor (relative to the elevation above the flat
+            // baseline, with the small absolute backstop) so both attributions call "diffuse"
+            // at the same honesty bar.
+            let tavailable = ttop.2 >= min_drop_pp;
+            snap.load_bearing_theater = crate::models::TheaterSensitivity {
+                theater:    if tavailable { ttop.1 } else { String::new() },
+                theater_id: if tavailable { ttop.0 } else { String::new() },
+                p_drop_pp:  if tavailable { ttop.2 } else { 0.0 },
+                profile:    tprofile.into_iter().map(|(_, label, pp)| (label, pp)).collect(),
+                available:  tavailable,
+            };
         }
 
         // ── Step 8: Delta (change since the PREVIOUS snapshot) ──

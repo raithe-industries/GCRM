@@ -22,6 +22,57 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-06 — awareness (MATH-ANALYTIC) — the headline now names its LOAD-BEARING THEATER (the WHERE)
+- Item: roadmap 1.11 (new) — standing lane 1 MATH-ANALYTIC (per-theater sensitivity/ablation). The
+  place-analog of 1.10's load-bearing MODALITY.
+- Diagnosis: AWARENESS (WHERE) was the weakest pillar. 1.10 gave the operator which KIND of force
+  carries the number, but WHERE was still only the HOTTEST theater (`driver`, raw heat) — and the
+  couplers (concurrency, great-power entanglement, nuclear brink) are non-linear, so the loudest theater
+  is not always the highest-LEVERAGE one. That gap (loudest ≠ most load-bearing) was invisible.
+- Change (new server-computed gauge; diagnostic only):
+  (a) `bayesian::compute` Step 7b, beside the modality read: a leave-one-out over THEATERS — remove each
+      theater from the scored board, re-aggregate `l_sys` via the EXISTING `theater::aggregate_l_sys`
+      (no signature change: removing a theater = excluding it from the slice), map back to P with the
+      SAME unclamped `p_of_lsys` the modality read uses, and name the theater whose absence drops the
+      headline P the most. `snap.load_bearing_theater` = label + id + `p_drop_pp` + full sorted profile
+      + `available`, reusing the modality read's relative display floor (`min_drop_pp`) so both call
+      "diffuse" at the same honesty bar.
+  (b) Served top-level as `data.load_bearing_theater` (aggregator.rs, the load_bearing_modality
+      precedent) + served-JSON key/shape asserts.
+  (c) Dashboard model-state footer: a new "Load-bearing theater = …" row (`f-loadtheater`) consuming
+      `d.load_bearing_theater`, with honest-null copy ("spread across theaters" / "held by war-state
+      memory") and the pre-ceiling-attribution note when the headline is pegged — mirroring f-loadbearing.
+  (d) Eyes gate (deploy) section 8 now also watches `#f-loadtheater` for the "—" placeholder (a
+      dropped/crashed render), the same discipline as `#f-loadbearing`/`#ca-peak`.
+- Metric moved: new server-computed AWARENESS gauge (the WHERE counterfactual — highest-leverage
+  flashpoint), distinct from the hottest-theater `driver`. +3 tests (575 → 578 passed). NO calibration
+  constant touched — computed AFTER P is final, never feeds it; the four anchors are bit-identical
+  (`cargo test backtest` green; bands quiet/Ukraine/current_2026=60%/Cuba all in-band; ordering holds).
+- Proof: `cargo build --release` clean (3 warnings are vendored feed-rs). `cargo test --release`
+  **578 passed / 0 failed / 5 ignored**. `cargo clippy --release -p gcrm` — 0 warnings from my touched
+  src/ files (remaining are vendor/ee-sources, signal-hunter lane, pre-existing). `node --check
+  smoke.mjs` OK. Lock proven fails-without-change: `git stash push src/bayesian.rs` (compute block only,
+  field kept) → `snapshot_attributes_the_headline_to_a_load_bearing_theater` FAILS ("must have a
+  load-bearing theater" — `available=false` with the compute gone); restored → 578 green. The
+  divergence lock `theater_sensitivity_names_the_highest_leverage_theater_not_the_loudest` pins
+  leverage≠heat on a synthetic board (us_iran heat 0.4105 is hottest, yet removing the nato_russia
+  nuclear-brink theater drops l_sys 0.0853 vs us_iran's 0.0399).
+- Tier: T1 (a NEW computed gauge — the headline's highest-leverage theater via a leave-one-out
+  counterfactual over the board, from new input; the 1.10 load_bearing_modality precedent. NOT a restyle
+  of `driver`: the divergence test proves it names a different theater than raw heat) · Touched:
+  engine-behavior (new server-side diagnostic + client consumes it; the end-to-end lock fails when the
+  compute is stashed) · Lock-fails-without-change: yes (stash proof above) · Counts: none of
+  Live-sources/Map-layers/Monitors moved — an awareness gauge · consecutive_display_only=0 ·
+  display_only_in_last_7=1 (was 2; this run is T1, not display-only) · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `load_bearing_theater` is DIAGNOSTIC — the leave-one-out is over
+  `snap.theaters` AFTER P is final and never touches P or a fitted constant; do not wire it into the
+  number. (2) It reuses `aggregate_l_sys` unchanged (a theater is "absent" ⇔ excluded from the slice) and
+  the modality read's `p_of_lsys` + `min_drop_pp` display floor — keep them shared so the two attributions
+  stay consistent. (3) The argmax is taken at the l_sys level in the theater.rs lock and at the P level in
+  the snapshot; both agree because `p_of_lsys` is monotone — do not "optimize" one to a non-monotone map.
+  (4) The divergence test's inputs are tuned to a narrow window (us_iran just above the brink theater in
+  heat); if a coupler constant changes, re-verify the margins rather than deleting the test.
+
 ## 2026-07-05 (late) — honesty/legibility (VISUAL-ANALYTIC) — the recent-range label follows its data source; the eyes gate now watches both newest awareness surfaces
 - Item: roadmap 2.8 FOLLOW-UP (this evening's read_range work) + standing lane 2 VISUAL-ANALYTIC.
 - Diagnosis: the last two runs shipped two new awareness surfaces — the durable `read_range` context

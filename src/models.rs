@@ -896,6 +896,41 @@ pub struct ModalitySensitivity {
     pub available:  bool,
 }
 
+// ── Theater sensitivity (load-bearing theater) ─────────────────────────────────
+
+/// Systemic theater-SENSITIVITY read: which flashpoint is LOAD-BEARING for the headline
+/// right now, measured by leave-one-out. The engine recomputes the systemic likelihood with
+/// each theater REMOVED FROM THE BOARD and maps it back to P the same way; the theater whose
+/// absence drops the headline P the most is the load-bearing one, and `p_drop_pp` is that drop
+/// in percentage points. This answers WHERE the number is really coming from — a question the
+/// existing fields do NOT answer. `driver` names the HOTTEST theater by raw heat, but the
+/// couplers (concurrency, great-power entanglement, nuclear brink) are non-linear, so the
+/// loudest theater is not always the highest-LEVERAGE one: a slightly cooler theater that is
+/// the sole nuclear-brink or the sole second-great-power contributor can drop P more when it
+/// leaves. `load_bearing_modality` names which KIND of force carries the read; this names which
+/// PLACE — a distinct operator question (which flashpoint to de-escalate/watch, not which force
+/// dimension). A pure diagnostic read-out of a counterfactual over the already-scored board: it
+/// never feeds `l_sys`/P and touches no fitted constant. Empty / `available = false` when the
+/// board is too quiet for any single theater to carry a meaningful share of the headline.
+/// `#[serde(default)]` keeps older persisted snapshots loadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TheaterSensitivity {
+    /// The load-bearing theater's human label (e.g. "US/Israel–Iran"). Empty when unavailable.
+    pub theater:    String,
+    /// The load-bearing theater's stable id (e.g. "us_israel_iran"), for keying. Empty when
+    /// unavailable.
+    pub theater_id: String,
+    /// Headline annual-P drop, in percentage points, if that theater were absent from the board.
+    pub p_drop_pp:  f64,
+    /// Per-theater leave-one-out profile: (theater label, headline-P drop in pp), so the operator
+    /// can see the full attribution, not just the top term. Sorted largest-first.
+    #[serde(default)]
+    pub profile:    Vec<(String, f64)>,
+    /// False when no theater's removal moves the headline by the display floor — the read is
+    /// diffuse / spread across theaters, so naming one load-bearing theater would overclaim.
+    pub available:  bool,
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -962,6 +997,12 @@ pub struct RiskSnapshot {
     #[serde(default)]
     pub load_bearing_modality: ModalitySensitivity,
 
+    /// Which THEATER is LOAD-BEARING for the headline (leave-one-out sensitivity) — the
+    /// systemic "which flashpoint is holding up this number, and by how much". Computed in
+    /// `compute` AFTER P is final, purely from the already-scored board; never feeds P.
+    #[serde(default)]
+    pub load_bearing_theater: TheaterSensitivity,
+
     /// True when the seismic monitor holds a live event the detector judges
     /// consistent with a nuclear test — near a known test site AND past the
     /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
@@ -1011,6 +1052,7 @@ impl Default for RiskSnapshot {
             couplers: SystemicCouplers::default(),
             driver: String::new(),
             load_bearing_modality: ModalitySensitivity::default(),
+            load_bearing_theater: TheaterSensitivity::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
         }

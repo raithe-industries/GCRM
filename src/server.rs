@@ -777,6 +777,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_the_load_bearing_theater() {
+        // AWARENESS (WHERE): the model-state footer must surface WHICH theater is load-bearing
+        // for the headline (the leave-one-out sensitivity, server field load_bearing_theater) and,
+        // honestly, say "spread across theaters" when no single flashpoint carries the number.
+        // Lock the render element + the consumer of the server field + the honest-null copy.
+        assert!(DASHBOARD_HTML.contains("f-loadtheater"),
+            "the model-state footer must carry the load-bearing-theater element");
+        assert!(DASHBOARD_HTML.contains("d.load_bearing_theater"),
+            "the readout must read the server-provided load_bearing_theater sensitivity");
+        assert!(DASHBOARD_HTML.contains("if absent from the board"),
+            "a named load-bearing theater must state its leave-one-out P drop");
+        assert!(DASHBOARD_HTML.contains("spread across theaters — no single flashpoint carries the headline"),
+            "a diffuse read must be named honestly instead of over-attributing to one theater");
+    }
+
+    #[test]
     fn dashboard_renders_the_durable_recent_range_position() {
         // HONESTY + AWARENESS: the context strip must consume the durable, server-computed recent
         // range (server field read_range / EpochStore::read_range) — the 24h high/low + the read's

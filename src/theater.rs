@@ -1127,6 +1127,64 @@ mod tests {
     }
 
     #[test]
+    fn theater_sensitivity_names_the_highest_leverage_theater_not_the_loudest() {
+        // The leave-one-out over THEATERS (the place-analog of the modality read) must identify
+        // WHERE the systemic likelihood comes from: removing a theater from the board can only
+        // LOWER l_sys, and the theater whose absence lowers it MOST is the load-bearing one.
+        // The counterfactual is exactly what `bayesian::compute` runs: drop the theater from the
+        // slice and re-aggregate. Because the headline map `p_of_lsys` is monotone in l_sys, the
+        // argmax over theaters at the l_sys level (locked here) is the same theater the snapshot's
+        // `load_bearing_theater` names — so this pins the mechanism the served field rests on.
+        let drop_if_absent = |states: &[TheaterState], id: &str| -> f64 {
+            let base = aggregate_l_sys(states, None);
+            let without: Vec<TheaterState> =
+                states.iter().filter(|s| s.theater_id != id).cloned().collect();
+            base - aggregate_l_sys(&without, None)
+        };
+
+        // (a) A single hot theater carries the whole board: removing it collapses l_sys, and
+        //     removing a theater with no evidence changes nothing.
+        let solo: Vec<_> = (0..10)
+            .map(|_| ev("us_iran", "military_escalation", 0.92, 0.92, &["united_states", "iran"], true))
+            .collect();
+        let sstates = TheaterEngine::new().compute(&solo).theaters;
+        assert!(drop_if_absent(&sstates, "us_iran") > 0.0,
+            "removing the only hot theater must lower l_sys");
+        assert!(drop_if_absent(&sstates, "us_china_taiwan").abs() < 1e-9,
+            "removing a theater with zero evidence must not move l_sys");
+
+        // (b) The DIVERGENCE case — leverage ≠ heat, the whole reason this gauge is not a restyle
+        //     of the hottest-theater `driver`. Two comparably-hot theaters:
+        //   • us_iran     — three kinetic/economic/diplomatic modalities, but only ONE great power
+        //                   (US; Iran is not one) and NO nuclear brink. Tuned to be the LOUDEST by
+        //                   raw heat.
+        //   • nato_russia — slightly cooler, but a two-great-power FULL NUCLEAR BRINK (US + Russia,
+        //                   posture 0.95). It is the SOLE brink contributor and the SOLE source of
+        //                   the second great power.
+        // Removing nato_russia kills the ×1.7 brink amplifier AND the great-power entanglement —
+        // a larger l_sys drop than removing the marginally-hotter-but-uncoupled us_iran. So the
+        // LOAD-BEARING theater is nato_russia even though us_iran is the hottest: the non-linear
+        // couplers make the highest-leverage flashpoint different from the loudest. (Verified
+        // margins at these inputs: heat 0.4105 vs 0.3981; l_sys drop 0.0399 vs 0.0853.)
+        let mut board = Vec::new();
+        for m in ["military_escalation", "economic_warfare", "diplomatic_breakdown"] {
+            board.extend((0..8).map(|_| ev("us_iran", m, 0.60, 0.60, &["united_states", "iran"], true)));
+        }
+        board.extend((0..10).map(|_| ev("nato_russia", "nuclear_posture", 0.95, 0.95, &["united_states", "russia"], true)));
+        board.extend((0..6).map(|_|  ev("nato_russia", "military_escalation", 0.30, 0.30, &["united_states", "russia"], true)));
+        let bstates = TheaterEngine::new().compute(&board).theaters;
+        let hottest = bstates.iter()
+            .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap().theater_id.clone();
+        assert_eq!(hottest, "us_iran", "sanity: us_iran must be the loudest theater by raw heat");
+        let d_iran   = drop_if_absent(&bstates, "us_iran");
+        let d_russia = drop_if_absent(&bstates, "nato_russia");
+        assert!(d_russia > d_iran,
+            "the brink/entanglement theater must be the highest-leverage one even though it is \
+             not the hottest (nato_russia drop {d_russia:.5} must exceed us_iran drop {d_iran:.5})");
+    }
+
+    #[test]
     fn escalation_momentum_surfaces_the_signed_news_flow_direction() {
         // The recency-weighted mean signed `escalation_step`, surfaced as a per-theater gauge in
         // [−1,+1] — the same quantity the de-escalation floor gate thresholds, exposed as a

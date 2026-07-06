@@ -436,6 +436,37 @@ fn snapshot_attributes_the_cuba_headline_to_nuclear_posture() {
 }
 
 #[test]
+fn snapshot_attributes_the_headline_to_a_load_bearing_theater() {
+    // End-to-end lock for the theater-sensitivity read through `compute`: the multi-theater
+    // current-2026 analog's headline must attribute to a load-bearing THEATER — the flashpoint
+    // whose absence from the board drops P the most. Proves the leave-one-out over theaters is
+    // wired from the scored board through P and reaches the snapshot. Diagnostic only: the headline
+    // P itself is unchanged by this read (computed after the P math, pinned by the `bands_*` tests).
+    let s = run(current_2026().0, &current_2026().1);
+    let lt = &s.load_bearing_theater;
+    assert!(lt.available, "the 3-theater current-world headline must have a load-bearing theater");
+    assert!(!lt.theater.is_empty() && !lt.theater_id.is_empty(),
+        "a named load-bearing theater must carry both a label and an id");
+    assert!(lt.p_drop_pp > 0.0, "a load-bearing theater must carry a positive headline P drop");
+    assert_eq!(lt.profile.len(), s.theaters.len(),
+        "the attribution profile must cover every theater on the board");
+    // The profile is sorted largest-first and its top entry is the named theater's label.
+    assert_eq!(lt.profile[0].0, lt.theater,
+        "profile must be sorted with the load-bearing theater first");
+    for w in lt.profile.windows(2) {
+        assert!(w[0].1 >= w[1].1, "the theater attribution profile must be sorted largest-first");
+    }
+
+    // An EMPTY board attributes nothing — with no events the headline sits at the flat baseline
+    // and no theater carries it, so naming one would overclaim (available=false).
+    let empty_snap = run(1.0, &[]);
+    assert!(!empty_snap.load_bearing_theater.available,
+        "an empty board must not name a load-bearing theater");
+    assert!(empty_snap.load_bearing_theater.theater.is_empty(),
+        "an empty board's load-bearing theater must be blank");
+}
+
+#[test]
 fn ordering_holds() {
     let q = p_of(quiet());
     let u = p_of(ukraine_2022());
