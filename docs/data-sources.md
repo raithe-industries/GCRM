@@ -125,6 +125,34 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   in summer; lights up ~late-Nov→Apr). Joins product `area.id` ↔ areas feature `id`, centroid.
 - **CCCS cyber** (`cccs`) — already a registry connector; lift onto a UI surface (a cyber
   panel), not the map.
+- **FEWS NET / IPC acute food insecurity** (`fdw.fews.net/api/ipcphasemap/?…&format=geojson`)
+  — **STRONG deferral, blocked 2026-07-06 only on real-bytes schema anchoring.** Opens a
+  genuinely new **humanitarian / instability early-warning** modality a WWIII-risk operator
+  tracks (famine zones are first-order conflict amplifiers): the current-2026 map lists **Sudan
+  IPC 5 Catastrophe / credible Famine, Gaza confirmed Famine, and Nigeria/Somalia/South Sudan/
+  Yemen at IPC 4 Emergency**. Clears essentially the whole bar — **authoritative** (FEWS NET, the
+  USAID→State famine-early-warning system; IPC-compatible 5-phase scale), **fresh** (verified
+  back online + publishing: June-2026 Food Assistance Outlook Brief, Sudan outlook update Apr-2026;
+  the "portal offline Jan-2025" note in `prio-data/FEWSNet_to_PG` is RETIRED — it reactivated in
+  2025), **geocoded** (admin-area polygons → centroid), **machine-readable** (GeoJSON via the FDW
+  REST API; `scenario` = CS/ML1/ML2), **non-duplicative** (no food-security/humanitarian layer
+  exists), **signal-meaningful** (IPC Phase 1 Minimal → 5 Famine is a defined baseline scale, each
+  level a named severity — not a nonsense number), **auth-free** (FDW docs: anonymous requests
+  return public data; the AFI classifications are public). **The one unmet requirement:** anchor the
+  exact `ipcphasemap` GeoJSON **feature-property keys + confirm inline polygon geometry** to real
+  committed bytes. `fdw.fews.net` 403s every web fetch (the standard gov-host egress wall — not a
+  browser-only WAF like NGA), and no committed GitHub sample/consumer quotes the *map* product's
+  property schema: `prio-data/FEWSNet_to_PG` uses the **geometryless** `ipcphase.csv` + an external
+  boundary merge (fields seen: `country_code`/`country`/`reporting_date`/`geometry`/`value`→`IPC_value`),
+  and `nutriverse/ipctools` targets the **keyed** IPC (`ipcinfo.org`) API, not FDW. Docs consistently
+  name the `ipcphase.geojson` datapoint properties (`id,scenario,start_date,end_date,collection_date,value`)
+  but do NOT confirm whether the geometry-bearing `ipcphasemap` variant carries inline polygons or its
+  exact keys — too many load-bearing unknowns to write an honest fixture. **Landable next run** if
+  EITHER a committed real `ipcphasemap` GeoJSON sample surfaces on `raw.githubusercontent.com`, OR the
+  live endpoint becomes web fetch-reachable (200), OR a consumer quoting the map product's exact property
+  keys is found. (The IPC `ipcinfo.org` API is the keyed alternative → would ship DORMANT; IPC also
+  publishes GeoJSON to auth-free **HDX** `data.humdata.org` — a possible Path-B mirror if a stable
+  per-region file + schema can be pinned.)
 
 ---
 
@@ -262,6 +290,13 @@ Bias each run toward the least-covered axis below.
   not this one. Note: **US EPA RadNet is REJECTED for the map** — it publishes gamma **gross count rate**
   (detector-specific, no universal baseline) not µSv/h, so its raw value is a "nonsense number" (same
   failure mode as ECCC hydrometric); revisit only if a baseline-relative RadNet product surfaces.
+- **Humanitarian / food-insecurity (instability)** — **NO layer yet; lead identified 2026-07-06.**
+  Acute food insecurity (IPC Phase 4/5 zones: Sudan, Gaza, Yemen, Somalia, South Sudan, Sahel) is a
+  recognized conflict early-warning indicator an operator tracks. Lead: **FEWS NET / IPC** (see the
+  DEFERRED entry) — authoritative, fresh-2026, geocoded admin polygons, IPC 1–5 scale; blocked only
+  on anchoring the `ipcphasemap` GeoJSON schema to real committed bytes. Adjacent leads if FEWS/IPC
+  stays blocked: **FAO–WFP Hunger Hotspots** (PDF/report — geometry-anchoring risk), the **Global
+  Report on Food Crises** (annual, too lagged), and **HDX**-mirrored IPC GeoJSON (Path-B snapshot).
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -272,6 +307,37 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-06 (Signal Hunter, later run)** — **HONEST NO-OP: no source clears the real-bytes
+  schema-anchoring rule this run; strong FEWS NET/IPC lead captured as DEFERRED.** web search + web fetch
+  BOTH recovered from the prior run's outage (web search queries all returned; web fetch reaches
+  `raw.githubusercontent.com`, 403s every non-GitHub gov host — the normal egress wall). Worked the
+  ranked gaps top-down:
+  (1) **Asian-theatre maritime / maritime-security** — re-probed the reopened gap. **ReCAAP ISC** now
+  403s even via web fetch (WAF, not just in-sandbox) — its Re-VAMP dashboard has no documented public API;
+  **commercial AIS** (AISHub/VesselFinder/aisstream/VesselAPI) all **keyed**; **UKMTO** (Gulf/Hormuz
+  incidents+warnings) publishes **no machine-readable feed** (web views only); **Norway Kystverket** live
+  AIS needs **registration + a TCP/IEC socket** (not auth-free JSON; BarentsWatch is keyed); **Taiwan
+  ADIZ** data exists only as **third-party compilations** (PLATracker / Ben Lewis Google Sheet — fails the
+  no-scrapers bar; Taiwan MND itself ships text/PDF daily bulletins, not geocoded). Maritime top-gap stays
+  walled.
+  (2) **Military-posture / airspace closures** — no new **auth-free geocoded NOTAM-class / danger-area**
+  feed surfaced; NGA `broadcast-warn`/NAVAREA stays WAF-ruled-out (prior run), FAA NOTAM is keyed, NAV
+  CANADA remains Canada-only.
+  (3) **FEWS NET / IPC acute food insecurity** (secondary, tractable) — evaluated in depth and it clears
+  **six of the seven checks**: authoritative (USAID→State famine-early-warning system), **fresh —
+  confirmed BACK ONLINE + publishing 2026** (June-2026 Outlook Brief, Sudan update Apr-2026: IPC 5
+  Catastrophe/Famine risk; Gaza confirmed Famine), geocoded (admin polygons), machine-readable (FDW
+  GeoJSON), non-duplicative (new humanitarian/instability modality), signal-meaningful (IPC 1–5 defined
+  scale), auth-free (public AFI data, anonymous FDW requests). **Not shipped — the one unmet requirement is
+  the mission's hard one: anchor the exact `ipcphasemap` GeoJSON property keys + confirm inline geometry to
+  real committed bytes.** `fdw.fews.net` 403s every web fetch (all endpoints/formats/countries — host-level
+  egress), and no committed consumer quotes the *map* product's schema (`prio-data/FEWSNet_to_PG` uses the
+  geometryless `ipcphase.csv`+boundary-merge; `nutriverse/ipctools` targets the keyed IPC API). Writing a
+  fixture from guessed field names would fabricate the liveness proof the bar forbids, so it goes to
+  **DEFERRED** (strong) with the precise unblock condition, not onto the map. Retired the stale "FEWS portal
+  offline Jan-2025" concern (it reactivated). Added a "Humanitarian / food-insecurity" coverage gap.
+  **No code touched; tree clean; ledger-only commit.** UCDP still carries the Conflict layer live (ACLED
+  aggregate snapshot remains 121 days old → its contribution honestly dark; refresh is a local job).
 - **2026-07-06 (Signal Hunter)** — **HONEST NO-OP: dual verification-tool outage; nothing shippable
   clears the six-point bar this run.** Ranked the mission gaps (military-posture observables >
   Asian-theatre maritime > global NOTAM-class airspace > conflict freshness) and worked the top
