@@ -1537,6 +1537,32 @@ impl Ingestor {
             crate::aggregator::append_article(&u).await;
             return;
         }
+        // Near-duplicate pass (display-layer only — the event pipeline upstream has
+        // already seen this article, so corroboration credit is unaffected):
+        // same-source edited re-issues REPLACE their row; another source's copy of a
+        // story already on display is SUPPRESSED. (operator-reported duplicates,
+        // 2026-07-05; thresholds measured on the live store.)
+        {
+            let mut store = self.state.article_store.lock().await;
+            match store.near_duplicate_of(&article.title, &article.source) {
+                crate::aggregator::NearDup::Edition(id) => {
+                    if let Some(u) = store.update_edition(
+                        &id, &article.title, &article.url, &body_excerpt,
+                        &article.published_at.to_rfc3339(), &article.fetched_at.to_rfc3339(),
+                    ) {
+                        drop(store);
+                        crate::aggregator::append_article(&u).await;
+                        return;
+                    }
+                }
+                crate::aggregator::NearDup::Syndicated(first_source) => {
+                    debug!("store: suppressed syndicated near-duplicate of {first_source}: \"{}\" ({})",
+                           article.title.chars().take(70).collect::<String>(), article.source);
+                    return;
+                }
+                crate::aggregator::NearDup::New => {}
+            }
+        }
         let stored = StoredArticle {
             id:           article.id.clone(),
             title:        article.title.clone(),

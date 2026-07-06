@@ -306,6 +306,25 @@ pub struct StoredArticle {
     pub domain_tags:  Vec<String>,
 }
 
+/// Verdict of [`ArticleStore::near_duplicate_of`].
+#[derive(Debug, PartialEq)]
+pub enum NearDup {
+    /// No recent near-duplicate — store a new row.
+    New,
+    /// Same source re-issued an edited headline — replace that row (id).
+    Edition(String),
+    /// Another source's copy of a story already on display — suppress the row
+    /// (the event pipeline still processes the article; display only).
+    Syndicated(String),
+}
+
+/// Title-similarity floor for the store-level near-duplicate pass. Measured on the
+/// live store 2026-07-05: all sampled pairs at/above 0.70 were true duplicates
+/// (syndication or editions); distinct stories sampled ≤0.55. Display-layer only.
+pub const NEAR_DUP_STORE_SIM: f64 = 0.70;
+/// How many newest rows the near-duplicate pass scans (bounds cost; ~4-8h of flow).
+pub const NEAR_DUP_SCAN: usize = 400;
+
 #[derive(Debug, Default)]
 pub struct ArticleStore {
     pub articles:   VecDeque<StoredArticle>,
@@ -395,6 +414,96 @@ impl ArticleStore {
         if older { return Some(art.clone()); } // keep stored content; re-archive as-is
         art.title        = title.to_string();
         // A degenerate re-fetch (title-only entry) must not blank a real excerpt.
+        if !body.trim().is_empty() || art.body.trim().is_empty() {
+            art.body = body.to_string();
+        }
+        art.published_at = published_at.to_string();
+        art.ingested_at  = ingested_at.to_string();
+        Some(art.clone())
+    }
+
+    /// What to do with an incoming article whose TITLE is a near-duplicate of a
+    /// recently stored row. Same-URL edits are handled earlier by `update_by_url`;
+    /// this catches the two classes that slipped past it (operator-reported
+    /// 2026-07-05: 25 near-dup pairs in the newest 600 rows):
+    ///  - the same outlet re-issuing an edited headline under a NEW url (an
+    ///    edition — the new copy should REPLACE the row, like a live-blog edit);
+    ///  - a syndicated wire story re-headlined by another outlet, or an outlet's
+    ///    video twin of its own text story (the row is CLUTTER — the event
+    ///    pipeline still sees the article, so corroboration credit is unaffected).
+    /// Measured threshold: every sampled pair ≥0.70 trigram-Jaccard was a true
+    /// duplicate; distinct stories in the sample sat ≤0.55.
+    pub fn near_duplicate_of(&self, title: &str, source: &str) -> NearDup {
+        // -live rows are rolling transcripts with their own update-in-place contract:
+        // they neither suppress durable copy nor get suppressed here.
+        if source.ends_with("-live") {
+            return NearDup::New;
+        }
+        let incoming_video = source.ends_with("-video");
+        let mut syndicated: Option<String> = None;
+        for art in self.articles.iter().rev().take(NEAR_DUP_SCAN) {
+            if art.source.ends_with("-live") {
+                continue;
+            }
+            let sim = crate::video::title_trigram_jaccard(title, &art.title);
+            if sim < NEAR_DUP_STORE_SIM {
+                continue;
+            }
+            if art.source == source {
+                // A same-source match is an EDITION and outranks any cross-source
+                // match seen earlier in the scan (a newer syndicated copy must not
+                // shadow the outlet's own row and strand its stale headline).
+                return NearDup::Edition(art.id.clone());
+            }
+            // Durable wire text is preferred over a video twin: an incoming WIRE
+            // article is never suppressed by a stored -video row (the reverse — a
+            // video twin deferring to existing wire copy — is suppressed).
+            if !incoming_video && art.source.ends_with("-video") {
+                continue;
+            }
+            syndicated.get_or_insert_with(|| art.source.clone());
+        }
+        match syndicated {
+            Some(s) => NearDup::Syndicated(s),
+            None => NearDup::New,
+        }
+    }
+
+    /// Replace an edition row (found via [`Self::near_duplicate_of`]) with the
+    /// re-issued copy — same id, so the JSONL append supersedes older lines at
+    /// reload, exactly like the same-URL update path.
+    pub fn update_edition(
+        &mut self,
+        id:           &str,
+        title:        &str,
+        url:          &str,
+        body:         &str,
+        published_at: &str,
+        ingested_at:  &str,
+    ) -> Option<StoredArticle> {
+        let &abs_pos = self.index.get(id)?;
+        let slot = abs_pos.wrapping_sub(self.front_counter);
+        let art = self.articles.get_mut(slot)?;
+        if art.id != id {
+            return None;
+        }
+        // Refuse to go BACKWARDS (same discipline as update_by_url): a stale
+        // re-serve of a superseded edition — day-rollover live-blog lists keep
+        // yesterday's entry alive; boot re-fetches replay old entries after the
+        // dedup caches reset — must not revert the row or ping-pong it. Treat
+        // the incoming stale copy as handled (Some) so no duplicate row inserts.
+        let older = chrono::DateTime::parse_from_rfc3339(published_at).ok()
+            .zip(chrono::DateTime::parse_from_rfc3339(&art.published_at).ok())
+            .is_some_and(|(new, old)| new < old);
+        if older { return Some(art.clone()); }
+        // ADD the edition's URL as another key to the same row (never remove the
+        // old key, never index an empty URL): both editions' URLs then hit the
+        // same-URL update path in future instead of re-entering this pass.
+        if !url.is_empty() {
+            self.url_index.insert(url.to_string(), art.id.clone());
+            art.url = url.to_string();
+        }
+        art.title        = title.to_string();
         if !body.trim().is_empty() || art.body.trim().is_empty() {
             art.body = body.to_string();
         }
@@ -1827,6 +1936,110 @@ mod tests {
     }
 
     // ── snapshot_to_json ─────────────────────────────────────────────────────
+
+    fn near_dup_store(titles: &[(&str, &str)]) -> ArticleStore {
+        let mut st = ArticleStore::new(1000);
+        for (i, (src, t)) in titles.iter().enumerate() {
+            st.push(StoredArticle {
+                id: format!("a{i}"), title: t.to_string(), url: format!("https://e.com/{i}"),
+                source: src.to_string(), tier: 1, published_at: "2026-07-05T20:00:00Z".into(),
+                ingested_at: "2026-07-05T20:00:00Z".into(), body: String::new(), domain_tags: vec![],
+            });
+        }
+        st
+    }
+
+    #[test]
+    fn near_duplicate_verdicts_cover_editions_syndication_and_new_stories() {
+        // Fixtures are real pair shapes from the 2026-07-05 live-store measurement.
+        let st = near_dup_store(&[
+            ("npr", "NATO leaders look for unity as Trump attends annual summit"),
+            ("aljazeera", "Lawmaker McGovern: Americans need to fight for the soul of the US"),
+        ]);
+        // Same outlet re-issues an edited headline -> Edition (replace the row).
+        assert_eq!(
+            st.near_duplicate_of("NATO leaders look for unity as Trump arrives at annual summit", "npr"),
+            NearDup::Edition("a0".into())
+        );
+        // Another outlet's (or the video twin's) copy -> Syndicated (suppress).
+        assert_eq!(
+            st.near_duplicate_of("Americans need to fight for the soul of the US: Lawmaker McGovern", "aljazeera-video"),
+            NearDup::Syndicated("aljazeera".into())
+        );
+        // A genuinely different story -> New.
+        assert_eq!(
+            st.near_duplicate_of("Earthquake relief effort expands in Venezuela", "cbc"),
+            NearDup::New
+        );
+    }
+
+    #[test]
+    fn near_duplicate_pass_respects_live_and_wire_over_video() {
+        let st = near_dup_store(&[
+            ("aljazeera-live", "[LIVE] aljazeera: Iran warns tankers approaching the strait"),
+            ("skynews-video", "Iran warns tankers approaching the strait of Hormuz"),
+        ]);
+        // Incoming -live rows never enter the pass.
+        assert_eq!(st.near_duplicate_of("[LIVE] dwnews: Iran warns tankers approaching the strait", "dwnews-live"),
+            NearDup::New);
+        // Stored -live rows never suppress durable wire copy.
+        // Stored -video rows never suppress incoming WIRE copy either (wire preferred)...
+        assert_eq!(st.near_duplicate_of("Iran warns tankers approaching the strait of Hormuz", "reuters"),
+            NearDup::New);
+        // ...but an incoming video twin DOES defer to stored video/wire.
+        assert_eq!(st.near_duplicate_of("Iran warns tankers approaching strait of Hormuz", "dwnews-video"),
+            NearDup::Syndicated("skynews-video".into()));
+    }
+
+    #[test]
+    fn near_duplicate_same_source_edition_outranks_newer_cross_source_copy() {
+        // Guardian's newer copy must not shadow Reuters' own row (misrouting the
+        // edition as Syndicated and stranding the stale Reuters headline).
+        let st = near_dup_store(&[
+            ("reuters", "Death toll from Venezuela earthquakes rises to 3,342"),
+            ("guardian", "Death toll from Venezuela quakes rises to 3,342"),
+        ]);
+        assert_eq!(
+            st.near_duplicate_of("Death toll from Venezuela earthquakes rises past 3,400", "reuters"),
+            NearDup::Edition("a0".into())
+        );
+    }
+
+    #[test]
+    fn update_edition_refuses_to_go_backwards_and_keeps_both_urls() {
+        let mut st = near_dup_store(&[("aljazeera", "Russia-Ukraine war: key events, day 1227")]);
+        // legitimate forward edition: new URL keyed IN ADDITION to the old one
+        st.update_edition("a0", "Russia-Ukraine war: key events, day 1228",
+            "https://e.com/day1228", "b", "2026-07-06T00:00:00Z", "2026-07-06T00:00:00Z").unwrap();
+        assert!(st.update_by_url("https://e.com/0", "aljazeera", "t", "b",
+            "2026-07-06T01:00:00Z", "2026-07-06T01:00:00Z").is_some(),
+            "the OLD url must still hit the same-URL path (no ping-pong re-entry)");
+        // stale re-serve of the superseded edition: refused, row unchanged
+        let before = st.query(1, None, None)[0].clone();
+        let r = st.update_edition("a0", "Russia-Ukraine war: key events, day 1227",
+            "https://e.com/day1227", "old", "2026-07-05T00:00:00Z", "2026-07-06T02:00:00Z");
+        assert!(r.is_some(), "stale copy treated as handled (no duplicate row)");
+        assert_eq!(st.query(1, None, None)[0].title, before.title, "row must not revert");
+        // empty-url edition keeps the row's existing URL and indexes nothing new
+        st.update_edition("a0", "Russia-Ukraine war: key events, day 1229",
+            "", "b", "2026-07-06T03:00:00Z", "2026-07-06T03:00:00Z").unwrap();
+        assert!(!st.query(1, None, None)[0].url.is_empty(), "empty URL must not blank the row link");
+    }
+
+    #[test]
+    fn update_edition_replaces_row_and_rekeys_url() {
+        let mut st = near_dup_store(&[("npr", "NATO leaders look for unity as Trump attends annual summit")]);
+        let u = st.update_edition("a0",
+            "NATO leaders look for unity as Trump arrives at annual summit",
+            "https://npr.org/new-edition", "fresh body",
+            "2026-07-05T21:00:00Z", "2026-07-05T21:00:00Z").expect("edition updates");
+        assert_eq!(u.id, "a0", "same id — JSONL append supersedes at reload");
+        assert!(u.title.contains("arrives"));
+        assert_eq!(st.query(10, None, None).len(), 1, "still ONE row");
+        // the NEW url now updates in place through the same-URL path
+        assert!(st.update_by_url("https://npr.org/new-edition", "npr", "t2", "b", 
+            "2026-07-05T22:00:00Z", "2026-07-05T22:00:00Z").is_some());
+    }
 
     #[test]
     fn snapshot_to_json_has_required_keys() {
