@@ -853,6 +853,155 @@ impl EpochStore {
         })
     }
 
+    /// Forward interval-COVERAGE of the published headline band — the honest VALIDATION of
+    /// [`uncertainty_window`], computed server-side from the durable ring. The band is published every
+    /// tick as an ~80% interval; this measures whether reality actually stayed inside it. Over the
+    /// archived history, for each past tick `t` it reconstructs the band that was standing then and
+    /// checks whether the read a fixed HORIZON later fell within it. A well-calibrated 80% band
+    /// contains the forward read ~80% of the time; materially LESS means the band was too tight
+    /// (`overconfident` — real moves escaped it); materially MORE means it was `conservative`, as the
+    /// deliberate humility floor intends. Diagnostic only — computed after P is final, it never feeds
+    /// P or any fitted constant. See [`Self::band_coverage_window`] for the construction.
+    pub fn band_coverage(&self) -> serde_json::Value {
+        self.band_coverage_window(
+            Utc::now(),
+            BAND_COV_WINDOW_SECS,
+            BAND_COV_BAND_SECS,
+            BAND_COV_HORIZON_SECS,
+            BAND_COV_STRIDE_SECS,
+            BAND_COV_MIN_PAIRS,
+        )
+    }
+
+    /// Testable core of [`band_coverage`]: caller injects `now`, the lookback window, the band-window
+    /// (the trailing span each band is built from — matches [`uncertainty_window`]'s 6h), the forward
+    /// `horizon` at which coverage is checked, the decimation `stride`, and the minimum pair count.
+    ///
+    /// The reconstructed band uses the SAME empirical construction as [`uncertainty_window`]
+    /// (`max(central-80% half-spread, HUMILITY_FLOOR_HW)`) but OMITS the confidence-widening term (the
+    /// per-tick `confidence` is not carried in the ring). Since widening only ever WIDENS the published
+    /// band, the reconstructed band is a SUBSET of it, so the reported coverage is a conservative FLOOR
+    /// on the true published band's coverage — we never overstate how well the band performed. The
+    /// series is stride-decimated (as in [`Self::momentum_lead_lag_window`]) so 1 Hz autocorrelated
+    /// ticks don't inflate the pair count.
+    pub fn band_coverage_window(
+        &self,
+        now: DateTime<Utc>,
+        window_secs: i64,
+        band_secs: i64,
+        horizon_secs: i64,
+        stride_secs: i64,
+        min_pairs: usize,
+    ) -> serde_json::Value {
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        // In-window entries newest→oldest, breaking at the cutoff (same discipline as the other ring
+        // diagnostics — pre-window history is never parsed even though the ring can hold days beyond).
+        let mut rev: Vec<(i64, f64)> = Vec::new();
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue,
+            };
+            if t > now {
+                continue;
+            }
+            if t < cutoff {
+                break;
+            }
+            if let Some(p) = e.get("p_annual").and_then(|v| v.as_f64()) {
+                rev.push(((t - cutoff).num_seconds(), p));
+            }
+        }
+        // Ascending, stride-decimated series of (secs_since_cutoff, p).
+        let mut series: Vec<(i64, f64)> = Vec::with_capacity(rev.len() / 4 + 1);
+        let mut last_kept: Option<i64> = None;
+        for &(secs, p) in rev.iter().rev() {
+            if let Some(lk) = last_kept {
+                if secs - lk < stride_secs {
+                    continue;
+                }
+            }
+            last_kept = Some(secs);
+            series.push((secs, p));
+        }
+
+        // For each anchor tick, reconstruct the empirical band from the trailing `band_secs` of the
+        // series, then test whether the read nearest `anchor + horizon` fell inside it. `j` is a
+        // forward two-pointer over the ascending series: the target grows monotonically with the
+        // anchor, so it only ever moves forward (as in `momentum_lead_lag_window`).
+        let tol = stride_secs;
+        let (mut pairs, mut covered) = (0usize, 0usize);
+        let mut j = 0usize;
+        for i in 0..series.len() {
+            let (ti, pi) = series[i];
+            // Trailing band-window reads (need >= 4 to form a central-80% spread, as uncertainty does).
+            let lo_t = ti - band_secs;
+            let mut win: Vec<f64> = Vec::new();
+            for k in (0..=i).rev() {
+                if series[k].0 < lo_t {
+                    break;
+                }
+                win.push(series[k].1);
+            }
+            if win.len() < 4 {
+                continue;
+            }
+            win.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let emp_hw = (percentile_sorted(&win, 0.90) - percentile_sorted(&win, 0.10)) / 2.0;
+            let hw = emp_hw.max(crate::models::HUMILITY_FLOOR_HW);
+            // Forward read nearest ti + horizon, within ±stride tolerance.
+            let target = ti + horizon_secs;
+            while j + 1 < series.len() && series[j].0 < target {
+                j += 1;
+            }
+            let cand = if j > 0 && (target - series[j - 1].0).abs() < (series[j].0 - target).abs() {
+                j - 1
+            } else {
+                j
+            };
+            if (series[cand].0 - target).abs() > tol {
+                continue; // no sample near ti + horizon
+            }
+            let pf = series[cand].1;
+            pairs += 1;
+            if pf >= pi - hw && pf <= pi + hw {
+                covered += 1;
+            }
+        }
+
+        if pairs < min_pairs {
+            return serde_json::json!({
+                "available": false,
+                "pairs":     pairs,
+                "verdict":   "insufficient",
+            });
+        }
+        let coverage = covered as f64 / pairs as f64 * 100.0;
+        let verdict = if coverage < BAND_COV_NOMINAL_PCT - BAND_COV_TOL_PP {
+            "overconfident" // reads escaped the band more than a 1-in-5 rate — band too tight
+        } else if coverage > BAND_COV_NOMINAL_PCT + BAND_COV_TOL_PP {
+            "conservative" // band wider than realized moves — the humility floor doing its job
+        } else {
+            "calibrated"
+        };
+        serde_json::json!({
+            "available":    true,
+            "coverage_pct": (coverage * 1e1).round() / 1e1,
+            "breaches":     pairs - covered,
+            "pairs":        pairs,
+            "nominal_pct":  BAND_COV_NOMINAL_PCT,
+            "horizon_secs": horizon_secs,
+            "verdict":      verdict,
+            "basis": "share of archived reads that landed inside the model's own band published one \
+                      horizon earlier; the confidence-widening term is omitted, so this is a floor on \
+                      the published band's true coverage",
+        })
+    }
+
     /// Stride-cached public entry: the window scan reads the whole 48h series, its
     /// answer can only change once per [`MOM_LL_STRIDE_SECS`], and it runs on the 1 Hz
     /// broadcast path under the shared epoch_store lock — so recompute at most once
@@ -1095,6 +1244,21 @@ const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an ep
 const READ_RANGE_WINDOW_SECS: i64 = 24 * 3600;
 const READ_RANGE_MIN_SAMPLES: usize = 30;
 const FLAT_RANGE_PP: f64 = 0.3;
+
+// Band-coverage parameters (DISPLAY/diagnostic only — none touches P or any fitted constant). This is
+// the honest self-VALIDATION of the published uncertainty band: does reality stay inside it? Over a
+// 48h lookback, each band is rebuilt from its trailing 6h (matching `uncertainty_window`) and tested
+// against the read 1h later; the series is decimated to one sample per 5 min (matching the momentum
+// lead-lag) so autocorrelated ticks don't inflate the count. `NOMINAL_PCT` is the band's central-80%
+// design point; realized coverage within `TOL_PP` of it reads "calibrated", above → "conservative"
+// (the humility floor is doing its job), below → "overconfident" (real moves escaped the band).
+const BAND_COV_WINDOW_SECS: i64 = 48 * 3600;
+const BAND_COV_BAND_SECS: i64 = 6 * 3600;
+const BAND_COV_HORIZON_SECS: i64 = 3600;
+const BAND_COV_STRIDE_SECS: i64 = 300;
+const BAND_COV_MIN_PAIRS: usize = 12;
+const BAND_COV_NOMINAL_PCT: f64 = 80.0;
+const BAND_COV_TOL_PP: f64 = 10.0;
 
 /// Linear-interpolated percentile of an ALREADY-SORTED ascending slice. `q` in [0,1].
 /// Returns 0.0 for an empty slice. Used by the headline uncertainty interval.
@@ -2743,6 +2907,67 @@ mod tests {
         assert_eq!(tr["samples"], 2); // the 10h-old one excluded
         assert!((tr["baseline"].as_f64().unwrap() - 0.70).abs() < 1e-9);
         assert!((tr["delta"].as_f64().unwrap() - 0.05).abs() < 1e-9);
+    }
+
+    // ── EpochStore::band_coverage — the uncertainty band is VALIDATED, not just published ──
+    // The band is served every tick as an ~80% interval; these lock the diagnostic that measures
+    // whether reality actually stayed inside it. The breach test is the behavioral lock: if the
+    // in-band membership check is neutered (always-covered), it goes red.
+
+    #[test]
+    fn band_coverage_window_reports_full_coverage_on_a_stable_series() {
+        // A calm read that drifts far LESS than the humility floor (7pp) over the 1h horizon must
+        // stay inside its own band every time → 100% coverage, "conservative" (the floor doing its
+        // job), ample pairs. This is the common healthy state.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        let n = 36i64;
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60; // 300s apart, ascending in time, all inside 48h
+            let p = 0.50 + 0.008 * ((i % 3) - 1) as f64; // ±0.8pp jitter, well under the 7pp floor
+            es.push(epoch_at(secs_ago, now, p));
+        }
+        let r = es.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(r["available"], true);
+        assert!(r["pairs"].as_u64().unwrap() >= 12, "a 3h series must yield enough pairs to judge");
+        assert_eq!(r["breaches"].as_u64().unwrap(), 0, "sub-floor drift can never breach the band");
+        assert!((r["coverage_pct"].as_f64().unwrap() - 100.0).abs() < 1e-9);
+        assert_eq!(r["verdict"], "conservative");
+    }
+
+    #[test]
+    fn band_coverage_window_flags_a_breach_when_a_move_outruns_the_band() {
+        // A read flat at 0.50 for hours (tight trailing spread → band floored at ±7pp) that then STEPS
+        // to 0.65 must produce breaches: an anchor sitting on the plateau, whose 1h-forward read lands
+        // after the +15pp step, escapes its own ±7pp band. This is the behavioral lock — a neutered
+        // (always-covered) membership check makes breaches=0 / coverage=100 and this goes red.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        let n = 38i64;
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60;
+            let p = if i < 25 { 0.50 } else { 0.65 }; // +15pp step, well past the 7pp floor
+            es.push(epoch_at(secs_ago, now, p));
+        }
+        let r = es.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(r["available"], true);
+        assert!(r["pairs"].as_u64().unwrap() >= 12);
+        assert!(r["breaches"].as_u64().unwrap() >= 1, "a +15pp step must breach the ±7pp band at least once");
+        assert!(r["coverage_pct"].as_f64().unwrap() < 80.0, "a real move escaping the band must drop coverage below nominal");
+        assert_eq!(r["verdict"], "overconfident");
+    }
+
+    #[test]
+    fn band_coverage_window_honest_null_below_min_pairs() {
+        // Too little history to form horizon pairs → no fabricated coverage number.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..5 {
+            es.push(epoch_at(300 * (i + 1), now, 0.50));
+        }
+        let r = es.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(r["available"], false, "too few pairs must not fabricate a coverage read");
+        assert_eq!(r["verdict"], "insufficient");
     }
 
     // ── Honesty-layer uncertainty interval ────────────────────────────────────────

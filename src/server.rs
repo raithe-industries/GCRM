@@ -248,6 +248,13 @@ pub async fn broadcast_snapshots(
                 // a multi-day HIGH is a different state than one range-bound for days; the bare number
                 // and the 6h delta show neither. Diagnostic only; never feeds P. (EpochStore::read_range.)
                 data["read_range"] = es.read_range(snap.p_wwiii_annual);
+                // Honesty layer: the headline band (`uncertainty`) is published as an ~80% interval.
+                // VALIDATE it — over the archived ring, did the read an hour later actually land inside
+                // the band standing then? The operator sees whether the band means what it claims
+                // (calibrated ≈ 80% / conservative / overconfident), not just a bare interval. The
+                // reconstruction omits the confidence-widening term, so the coverage is a conservative
+                // floor. Diagnostic only; never feeds P. (EpochStore::band_coverage.)
+                data["band_coverage"] = es.band_coverage();
             }
             data["epistemic"] = serde_json::json!({
                 "reference_class": crate::models::EPISTEMIC_REFERENCE_CLASS,
@@ -790,6 +797,21 @@ mod tests {
             "a named load-bearing theater must state its leave-one-out P drop");
         assert!(DASHBOARD_HTML.contains("spread across theaters — no single flashpoint carries the headline"),
             "a diffuse read must be named honestly instead of over-attributing to one theater");
+    }
+
+    #[test]
+    fn dashboard_renders_the_band_coverage_validation() {
+        // HONESTY: the headline band is published as an ~80% interval; the caption below it must
+        // consume the server-computed SELF-VALIDATION (server field band_coverage / EpochStore::
+        // band_coverage) — what share of archived reads actually landed inside the band published an
+        // hour earlier — so the operator sees whether the band means what it claims, not just a bare
+        // interval. Lock the render element, the consumer of the server field, and the coverage copy.
+        assert!(DASHBOARD_HTML.contains("gauge-band-cov"),
+            "the headline must carry the band-coverage validation element");
+        assert!(DASHBOARD_HTML.contains("d.band_coverage"),
+            "the caption must read the server-provided band_coverage validation");
+        assert!(DASHBOARD_HTML.contains("band held "),
+            "a judged band must state the realized coverage share");
     }
 
     #[test]

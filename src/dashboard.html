@@ -447,6 +447,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            widened when data is thin (server-computed, EpochStore::uncertainty_6h). A point
            estimate of an unprecedented event would claim a precision the model does not have. -->
       <div class="gauge-interval" id="gauge-interval" style="font-size:10px;color:var(--t3);text-align:center;margin-top:1px;line-height:1.2;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
+      <div class="gauge-band-cov" id="gauge-band-cov" style="font-size:9px;color:var(--t3);text-align:center;line-height:1.2;font-family:monospace" title="Self-validation of the band above: over the last 48h of archived reads, the share that landed inside the model's own band published an hour earlier (server field band_coverage). A well-calibrated 80% band holds ~80%; more = conservative (the humility floor at work), less = overconfident. Diagnostic only — it never feeds the number."></div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
       <!-- Historical positioning: where the live read sits on the model's OWN calibration
            ladder (the same Ukraine-2022 / Cuba-1962 analog scores the For-scale info line
@@ -1228,6 +1229,18 @@ function applyData(d){
     if(_u&&typeof _u.low_pct==='number'&&typeof _u.high_pct==='number'){
       _gi.textContent='range '+_u.low_pct.toFixed(0)+'–'+_u.high_pct.toFixed(0)+'%'+(_atCeiling?' · capped':'');
     } else { _gi.textContent=''; }
+  }
+  // Honesty layer: VALIDATE the band above — what share of archived reads actually stayed inside the
+  // model's own band published an hour earlier (server field band_coverage). Calibrated ≈ 80%; above
+  // is conservative (the humility floor at work), below is overconfident. Honest-null when the ring is
+  // too thin to judge. Diagnostic only — never feeds the number.
+  const _bc=d.band_coverage,_bcel=document.getElementById('gauge-band-cov');
+  if(_bcel){
+    if(_bc&&_bc.available===true&&typeof _bc.coverage_pct==='number'){
+      const _tag={calibrated:'calibrated',conservative:'conservative',overconfident:'overconfident'}[_bc.verdict]||'';
+      _bcel.textContent='band held '+_bc.coverage_pct.toFixed(0)+'% of reads · '+_tag+' (n='+_bc.pairs+')';
+      _bcel.style.color = _bc.verdict==='overconfident' ? 'var(--bad,#e0533d)' : 'var(--t3)';
+    } else { _bcel.textContent=''; _bcel.style.color='var(--t3)'; }
   }
   const _ep=d.epistemic,_gp=document.getElementById('gauge-posture');
   if(_gp){

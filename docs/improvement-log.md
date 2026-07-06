@@ -22,6 +22,59 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-06 (late) — honesty (MATH-ANALYTIC) — the uncertainty band now VALIDATES itself against the archived history
+- Item: roadmap 1.12 (new) — standing lane 1 MATH-ANALYTIC, the scorecard's open "calibration
+  diagnostics beyond the four anchors (reliability/sharpness over the archived epoch history)".
+- Diagnosis (pillar-1 HONESTY weakest): the headline is published every tick as an ~80% interval
+  (`uncertainty_6h`), a mature honesty feature — but NOTHING measured whether the band means what it
+  claims. `grep` showed zero validation of it; the operator saw a range with no evidence reads actually
+  stay inside it, and the 7pp humility floor's adequacy was ASSERTED in prose, never tested against what
+  the model has actually done. The four calibration anchors are static scenarios; the live archived
+  history was un-mined.
+- Change (new server-computed honesty diagnostic; diagnostic only, never feeds P):
+  (a) `EpochStore::band_coverage` / `band_coverage_window` (aggregator.rs, beside `read_range` /
+      `uncertainty_window`): over a 48h lookback, stride-decimated (300s, as the momentum lead-lag), for
+      each past tick reconstruct the band that was standing then — the SAME empirical construction as
+      `uncertainty_window` (`max(central-80% half-spread, HUMILITY_FLOOR_HW)`), OMITTING the
+      confidence-widening term (per-tick `confidence` isn't carried in the ring; widening only ever
+      WIDENS, so omitting it makes the reconstructed band a SUBSET of the published one → reported
+      coverage is a conservative FLOOR, never an overstatement). Then a forward two-pointer tests whether
+      the read ~1h later fell inside it. Reports `coverage_pct`, `breaches`, `pairs`, `nominal_pct`=80,
+      and a `verdict`: calibrated (within ±10pp of 80) / conservative (above — the floor doing its job) /
+      overconfident (below — real moves escaped the band). Honest-null (`available:false`) below 12 pairs.
+  (b) Served top-level as `data.band_coverage` (server.rs, the read_range precedent).
+  (c) Dashboard: a caption under the headline interval (`#gauge-band-cov`) reading "band held N% of
+      reads · <verdict> (n=P)", tinted on `overconfident`; empty honest-null when the ring is thin.
+  (d) Eyes gate (deploy): the caption element must EXIST and, when it carries text, match the coverage
+      format — it has no "—" sentinel (honest-null renders empty), so the check locks structure + format
+      without false-rolling a cold ring.
+- Metric moved: new server-computed HONESTY diagnostic — the first self-validation of the published
+  uncertainty band, computed from the archived epoch history (beyond the four static anchors). +4 tests
+  (583 → 587 passed). NO calibration constant touched — computed after P is final, never feeds it; the
+  four anchors are bit-identical (`cargo test backtest` green: 24/24; bands quiet/Ukraine/current_2026=60%
+  /Cuba all in-band).
+- Proof: `cargo build --release` clean (warnings are vendored feed-rs). `cargo test --release`
+  **587 passed / 0 failed / 5 ignored**. `cargo clippy --release -p gcrm` — 0 warnings from touched src/
+  files. `node --check deploy/eyes/smoke.mjs` OK. Lock proven fails-without-change: replacing the in-band
+  membership predicate `pf >= pi-hw && pf <= pi+hw` with `true` (always-covered) →
+  `band_coverage_window_flags_a_breach_when_a_move_outruns_the_band` FAILS (breaches=0, coverage=100 for a
+  planted +15pp step); restored → 587 green.
+- Tier: T1 (a NEW computed gauge — forward interval coverage of the published band, a genuinely new
+  quantity/units validating the top-pillar honesty feature from the archived epoch history; the scorecard
+  math-analytic lane's named open item. NOT a restyle of the band: it computes a hit-rate the band itself
+  never carries) · Touched: engine-behavior (new server-side computation + client consumes it; the
+  behavioral lock fails when the membership check is neutered) · Lock-fails-without-change: yes (neutered-
+  predicate proof above) · Counts: none of Live-sources/Map-layers/Monitors moved — an honesty diagnostic
+  · consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `band_coverage` is DIAGNOSTIC — reconstructed AFTER P is final over
+  the archived ring; it never touches P, the band, or a fitted constant. (2) The reconstruction
+  deliberately OMITS the confidence-widening term so the coverage is a conservative floor; do NOT "fix"
+  this to match the published band exactly unless `confidence` is first added to the durable ring entry —
+  omitting it is the honest under-claim, not a bug. (3) It reuses `uncertainty_window`'s empirical
+  construction + `HUMILITY_FLOOR_HW`; keep them shared so the validation stays faithful to what is
+  published. (4) The eyes check asserts structure+format only (no "—" sentinel exists), so an honest-null
+  empty caption on a cold ring must never trip a rollback — keep it that way.
+
 ## 2026-07-06 — awareness (MATH-ANALYTIC) — the headline now names its LOAD-BEARING THEATER (the WHERE)
 - Item: roadmap 1.11 (new) — standing lane 1 MATH-ANALYTIC (per-theater sensitivity/ablation). The
   place-analog of 1.10's load-bearing MODALITY.

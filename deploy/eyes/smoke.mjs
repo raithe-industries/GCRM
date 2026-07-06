@@ -230,6 +230,20 @@ if (latest) {
   if (lt == null) fail.push('#f-loadtheater (load-bearing theater) missing — model-state footer not rendered');
   else if (lt === '' || lt === '—') fail.push('#f-loadtheater stuck on the "—" placeholder — the load-bearing theater footer did not render');
   else ok(`load-bearing theater footer populated (#f-loadtheater = "${clip(lt)}")`);
+
+  // Band self-validation caption (#gauge-band-cov): the honest coverage read on the uncertainty band.
+  // Unlike the surfaces above it has NO "—" sentinel — an honest-null (thin ring) renders EMPTY — so we
+  // cannot demand non-empty without false-rolling a cold ring. Instead: the element must EXIST (a
+  // dropped/renamed node fails), and WHEN it carries text it must be the well-formed coverage line
+  // ("band held N% of reads · <verdict> (n=P)"), never a stray token from a broken render.
+  const bcPresent = await page.$('#gauge-band-cov');
+  if (!bcPresent) fail.push('#gauge-band-cov (band self-validation) missing — the uncertainty-band coverage caption was dropped from the DOM');
+  else {
+    const bc = await page.$eval('#gauge-band-cov', (el) => el.textContent.trim()).catch(() => null);
+    if (bc && !/^band held \d+% of reads · \w+ \(n=\d+\)$/.test(bc))
+      fail.push(`#gauge-band-cov rendered a malformed coverage line ("${clip(bc)}") — expected "band held N% of reads · <verdict> (n=P)"`);
+    else ok(`band self-validation caption intact (#gauge-band-cov = "${bc ? clip(bc) : '(honest-null: thin ring)'}")`);
+  }
 }
 
 await browser.close();

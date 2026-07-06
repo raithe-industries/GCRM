@@ -339,6 +339,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   load_bearing_theater` (end-to-end through `compute`; fails when the compute block is stashed →
   `available=false`), `dashboard_renders_the_load_bearing_theater`, + the served-JSON key assert. See
   improvement-log 2026-07-06.
+- [x] **1.12 Band coverage — the uncertainty interval VALIDATES itself against the archived history**
+  — **DONE 2026-07-06.** The headline is published every tick as an ~80% interval (`uncertainty_6h`),
+  but nothing measured whether the band means what it claims — the operator had a range with no evidence
+  reads actually stay inside it, and the 7pp humility floor's adequacy was asserted, never tested. Added
+  `EpochStore::band_coverage` (a "calibration diagnostic beyond the four anchors over the archived epoch
+  history", the math-analytic lane's open item): over a 48h lookback, for each past tick reconstruct the
+  band standing then — the SAME empirical construction as `uncertainty_window`, `max(central-80%
+  half-spread, HUMILITY_FLOOR_HW)`, OMITTING the confidence-widening so the result is a conservative FLOOR
+  on the true band's coverage — and check whether the read 1h later fell inside it. Reports realized
+  coverage %, breach count, pairs, and a verdict (calibrated ≈ 80% / conservative = floor doing its job /
+  overconfident = real moves escaped the band). Stride-decimated (300s) like the momentum lead-lag so
+  autocorrelated ticks don't inflate the count. Diagnostic only — computed after P is final, never feeds P
+  or a fitted constant; anchors bit-identical. Served as `data.band_coverage`, rendered as a caption under
+  the headline interval (`#gauge-band-cov`, overconfident tinted), watched by the eyes gate. Locked by
+  `band_coverage_window_flags_a_breach_when_a_move_outruns_the_band` (a +15pp step past the ±7pp floor
+  MUST breach — fails when the in-band membership check is neutered to always-covered),
+  `band_coverage_window_reports_full_coverage_on_a_stable_series`, `band_coverage_window_honest_null_below_
+  min_pairs`, + `dashboard_renders_the_band_coverage_validation`. See improvement-log 2026-07-06 (late).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
