@@ -435,6 +435,10 @@ fn feed_detail(e: &Event) -> Option<String> {
         // the µSv/h reading + band, e.g. "0.45 µSv/h · Above normal" — same
         // universal-baseline read as odlinfo/stuk, over Europe's largest nuclear power.
         "teleray" => ee_sources::teleray::dose_chip(&e.raw),
+        // NSW RFS incident: the official alert level (when an active warning) + the
+        // incident type + fire size, e.g. "Watch and Act · Bush Fire · 315512 ha" /
+        // "Bush Fire · 10 ha" — the operational read behind the incident dot.
+        "nsw_rfs" => ee_sources::nsw_rfs::incident_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -746,7 +750,7 @@ async fn feeds_payload() -> Value {
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
         geonet_quake::GeonetQuake, geonet_volcano::GeonetVolcano, gvp_volcano::GvpVolcano,
         healthmap::HealthMap, jma_quake::JmaQuake, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
-        navcanada::NavCanada, nhc::Nhc,
+        navcanada::NavCanada, nhc::Nhc, nsw_rfs::NswRfs,
         nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
         opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
@@ -762,7 +766,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -882,6 +886,12 @@ async fn feeds_payload() -> Value {
         //  (TLS-invalid), and the site's real data path runs through a JWT-gated Kalisio
         //  gateway — not auth-free. Radiation stays covered by odlinfo (DE) + stuk (FI);
         //  the connector stays for the day ASNR fixes the public host. See data-sources.md.)
+        // NSW RFS — Australian major fire/emergency incidents with their official
+        // alert level (Emergency Warning / Watch and Act / Advice), plotted at each
+        // incident's representative point: the operational emergency-warning modality
+        // + Australian geography the global thermal-hotspot wildfire feeds
+        // (FIRMS/CWFIS/EONET) don't carry. Empty feed (quiet/off-season) = 0 events.
+        fetch_one("nsw_rfs", NswRfs, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -941,6 +951,9 @@ async fn feeds_payload() -> Value {
         (fi_radiation.0, fi_radiation.1, "stuk_radiation", 400),
         // France's ~470-station Téléray network; a real event can light up many at once,
         // so allow the same generous headroom as the other radiation networks.
+        // NSW major incidents: a bad fire day runs to dozens-to-low-hundreds; 300 is
+        // ample headroom, and severity-sort keeps the Emergency Warnings if it overflows.
+        (au_incidents.0, au_incidents.1, "nsw_rfs", 300),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
@@ -1333,6 +1346,39 @@ mod tests {
         // No aviation colour assigned -> the alert level stands alone.
         let e = mk(json!({"level": 1, "acc": ""}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Alert Level 1"));
+    }
+
+    #[test]
+    fn nsw_rfs_chip_surfaces_alert_level_type_and_size() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "nsw-rfs-x".into(),
+            source_id: "nsw_rfs".into(),
+            kind: EventKind::Wildfire,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(-33.0, 150.0),
+            severity: Severity::new(0.7),
+            url: None,
+            raw,
+        };
+        // `raw` is the RFS feature's properties: alert level in `category` + the
+        // description HTML blob carrying TYPE and SIZE.
+        let e = mk(json!({
+            "category": "Watch and Act",
+            "description": "ALERT LEVEL: Watch and Act <br />TYPE: Bush Fire <br />SIZE: 315512 ha <br />"
+        }));
+        assert_eq!(
+            feed_detail(&e).as_deref(),
+            Some("Watch and Act · Bush Fire · 315512 ha")
+        );
+        // A Not-Applicable major incident leads with its type, not the (non-)warning.
+        let e = mk(json!({
+            "category": "Not Applicable",
+            "description": "ALERT LEVEL: Not Applicable <br />TYPE: Grass Fire <br />SIZE: 0 ha <br />"
+        }));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Grass Fire"));
     }
 
     #[test]

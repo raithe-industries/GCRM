@@ -25,6 +25,7 @@ pub mod digitraffic_ais;
 pub mod drivebc;
 pub mod navcanada;
 pub mod nhc;
+pub mod nsw_rfs;
 pub mod nwps_flood;
 pub mod spc_storm_reports;
 pub mod stuk_radiation;
@@ -103,6 +104,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(odlinfo::Odlinfo), // Radiation: gamma dose rate above natural background (BfS ODL, Germany)
         Box::new(stuk_radiation::StukRadiation), // Radiation: external dose rate above background (STUK/FMI, Finland)
         Box::new(teleray::Teleray), // Radiation: ambient gamma dose rate above background (IRSN/ASNR Téléray, France)
+        Box::new(nsw_rfs::NswRfs), // Wildfire layer: NSW RFS major fire/emergency incidents + official alert levels (Australia)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),
