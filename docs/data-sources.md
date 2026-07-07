@@ -201,6 +201,10 @@ Bias each run toward the least-covered axis below.
   (`bom.gov.au`), Météo-France La Réunion, or Fiji RSMC, if an auth-free geocoded product
   exists. JTWC (`metoc.navy.mil`) publishes HTML/RSS only — no clean auth-free JSON/GeoJSON
   (confirmed 2026-06-25; the JSON wrappers found are all keyed third parties: Xweather/DTN).
+  **BoM triaged 2026-07-07:** a JSON cyclone product exists (`api.weather.bom.gov.au`) with a committed
+  client (`tonyallan/weather-au`), but **BoM open-data delivery is currently SUSPENDED for a platform
+  upgrade** → not fresh; revisit when BoM resumes open data. Best remaining leads: IMD / Météo-France
+  La Réunion (RSMC SW-Indian) / Fiji RSMC Nadi, if an auth-free geocoded product surfaces.
 - **Volcano** — SEEDED globally with `gvp_volcano` (Smithsonian eruption catalogue) + EONET,
   and EXTENDED 2026-06-25 with `geonet_volcano` (GeoNet/GNS NZ **Volcanic Alert Levels** —
   the operational alert state, not an eruption record), and EXTENDED 2026-06-26 with
@@ -282,8 +286,22 @@ Bias each run toward the least-covered axis below.
   `Value`/`Uncertainty` in Bq — NOT a real-time gamma **dose-rate** network; the live dose-rate map "MapMon"
   has no documented open API) → deferred until a MapMon backend surfaces; **Sweden SSM** (`karttjanst.ssm.se/
   gammastationer`, 28-station Baltic/Russia-frontier net — HIGH value) and **Norway DSA** Radnett (33 stations,
-  Kola frontier) both have an **opaque map backend + no committed consumer to anchor** → blocked this run,
-  re-attempt if a backend JSON/committed client surfaces; Netherlands **RIVM** WMS-only (no per-station µSv/h
+  Kola frontier) both have an **opaque map backend + no committed consumer to anchor** → blocked, re-attempt
+  if a backend JSON/committed client surfaces. **Norway RADNETT lead UPGRADED 2026-07-07:** RADNETT is
+  **published on Geonorge** (Norway's national spatial-data infrastructure; metadata record
+  `e379ef5e-8851-4305-b900-44a4587cf14c`), which typically serves auth-free OGC **WFS/GeoJSON** — so a real
+  machine-readable per-station endpoint very likely exists (no longer "opaque backend"). Still unanchorable
+  *this* run: `geonorge.no` 403s web fetch (the session egress wall — see the 2026-07-07 run-log entry) and no
+  committed client quotes the RADNETT dose-rate feature schema, so the exact `GetFeature` property keys can't
+  be pinned to real bytes yet. **Landable when EITHER the Geonorge WFS becomes web fetch-reachable (200) OR a
+  committed consumer quoting the feature schema surfaces.** **Asian-theatre radiation triaged 2026-07-07**
+  (would double-hit the radiation gap + Asian-theatre geography): **Japan NRA** (`radioactivity.nra.go.jp`
+  RAMDAS, real-time monitoring-post dose rate — high value, Fukushima + Asian theatre), **South Korea KINS**
+  (`iernet.kins.re.kr` IERNet, 171 sites, DPRK-frontier), and **Taiwan AEC/NuSC** (real-time net, Taiwan-Strait
+  flashpoint — but data.gov.tw dataset 31542 is a *report*, not a real-time geocoded per-station API) — all
+  real authoritative networks, **all blocked the same way: no committed GitHub client to anchor the schema +
+  web fetch dead to every gov host** → deferred until a committed consumer or a web fetch-reachable endpoint
+  surfaces. Netherlands **RIVM** WMS-only (no per-station µSv/h
   API); the EU JRC **EURDEP** aggregate is access-restricted (not auth-free). (b) **promote to a first-class
   `Radiation` EventKind + map layer** — currently rides `EventKind::Other` ("Other Signals", default-off);
   that promotion (ee_core enum + ee_view layer + colour/label) is the **self-improvement routine's lane**,
@@ -307,6 +325,36 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-07 (Signal Hunter)** — **HONEST NO-OP: verified web fetch egress degradation blocks every
+  live-verification + snapshot-refresh path this run; one real lead advanced (Norway RADNETT → Geonorge).**
+  **Tool-health probed first, decisively:** web fetch **403s every non-GitHub host — including USGS**
+  (`earthquake.usgs.gov/.../significant_week.geojson`), a known auth-free public gov feed — so the standing
+  "web fetch routes outside the sandbox and works" assumption does **not** hold this session; only
+  `raw.githubusercontent.com` is reachable. web search works (prose summaries, not verbatim bytes/schema).
+  Worked the ranked gaps top-down, each genuinely evaluated:
+  (1) **Conflict freshness / `acled_aggregated` refresh** (flagged high-value; snapshot's newest `WEEK`
+  `2026-03-07` = **122 days stale**, so the age gate keeps the ACLED contribution honestly **dark**). The
+  mission greenlights a web fetch refresh, but web fetch **403s acleddata.com AND data.humdata.org (HDX)**, and
+  a targeted search found **no GitHub mirror of a current (2026) ACLED weekly aggregate** on
+  `raw.githubusercontent.com` (ACLED redistribution is registration-gated; the committed mirrors are stale).
+  Transcribing exact event/fatality/centroid rows from web search prose would fabricate the bytes the honesty
+  bar forbids → **not refreshed** (re-light needs the local re-download job, operator's lane).
+  (2) **Radiation outside DE+FI+FR** (double-hit lead: Asian-theatre geography). Triaged **Japan NRA RAMDAS**,
+  **South Korea KINS IERNet**, **Taiwan AEC/NuSC**, plus the Baltic/Kola-frontier **Sweden SSM** + **Norway
+  DSA RADNETT**. **One genuine advance:** RADNETT is on **Geonorge** (national SDI, metadata record noted) →
+  upgraded from "opaque backend" to a likely auth-free WFS/GeoJSON endpoint (see COVERAGE GAPS radiation (a)).
+  But all remain unanchorable this run — **no committed GitHub client quotes any of their schemas** and web fetch
+  can't reach the endpoints, so an honest offline fixture can't be written (guessing field names = fabrication).
+  (3) **SH / Indian-Ocean tropical cyclone** (Storm gap) — **Australia BoM** has a JSON cyclone product
+  (`api.weather.bom.gov.au`) + a committed client (`tonyallan/weather-au`), **but BoM open-data delivery is
+  currently SUSPENDED for a platform upgrade** (per BoM notices) → not fresh, deferred until it resumes.
+  (4) **Asian maritime / military-posture / global NOTAM airspace** — top gaps re-confirmed walled (WAF/keyed/
+  no-machine-readable-feed), unchanged from prior runs; no new auth-free geocoded feed surfaced.
+  **Root cause:** the same egress wall as the last several runs — web fetch dead to all gov hosts, so no live
+  Path-A verification and no non-GitHub snapshot refresh is possible; the bar forbids faking a liveness proof.
+  **No code touched; tree clean; ledger-only commit.** UCDP still carries the Conflict layer live; the ACLED
+  contribution stays dark pending a local refresh. Re-attempt RADNETT-via-Geonorge + the ACLED refresh next
+  run if web fetch egress recovers.
 - **2026-07-06 (Signal Hunter, later run)** — **HONEST NO-OP: no source clears the real-bytes
   schema-anchoring rule this run; strong FEWS NET/IPC lead captured as DEFERRED.** web search + web fetch
   BOTH recovered from the prior run's outage (web search queries all returned; web fetch reaches
