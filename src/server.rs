@@ -230,7 +230,7 @@ pub async fn broadcast_snapshots(
                 if let Some(obj) = t6.as_object_mut() {
                     let then = obj.get("lead_then").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let shifted = !lead_now.is_empty() && !then.is_empty() && lead_now != then;
-                    obj.insert("lead".into(), serde_json::Value::String(lead_now));
+                    obj.insert("lead".into(), serde_json::Value::String(lead_now.clone()));
                     obj.insert("lead_shifted".into(), serde_json::Value::Bool(shifted));
                     obj.insert("pegged".into(), serde_json::Value::Bool(pegged));
                 }
@@ -248,6 +248,14 @@ pub async fn broadcast_snapshots(
                 // a multi-day HIGH is a different state than one range-bound for days; the bare number
                 // and the 6h delta show neither. Diagnostic only; never feeds P. (EpochStore::read_range.)
                 data["read_range"] = es.read_range(snap.p_wwiii_annual);
+                // Awareness layer (the WHERE, over TIME): how CONCENTRATED the locus of risk has been
+                // over the last 24h — has one flashpoint entrenched itself as the lead, or is the lead
+                // ROTATING across many fronts? `trend_6h` names only a binary now-vs-6h-ago relocation;
+                // this reports the continuous picture (the current lead's day-share + the modal front +
+                // the distinct-front count), so a single deepening standoff reads differently from a
+                // broadening multi-front world. Reuses the `lead_now` single source of truth already
+                // computed above. Diagnostic only; never feeds P. (EpochStore::lead_concentration.)
+                data["lead_concentration"] = es.lead_concentration(&lead_now);
                 // Honesty layer: the headline band (`uncertainty`) is published as an ~80% interval.
                 // VALIDATE it — over the archived ring, did the read an hour later actually land inside
                 // the band standing then? The operator sees whether the band means what it claims
@@ -844,6 +852,24 @@ mod tests {
             "the context strip must carry the dwell element");
         assert!(DASHBOARD_HTML.contains("At level:"),
             "the dwell readout must be labeled so the operator reads it as time-at-band");
+    }
+
+    #[test]
+    fn dashboard_renders_the_locus_concentration() {
+        // AWARENESS (the WHERE, over TIME): the context strip must consume the server-computed
+        // locus concentration (server field lead_concentration / EpochStore::lead_concentration) —
+        // how much of the last 24h the current lead theater held the lead, and how many distinct
+        // fronts traded it — so a single entrenched standoff reads differently from a lead rotating
+        // across many fronts. Lock the render fn, the consumer of the server field, the element, the
+        // label, and the honest-null hide (a cold ring / quiet world must not fabricate a locus).
+        assert!(DASHBOARD_HTML.contains("renderLocus") && DASHBOARD_HTML.contains("d.lead_concentration"),
+            "the readout must consume the server-provided lead_concentration");
+        assert!(DASHBOARD_HTML.contains("ca-locus"),
+            "the context strip must carry the locus element");
+        assert!(DASHBOARD_HTML.contains("Locus:"),
+            "the locus readout must be labeled so the operator reads it as where-over-time");
+        assert!(DASHBOARD_HTML.contains("% of 24h"),
+            "a named locus must state the current lead's share of the day");
     }
 
     #[test]

@@ -265,6 +265,25 @@ if (latest) {
     else if (!/^≥?\d+[dhms]( \d+[hm])? @ \w+$/.test(dw)) fail.push(`#ca-dwell rendered a malformed dwell ("${clip(dw)}") — expected "[≥]Xd Yh @ Level"`);
     else ok(`alert-band dwell populated (#ca-dwell = "${clip(dw)}")`);
   }
+
+  // Locus-concentration readout (#ca-locus): how concentrated the WHERE has been over 24h.
+  // Honest-null (cold ring / quiet world with no lead / older backend) HIDES its box, so we cannot
+  // demand non-"—". Instead: the node must EXIST (a dropped/renamed element fails), and WHEN its
+  // box is visible it must carry a well-formed locus string ("<theater> — N% of 24h …"), never a
+  // stuck "—" or a stray token.
+  const lcEl = await page.$('#ca-locus');
+  if (!lcEl) fail.push('#ca-locus (locus concentration) missing — the "where over time" readout was dropped from the DOM');
+  else {
+    const lcVisible = await page.$eval('#ca-locus-box', (el) => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).catch(() => false);
+    const lc = await page.$eval('#ca-locus', (el) => el.textContent.trim()).catch(() => null);
+    if (!lcVisible) ok('locus concentration honest-null (hidden: cold ring / quiet world / no durable field)');
+    else if (!lc || lc === '—') fail.push('#ca-locus box is visible but stuck on the "—" placeholder — renderLocus did not populate the locus');
+    else if (!/ — \d+% of 24h/.test(lc)) fail.push(`#ca-locus rendered a malformed locus ("${clip(lc)}") — expected "<theater> — N% of 24h …"`);
+    else ok(`locus concentration populated (#ca-locus = "${clip(lc)}")`);
+  }
 }
 
 await browser.close();

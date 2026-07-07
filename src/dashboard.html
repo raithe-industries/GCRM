@@ -579,6 +579,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="ca" id="ca-low-box" title="Lowest annual P(WWIII) over the last 24h — server-computed from the durable timeline."><span id="ca-low-label">24h low</span>: <span id="ca-low">—</span></div>
       <div class="ca" title="Where the live read sits within its 24h range: percentile rank of the current P among the last 24h of reads, so a fresh multi-day high reads differently from a read that has been range-bound. Diagnostic only — never feeds the number.">Position: <span id="ca-pos">—</span></div>
       <div class="ca" id="ca-dwell-box" title="How long the headline has been CONTINUOUSLY at or above its current alert band, server-computed from the durable timeline (EpochStore::alert_dwell). A flash spike into a band reads differently from one that has held for days (entrenchment). A '≥' prefix means the run reaches the start of the stored history, so the true dwell is at least this long. Diagnostic only — never feeds the number.">At level: <span id="ca-dwell">—</span></div>
+      <div class="ca" id="ca-locus-box" title="How CONCENTRATED the locus of risk has been over the last 24h, server-computed from the durable timeline (EpochStore::lead_concentration): the share of the day the current lead theater held the lead, plus how many distinct flashpoints traded it. A single entrenched standoff reads very differently from a lead rotating across many fronts — the 6h-trend flag only names a binary now-vs-then relocation, not this. Diagnostic only — never feeds the number.">Locus: <span id="ca-locus">—</span></div>
     </div>
     <div class="formula">
       Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, flat)</span> · systemic L = <span id="f-lik">—</span> · guardrail collapse = <span id="f-guard">—</span><br>
@@ -1086,6 +1087,28 @@ function renderDwell(d){
     if(box)box.style.display='none';el.textContent='—';
   }
 }
+// Locus concentration (server field lead_concentration, from EpochStore::lead_concentration): how
+// CONCENTRATED the WHERE has been over 24h — one entrenched flashpoint vs a lead rotating across
+// fronts. Honest-null (cold ring / quiet world with no lead / older backend) HIDES the item so a
+// degenerate concentration is never shown.
+function renderLocus(d){
+  const w=d&&d.lead_concentration,el=document.getElementById('ca-locus'),box=document.getElementById('ca-locus-box');
+  if(!el)return;
+  if(w&&w.available&&w.current){
+    if(box)box.style.display='';
+    const cur=w.current, cp=(w.current_pct||0).toFixed(0), v=w.verdict||'';
+    // Base clause: the live lead's day-share. When another theater actually led more of the day
+    // than the current one (a fresh entrant), name it so the operator isn't misled by the live tag.
+    let txt=cur+' — '+cp+'% of 24h';
+    if(w.top&&w.top!==cur) txt+=' ('+w.top+' led '+(w.top_pct||0).toFixed(0)+'%)';
+    else if(v) txt+=' ('+v+')';
+    if(w.top&&w.top!==cur&&v) txt+=' · '+v;
+    el.textContent=txt;
+    el.style.color=(v==='entrenched')?'var(--amber)':'var(--t2)';
+  }else{
+    if(box)box.style.display='none';el.textContent='—';
+  }
+}
 // Measured lead-lag verdict for the momentum gauge (server field momentum_lead, from
 // EpochStore::momentum_lead_lag). Turns the "leading" LABEL into an EARNED statement: 'leads'
 // appends a compact visible suffix (leads P ~30m) and a full tooltip; 'no_lead'/'coincident'/
@@ -1199,7 +1222,7 @@ function applyData(d){
   liveData=d;const doms=d.domains||{};
   const pA=d.probabilities.annual,p30=d.probabilities.thirty_day,p90=d.probabilities.ninety_day,dA=d.delta?.annual??0;
   if(pA>sessionPeak)sessionPeak=pA;if(pA<sessionLow)sessionLow=pA;update6hBuffer(pA);
-  renderReadRange(d,pA);renderDwell(d);
+  renderReadRange(d,pA);renderDwell(d);renderLocus(d);
   const _t6=trend6h(d,pA);const d6el=document.getElementById('ca-6h');if(d6el){if(!_t6){d6el.textContent='—';d6el.style.color='var(--t4)';}else{d6el.textContent=fmtTrend(_t6.delta);d6el.style.color=_t6.pegged?PEGGED_COLOR:trendColor(_t6.delta);}}
   // Two dials (see drawDial). Hero = forward-looking outlook (annual P(WWIII));
   // secondary = present escalation severity (systemic index 0–95 + hottest rung).

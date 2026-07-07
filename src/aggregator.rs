@@ -1124,6 +1124,100 @@ impl EpochStore {
         })
     }
 
+    pub fn lead_concentration(&self, current_lead: &str) -> serde_json::Value {
+        self.lead_concentration_window(
+            current_lead,
+            Utc::now(),
+            LEAD_CONC_WINDOW_SECS,
+            LEAD_CONC_MIN_SAMPLES,
+        )
+    }
+
+    /// Testable core of [`lead_concentration`]. Over the trailing 24h of the durable ring, tally the
+    /// per-tick LEAD theater (`lead`, the hottest flashpoint that tick) and report how CONCENTRATED
+    /// the locus of risk has been — the WHERE analog of `alert_dwell`'s time axis. `trend_6h` already
+    /// names a binary now-vs-6h-ago RELOCATION; this reports the continuous picture the operator
+    /// otherwise lacks: has one flashpoint entrenched itself (`current` held most of the day), or is
+    /// the lead ROTATING across many fronts (a broadening, multi-front world reads very differently
+    /// from a single deepening standoff, and a flickering near-tie makes the bare "relocated" flag
+    /// noise). Only ticks carrying a non-empty lead are counted — a quiet world (no lead) is
+    /// honest-null, never "0% concentrated". Reports `current`/`current_pct` (where the LIVE lead
+    /// sits — it can be a fresh entrant with a small share even while another theater dominated the
+    /// day) alongside the modal `top`/`top_pct` and the `distinct` front count. Honest-null below
+    /// `min_samples` decisive ticks or when the current world has no lead. Touches no fitted constant
+    /// and never feeds P.
+    pub fn lead_concentration_window(
+        &self,
+        current_lead: &str,
+        now: DateTime<Utc>,
+        window_secs: i64,
+        min_samples: usize,
+    ) -> serde_json::Value {
+        if current_lead.is_empty() {
+            // No live locus to characterize — a quiet world, not a concentration of zero.
+            return serde_json::json!({ "available": false, "reason": "no_lead" });
+        }
+        let cutoff = now - chrono::Duration::seconds(window_secs);
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut total = 0usize;
+        for e in self.ring.iter().rev() {
+            let t = match e
+                .get("t")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            {
+                Some(dt) => dt.with_timezone(&Utc),
+                None => continue, // unparseable tick — skip, don't count (matches the window scans)
+            };
+            if t > now {
+                continue; // ignore future-dated ticks (clock skew)
+            }
+            if t < cutoff {
+                break;
+            }
+            let lead = match e.get("lead").and_then(|v| v.as_str()) {
+                Some(s) if !s.is_empty() => s,
+                _ => continue, // quiet tick with no lead — not a decisive sample
+            };
+            *counts.entry(lead.to_string()).or_insert(0) += 1;
+            total += 1;
+        }
+        if total < min_samples {
+            return serde_json::json!({ "available": false, "samples": total });
+        }
+        // Modal lead over the window (ties broken alphabetically for a stable, deterministic pick).
+        let (top, top_n) = counts
+            .iter()
+            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+            .map(|(k, v)| (k.clone(), *v))
+            .unwrap_or_default();
+        let cur_n = counts.get(current_lead).copied().unwrap_or(0);
+        let pct = |n: usize| ((n as f64 / total as f64) * 100.0 * 1e1).round() / 1e1;
+        let top_pct = pct(top_n);
+        let distinct = counts.len();
+        // Display verdict (diagnostic thresholds — never a fitted constant, never feeds P):
+        // one flashpoint owned most of the day → entrenched; four+ fronts with no plurality
+        // majority → rotating; anything between → contested.
+        let verdict = if top_pct >= 70.0 {
+            "entrenched"
+        } else if distinct >= 4 && top_pct < 45.0 {
+            "rotating"
+        } else {
+            "contested"
+        };
+        serde_json::json!({
+            "available":   true,
+            "current":     current_lead,
+            "current_pct": pct(cur_n),
+            "top":         top,
+            "top_pct":     top_pct,
+            "distinct":    distinct,
+            "samples":     total,
+            "verdict":     verdict,
+            "window_secs": window_secs,
+        })
+    }
+
     /// Stride-cached public entry: the window scan reads the whole 48h series, its
     /// answer can only change once per [`MOM_LL_STRIDE_SECS`], and it runs on the 1 Hz
     /// broadcast path under the shared epoch_store lock — so recompute at most once
@@ -1366,6 +1460,13 @@ const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an ep
 const READ_RANGE_WINDOW_SECS: i64 = 24 * 3600;
 const READ_RANGE_MIN_SAMPLES: usize = 30;
 const FLAT_RANGE_PP: f64 = 0.3;
+
+// Lead-concentration parameters (DISPLAY/diagnostic only — none touches P or any fitted constant).
+// Fixed 24h window off the durable ring (matches read_range so the "locus" band means the same for
+// every operator regardless of tab uptime); `MIN_SAMPLES` keeps a cold-start ring from publishing a
+// degenerate concentration off a handful of ticks (matches READ_RANGE_MIN_SAMPLES).
+const LEAD_CONC_WINDOW_SECS: i64 = 24 * 3600;
+const LEAD_CONC_MIN_SAMPLES: usize = 30;
 
 // Alert-dwell parameter (DISPLAY/diagnostic only — never touches P or any fitted constant). The
 // minimum contiguous in-band ticks before a dwell duration is claimed: below this the ring is too
@@ -3283,6 +3384,90 @@ mod tests {
         let r = es.alert_dwell_window("chartreuse", now, 3);
         assert_eq!(r["available"], false);
         assert_eq!(r["reason"], "unknown_alert");
+    }
+
+    // ── Awareness-layer locus concentration ───────────────────────────────────────
+
+    #[test]
+    fn lead_concentration_window_reports_entrenched_when_one_theater_dominates() {
+        // 36 of 40 in-window ticks led by Taiwan, current lead Taiwan → the locus was ENTRENCHED
+        // on one flashpoint, and the current lead held ~90% of the day. Locks the concentration
+        // math and the ≥70% entrenched verdict; also proves distinct-front counting.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..36 { es.push(epoch_at_lead(3600 - i, now, 0.60, "Taiwan Strait")); }
+        for i in 0..4  { es.push(epoch_at_lead(120 - i, now, 0.60, "Ukraine")); }
+        let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["current"], "Taiwan Strait");
+        assert_eq!(r["samples"], 40);
+        assert_eq!(r["distinct"], 2);
+        assert_eq!(r["top"], "Taiwan Strait");
+        assert_eq!(r["top_pct"].as_f64().unwrap(), 90.0);
+        assert_eq!(r["current_pct"].as_f64().unwrap(), 90.0);
+        assert_eq!(r["verdict"], "entrenched");
+    }
+
+    #[test]
+    fn lead_concentration_window_reports_rotating_when_many_fronts_share() {
+        // The lead rotated across five fronts with no plurality majority → a broadening,
+        // multi-front world. Locks the rotating verdict (distinct ≥ 4 AND top_pct < 45) — the
+        // state that reads differently from a single deepening standoff, and that the binary
+        // 6h-relocation flag cannot express.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        let fronts = ["Taiwan Strait", "Ukraine", "Kashmir", "Korea", "South China Sea"];
+        for i in 0..40i64 {
+            es.push(epoch_at_lead(4000 - i, now, 0.55, fronts[(i as usize) % fronts.len()]));
+        }
+        let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["distinct"], 5);
+        assert!(r["top_pct"].as_f64().unwrap() < 45.0, "no front holds a plurality majority");
+        assert_eq!(r["verdict"], "rotating");
+    }
+
+    #[test]
+    fn lead_concentration_window_ignores_quiet_ticks_and_null_below_min() {
+        // Quiet ticks (empty lead) are NOT decisive samples — a mostly-quiet ring with only a few
+        // led ticks is honest-null, never "0% concentrated" off a handful of samples.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..50 { es.push(epoch_at_lead(4000 - i, now, 0.02, "")); } // quiet: no lead
+        for i in 0..5  { es.push(epoch_at_lead(200 - i, now, 0.30, "Taiwan Strait")); }
+        let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
+        assert_eq!(r["available"], false, "5 led ticks (quiet ones excluded) is below the 30-sample floor");
+        assert_eq!(r["samples"], 5, "only non-empty-lead ticks are counted");
+    }
+
+    #[test]
+    fn lead_concentration_window_honest_null_when_current_world_has_no_lead() {
+        // A quiet current world (empty live lead) has no locus to characterize → honest-null,
+        // even if the ring holds historical leads. Never assert a concentration for "no lead".
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..40 { es.push(epoch_at_lead(3600 - i, now, 0.60, "Taiwan Strait")); }
+        let r = es.lead_concentration_window("", now, 24 * 3600, 30);
+        assert_eq!(r["available"], false);
+        assert_eq!(r["reason"], "no_lead");
+    }
+
+    #[test]
+    fn lead_concentration_window_names_the_day_leader_when_current_is_a_fresh_entrant() {
+        // The current lead just took over (a small day-share) while another theater actually led
+        // most of the day. Both must surface: current_pct small, top the day's leader — so the live
+        // tag can't mislead the operator into thinking the fresh entrant owned the day.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..34 { es.push(epoch_at_lead(3600 - i, now, 0.60, "Ukraine")); }       // day leader
+        for i in 0..6  { es.push(epoch_at_lead(60 - i, now, 0.60, "Taiwan Strait")); }   // fresh entrant, newest
+        let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
+        assert_eq!(r["available"], true);
+        assert_eq!(r["current"], "Taiwan Strait");
+        assert_eq!(r["top"], "Ukraine", "the modal lead is the day's leader, not the live tag");
+        assert_eq!(r["current_pct"].as_f64().unwrap(), 15.0);
+        assert_eq!(r["top_pct"].as_f64().unwrap(), 85.0);
+        assert_eq!(r["verdict"], "entrenched", "the day was dominated by one front even as the live lead changed");
     }
 
     // ── Honesty-layer uncertainty interval ────────────────────────────────────────

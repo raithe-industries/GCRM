@@ -22,6 +22,55 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-07 (late) — awareness (MATH-ANALYTIC) — the WHERE gets a TIME axis: how concentrated the locus of risk has been
+- Item: roadmap 1.16 (new). The place-analog of 1.13's alert-dwell — deliberately OFF the band-diagnostic
+  vein (coverage/sharpness/direction, 1.12/1.14/1.15) the last three runs mined, onto the least-recently-
+  advanced axis (the WHERE / theater awareness).
+- Diagnosis (pillar-3 AWARENESS weakest this run): the last three runs deepened pillar-1 HONESTY on the
+  uncertainty band until it is the best-instrumented surface in the system, while the WHERE stagnated. The
+  operator could see the CURRENT lead theater and a binary now-vs-6h-ago relocation (`trend_6h.lead_shifted`,
+  3.14), but a `grep` confirmed NO surface carried the locus's STABILITY over time. A single flashpoint
+  entrenched as the lead all day and a lead thrashing across five fronts read identically — yet one is a
+  deepening standoff and the other a broadening multi-front world, and when two theaters are a near-tie the
+  bare "relocated" flag fires on noise. That is the decision-relevant gap: entrenchment vs rotation.
+- Change (a NEW computed gauge from the durable ring; diagnostic-only, never feeds P): added
+  `EpochStore::lead_concentration` (24h window, matching `read_range` so the band means the same for every
+  operator). It tallies the per-tick `lead` label and reports `current`/`current_pct` (the LIVE lead's
+  day-share — small when the lead is a fresh entrant), the modal `top`/`top_pct` (the day's actual leader,
+  named when it differs so the live tag can't mislead), the `distinct`-front count, and a verdict
+  (entrenched ≥70% / rotating ≥4 fronts & top <45% / contested). Only non-empty-lead ticks are decisive —
+  a quiet world (no lead) is honest-null, never "0% concentrated"; honest-null below 30 samples or when the
+  live world has no lead. Served as `data.lead_concentration` (reuses the `lead_now` single-source-of-truth
+  already computed for the trend; the one server touch is a `.clone()` so both consumers can read it).
+  Rendered in the context strip (`#ca-locus`, hidden on honest-null via `renderLocus`), watched by the eyes
+  gate (element exists + well-formed "<theater> — N% of 24h" when visible).
+- Metric moved: a NEW awareness read — locus concentration over the archived 24h history (entrenched vs
+  rotating), a quantity no surface carried. +6 tests (595 → 601 in-tree; harness reports 602 passed).
+  NO calibration constant touched — computed after P is final; the four anchors are bit-identical
+  (`cargo test backtest` 24/24; bands quiet/Ukraine/current_2026=60%/Cuba all in-band).
+- Proof: `cargo build --release` clean. `cargo test --release` **602 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from touched src/ files. `node --check deploy/eyes/smoke.mjs`
+  OK. Lock proven fails-without-change: replacing the verdict classification with a constant `"contested"`
+  makes `lead_concentration_window_reports_entrenched_*` and `_reports_rotating_*` FAIL (got "contested",
+  right "entrenched"/"rotating"); restored → 602 green.
+- Tier: T1 (a NEW computed gauge — locus concentration over the 24h ring history: how much of the day the
+  current lead held the lead + the distinct-front count + entrenched/rotating verdict. NOT a restyle of the
+  existing `lead` field or the binary relocation flag — it computes new quantities (day-shares, front count,
+  concentration verdict) the per-tick lead does not carry over time. Precedent: `band_coverage`/`alert_dwell`
+  are graded T1 as new statistics over existing ring fields) · Touched: engine-behavior (new server-side
+  computation the client consumes; the lock fails when the verdict classification is neutered) ·
+  Lock-fails-without-change: yes (neutered-verdict proof above) · Counts: none of Live-sources/Map-layers/
+  Monitors moved — a diagnostic awareness read · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `lead_concentration` counts ONLY non-empty-`lead` ticks — a quiet
+  world is honest-null, never "0% concentrated"; do not "fix" that to report a zero. (2) The verdict
+  thresholds (70% / 45% / 4 fronts) are DISPLAY-only diagnostic cutoffs, not fitted constants — tune the
+  copy freely, but they never touch P. (3) `current` (live lead) and `top` (modal lead) genuinely differ
+  when the lead has just changed hands — keep BOTH; collapsing to one re-introduces the misleading-live-tag
+  bug the fresh-entrant test guards. (4) This is the WHERE-over-time lane (theater awareness), NOT the closed
+  band-caveat family; the FOLLOW-UP (per-modality concentration) needs a per-modality field added to the
+  ring's `TimelineEntry` first.
+
 ## 2026-07-07 (later) — honesty (MATH-ANALYTIC) — the band now says WHICH WAY it fails, not just how often
 - Item: roadmap 1.15 (new) — standing lane 1 MATH-ANALYTIC. The third reliability read of the band
   self-validation, after coverage (1.12) and sharpness (1.14).

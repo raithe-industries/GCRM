@@ -412,6 +412,28 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   + `dashboard_renders_the_band_coverage_validation` (extended to assert the breaches_up/down consumer +
   the above-band under-warn copy). See improvement-log 2026-07-07 (later).
 
+- [x] **1.16 Locus CONCENTRATION — the WHERE, over TIME** — **DONE 2026-07-07 (late).**
+  The place-analog of `alert_dwell` (1.13, the TIME axis of severity): the operator could see the
+  CURRENT lead theater (the WHERE) and a binary now-vs-6h-ago RELOCATION (`trend_6h.lead_shifted`,
+  3.14), but never how CONCENTRATED the locus of risk had been over the day. A single flashpoint
+  entrenched as the lead for 24h and a lead ROTATING across five fronts read identically — yet they are
+  a single deepening standoff vs a broadening multi-front world, and a flickering near-tie makes the
+  bare "relocated" flag pure noise. Added `EpochStore::lead_concentration` (24h window off the durable
+  ring, matching `read_range`): tally the per-tick `lead` label, report the current lead's day-share
+  (`current_pct`), the modal front (`top`/`top_pct`, which can differ when the live lead is a fresh
+  entrant), the `distinct`-front count, and a verdict (entrenched ≥70% / rotating ≥4 fronts & top <45% /
+  contested). Only non-empty-lead ticks count — a quiet world (no lead) is honest-null, never "0%
+  concentrated"; honest-null below 30 samples or when the live world has no lead. Diagnostic only —
+  read AFTER P is final, never feeds P or any fitted constant; anchors bit-identical (backtest 24/24).
+  Served as `data.lead_concentration`, rendered in the context strip (`#ca-locus`, hidden on
+  honest-null), watched by the eyes gate. Locked by
+  `lead_concentration_window_reports_entrenched_when_one_theater_dominates`,
+  `_reports_rotating_when_many_fronts_share` (FAIL when the verdict classification is neutered),
+  `_ignores_quiet_ticks_and_null_below_min`, `_honest_null_when_current_world_has_no_lead`,
+  `_names_the_day_leader_when_current_is_a_fresh_entrant`, + `dashboard_renders_the_locus_concentration`.
+  See improvement-log 2026-07-07 (late). FOLLOW-UP [candidate]: the same concentration read per-modality
+  (is the WHY entrenched on one channel or diffuse?) — needs a per-modality field in the ring first.
+
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
   peak")** — **DONE 2026-07-05.** The context strip showed "Session peak / Session low", computed
