@@ -942,6 +942,12 @@ impl EpochStore {
         // anchor, so it only ever moves forward (as in `momentum_lead_lag_window`).
         let tol = stride_secs;
         let (mut pairs, mut covered) = (0usize, 0usize);
+        // BREACH DIRECTION (the reliability companion to coverage): of the reads that escaped the
+        // band, how many broke ABOVE it (the read rose faster than the band allowed — the model
+        // UNDER-warned, the dangerous direction) vs BELOW it (over-warned). Coverage says whether the
+        // band fails; direction says which way — the decision-relevant half of an "overconfident"
+        // verdict, since upward breaches mean escalation outran the model.
+        let (mut breach_up, mut breach_down) = (0usize, 0usize);
         // SHARPNESS accumulators (the resolution companion to coverage): over every reconstructable
         // band — not only the ones that also formed a horizon pair — how WIDE the band typically is,
         // and how often the humility FLOOR rather than measured spread is what set that width.
@@ -992,6 +998,10 @@ impl EpochStore {
             pairs += 1;
             if pf >= pi - hw && pf <= pi + hw {
                 covered += 1;
+            } else if pf > pi + hw {
+                breach_up += 1; // read rose past the band top → model under-warned
+            } else {
+                breach_down += 1; // read fell below the band bottom → model over-warned
             }
         }
 
@@ -1014,6 +1024,11 @@ impl EpochStore {
             "available":    true,
             "coverage_pct": (coverage * 1e1).round() / 1e1,
             "breaches":     pairs - covered,
+            // Direction of the breaches: how many escaped ABOVE the band (the model under-warned —
+            // the dangerous direction) vs BELOW it. `breach_up + breach_down == breaches` by
+            // construction (a non-covered read is strictly above or strictly below the band).
+            "breaches_up":   breach_up,
+            "breaches_down": breach_down,
             "pairs":        pairs,
             "nominal_pct":  BAND_COV_NOMINAL_PCT,
             "horizon_secs": horizon_secs,
@@ -1028,7 +1043,9 @@ impl EpochStore {
                       horizon earlier; the confidence-widening term is omitted, so this is a floor on \
                       the published band's true coverage. mean_hw_pct is the band's mean half-width (a \
                       floor, widening omitted); floor_bound_pct is the share of reads whose empirical \
-                      spread was tighter than the humility floor, so the floor set the band width",
+                      spread was tighter than the humility floor, so the floor set the band width. \
+                      breaches_up/breaches_down split the escaped reads by direction — above the band \
+                      means the read outran the model (under-warned), below means it over-warned",
         })
     }
 
@@ -3077,6 +3094,46 @@ mod tests {
         assert!(r["breaches"].as_u64().unwrap() >= 1, "a +15pp step must breach the ±7pp band at least once");
         assert!(r["coverage_pct"].as_f64().unwrap() < 80.0, "a real move escaping the band must drop coverage below nominal");
         assert_eq!(r["verdict"], "overconfident");
+    }
+
+    #[test]
+    fn band_coverage_window_splits_breaches_by_direction() {
+        // Coverage says whether the band fails; direction says WHICH WAY. A read flat on a plateau
+        // that then STEPS UP escapes its band from ABOVE (the read outran the model — under-warned);
+        // a step DOWN escapes from below (over-warned). This locks the direction assignment: remove
+        // it (both counters stay 0) or reverse it and the matching assertion goes red.
+        let now = Utc::now();
+        let n = 38i64;
+
+        // Upward step: +15pp past the ±7pp floor → every breach is ABOVE the band.
+        let mut up = EpochStore::new();
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60;
+            let p = if i < 25 { 0.50 } else { 0.65 };
+            up.push(epoch_at(secs_ago, now, p));
+        }
+        let ru = up.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(ru["verdict"], "overconfident");
+        let bu = ru["breaches"].as_u64().unwrap();
+        assert!(bu >= 1, "the +15pp step must breach at least once");
+        assert_eq!(ru["breaches_up"].as_u64().unwrap(), bu, "an upward step's breaches all escape ABOVE the band");
+        assert_eq!(ru["breaches_down"].as_u64().unwrap(), 0, "an upward step never breaches below");
+        assert_eq!(ru["breaches_up"].as_u64().unwrap() + ru["breaches_down"].as_u64().unwrap(), bu,
+            "up + down must partition the breaches");
+
+        // Downward step: −15pp → every breach is BELOW the band (over-warned).
+        let mut dn = EpochStore::new();
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60;
+            let p = if i < 25 { 0.65 } else { 0.50 };
+            dn.push(epoch_at(secs_ago, now, p));
+        }
+        let rd = dn.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(rd["verdict"], "overconfident");
+        let bd = rd["breaches"].as_u64().unwrap();
+        assert!(bd >= 1, "the −15pp step must breach at least once");
+        assert_eq!(rd["breaches_down"].as_u64().unwrap(), bd, "a downward step's breaches all escape BELOW the band");
+        assert_eq!(rd["breaches_up"].as_u64().unwrap(), 0, "a downward step never breaches above");
     }
 
     #[test]

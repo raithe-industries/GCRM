@@ -822,6 +822,13 @@ mod tests {
         // read correctly (wide because the world is quiet, not because the model is guessing).
         assert!(DASHBOARD_HTML.contains("floor_bound_pct") && DASHBOARD_HTML.contains("at floor "),
             "the caption must surface the band's floor-binding share (the sharpness read)");
+        // BREACH DIRECTION (reliability): the caption must also consume which way the escaped reads
+        // broke — above the band (model under-warned, the dangerous direction) vs below — so an
+        // "overconfident" verdict is not a bare word but names the direction of its failures.
+        assert!(DASHBOARD_HTML.contains("breaches_up") && DASHBOARD_HTML.contains("breaches_down"),
+            "the caption must consume the server-provided breach direction (breaches_up/breaches_down)");
+        assert!(DASHBOARD_HTML.contains("ABOVE the band"),
+            "the breach-direction tooltip must name the under-warn (above-band) direction");
     }
 
     #[test]

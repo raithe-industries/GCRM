@@ -22,6 +22,57 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-07 (later) — honesty (MATH-ANALYTIC) — the band now says WHICH WAY it fails, not just how often
+- Item: roadmap 1.15 (new) — standing lane 1 MATH-ANALYTIC. The third reliability read of the band
+  self-validation, after coverage (1.12) and sharpness (1.14).
+- Diagnosis (pillar-1 HONESTY weakest): the band self-validation reported coverage (does it hold?) and,
+  since this morning, sharpness (is it tight?). But `breaches` was a bare COUNT — an "overconfident"
+  verdict named that the band failed but not WHICH WAY. A `grep` confirmed no direction/asymmetry read
+  exists anywhere. This is the decision-relevant half: a read escaping ABOVE the band means escalation
+  outran the model (it UNDER-warned — the dangerous direction); escaping BELOW means it over-warned. A
+  model that over-covers overall can still be systematically breaking upward on its rare misses, and the
+  operator had no way to see that.
+- Change (extends the existing `band_coverage` diagnostic; still diagnostic-only, never feeds P):
+  (a) `band_coverage_window` (aggregator.rs) now classifies each breach: `pf > pi+hw` → `breaches_up`
+      (above the band, under-warn), `pf < pi-hw` → `breaches_down` (below, over-warn). A non-covered read
+      is strictly above or below, so `breaches_up + breaches_down == breaches` by construction (asserted
+      in the test). Both ride the existing `data.band_coverage` object — NO server change.
+  (b) Dashboard (`#gauge-band-cov`): a compact "N⇧ M⇩" clause is shown ONLY on an OVERCONFIDENT verdict
+      (where direction is decision-relevant); calibrated/conservative keep the clean caption and carry the
+      breakdown in the tooltip. The tooltip gains a DIRECTION sentence naming the under-warn (above) vs
+      over-warn (below) split whenever there are breaches.
+  (c) Eyes gate: the coverage-line regex widened to `band held N% of reads · <verdict>[ · N⇧ M⇩][ · at
+      floor M%] (n=P)` — accepts the optional breach clause and stays tolerant of every verdict class and
+      an older backend.
+- Metric moved: the third calibration-diagnostic read — breach ASYMMETRY (under- vs over-warn direction)
+  over the archived epoch history, a quantity no surface carried. +1 test (594 → 595 passed). NO
+  calibration constant touched — computed after P is final; the four anchors are bit-identical
+  (`cargo test backtest` green; bands quiet/Ukraine/current_2026=60%/Cuba all in-band).
+- Proof: `cargo build --release` clean (warnings are vendored feed-rs). `cargo test --release`
+  **595 passed / 0 failed / 5 ignored**. `cargo clippy --release -p gcrm` — 0 warnings from touched src/
+  files. `node --check deploy/eyes/smoke.mjs` OK. Lock proven fails-without-change: neutering the
+  direction assignment (both counters stay 0) makes `breaches_up=0` for the up-step series and
+  `band_coverage_window_splits_breaches_by_direction` FAILS (panic at the `breaches_up==breaches`
+  assertion); restored → 595 green.
+- Tier: T1 (a NEW computed read — breach ASYMMETRY over the archived history: how the band's failures
+  split by direction, distinct from coverage=does-it-fail and sharpness=is-it-tight, and a quantity no
+  surface carried. NOT a restyle of the caption — it classifies each escaped read against the band it was
+  published under. Extends 1.12/1.14's function rather than adding a new one — disclosed here — because
+  coverage/sharpness/direction are three reads off ONE window walk of the same reconstructed bands;
+  splitting them would duplicate the walk) · Touched: engine-behavior (new server-side computation the
+  client consumes; the lock fails when the direction assignment is neutered) · Lock-fails-without-change:
+  yes (neutered-assignment proof above) · Counts: none of Live-sources/Map-layers/Monitors moved — a
+  calibration-diagnostic read · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `breaches_up + breaches_down == breaches` is a CONSTRUCTION
+  invariant (a non-covered read is strictly above or below the band) — keep it exact; do not add a
+  "boundary" bucket. (2) The visible "N⇧ M⇩" clause is intentionally gated to the OVERCONFIDENT verdict
+  to keep the common caption clean — the tooltip always carries the split. If you ever surface it for
+  other verdicts, widen the eyes-gate regex accordingly. (3) DIAGNOSTIC — computed after P is final; it
+  never touches P, the band, or a fitted constant. (4) The band caveat FAMILY (blind/thin/stale/…) is
+  closed; this is NOT that — it is the calibration-diagnostic lane (reliability over the archived
+  history), which standing lane 1 keeps open.
+
 ## 2026-07-07 — honesty (MATH-ANALYTIC) — the band now reports its SHARPNESS, not just its coverage
 - Item: roadmap 1.14 (new) — standing lane 1 MATH-ANALYTIC. The named-but-unshipped SHARPNESS half of
   the "reliability/sharpness over the archived epoch history" calibration diagnostic.

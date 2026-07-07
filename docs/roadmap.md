@@ -394,6 +394,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   ≈100 & mean_hw at the floor; ±20pp sawtooth → floor_bound_pct ≈0 & mean_hw above the floor — FAILS
   when `emp_hw < FLOOR` is neutered to `false`) + `dashboard_renders_the_band_coverage_validation`
   (extended to assert the floor-binding clause). See improvement-log 2026-07-07.
+- [x] **1.15 Band BREACH DIRECTION — which way the band fails** — **DONE 2026-07-07 (later).**
+  1.12/1.14 shipped coverage (does the band hold?) + sharpness (is it tight?); the third reliability
+  read — WHICH WAY it fails when it does — was unshipped. `breaches` was a bare count, so an
+  "overconfident" verdict couldn't tell the operator whether reads escaped ABOVE the band (escalation
+  outran the model — the model UNDER-warned, the dangerous direction) or BELOW (over-warned). A model
+  that over-covers overall can still be systematically breaking upward on its rare misses — the
+  direction is the decision-relevant half. Extended `band_coverage_window`: at each breach, classify
+  `pf > pi+hw` (above) vs `pf < pi-hw` (below) — a non-covered read is strictly one or the other, so
+  `breaches_up + breaches_down == breaches` by construction. Served on the existing `data.band_coverage`
+  object (no server change); rendered as a compact "N⇧ M⇩" clause on `#gauge-band-cov` ONLY on an
+  overconfident verdict (calibrated/conservative keep the clean caption, direction in the tooltip) + a
+  tooltip DIRECTION sentence; eyes-gate regex widened to accept the optional clause. Diagnostic only —
+  computed after P is final, never feeds P or a fitted constant; anchors bit-identical (backtest green).
+  Locked by `band_coverage_window_splits_breaches_by_direction` (an up-step → breaches_up==breaches,
+  breaches_down==0; a down-step → the mirror — FAILS when the direction assignment is neutered/reversed)
+  + `dashboard_renders_the_band_coverage_validation` (extended to assert the breaches_up/down consumer +
+  the above-band under-warn copy). See improvement-log 2026-07-07 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session

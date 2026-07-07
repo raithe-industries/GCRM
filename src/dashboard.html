@@ -1263,7 +1263,15 @@ function applyData(d){
       // verdict says the band is wide because the world is QUIET (moves smaller than the floor), not
       // because the model is guessing. Present whenever the server carries it (older backends omit it).
       const _fb=(typeof _bc.floor_bound_pct==='number')?' · at floor '+_bc.floor_bound_pct.toFixed(0)+'%':'';
-      _bcel.textContent='band held '+_bc.coverage_pct.toFixed(0)+'% of reads · '+_tag+_fb+' (n='+_bc.pairs+')';
+      // BREACH DIRECTION clause — shown only when OVERCONFIDENT (reads escaping the band > 1-in-5),
+      // where WHICH WAY they escaped is the decision-relevant half: ⇧ above = the read outran the
+      // model (under-warned, the dangerous direction), ⇩ below = over-warned. Compact "N⇧ M⇩" so both
+      // counts always render in the same shape. Hidden for calibrated/conservative (the band is
+      // holding — direction is in the tooltip only) to keep the common caption clean.
+      const _bu=(typeof _bc.breaches_up==='number')?_bc.breaches_up:null;
+      const _bd=(typeof _bc.breaches_down==='number')?_bc.breaches_down:null;
+      const _brc=(_bc.verdict==='overconfident'&&_bu!=null&&_bd!=null&&(_bu+_bd)>0)?(' · '+_bu+'⇧ '+_bd+'⇩'):'';
+      _bcel.textContent='band held '+_bc.coverage_pct.toFixed(0)+'% of reads · '+_tag+_brc+_fb+' (n='+_bc.pairs+')';
       _bcel.style.color = _bc.verdict==='overconfident' ? 'var(--bad,#e0533d)' : 'var(--t3)';
       if(typeof _bc.mean_hw_pct==='number'){
         _bcel.title='Self-validation of the band above. COVERAGE (reliability): '+_bc.coverage_pct.toFixed(0)
@@ -1272,6 +1280,9 @@ function applyData(d){
           +' (resolution): the band’s mean half-width is ≥'+_bc.mean_hw_pct.toFixed(1)+'pp (a floor —'
           +' confidence-widening omitted), and it sat AT the ±7pp humility floor '+_bc.floor_bound_pct.toFixed(0)
           +'% of the time — that share is how often the floor, not measured volatility, set the width.'
+          +((_bu!=null&&_bd!=null&&(_bu+_bd)>0)?(' DIRECTION: of the '+(_bu+_bd)+' read'+((_bu+_bd)===1?'':'s')
+            +' that escaped, '+_bu+' broke ABOVE the band (the read outran the model — under-warned, the'
+            +' dangerous direction) and '+_bd+' broke below (over-warned).'):'')
           +' Diagnostic only; it never feeds the number.';
       }
     } else { _bcel.textContent=''; _bcel.style.color='var(--t3)'; }
