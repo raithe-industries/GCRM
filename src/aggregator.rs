@@ -884,6 +884,13 @@ impl EpochStore {
     /// on the true published band's coverage — we never overstate how well the band performed. The
     /// series is stride-decimated (as in [`Self::momentum_lead_lag_window`]) so 1 Hz autocorrelated
     /// ticks don't inflate the pair count.
+    ///
+    /// Alongside coverage (reliability), it also reports SHARPNESS (resolution): `mean_hw_pct`, the
+    /// band's mean half-width (a floor, since the confidence-widening term is omitted), and
+    /// `floor_bound_pct`, the share of reconstructable bands whose empirical spread was tighter than
+    /// the humility floor — i.e. how often the ±7pp floor, not measured volatility, set the width.
+    /// Coverage without sharpness is gameable (a very wide band trivially covers); the pair is the
+    /// standard "maximise sharpness subject to calibration" read.
     pub fn band_coverage_window(
         &self,
         now: DateTime<Utc>,
@@ -935,6 +942,10 @@ impl EpochStore {
         // anchor, so it only ever moves forward (as in `momentum_lead_lag_window`).
         let tol = stride_secs;
         let (mut pairs, mut covered) = (0usize, 0usize);
+        // SHARPNESS accumulators (the resolution companion to coverage): over every reconstructable
+        // band — not only the ones that also formed a horizon pair — how WIDE the band typically is,
+        // and how often the humility FLOOR rather than measured spread is what set that width.
+        let (mut bands, mut sum_hw, mut floor_bound) = (0usize, 0.0f64, 0usize);
         let mut j = 0usize;
         for i in 0..series.len() {
             let (ti, pi) = series[i];
@@ -953,6 +964,17 @@ impl EpochStore {
             win.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let emp_hw = (percentile_sorted(&win, 0.90) - percentile_sorted(&win, 0.10)) / 2.0;
             let hw = emp_hw.max(crate::models::HUMILITY_FLOOR_HW);
+            // Sharpness: accumulate this band's half-width and whether the humility floor bound it.
+            // `hw` omits the confidence-widening term (as the whole reconstruction does), so the mean
+            // is a FLOOR on the published band's mean half-width — never an overstatement of how tight
+            // the model actually is. `emp_hw < FLOOR` is widening-independent: a clean read of how
+            // often the ±7pp floor — not realized volatility — is what makes the band its width. The
+            // `<` matches `uncertainty_window`'s own `floored` predicate (equality is not "floored").
+            bands += 1;
+            sum_hw += hw;
+            if emp_hw < crate::models::HUMILITY_FLOOR_HW {
+                floor_bound += 1;
+            }
             // Forward read nearest ti + horizon, within ±stride tolerance.
             let target = ti + horizon_secs;
             while j + 1 < series.len() && series[j].0 < target {
@@ -996,9 +1018,17 @@ impl EpochStore {
             "nominal_pct":  BAND_COV_NOMINAL_PCT,
             "horizon_secs": horizon_secs,
             "verdict":      verdict,
+            // SHARPNESS (the resolution half of the calibration read): the band's mean half-width and
+            // how often the humility floor — not measured spread — set it. `mean_hw_pct` omits the
+            // confidence-widening term, so it is a FLOOR on the published band's mean half-width.
+            "mean_hw_pct":     (sum_hw / bands as f64 * 100.0 * 1e1).round() / 1e1,
+            "floor_bound_pct": (floor_bound as f64 / bands as f64 * 100.0 * 1e1).round() / 1e1,
+            "bands":           bands,
             "basis": "share of archived reads that landed inside the model's own band published one \
                       horizon earlier; the confidence-widening term is omitted, so this is a floor on \
-                      the published band's true coverage",
+                      the published band's true coverage. mean_hw_pct is the band's mean half-width (a \
+                      floor, widening omitted); floor_bound_pct is the share of reads whose empirical \
+                      spread was tighter than the humility floor, so the floor set the band width",
         })
     }
 
@@ -3060,6 +3090,49 @@ mod tests {
         let r = es.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
         assert_eq!(r["available"], false, "too few pairs must not fabricate a coverage read");
         assert_eq!(r["verdict"], "insufficient");
+    }
+
+    #[test]
+    fn band_coverage_window_reports_sharpness_and_floor_binding() {
+        // SHARPNESS (the resolution companion to coverage). Two regimes:
+        //  (a) a CALM series whose spread stays far under the ±7pp humility floor — the floor sets the
+        //      band on ~every read, so floor_bound_pct ≈ 100 and the mean half-width sits at the floor;
+        //  (b) a VOLATILE ±20pp sawtooth — the model's own empirical spread dwarfs the floor, so the
+        //      floor binds on ~no read (floor_bound_pct ≈ 0) and the mean half-width exceeds the floor.
+        // The floor-binding count is the behavioral lock: neuter `emp_hw < FLOOR` to `false` and the
+        // calm-regime assertion (floor_bound_pct high) goes red.
+        let now = Utc::now();
+        let floor_pp = crate::models::HUMILITY_FLOOR_HW * 100.0; // 7.0
+        let n = 36i64;
+
+        // (a) calm: ±0.8pp jitter, well under the floor.
+        let mut calm = EpochStore::new();
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60;
+            let p = 0.50 + 0.008 * ((i % 3) - 1) as f64;
+            calm.push(epoch_at(secs_ago, now, p));
+        }
+        let rc = calm.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(rc["available"], true);
+        assert!(rc["bands"].as_u64().unwrap() >= 12, "a 3h series must reconstruct enough bands to judge sharpness");
+        assert!(rc["floor_bound_pct"].as_f64().unwrap() >= 90.0,
+            "a sub-floor-jitter series must be floor-bound on nearly every read, got {}", rc["floor_bound_pct"]);
+        assert!((rc["mean_hw_pct"].as_f64().unwrap() - floor_pp).abs() < 0.2,
+            "when the floor binds, the mean half-width sits at the floor (~{floor_pp}pp), got {}", rc["mean_hw_pct"]);
+
+        // (b) volatile: a ±20pp sawtooth — empirical spread dwarfs the floor.
+        let mut vol = EpochStore::new();
+        for i in 0..n {
+            let secs_ago = (n - i) * 300 + 60;
+            let p = if i % 2 == 0 { 0.30 } else { 0.70 };
+            vol.push(epoch_at(secs_ago, now, p));
+        }
+        let rv = vol.band_coverage_window(now, 48 * 3600, 6 * 3600, 3600, 300, 12);
+        assert_eq!(rv["available"], true);
+        assert!(rv["floor_bound_pct"].as_f64().unwrap() <= 10.0,
+            "a ±20pp sawtooth's empirical spread dwarfs the floor — it should bind on ~no read, got {}", rv["floor_bound_pct"]);
+        assert!(rv["mean_hw_pct"].as_f64().unwrap() > floor_pp + 2.0,
+            "a wide empirical spread must push the mean half-width above the floor, got {}", rv["mean_hw_pct"]);
     }
 
     // ── Alert-band dwell (the TIME axis of the current state) ──────────────────────

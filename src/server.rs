@@ -817,6 +817,11 @@ mod tests {
             "the caption must read the server-provided band_coverage validation");
         assert!(DASHBOARD_HTML.contains("band held "),
             "a judged band must state the realized coverage share");
+        // SHARPNESS (resolution): the caption must also consume the floor-binding share — how often the
+        // ±7pp humility floor, not measured spread, set the band width — so a "conservative" verdict is
+        // read correctly (wide because the world is quiet, not because the model is guessing).
+        assert!(DASHBOARD_HTML.contains("floor_bound_pct") && DASHBOARD_HTML.contains("at floor "),
+            "the caption must surface the band's floor-binding share (the sharpness read)");
     }
 
     #[test]

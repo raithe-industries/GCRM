@@ -375,6 +375,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `_caps_when_the_run_reaches_the_ring_edge`, `_honest_null_below_min_samples`,
   `_fails_closed_on_a_missing_alert_field`, `_honest_null_on_unknown_alert`,
   `dashboard_renders_the_alert_dwell`. See improvement-log 2026-07-06 (evening).
+- [x] **1.14 Band SHARPNESS — the resolution half of the calibration read** — **DONE 2026-07-07.**
+  1.12 shipped the RELIABILITY half (does the band cover?); the math-analytic lane names
+  "reliability/**sharpness** over the archived epoch history", and sharpness was unshipped — coverage
+  alone is gameable (a very wide band trivially covers, so the standard read is "maximise sharpness
+  subject to calibration"). Extended `band_coverage_window` to also report, over every reconstructable
+  band in the 48h window: `mean_hw_pct` (the band's mean half-width — a FLOOR, since the
+  confidence-widening term stays omitted, so it never overstates how tight the model is) and
+  `floor_bound_pct` (the share of bands whose empirical 80% spread was tighter than the ±7pp humility
+  floor — how often the floor, not measured volatility, set the width). This tells the operator whether
+  a "conservative" coverage verdict means the world is genuinely QUIET (moves smaller than the floor,
+  floor-bound high) or the model is guessing. Widening-independent for the floor share (a clean
+  `emp_hw < FLOOR` comparison, matching `uncertainty_window`'s `floored` predicate). Diagnostic only —
+  computed after P is final, never feeds P or a fitted constant; anchors bit-identical. Rides the
+  existing `data.band_coverage` object (no server change) into the `#gauge-band-cov` caption as a
+  "· at floor M%" clause + a sharpness tooltip; eyes-gate regex widened to accept the clause. Locked by
+  `band_coverage_window_reports_sharpness_and_floor_binding` (calm sub-floor series → floor_bound_pct
+  ≈100 & mean_hw at the floor; ±20pp sawtooth → floor_bound_pct ≈0 & mean_hw above the floor — FAILS
+  when `emp_hw < FLOOR` is neutered to `false`) + `dashboard_renders_the_band_coverage_validation`
+  (extended to assert the floor-binding clause). See improvement-log 2026-07-07.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session

@@ -22,6 +22,62 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-07 — honesty (MATH-ANALYTIC) — the band now reports its SHARPNESS, not just its coverage
+- Item: roadmap 1.14 (new) — standing lane 1 MATH-ANALYTIC. The named-but-unshipped SHARPNESS half of
+  the "reliability/sharpness over the archived epoch history" calibration diagnostic.
+- Diagnosis (pillar-1 HONESTY weakest): 1.12 shipped band COVERAGE (reliability) — but coverage alone is
+  gameable, because a very wide band trivially covers. The standard probabilistic-forecast read is
+  "maximise SHARPNESS subject to calibration" (Gneiting): coverage tells you if the band holds, sharpness
+  tells you if it's doing useful work. `grep` confirmed no historical sharpness/floor-binding read exists
+  anywhere in src or the dashboard — only the per-tick `half_width_pct` of the currently-published band.
+  So a "conservative" (over-covering) verdict left the operator unable to tell whether the band is wide
+  because the WORLD IS QUIET (realized moves smaller than the ±7pp humility floor) or because the model is
+  actually uncertain — two states implying very different reads of the same caption.
+- Change (extends the existing `band_coverage` diagnostic; still diagnostic-only, never feeds P):
+  (a) `band_coverage_window` (aggregator.rs) now accumulates, over EVERY reconstructable band in the 48h
+      window (not only the ones that also formed a horizon pair): `mean_hw_pct` — the band's mean
+      half-width — and `floor_bound_pct` — the share of bands whose empirical central-80% spread was
+      tighter than `HUMILITY_FLOOR_HW` (±7pp), i.e. how often the FLOOR, not measured volatility, set the
+      width. `mean_hw_pct` keeps the confidence-widening term OMITTED (as the whole reconstruction does),
+      so it is a conservative FLOOR on the published band's mean half-width — it can never overstate how
+      tight the model is (understating width = never a flattering-sharper lie). The floor-binding share
+      uses `emp_hw < FLOOR`, widening-independent and matching `uncertainty_window`'s own `floored`
+      predicate (equality is not "floored"). Both ride the existing `data.band_coverage` object — NO
+      server change (server.rs already serves the whole json object).
+  (b) Dashboard (`#gauge-band-cov`): the caption gains a "· at floor M%" clause and a sharpness tooltip
+      (mean half-width ≥Xpp + what the floor-bound share means); the clause is conditional on the server
+      carrying `floor_bound_pct`, so an older backend renders the plain coverage line.
+  (c) Eyes gate: the coverage-line regex is widened to `band held N% of reads · <verdict>[ · at floor M%]
+      (n=P)` — accepts the sharpness clause and stays tolerant of a backend that omits it.
+- Metric moved: the SHARPNESS half of the band self-validation — first read of how wide the published
+  band typically is and how often the humility floor (vs. measured volatility) sets it, from the archived
+  epoch history. +1 test (593 → 594 passed). NO calibration constant touched — computed after P is final;
+  the four anchors are bit-identical (`cargo test backtest` green; bands quiet/Ukraine/current_2026=60%/
+  Cuba all in-band).
+- Proof: `cargo build --release` clean (warnings are vendored feed-rs). `cargo test --release`
+  **594 passed / 0 failed / 5 ignored**. `cargo clippy --release -p gcrm` — 0 warnings from touched src/
+  files. `node --check deploy/eyes/smoke.mjs` OK. Lock proven fails-without-change: neutering the
+  floor-binding predicate `emp_hw < FLOOR` → `false` makes `floor_bound_pct=0` for the calm sub-floor
+  series and `band_coverage_window_reports_sharpness_and_floor_binding` FAILS ("must be floor-bound on
+  nearly every read, got 0.0"); restored → 594 green.
+- Tier: T1 (a NEW computed read — the band's historical SHARPNESS: mean half-width + floor-binding share,
+  the named-but-unshipped resolution half of the calibration diagnostic, quantities the per-tick
+  `half_width_pct` does not carry over history and that no surface showed. NOT a restyle of the coverage
+  caption: it computes new numbers from the ring's reconstructed bands. It extends 1.12's function rather
+  than adding a new one — disclosed here — because sharpness and coverage are the two halves of ONE proper
+  read and share the exact same window walk; splitting them into two functions would duplicate the walk
+  for no gain) · Touched: engine-behavior (new server-side computation the client consumes; the
+  behavioral lock fails when the floor predicate is neutered) · Lock-fails-without-change: yes
+  (neutered-predicate proof above) · Counts: none of Live-sources/Map-layers/Monitors moved — a
+  calibration-diagnostic read · consecutive_display_only=0 · display_only_in_last_7=1 ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `mean_hw_pct` is a FLOOR (widening omitted) — keep it framed with
+  "≥" in any UI; never present it as the exact published width (that would overstate sharpness). (2) The
+  floor share uses `emp_hw < FLOOR` (strict, equality-not-floored) to match `uncertainty_window`'s
+  `floored` — do not flip to `<=`. (3) Sharpness is measured over every reconstructable band (`bands`),
+  a superset of `pairs` — deliberately, so band width is judged independently of horizon-pairing. (4)
+  This is DIAGNOSTIC — computed after P is final; it never touches P, the band, or a fitted constant.
+
 ## 2026-07-06 (evening) — awareness (MATH-ANALYTIC) — the headline now says HOW LONG it has held its alert band (the TIME axis)
 - Item: roadmap 1.13 (new) — standing lane 1 MATH-ANALYTIC. A new computed gauge from the durable ring.
 - Diagnosis (AWARENESS weakest of the three, per mission WHERE/WHY over HOW-MUCH): the recent runs

@@ -239,9 +239,11 @@ if (latest) {
   const bcPresent = await page.$('#gauge-band-cov');
   if (!bcPresent) fail.push('#gauge-band-cov (band self-validation) missing — the uncertainty-band coverage caption was dropped from the DOM');
   else {
+    // The optional "· at floor M%" clause is the sharpness read (present on backends that carry
+    // floor_bound_pct; an older backend omits it) — accept the line with or without it.
     const bc = await page.$eval('#gauge-band-cov', (el) => el.textContent.trim()).catch(() => null);
-    if (bc && !/^band held \d+% of reads · \w+ \(n=\d+\)$/.test(bc))
-      fail.push(`#gauge-band-cov rendered a malformed coverage line ("${clip(bc)}") — expected "band held N% of reads · <verdict> (n=P)"`);
+    if (bc && !/^band held \d+% of reads · \w+( · at floor \d+%)? \(n=\d+\)$/.test(bc))
+      fail.push(`#gauge-band-cov rendered a malformed coverage line ("${clip(bc)}") — expected "band held N% of reads · <verdict>[ · at floor M%] (n=P)"`);
     else ok(`band self-validation caption intact (#gauge-band-cov = "${bc ? clip(bc) : '(honest-null: thin ring)'}")`);
   }
 

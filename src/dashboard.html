@@ -1258,8 +1258,22 @@ function applyData(d){
   if(_bcel){
     if(_bc&&_bc.available===true&&typeof _bc.coverage_pct==='number'){
       const _tag={calibrated:'calibrated',conservative:'conservative',overconfident:'overconfident'}[_bc.verdict]||'';
-      _bcel.textContent='band held '+_bc.coverage_pct.toFixed(0)+'% of reads · '+_tag+' (n='+_bc.pairs+')';
+      // SHARPNESS clause (the resolution half of the read): how often the ±7pp humility floor — not
+      // measured spread — set the band width. High "at floor" alongside a "conservative" coverage
+      // verdict says the band is wide because the world is QUIET (moves smaller than the floor), not
+      // because the model is guessing. Present whenever the server carries it (older backends omit it).
+      const _fb=(typeof _bc.floor_bound_pct==='number')?' · at floor '+_bc.floor_bound_pct.toFixed(0)+'%':'';
+      _bcel.textContent='band held '+_bc.coverage_pct.toFixed(0)+'% of reads · '+_tag+_fb+' (n='+_bc.pairs+')';
       _bcel.style.color = _bc.verdict==='overconfident' ? 'var(--bad,#e0533d)' : 'var(--t3)';
+      if(typeof _bc.mean_hw_pct==='number'){
+        _bcel.title='Self-validation of the band above. COVERAGE (reliability): '+_bc.coverage_pct.toFixed(0)
+          +'% of the last 48h of archived reads landed inside the model’s own band published an hour earlier'
+          +' (a well-calibrated 80% band holds ≈80%; more = conservative, less = overconfident). SHARPNESS'
+          +' (resolution): the band’s mean half-width is ≥'+_bc.mean_hw_pct.toFixed(1)+'pp (a floor —'
+          +' confidence-widening omitted), and it sat AT the ±7pp humility floor '+_bc.floor_bound_pct.toFixed(0)
+          +'% of the time — that share is how often the floor, not measured volatility, set the width.'
+          +' Diagnostic only; it never feeds the number.';
+      }
     } else { _bcel.textContent=''; _bcel.style.color='var(--t3)'; }
   }
   const _ep=d.epistemic,_gp=document.getElementById('gauge-posture');
