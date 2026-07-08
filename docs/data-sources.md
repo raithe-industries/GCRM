@@ -108,9 +108,20 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   the baseline-relative *flood category* (`status`), so the river-flooding hazard now plots
   meaningfully without precomputing a baseline. (ECCC hydrometric itself stays rejected: it's
   Canadian raw level with no category; reconsider only via the precomputed-quantile route above.)
-- **NTWC tsunami messages (tsunami.gov)** — usable + geocoded, but US-NOAA-authoritative,
-  not a Canadian agency (fails bar 1 for the Canada focus). Reconsider only if the program
-  scope broadens to "official-issuer-for-Canada" sources.
+- **NTWC / NOAA tsunami (tsunami.gov CAP-TSU)** — usable + geocoded, but **now ruled out as
+  DUPLICATIVE (re-evaluated 2026-07-08).** The original "US-NOAA-authoritative, not Canadian"
+  caveat is moot — the map is fully global (US NWS/NHC/SPC/AWC/NWPS, DE/FI/FR radiation, JMA,
+  GeoNet, etc.), so NOAA clears bar 1. But re-checked against the fan-out: the live `nws` feed
+  fetches `api.weather.gov/alerts/active` and `parse_nws` ingests **every** alert by its `event`
+  field with **no type filter** — so US **Tsunami Warning / Advisory / Watch** are ALREADY on the
+  map (as `EventKind::Weather`). The tsunami.gov CAP files (`/events/xml/PAAQCAP.xml` NTWC,
+  `PHEBCAP.xml` PTWC; epicenter inline as the `EventLatLon` param, magnitude as
+  `EventPreliminaryMagnitude`) cover the same US areas → **fails bar 6 (non-duplicative)**; the
+  ocean-wide *international* products (Japan/Chile/Pacific) are separate **text bulletins**, not
+  in these geocoded CAP files, so the CAP path does NOT reach the Asian theater. **JMA tsunami**
+  (`bosai/tsunami`) is issued per **coastal forecast region (66 region codes, no inline geometry)**
+  → same geometry-anchoring wall as MeteoAlarm; blocked without an EMMA-style region table. Net: no
+  clean, non-duplicative, geocoded tsunami-warning layer available — do not re-chase either path.
 - **NRCan space weather** — no clean machine-readable, geocoded, per-record product (K-index
   is a JS-drawn image; F10.7 is a single-site global scalar). No map fit.
 
@@ -182,12 +193,19 @@ Bias each run toward the least-covered axis below.
   `asam` connector's parser/severity ladder is reusable if any successor speaks a
   compatible schema. Also remaining: **live AIS traffic** outside the Baltic
   (positions, not incidents) — other
-  authoritative auth-free regional AIS if one surfaces. Two AIS-traffic leads stay ruled out:
+  authoritative auth-free regional AIS if one surfaces. Three AIS-traffic leads stay ruled out:
   **NOAA/USCG marinecadastre** (authoritative but data on Azure blob, GeoParquet bulk
-  historical — not GitHub-raw, not live, no hand-parse) and **Danish Maritime Authority**
+  historical — not GitHub-raw, not live, no hand-parse); **Danish Maritime Authority**
   (live AIS is *paid*, DKK 1,800–5,600/yr; only historical 2006–2016 bulk CSV is free, on
   `web.ais.dk` not GitHub; the `dma-ais` GitHub org is Java *software* libraries, no data
-  feed). Neither is a Path-A or Path-B fit.
+  feed); and **Norwegian Coastal Administration / Kystverket** (checked 2026-07-08 — the
+  real-time feed is **auth-free (NLOD, no registration)** BUT delivered as a **raw TCP socket**
+  of IEC-62320 AIVDM/AIVDO sentences at `153.44.253.27:5631`, NOT an HTTP JSON/GeoJSON endpoint,
+  so it does NOT fit the connector's `fetch_text` hand-parse model — a persistent-socket ingestor
+  is out of lane; `ais-public.kystverket.no` is *historical* only, and `kystdatahuset.no/ws`
+  is an analytics web-service, not a live-positions GeoJSON). None is a Path-A or Path-B fit.
+  (The only clean HTTP AIS on the map remains `digitraffic_ais`, Fintraffic/Baltic — an
+  equivalent auth-free HTTP AIS for an **Asian chokepoint** theater has not surfaced.)
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV) and EXTENDED
   2026-06-28 with `acled_aggregated` (**ACLED weekly Admin-1 intensity, Path-B snapshot**) —
   the ACLED aggregated-weekly product is now LANDED (the licensed event `acled` stays dormant).
@@ -254,9 +272,19 @@ Bias each run toward the least-covered axis below.
   baseline-relative flood modality now spans the US **and** England (opening UK/Europe, the
   biggest blank). Gap now: flood-with-baselines **elsewhere** — a **Canadian** product that
   ships a category (ECCC hydrometric stays rejected for lacking one), **Scotland (SEPA)** /
-  **Wales (NRW)** (the EA `floods` endpoint is England-only — SEPA/NRW publish separately),
-  or a broader **European** flood-category feed (Copernicus EFAS / GloFAS if an auth-free
-  geocoded per-area category surfaces). **snow-avalanche
+  **Wales (NRW)** to complete Great Britain, or a broader **European** flood-category feed
+  (Copernicus EFAS / GloFAS if an auth-free geocoded per-area category surfaces). **GB-completion
+  triaged 2026-07-08 — both blocked this run:** **NRW (Wales)** does expose a "Live Flood Warnings
+  & Alerts" **GeoJSON by severity** (same Severe/Warning/Alert scale as EA, 15-min cadence) but it
+  lives on an **Azure API-Management portal (`api-portal.naturalresources.wales`) behind a
+  subscription key** → would ship DORMANT (keyed, no live value). **SEPA (Scotland)** publishes on
+  an **ArcGIS Hub (`opendata-scottishepa.hub.arcgis.com`)** but the hosted content is **static
+  flood-*risk*/extent maps**, not a live flood-*warning* FeatureServer with current status — the
+  live warnings run through Floodline, whose auth-free machine-readable status endpoint isn't
+  exposed/confirmable (SEPA host 403s web fetch, no committed client to anchor). **Landable when
+  EITHER** an auth-free SEPA live-warning ArcGIS FeatureServer (queryable `f=geojson`) is pinned,
+  **OR** NRW confirms a keyless open-data tier, **OR** a committed client quoting either live-warning
+  schema surfaces. **snow-avalanche
   hazard SEEDED 2026-06-27** with `avalanche_ca` (Avalanche Canada danger ratings, Canadian
   mountains, seasonal). Gap now: avalanche/mountain hazard outside Canada (e.g. US NWAC/CAIC,
   the European EAWS/`avalanche.report` if an auth-free geocoded product ships a danger level).
@@ -340,6 +368,38 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-08 (Signal Hunter, later run)** — **HONEST NO-OP — every ranked mission gap re-verified
+  walled from the sandbox this run; ledger updated (no code change).** Worked the gap ranking top-down,
+  each candidate genuinely evaluated (web search works; web fetch still 403s every non-GitHub host —
+  `raw.githubusercontent.com` only): (1) **Maritime / Asian-theater vessel (top gap)** — ReCAAP has no
+  machine-readable API (re-confirmed); **Kystverket (Norway)** real-time AIS is auth-free but a **raw TCP
+  socket** (AIVDM sentences, `153.44.253.27:5631`), not an HTTP JSON feed → out of the `fetch_text`
+  connector model (recorded in the Vessel gap); no auth-free HTTP AIS for a Hormuz/Taiwan-Strait/SCS
+  chokepoint surfaced → **blocked**. (2) **Conflict-freshness / `acled_aggregated` refresh** (snapshot
+  newest WEEK `2026-03-07`, ~123 days stale → the intensity layer is honestly dark): re-verified myself —
+  `acleddata.com` + `data.humdata.org` both 403 web fetch, **no fresh 2026 ACLED weekly-aggregate mirror on
+  GitHub-raw** (redistribution is registration/ToS-gated), and re-adding a live ACLED fetch is permanently
+  barred → **not refreshable from here** (local re-download job only). (3) **Military-posture / global
+  NOTAM airspace** — FAA SWIM keyed; openAIP is static airspace (not live danger-area *activation*); FAA
+  TFRs are US-only/low-signal → **blocked**. (4) **Asian-theatre radiation** (Japan NRA RAMDAS / Korea KINS
+  / Taiwan) — real authoritative networks but **no committed GitHub client quotes any dose-rate schema** to
+  anchor, and only citizen-science aggregators (OpenRadiation/Safecast) surfaced (fail no-scrapers) →
+  **blocked**. (5) **Food-insecurity (FEWS NET / IPC, strong deferral)** — re-attempted the HDX mirror path:
+  the IPC API (`api.ipcinfo.org`) is **keyed**, HDX (`data.humdata.org/organization/ipc`) **403s web fetch**,
+  and **no committed IPC/FEWS GeoJSON sample** surfaced on GitHub-raw → still blocked on real-bytes schema
+  anchoring (stays a strong deferral). (6) **Tsunami warnings** — NEW ruling: NOAA `tsunami.gov` CAP-TSU is
+  **duplicative** — the live `nws` feed already ingests US Tsunami Warning/Advisory/Watch (`parse_nws` takes
+  every `api.weather.gov/alerts/active` event with no type filter); JMA `bosai/tsunami` is region-code (no
+  inline geometry). Both recorded under the updated **NTWC/NOAA tsunami** rejection → do not re-chase.
+  (7) **GB-flood completion (Scotland SEPA / Wales NRW)** — NRW live GeoJSON is **key-gated** (Azure portal
+  → DORMANT); SEPA's ArcGIS Hub carries **static flood-risk maps**, not a live-warning FeatureServer →
+  blocked (both recorded under the flood gap). No candidate cleared all six bars with an honest anchor, and
+  the sole anchorable option (a 2nd Australian-state fire feed, same alert-level modality as `nsw_rfs`) closes
+  **no** ranked gap — landing it would be low-value densification the mission deprioritizes ("one source that
+  fills a mission gap beats three trivia layers"), especially hours after `ea_flood` landed. **Green-proof:
+  N/A (ledger-only commit, no connector/`osint.rs` change — tree otherwise clean).** The maritime/Asian-AIS,
+  military-posture/NOTAM, Asian-radiation, ACLED-refresh, food-insecurity, and GB-flood lanes remain open per
+  the (now-sharpened) gap notes.
 - **2026-07-08 (Signal Hunter)** — **ADOPTED `ea_flood` (UK Environment Agency active flood warnings,
   England), Path A** — the **first England/UK feed on the map**, extending the baseline-relative
   flood-category modality (opened by the US-only `nwps_flood`) to **England** and opening **Europe**
