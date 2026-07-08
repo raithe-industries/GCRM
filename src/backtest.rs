@@ -436,6 +436,61 @@ fn snapshot_attributes_the_cuba_headline_to_nuclear_posture() {
 }
 
 #[test]
+fn load_bearing_modality_reports_support_breadth_from_the_drop_vector() {
+    // Lock for SUPPORT BREADTH — the effective number of modalities the headline leans on, the
+    // participation ratio (Σd)²/Σd² of the leave-one-out drop vector. Two properties, both proven
+    // end-to-end through `compute`:
+    //  (1) IDENTITY: the served `support_breadth` IS the participation ratio of the served profile
+    //      drops (they cannot disagree — same vector). This fails if the field is neutered to a
+    //      constant OR computed from a different vector than the one shown.
+    //  (2) DISCRIMINATION: a broad, multi-theater board leans on MORE than one modality (breadth
+    //      well above 1), while a single-modality board collapses to breadth ≈ 1. A neuter that
+    //      always returns 1.0 (or 0.0) fails the broad-board assertion.
+    let ratio = |prof: &[(String, f64)]| -> f64 {
+        let s: f64 = prof.iter().map(|(_, d)| *d).sum();
+        let s2: f64 = prof.iter().map(|(_, d)| d * d).sum();
+        if s2 > 0.0 { s * s / s2 } else { 0.0 }
+    };
+
+    // Broad current-world board: several modalities carry real leverage.
+    let broad = run(current_2026().0, &current_2026().1);
+    let lbm = &broad.load_bearing_modality;
+    assert!(lbm.available, "the broad current-world headline must name a load-bearing modality");
+    // (1) identity with the served profile, within the field's 1e-2 rounding.
+    assert!((lbm.support_breadth - ratio(&lbm.profile)).abs() <= 0.02,
+        "support_breadth {:.4} must equal the participation ratio {:.4} of the served drop vector",
+        lbm.support_breadth, ratio(&lbm.profile));
+    // (2) breadth is bounded by the modality count and — for a genuinely multi-modal world —
+    // sits meaningfully above the single-sourced floor of 1. This is the assertion a constant-1.0
+    // neuter fails.
+    assert!(lbm.support_breadth >= 1.0 && lbm.support_breadth <= 5.0,
+        "support breadth must lie in [1, 5], got {:.2}", lbm.support_breadth);
+    assert!(lbm.support_breadth > 1.2,
+        "a multi-theater multi-modality board must lean on more than one modality, got {:.2}",
+        lbm.support_breadth);
+
+    // A single-modality board (a lone nuclear-brink standoff, no other force in play) collapses the
+    // breadth toward 1: the drop vector is dominated by one entry.
+    let single = run(cuba_1962().0, &cuba_1962().1);
+    let lbs = &single.load_bearing_modality;
+    assert!(lbs.available, "the Cuba brink headline must name a load-bearing modality");
+    assert!((lbs.support_breadth - ratio(&lbs.profile)).abs() <= 0.02,
+        "identity must hold for the single-sourced board too, got {:.4} vs {:.4}",
+        lbs.support_breadth, ratio(&lbs.profile));
+    assert!(lbs.support_breadth < broad.load_bearing_modality.support_breadth,
+        "a brink-dominated board ({:.2}) must be more single-sourced than the broad board ({:.2})",
+        lbs.support_breadth, broad.load_bearing_modality.support_breadth);
+
+    // An empty board names no modality, so the breadth is honestly zero (unavailable), never a
+    // phantom "1 modality".
+    let empty_snap = run(1.0, &[]);
+    assert!(!empty_snap.load_bearing_modality.available,
+        "an empty board must not name a load-bearing modality");
+    assert_eq!(empty_snap.load_bearing_modality.support_breadth, 0.0,
+        "an empty board's support breadth must be 0.0 (unavailable), not a phantom count");
+}
+
+#[test]
 fn snapshot_attributes_the_headline_to_a_load_bearing_theater() {
     // End-to-end lock for the theater-sensitivity read through `compute`: the multi-theater
     // current-2026 analog's headline must attribute to a load-bearing THEATER — the flashpoint

@@ -22,6 +22,56 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-08 (later) — honesty/awareness (MATH-ANALYTIC) — is the headline single-sourced (fragile) or broad-based (robust)
+- Item: roadmap 1.18 (new). Stays in the sensitivity family (1.9–1.11, 1.17) — the live vein per the
+  1.17 notes — but on a fresh axis: not WHICH factor is load-bearing (leader) nor HOW MUCH memory
+  props it (1.17), but HOW MANY kinds of force actually hold it up (diversification/breadth). Distinct
+  from every prior read.
+- Diagnosis (pillar-1 HONESTY / pillar-3 AWARENESS weakest): the load-bearing-modality read names the
+  SINGLE leader and its leave-one-out drop, and a `grep` confirmed no surface carries the SHAPE of the
+  full drop vector — whether that leader is the whole story or first among several. A 60% resting
+  entirely on economic warfare (one channel vanishing collapses it — FRAGILE) and a 60% resting evenly
+  across five modalities (ROBUST) name the same leader and read identically today, yet imply different
+  operator trust in the number. The decision-relevant gap: is this number single-sourced or broad-based.
+- Change (a NEW computed gauge over the already-computed profile; diagnostic-only, never feeds P):
+  added `support_breadth` to `ModalitySensitivity` — the participation ratio `(Σdᵢ)²/Σdᵢ²` of the
+  per-modality leave-one-out drop vector, i.e. the EFFECTIVE NUMBER of modalities the headline leans
+  on. N_eff = 1 when one modality carries the whole drop (single-sourced), approaches the count of
+  comparable contributors when the support is spread; zero-drop modalities contribute nothing so it is
+  bounded by the count with real leverage. Computed in `bayesian::compute` from the SAME `profile` the
+  leader is drawn from (they can never disagree), gated on the same `available` (0.0 when diffuse).
+  Served under `load_bearing_modality.support_breadth` (the struct already serializes whole); rendered
+  as a "· leans on ≈N.N modalities[, single-sourced|broad-based]" clause on `#f-loadbearing`; eyes gate
+  asserts the clause is well-formed whenever present (optional — hidden for diffuse/held/older backend).
+- Metric moved: a NEW honesty/awareness read — the diversification of the headline's modality support
+  (single-sourced vs broad-based), a quantity no surface carried. +1 test (604 → 605 passed). NO
+  calibration constant touched — computed after P is final; the four anchors are bit-identical
+  (`cargo test backtest` 25/25; calibration_evidence Brier 0.00092 / RMSE 3.04pp / in-band 4/4 unchanged;
+  quiet 2.62% / Ukraine 43.24% / current_2026 60.01% / Cuba 84.30%, all in-band).
+- Proof: `cargo build --release` clean. `cargo test --release` **605 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from touched src/ files. `node --check deploy/eyes/smoke.mjs`
+  OK. Lock proven fails-without-change: neutering `support_breadth` to a constant `1.0` makes
+  `load_bearing_modality_reports_support_breadth_from_the_drop_vector` FAIL (identity vs the served
+  profile's participation ratio breaks and the broad>single discrimination breaks); restored → 605 green.
+- Tier: T1 (a NEW computed gauge — the effective number of load-bearing modalities, a participation
+  ratio over the leave-one-out drop VECTOR that the single-leader field cannot carry. NOT a restyle of
+  `load_bearing_modality` — it computes a new statistic (diversification) the same way `band_coverage`/
+  `lead_concentration` are graded T1 as new statistics over existing profile/ring fields; this is the
+  diversification of the sensitivity profile, orthogonal to its leader and to 1.17's memory ablation) ·
+  Touched: engine-behavior (new `support_breadth` computed in `compute`, consumed by the client; the
+  lock fails when it is neutered to a constant) · Lock-fails-without-change: yes (constant-1.0 neuter
+  proof above) · Counts: none of Live-sources/Map-layers/Monitors moved — a diagnostic honesty/awareness
+  read · consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `support_breadth` is the participation ratio of the SERVED
+  `profile` drops — keep it computed from that exact vector so the breadth and the named leader can
+  never disagree; the identity assertion in the lock enforces this. (2) It is bounded by the count of
+  modalities with positive leverage (zero-drop terms drop out of both sums), so a broad-board value near
+  the modality count is a real multi-modal world, not a bug. (3) The display qualifiers (<1.5
+  single-sourced / ≥3 broad-based) are DISPLAY-only cutoffs, not fitted constants — tune the copy freely,
+  they never touch P. (4) DIAGNOSTIC — computed after P is final; it never feeds P or any fitted
+  constant. (5) This is the diversification axis of the sensitivity family; the band-caveat family
+  remains CLOSED.
+
 ## 2026-07-08 — honesty (MATH-ANALYTIC) — how much of the headline is REMEMBERED, not just WHETHER it is
 - Item: roadmap 1.17 (new). Deliberately OFF the band-diagnostic vein (coverage/sharpness/direction/
   locus, 1.12–1.16) the last five runs mined — a fresh ablation read (memory ablation) in the

@@ -451,6 +451,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   displayed-basis one when a theater is memory-held; equal when none is — FAILS when the fresh variant
   is neutered to the displayed basis) + the extended `snapshot_to_json` contract assert. See
   improvement-log 2026-07-08.
+- [x] **1.18 SUPPORT BREADTH — is the headline single-sourced (fragile) or broad-based (robust)** —
+  **DONE 2026-07-08 (later).** The load-bearing reads (1.10/1.11) name the SINGLE leading modality and
+  its drop, but no surface said whether that leader is the whole story or one of several — a 60%
+  resting entirely on economic warfare and a 60% resting evenly across five modalities named the same
+  leader yet implied very different operator trust. Added `support_breadth` to `ModalitySensitivity`:
+  the participation ratio `(Σdᵢ)²/Σdᵢ²` of the already-computed leave-one-out drop vector — the
+  effective number of modalities the headline leans on. ≈1 → single-sourced/fragile (that one channel
+  vanishing collapses the read); larger → broad-based/robust; bounded by the count of modalities with
+  real leverage (zero-drop terms contribute nothing). 0.0 / hidden when the read is diffuse
+  (`available:false`). Computed from the SAME profile the leader is drawn from, so the two can never
+  disagree. Diagnostic only — computed AFTER P is final, never feeds P or any fitted constant; anchors
+  bit-identical (backtest 25/25, calibration evidence Brier 0.00092 unchanged). Served under
+  `load_bearing_modality.support_breadth`, rendered in the model-state footer as a "· leans on ≈N.N
+  modalities[, single-sourced|broad-based]" clause on `#f-loadbearing`, watched by the eyes gate (the
+  clause is well-formed when present). Locked by `load_bearing_modality_reports_support_breadth_from_
+  the_drop_vector` (identity with the served profile's participation ratio + broad>single discrimination
+  + empty-board=0.0; FAILS when the breadth is neutered to a constant). See improvement-log 2026-07-08 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session

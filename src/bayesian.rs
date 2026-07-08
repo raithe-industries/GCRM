@@ -946,10 +946,24 @@ impl BayesianRiskEngine {
             let min_drop_pp = MIN_DROP_ABS_PP.min((MIN_DROP_SHARE * elevation_pp).max(1e-3));
             let top = profile.first().cloned().unwrap_or_default();
             let available = top.1 >= min_drop_pp;
+            // SUPPORT BREADTH: the effective number of modalities the headline leans on — the
+            // participation ratio (Σd)²/Σd² of the leave-one-out drop vector. N_eff = 1 when one
+            // modality carries the whole drop (single-sourced / fragile); it approaches the count
+            // of comparable contributors when the support is spread (broad / robust). Non-negative
+            // drops, so Σd² > 0 exactly when some modality has leverage (i.e. when `available`);
+            // computed from the SAME profile so it can never disagree with the named leader.
+            let sum_d: f64 = profile.iter().map(|(_, d)| *d).sum();
+            let sum_d2: f64 = profile.iter().map(|(_, d)| d * d).sum();
+            let support_breadth = if available && sum_d2 > 0.0 {
+                ((sum_d * sum_d / sum_d2) * 1e2).round() / 1e2
+            } else {
+                0.0
+            };
             snap.load_bearing_modality = crate::models::ModalitySensitivity {
                 modality:  if available { top.0 } else { String::new() },
                 p_drop_pp: if available { top.1 } else { 0.0 },
                 profile,
+                support_breadth,
                 available,
             };
 

@@ -584,7 +584,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
     <div class="formula">
       Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, flat)</span> · systemic L = <span id="f-lik">—</span> · guardrail collapse = <span id="f-guard">—</span><br>
       P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span><br>
-      <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span><br>
+      <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). 'Leans on ≈N modalities' is the SUPPORT BREADTH — the effective number of modalities holding up the headline (participation ratio of the per-modality drops): ≈1 means single-sourced and fragile (that one channel vanishing collapses the read), a larger value means broad-based and robust. Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span><br>
       <span title="Leave-one-out sensitivity: the theater whose absence from the board would drop the headline P the most (server field load_bearing_theater) — the highest-LEVERAGE flashpoint, which the non-linear couplers can make different from the hottest one. Diagnostic only — it never feeds the number.">Load-bearing theater = <span id="f-loadtheater">—</span></span><br>
       <span id="f-memory-row" title="How much of the headline is carried by remembered war-state — persistence floors holding a memory-hot theater's heat up through a news gap — rather than current fighting (server field memory_load). It re-scores every theater on fresh evidence and reports the pp the live read sits ABOVE that: the quantitative form of the ⏸ held flag. Diagnostic only — it never feeds the number.">Memory load = <span id="f-memory">—</span></span>
     <div class="meta-pills" id="meta-row"></div>
@@ -1434,7 +1434,14 @@ function applyData(d){
   // naming a modality — a headline no single modality carries must not be attributed to one.
   const _lb=d.load_bearing_modality;const _lbe=document.getElementById('f-loadbearing');
   if(_lbe){const _pegged=!!(d.trend_6h&&d.trend_6h.pegged);const _held=!!(d.meta&&d.meta.read_held_by_floor);
-    if(_lb&&_lb.available&&_lb.modality){const _i=DID.indexOf(_lb.modality);const _nm=_i>=0?DSHORT[_i]:_lb.modality.replace(/_/g,' ');_lbe.textContent=_nm+' (−'+(_lb.p_drop_pp||0).toFixed(2)+'pp if its evidence vanished'+(_pegged?'; pre-ceiling attribution — the served headline is pegged':'')+')';}
+    if(_lb&&_lb.available&&_lb.modality){const _i=DID.indexOf(_lb.modality);const _nm=_i>=0?DSHORT[_i]:_lb.modality.replace(/_/g,' ');
+      // Support breadth: the effective number of modalities the headline leans on (participation
+      // ratio of the leave-one-out drops). It says whether the named leader is the WHOLE story
+      // (≈1 modality → single-sourced, fragile) or first among several (broad-based, robust). A
+      // number the single-leader read cannot carry; hidden if the server omits it (older backend).
+      const _bw=_lb.support_breadth;let _bwc='';
+      if(typeof _bw==='number'&&_bw>0){const _bws=_bw.toFixed(1);const _unit=_bws==='1.0'?'modality':'modalities';const _q=_bw<1.5?', single-sourced':(_bw>=3?', broad-based':'');_bwc=' · leans on ≈'+_bws+' '+_unit+_q;}
+      _lbe.textContent=_nm+' (−'+(_lb.p_drop_pp||0).toFixed(2)+'pp if its evidence vanished'+(_pegged?'; pre-ceiling attribution — the served headline is pegged':'')+')'+_bwc;}
     else if(_held){_lbe.textContent='held by war-state memory (persistence floor) — live modality evidence is not what carries the headline';}
     else{_lbe.textContent='diffuse — no single modality carries the headline';}}
   // Load-bearing theater (leave-one-out sensitivity): WHERE the systemic headline comes from —

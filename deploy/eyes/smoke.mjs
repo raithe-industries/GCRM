@@ -224,6 +224,13 @@ if (latest) {
   const lb = await settled('#f-loadbearing');
   if (lb == null) fail.push('#f-loadbearing (load-bearing modality) missing — model-state footer not rendered');
   else if (lb === '' || lb === '—') fail.push('#f-loadbearing stuck on the "—" placeholder — the load-bearing modality footer did not render');
+  // Support-breadth clause: when a load-bearing modality is named, the footer appends the effective
+  // number of modalities the headline leans on ("· leans on ≈N.N modality|modalities[, qualifier]").
+  // It is optional (hidden when diffuse/held, or when an older backend omits support_breadth), so we
+  // don't demand it; but WHEN present it must be well-formed — a broken render that appended a stray
+  // "leans on …" token should fail rather than ship an unreadable breadth read.
+  else if (/leans on/.test(lb) && !/leans on ≈\d+\.\d+ modalit(y|ies)(, (single-sourced|broad-based))?/.test(lb))
+    fail.push(`#f-loadbearing carries a malformed support-breadth clause ("${clip(lb)}") — expected "· leans on ≈N.N modality|modalities[, single-sourced|broad-based]"`);
   else ok(`load-bearing modality footer populated (#f-loadbearing = "${clip(lb)}")`);
 
   const lt = await settled('#f-loadtheater');

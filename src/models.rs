@@ -891,6 +891,19 @@ pub struct ModalitySensitivity {
     /// operator can see the full attribution, not just the top term. Sorted largest-first.
     #[serde(default)]
     pub profile:    Vec<(String, f64)>,
+    /// SUPPORT BREADTH: the effective number of modalities the headline actually leans on —
+    /// the participation ratio `(Σ dᵢ)² / Σ dᵢ²` of the leave-one-out drop vector. It says
+    /// whether the load-bearing modality named above is the WHOLE story or just first among
+    /// several: ≈1.0 means the number is single-sourced (fragile — that one channel vanishing
+    /// collapses it), a larger value means it rests on many kinds of force at once (a broadly
+    /// supported, more robust escalation). A quantity the single-leader read cannot carry: a
+    /// 60% resting entirely on economic warfare and a 60% resting evenly across five modalities
+    /// name the same leader but differ here. Zero-drop modalities contribute nothing, so the
+    /// value is bounded by the count of modalities with real leverage. 0.0 when `available` is
+    /// false (no leader carries the display floor). `#[serde(default)]` keeps older snapshots
+    /// loadable. Diagnostic only — computed after P is final, never feeds `l_sys`/P.
+    #[serde(default)]
+    pub support_breadth: f64,
     /// False when no modality's removal moves the headline by the display floor — the read
     /// is diffuse / the board is quiet, so naming one load-bearing modality would overclaim.
     pub available:  bool,
