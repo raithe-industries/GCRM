@@ -79,6 +79,42 @@ const box = async (sel) => { const el = await page.$(sel); return el ? el.boundi
 if (jsErrors.length) fail.push('JS errors on load:\n      ' + jsErrors.slice(0, 6).join('\n      '));
 else ok('no JS errors on load/render');
 
+// 1b) HTML STRUCTURAL INTEGRITY — the markup's <div> tree must balance. A dropped closing
+//     </div> is INVISIBLE to every other check: malformed HTML throws no JS error, the browser
+//     silently REPARENTS the following elements. On 2026-07-08 a routine dropped the </div>
+//     closing .formula; the parser nested .right-panel inside .center-panel, which collapsed
+//     .charts-area {flex:1} to ~0 — a 9h deploy freeze the gate caught only as the downstream
+//     symptom (#timeline-chart squished to 2px), never the cause. We parse the RAW served HTML
+//     (a fresh fetch — NOT page.content(), which returns the already auto-corrected DOM that
+//     hides the imbalance), strip <script>/<style>/comments so JS-string and CSS text can't skew
+//     the tag count, then walk <div>/</div> on a stack. <div> is never a void element, so a
+//     balanced tree is an invariant of ANY valid design — this constrains correctness, not looks.
+try {
+  const raw = await fetch(URL, { signal: AbortSignal.timeout(8000) }).then((r) => r.text());
+  const markup = raw
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const stack = [];
+  let stray = 0;
+  const re = /<div\b([^>]*)>|<\/div\s*>/gi;
+  let m;
+  while ((m = re.exec(markup)) !== null) {
+    if (m[1] === undefined) { if (stack.length) stack.pop(); else stray++; }       // a </div>
+    else if (!/\/\s*$/.test(m[1])) {                                               // a <div …> (not self-closed <div/>)
+      const id = /\bid="([^"]*)"/.exec(m[1])?.[1];
+      const cls = /\bclass="([^"]*)"/.exec(m[1])?.[1];
+      stack.push(id ? `#${id}` : cls ? `.${cls.trim().split(/\s+/)[0]}` : '<div>');
+    }
+  }
+  const opens = (markup.match(/<div\b/gi) || []).length;
+  if (stray) fail.push(`unbalanced <div> tree: ${stray} stray </div> with no opening <div> — the markup structure is broken`);
+  if (stack.length) fail.push(`unbalanced <div> tree: ${stack.length} unclosed <div> (still open at EOF: ${stack.slice(-3).join(' › ')}) — a dropped </div> silently reparents following siblings and collapses the layout, with NO JS error to flag it`);
+  if (!stray && !stack.length) ok(`HTML <div> tree balanced (${opens} divs, well-formed)`);
+} catch (e) {
+  fail.push(`structural-integrity check could not fetch raw HTML: ${e.message}`);
+}
+
 // 2) Primary P(WWIII) timeline graph: present and NOT collapsed/squished.
 //    (This is the exact regression the theater-ladder strip caused.)
 const tl = await box('#timeline-chart');
