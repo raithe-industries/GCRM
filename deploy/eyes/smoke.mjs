@@ -231,6 +231,25 @@ if (latest) {
   else if (lt === '' || lt === '—') fail.push('#f-loadtheater stuck on the "—" placeholder — the load-bearing theater footer did not render');
   else ok(`load-bearing theater footer populated (#f-loadtheater = "${clip(lt)}")`);
 
+  // Memory-load footer (#f-memory): the pp of headline carried by remembered war-state vs. fresh
+  // evidence — the quantitative form of the ⏸ held flag. Honest-null (no floor-held theater) HIDES
+  // its row, so we cannot demand non-"—". Instead: the node must EXIST (a dropped/renamed element
+  // fails), and WHEN its row is visible it must carry a well-formed lift string
+  // ("+X.XXpp from N memory-held theater(s) …"), never a stuck "—" or a stray token.
+  const mEl = await page.$('#f-memory');
+  if (!mEl) fail.push('#f-memory (memory load) missing — the "carried by memory" footer was dropped from the DOM');
+  else {
+    const mVisible = await page.$eval('#f-memory-row', (el) => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).catch(() => false);
+    const mv = await page.$eval('#f-memory', (el) => el.textContent.trim()).catch(() => null);
+    if (!mVisible) ok('memory-load footer honest-null (hidden: no floor-held theater)');
+    else if (!mv || mv === '—') fail.push('#f-memory row is visible but stuck on the "—" placeholder — the memory-load footer did not render');
+    else if (!/^\+\d+\.\d+pp from \d+ memory-held theater/.test(mv)) fail.push(`#f-memory rendered a malformed memory-load line ("${clip(mv)}") — expected "+X.XXpp from N memory-held theater(s) …"`);
+    else ok(`memory-load footer populated (#f-memory = "${clip(mv)}")`);
+  }
+
   // Band self-validation caption (#gauge-band-cov): the honest coverage read on the uncertainty band.
   // Unlike the surfaces above it has NO "—" sentinel — an honest-null (thin ring) renders EMPTY — so we
   // cannot demand non-empty without false-rolling a cold ring. Instead: the element must EXIST (a

@@ -585,8 +585,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       Baseline P₀ = <span>{{BASELINE_ANNUAL_PCT}}%/yr (modern, flat)</span> · systemic L = <span id="f-lik">—</span> · guardrail collapse = <span id="f-guard">—</span><br>
       P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span><br>
       <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span><br>
-      <span title="Leave-one-out sensitivity: the theater whose absence from the board would drop the headline P the most (server field load_bearing_theater) — the highest-LEVERAGE flashpoint, which the non-linear couplers can make different from the hottest one. Diagnostic only — it never feeds the number.">Load-bearing theater = <span id="f-loadtheater">—</span></span>
-    </div>
+      <span title="Leave-one-out sensitivity: the theater whose absence from the board would drop the headline P the most (server field load_bearing_theater) — the highest-LEVERAGE flashpoint, which the non-linear couplers can make different from the hottest one. Diagnostic only — it never feeds the number.">Load-bearing theater = <span id="f-loadtheater">—</span></span><br>
+      <span id="f-memory-row" title="How much of the headline is carried by remembered war-state — persistence floors holding a memory-hot theater's heat up through a news gap — rather than current fighting (server field memory_load). It re-scores every theater on fresh evidence and reports the pp the live read sits ABOVE that: the quantitative form of the ⏸ held flag. Diagnostic only — it never feeds the number.">Memory load = <span id="f-memory">—</span></span>
     <div class="meta-pills" id="meta-row"></div>
   </div>
   <div class="right-panel">
@@ -1446,6 +1446,17 @@ function applyData(d){
     if(_lt&&_lt.available&&_lt.theater){_lte.textContent=_lt.theater+' (−'+(_lt.p_drop_pp||0).toFixed(2)+'pp if absent from the board'+(_pegged?'; pre-ceiling attribution — the served headline is pegged':'')+')';}
     else if(_held){_lte.textContent='held by war-state memory (persistence floor) — no live flashpoint is what carries the headline';}
     else{_lte.textContent='spread across theaters — no single flashpoint carries the headline';}}
+  // Memory load: how much of the headline is carried by remembered war-state (persistence floors
+  // holding a memory-hot theater's heat up through a news gap) vs. current fighting — the
+  // quantitative form of the ⏸ held flag. Honest-null: the row is HIDDEN when no theater is
+  // floor-held, since there is then nothing being remembered (never shown as "0pp / none").
+  const _ml=d.memory_load;const _mle=document.getElementById('f-memory');const _mlr=document.getElementById('f-memory-row');
+  if(_mle&&_mlr){
+    if(_ml&&_ml.available){const _n=_ml.held_count||0;const _hl=_ml.held_theaters||[];
+      const _names=_hl.slice(0,2).join(', ')+(_hl.length>2?' +'+(_hl.length-2)+' more':'');
+      _mle.textContent='+'+(_ml.lift_pp||0).toFixed(2)+'pp from '+_n+' memory-held '+(_n===1?'theater':'theaters')+(_names?' ('+_names+')':'');
+      _mlr.style.display='';}
+    else{_mlr.style.display='none';}}
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];

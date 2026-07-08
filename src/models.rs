@@ -931,6 +931,33 @@ pub struct TheaterSensitivity {
     pub available:  bool,
 }
 
+// ── Memory load (headline carried by remembered war-state) ─────────────────────
+
+/// How much of the headline is propped up by PERSISTENCE MEMORY rather than fresh evidence — the
+/// quantitative form of `systemic_memory_held` (a bare bool: is the LEAD floor-held). The engine
+/// recomputes the systemic likelihood scoring EVERY theater on its current evidence, IGNORING the
+/// persistence floor that keeps a memory-hot theater's heat up through a news gap, and maps it back
+/// to P the same way; `lift_pp` is how many percentage points the live headline sits ABOVE that
+/// fresh-evidence read. A 60% earned by current fighting means something different from a 60%
+/// coasting on remembered war-state during a coverage blackout, and no other field quantified that
+/// gap: `systemic_memory_held` is only a yes/no about the lead theater. `held_count`/`held_theaters`
+/// name the flashpoints doing the carrying. A pure diagnostic over the already-scored board: it
+/// never feeds `l_sys`/P and touches no fitted constant. `available = false` (nothing floor-held →
+/// the lift is honestly 0) hides the read. `#[serde(default)]` keeps older snapshots loadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryLoad {
+    /// Headline annual-P lift, in percentage points, carried by memory above fresh evidence.
+    pub lift_pp: f64,
+    /// How many theaters on the board are currently floor-held (memory, not fresh evidence).
+    pub held_count: usize,
+    /// Their human labels, so the operator sees WHICH wars are being remembered.
+    #[serde(default)]
+    pub held_theaters: Vec<String>,
+    /// False when no theater is floor-held — the headline rests entirely on fresh evidence, so
+    /// there is no memory lift to surface.
+    pub available: bool,
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1003,6 +1030,12 @@ pub struct RiskSnapshot {
     #[serde(default)]
     pub load_bearing_theater: TheaterSensitivity,
 
+    /// How much of the headline is carried by persistence MEMORY vs. fresh evidence — the
+    /// quantitative form of `systemic_memory_held`. Computed in `compute` AFTER P is final,
+    /// purely from the already-scored board; never feeds P.
+    #[serde(default)]
+    pub memory_load: MemoryLoad,
+
     /// True when the seismic monitor holds a live event the detector judges
     /// consistent with a nuclear test — near a known test site AND past the
     /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
@@ -1053,6 +1086,7 @@ impl Default for RiskSnapshot {
             driver: String::new(),
             load_bearing_modality: ModalitySensitivity::default(),
             load_bearing_theater: TheaterSensitivity::default(),
+            memory_load: MemoryLoad::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
         }

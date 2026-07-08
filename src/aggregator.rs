@@ -185,6 +185,9 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // systemic "which flashpoint is holding up this number, and by how much". Diagnostic;
         // never feeds P. Top-level, the load_bearing_modality precedent.
         "load_bearing_theater": snap.load_bearing_theater,
+        // How much of the headline is carried by persistence MEMORY vs. fresh evidence — the
+        // quantitative form of systemic_memory_held. Diagnostic; never feeds P.
+        "memory_load": snap.memory_load,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -2471,6 +2474,15 @@ mod tests {
             "load_bearing_theater must carry an availability flag");
         assert!(v["load_bearing_theater"]["profile"].is_array(),
             "load_bearing_theater must carry the per-theater attribution profile");
+        // The memory-load read (headline carried by remembered war-state vs. fresh evidence) is on
+        // the served contract — the quantitative form of systemic_memory_held.
+        assert!(v["memory_load"].is_object(), "memory_load must be served");
+        assert!(v["memory_load"]["available"].is_boolean(),
+            "memory_load must carry an availability flag");
+        assert!(v["memory_load"]["lift_pp"].is_number(),
+            "memory_load must carry the pp lift carried by memory");
+        assert!(v["memory_load"]["held_theaters"].is_array(),
+            "memory_load must carry the list of floor-held theaters");
     }
 
     // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────

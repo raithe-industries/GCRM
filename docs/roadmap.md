@@ -434,6 +434,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   See improvement-log 2026-07-07 (late). FOLLOW-UP [candidate]: the same concentration read per-modality
   (is the WHY entrenched on one channel or diffuse?) — needs a per-modality field in the ring first.
 
+- [x] **1.17 MEMORY LOAD — how much of the headline is remembered vs. fresh** — **DONE 2026-07-08.**
+  The engine already flags WHETHER the headline rests on persistence memory (`systemic_memory_held`,
+  a bare bool about the lead theater + the per-theater `⏸ held` chip), but never HOW MUCH — a 60%
+  earned by current fighting read identically to a 60% coasting on remembered war-state through a
+  coverage blackout. Added `theater::aggregate_l_sys_fresh` (memory-ablated l_sys: re-score EVERY
+  theater on its FRESH evidence via the shared `aggregate_core`, ignoring the persistence floor) and,
+  in `bayesian::compute` right after the load-bearing block, `snap.memory_load` = the pp the live
+  headline sits ABOVE that fresh-evidence read (`p_base − p_of_lsys(aggregate_l_sys_fresh)`, same
+  unclamped map the sensitivities use), plus the floor-held theater count + labels. With no theater
+  floor-held the two bases coincide, so the lift is honestly 0 → `available:false` (hidden). Diagnostic
+  only — computed AFTER P is final, never feeds P or any fitted constant; anchors bit-identical
+  (backtest 24/24, calibration evidence Brier 0.00092 unchanged). Served as `data.memory_load`,
+  rendered in the model-state footer (`#f-memory`, row hidden on honest-null), watched by the eyes gate.
+  Locked by `aggregate_l_sys_fresh_ablates_the_persistence_floor` (fresh-basis l_sys strictly below the
+  displayed-basis one when a theater is memory-held; equal when none is — FAILS when the fresh variant
+  is neutered to the displayed basis) + the extended `snapshot_to_json` contract assert. See
+  improvement-log 2026-07-08.
+
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
   peak")** — **DONE 2026-07-05.** The context strip showed "Session peak / Session low", computed

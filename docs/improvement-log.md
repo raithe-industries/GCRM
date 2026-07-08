@@ -22,6 +22,59 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-08 — honesty (MATH-ANALYTIC) — how much of the headline is REMEMBERED, not just WHETHER it is
+- Item: roadmap 1.17 (new). Deliberately OFF the band-diagnostic vein (coverage/sharpness/direction/
+  locus, 1.12–1.16) the last five runs mined — a fresh ablation read (memory ablation) in the
+  sensitivity family (1.9–1.11), which the standing MATH-ANALYTIC lane names ("which factor moves the
+  read and by how much").
+- Diagnosis (pillar-1 HONESTY weakest): the band self-validation is now the best-instrumented surface
+  in the system, but a `grep` confirmed the headline's dependence on PERSISTENCE MEMORY was only a
+  BOOLEAN — `systemic_memory_held` (is the lead theater floor-held) + the per-theater `⏸ held` chip.
+  The decision-relevant quantity — HOW MANY pp of the current number is propped by remembered war-state
+  vs. earned by current fighting — was on zero surfaces. A 60% built on live escalation and a 60%
+  coasting on a persistence floor through a multi-day coverage blackout read identically; the operator
+  could not tell an earned number from a remembered one.
+- Change (a NEW computed gauge, diagnostic-only, never feeds P): added `theater::aggregate_l_sys_fresh`
+  — a memory-ABLATED systemic likelihood that re-scores EVERY theater on its FRESH evidence
+  (`heat_from_modality_scores`), ignoring the persistence floor that keeps a memory-hot theater's heat
+  up through a news gap. Extracted the battle-tested aggregation into a shared `aggregate_core(states,
+  heat_of, suppress)` so the displayed-basis `aggregate_l_sys` and the fresh-basis variant flow through
+  ONE formula and can never drift. In `bayesian::compute`, right after the load-bearing block (reusing
+  its `p_base` and the unclamped `p_of_lsys`), `snap.memory_load` = `p_base − p_of_lsys(aggregate_l_sys_
+  fresh)` in pp (the lift memory adds), plus the floor-held theater count + labels. `available:false`
+  (hidden) when nothing is floor-held — the two bases then coincide, so the lift is honestly 0, never
+  shown as "0pp / none". Served as `data.memory_load`; rendered in the model-state footer (`#f-memory`,
+  row hidden on honest-null); eyes gate watches the element + well-formed "+X.XXpp from N memory-held
+  theater(s)" when visible.
+- Metric moved: a NEW honesty read — the pp of headline carried by memory vs. fresh evidence, the
+  quantitative form of the bare `systemic_memory_held` flag; a quantity no surface carried. +1 test
+  (602 → 603 passed). NO calibration constant touched — computed after P is final; anchors bit-identical
+  (`cargo test backtest` 24/24; calibration_evidence Brier 0.00092 / RMSE 3.04pp / in-band 4/4 unchanged;
+  bands quiet/Ukraine/current_2026=60%/Cuba all in-band).
+- Proof: `cargo build --release` clean. `cargo test --release` **603 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from touched src/ files. `node --check deploy/eyes/smoke.mjs`
+  OK. Lock proven fails-without-change: neutering `aggregate_l_sys_fresh` to the displayed basis (held
+  theaters keep `s.heat`) makes `aggregate_l_sys_fresh_ablates_the_persistence_floor` FAIL (fresh ==
+  displayed, `fresh < displayed - 1e-9` panics); restored → 603 green.
+- Tier: T1 (a NEW computed gauge — the pp of headline attributable to persistence memory, a
+  counterfactual over the already-scored board that no field carried; NOT a restyle of the boolean
+  `systemic_memory_held` — it computes a NEW quantity, the memory LIFT, the way `alert_dwell` computed a
+  duration over an already-shown alert level. Precedent: `load_bearing_modality`/`_theater` are graded
+  T1 as leave-one-out marginals; this is the memory-ablation marginal) · Touched: engine-behavior (new
+  `aggregate_l_sys_fresh` + `aggregate_core` refactor the client consumes via `memory_load`; the lock
+  fails when the fresh variant is neutered) · Lock-fails-without-change: yes (neutered-basis proof above)
+  · Counts: none of Live-sources/Map-layers/Monitors moved — a diagnostic honesty read ·
+  consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `aggregate_core` is now the SINGLE aggregation formula — both
+  `aggregate_l_sys` (displayed basis: held theaters keep memory heat) and `aggregate_l_sys_fresh` (all
+  fresh) call it; `aggregate_l_sys_reproduces_the_live_l_sys` still drift-guards the displayed basis, do
+  not let the two bases diverge in anything but heat. (2) `memory_load.available` is gated on
+  `held_count > 0`, NOT on lift magnitude — a board with a held theater whose memory isn't lifting the
+  headline honestly shows "+0.00pp from N …"; that is TRUE, not a bug to hide. (3) DIAGNOSTIC — computed
+  after P is final; it never feeds P and touches no fitted constant. (4) This is the memory-ablation
+  read; the band-caveat family remains CLOSED and the sensitivity family (modality/theater/memory) is
+  the live vein.
+
 ## 2026-07-07 (late) — awareness (MATH-ANALYTIC) — the WHERE gets a TIME axis: how concentrated the locus of risk has been
 - Item: roadmap 1.16 (new). The place-analog of 1.13's alert-dwell — deliberately OFF the band-diagnostic
   vein (coverage/sharpness/direction, 1.12/1.14/1.15) the last three runs mined, onto the least-recently-

@@ -246,19 +246,53 @@ pub fn modality_ids() -> Vec<&'static str> {
 /// modality-independent and cancels out of the marginal. Diagnostic only: never feeds P and
 /// touches no fitted constant. Monotone — suppressing evidence can only lower `l_sys`.
 pub fn aggregate_l_sys(states: &[TheaterState], suppress: Option<&str>) -> f64 {
-    // Counterfactual per-theater heat under the suppression.
-    let heat_of = |s: &TheaterState| -> f64 {
-        if s.held_by_floor {
-            s.heat // memory heat — modality-independent (identical in baseline and every suppression)
-        } else {
-            // Round exactly as score_theater rounds the SERVED heat (1e-4): an
-            // unrounded recomputation can straddle the HOT_HEAT boundary the served
-            // board already crossed, silently shifting gp/concurrency and measuring
-            // the marginals against a headline the operator never saw (finding 11).
-            (heat_from_modality_scores(&s.modality_scores, suppress).min(1.0) * 1e4).round() / 1e4
-        }
-    };
+    // Counterfactual per-theater heat under the suppression: a floor-HELD theater keeps its
+    // memory heat (modality-independent — see the doc above), every other theater is re-scored
+    // from its (optionally suppressed) modality evidence.
+    aggregate_core(
+        states,
+        |s| {
+            if s.held_by_floor {
+                s.heat // memory heat — modality-independent (identical in baseline and every suppression)
+            } else {
+                // Round exactly as score_theater rounds the SERVED heat (1e-4): an
+                // unrounded recomputation can straddle the HOT_HEAT boundary the served
+                // board already crossed, silently shifting gp/concurrency and measuring
+                // the marginals against a headline the operator never saw (finding 11).
+                (heat_from_modality_scores(&s.modality_scores, suppress).min(1.0) * 1e4).round() / 1e4
+            }
+        },
+        suppress,
+    )
+}
 
+/// Memory-ABLATED systemic likelihood: score EVERY theater on its FRESH evidence
+/// (`heat_from_modality_scores`), ignoring the persistence floor that keeps a memory-hot theater's
+/// heat up through a news gap. `aggregate_l_sys(states, None) − aggregate_l_sys_fresh(states)` is
+/// the share of the headline carried by remembered war-state rather than current fighting — the
+/// QUANTITATIVE form of `systemic_memory_held`, which only says WHETHER the lead is floor-held. For
+/// a board with no floor-held theater this equals `aggregate_l_sys(states, None)` exactly (a
+/// non-held theater's fresh heat already IS its displayed heat), so the lift is honestly zero.
+/// Flows through the same [`aggregate_core`] as the displayed-basis read, so the decomposition can
+/// never drift from the number it explains. Diagnostic only: never feeds `l_sys`/P.
+pub fn aggregate_l_sys_fresh(states: &[TheaterState]) -> f64 {
+    aggregate_core(
+        states,
+        |s| (heat_from_modality_scores(&s.modality_scores, None).min(1.0) * 1e4).round() / 1e4,
+        None,
+    )
+}
+
+/// Shared systemic-aggregation core: given a per-theater `heat_of` basis and an optional suppressed
+/// modality (which only zeroes the nuclear brink), rebuild concurrency, great-power entanglement,
+/// alliance activation and the nuclear brink and return `l_sys`. Both the displayed-basis
+/// [`aggregate_l_sys`] and the fresh-basis [`aggregate_l_sys_fresh`] flow through this one formula
+/// so they can never diverge in anything but the heat basis they are asked about.
+fn aggregate_core(
+    states: &[TheaterState],
+    heat_of: impl Fn(&TheaterState) -> f64,
+    suppress: Option<&str>,
+) -> f64 {
     // Concurrency: fractional count of simultaneously-hot theaters (mirrors `compute`).
     let concurrency: f64 = states.iter()
         .map(|s| smoothstep(heat_of(s), HOT_HEAT - HOT_RAMP, HOT_HEAT + HOT_RAMP))
@@ -1078,6 +1112,50 @@ mod tests {
         let recon = aggregate_l_sys(&out.theaters, None);
         assert!((recon - out.l_sys).abs() < 1e-3,
             "aggregate_l_sys(None) must reproduce the live l_sys: recon={recon:.6} live={:.6}", out.l_sys);
+    }
+
+    #[test]
+    fn aggregate_l_sys_fresh_ablates_the_persistence_floor() {
+        use chrono::Duration;
+        // The memory-load decomposition rests on this: `aggregate_l_sys_fresh` scores EVERY theater
+        // on its FRESH evidence, so on a board where a floor-HELD theater's remembered war-state is
+        // holding the read up, the fresh-basis l_sys is STRICTLY BELOW the displayed-basis one — and
+        // that gap is exactly the memory the headline is coasting on. On a board with no held theater
+        // the two MUST coincide (a non-held theater's fresh heat already IS its displayed heat), so
+        // the lift is honestly zero.
+
+        // (a) A sustained war aged 96h → high memory heat, floor-held, but decayed FRESH evidence
+        //     (the same adversarial construction the systemic-momentum test uses to force a hold).
+        let mut aged = Vec::new();
+        for _ in 0..8 {
+            let mut a = ev("us_iran", "military_escalation", 0.95, 0.9, &["united_states", "iran"], true);
+            let mut b = ev("us_iran", "nuclear_posture", 0.9, 0.9, &["iran"], false);
+            a.published_at = Utc::now() - Duration::hours(96);
+            b.published_at = Utc::now() - Duration::hours(96);
+            a.escalation_step = 0.5; b.escalation_step = 0.5;   // stale escalatory memory
+            aged.push(a); aged.push(b);
+        }
+        let held_board = TheaterEngine::new().compute(&aged).theaters;
+        assert!(held_board.iter().any(|s| s.held_by_floor),
+            "precondition: the aged war must be floor-held (memory), not fresh evidence");
+        let displayed = aggregate_l_sys(&held_board, None);
+        let fresh = aggregate_l_sys_fresh(&held_board);
+        assert!(fresh < displayed - 1e-9,
+            "fresh-basis l_sys must be BELOW the displayed-basis one when a theater is memory-held \
+             (displayed={displayed:.6}, fresh={fresh:.6}) — the gap is the memory lift");
+
+        // (b) A FRESH board (no floor-held theater) → the two bases coincide, lift is honestly 0.
+        let fresh_evs: Vec<_> = (0..8)
+            .map(|_| ev("us_iran", "military_escalation", 0.9, 0.9, &["united_states", "iran"], true))
+            .collect();
+        let fresh_board = TheaterEngine::new().compute(&fresh_evs).theaters;
+        assert!(!fresh_board.iter().any(|s| s.held_by_floor),
+            "precondition: a fresh board has no floor-held theater");
+        let d2 = aggregate_l_sys(&fresh_board, None);
+        let f2 = aggregate_l_sys_fresh(&fresh_board);
+        assert!((d2 - f2).abs() < 1e-9,
+            "with no memory on the board the fresh and displayed bases must coincide \
+             (displayed={d2:.6}, fresh={f2:.6})");
     }
 
     #[test]

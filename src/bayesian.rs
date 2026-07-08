@@ -983,6 +983,28 @@ impl BayesianRiskEngine {
                 profile:    tprofile.into_iter().map(|(_, label, pp)| (label, pp)).collect(),
                 available:  tavailable,
             };
+
+            // ── Memory load (HONESTY — how much of the headline is remembered vs. fresh) ──
+            // Recompute l_sys scoring EVERY theater on its CURRENT evidence — ignoring the
+            // persistence floor that keeps a memory-hot theater's heat up through a news gap — and
+            // map it back to P the SAME way (same unclamped `p_of_lsys`, same `p_base`). `lift_pp`
+            // is the pp the live headline sits ABOVE that fresh-evidence read: the share propped by
+            // remembered war-state, not current fighting — the quantitative form of the bare
+            // `systemic_memory_held` flag. With no theater floor-held the two reads coincide, so the
+            // lift is honestly 0. Pure diagnostic over the already-scored board: it never feeds P
+            // and touches no fitted constant.
+            let p_fresh = p_of_lsys(crate::theater::aggregate_l_sys_fresh(&snap.theaters));
+            let held: Vec<String> = snap.theaters.iter()
+                .filter(|t| t.held_by_floor)
+                .map(|t| t.label.clone())
+                .collect();
+            let held_count = held.len();
+            snap.memory_load = crate::models::MemoryLoad {
+                lift_pp: ((p_base - p_fresh).max(0.0) * 100.0 * 1e2).round() / 1e2,
+                held_count,
+                held_theaters: held,
+                available: held_count > 0,
+            };
         }
 
         // ── Step 8: Delta (change since the PREVIOUS snapshot) ──
