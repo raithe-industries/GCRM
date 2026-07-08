@@ -22,6 +22,59 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-08 (late) — awareness (MATH-ANALYTIC) — is the number heating WHERE it rests, or on a different front
+- Item: roadmap 1.19 (new). Deliberately OFF the pure leave-one-out LEVERAGE vein the sensitivity
+  family (1.10/1.11/1.17/1.18) has mined for seven straight runs — a fresh RELATIONAL axis: not which
+  factor/theater is load-bearing, nor how much memory/breadth props it, but whether the escalation is
+  building in the SAME theater the number rests on or a DIFFERENT one.
+- Diagnosis (pillar-3 AWARENESS weakest): the last seven runs all deepened HONESTY self-diagnostics
+  (memory load, support breadth, band coverage/sharpness/direction/dwell/locus) — the number now knows
+  a great deal about ITSELF, but a `grep` confirmed no surface RELATES the two where-reads the operator
+  already has. `load_bearing_theater` says where the number RESTS (leave-one-out leverage);
+  per-theater `escalation_momentum` says where the news flow is TURNING UP; and a 60% whose
+  load-bearing flashpoint is also the one escalating (watch it) reads identically to a 60% resting on a
+  stable standoff while escalation builds on an emerging second front (watch elsewhere too). The
+  decision-relevant gap: is the momentum coincident with the leverage, or divergent from it.
+- Change (a NEW computed relation over the already-scored board; diagnostic-only, never feeds P):
+  added `EscalationCoherence` on the snapshot, computed in `bayesian::compute` right after the
+  memory-load block (reusing the just-computed `load_bearing_theater`). It picks the momentum leader —
+  the theater whose `escalation_momentum` is highest AND clears the escalation MIRROR of the existing
+  de-escalation floor gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30, so escalation and de-escalation are
+  judged decisive at the same magnitude) — and sets `coherent = (momentum_leader.id ==
+  load_bearing_theater.id)`. `available:false` (row hidden) when no load-bearing theater OR nothing
+  decisively escalating — never a hollow "coherent". Served as `escalation_coherence`; rendered in the
+  model-state footer as an "Escalation locus" row (`#f-coherence`, honest-null hidden): "coherent —
+  escalating where the number rests (+m)" or "divergent — escalation building in X (+m), not where the
+  number rests". Eyes gate asserts the line is well-formed whenever the row is visible.
+- Metric moved: a NEW awareness read — the relation between where the number RESTS and where it's
+  HEATING (coherent vs. divergent front), a quantity no surface carried. +2 test fns (605 → 607
+  passed). NO calibration constant touched — computed after P is final; the four anchors are
+  bit-identical (`cargo test backtest` 25/25; calibration_evidence Brier 0.00092 / RMSE 3.04pp / in-band
+  4/4 unchanged).
+- Proof: `cargo build --release` clean. `cargo test --release` **607 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from touched src/ files. `node --check deploy/eyes/smoke.mjs`
+  OK. Lock proven fails-without-change: neutering `coherent` to a constant `true` makes
+  `escalation_coherence_names_a_divergent_front_vs_a_coherent_one` FAIL (the brink-vs-escalating board
+  asserts divergent, not coherent → panic at the divergent assertion); restored → 607 green.
+- Tier: T1 (a NEW computed relation — the coincidence/divergence of the leverage leader and the
+  momentum leader, a statistic over two already-computed board fields that neither carries alone. NOT a
+  restyle/relocation of `load_bearing_theater` or `escalation_momentum` — it computes a new
+  classification the way `memory_load` computed a new lift over two aggregation bases; precedent: the
+  sensitivity/ablation reads are graded T1 as new statistics over the scored board) · Touched:
+  engine-behavior (new `EscalationCoherence` computed in `compute`, consumed by the client via
+  `escalation_coherence`; the lock fails when `coherent` is neutered) · Lock-fails-without-change: yes
+  (constant-true neuter proof above) · Counts: none of Live-sources/Map-layers/Monitors moved — a
+  diagnostic awareness read · consecutive_display_only=0 · display_only_in_last_7=1 · consecutive_noop=0
+  · noop_in_last_3=0
+- Notes future runs MUST respect: (1) the decisive-escalation bar is the MIRROR of the de-escalation
+  floor gate (`-DEESCALATION_STEP_THRESHOLD`); keep it expressed that way so escalation/de-escalation
+  stay symmetric — it is a DISPLAY threshold, not a fitted constant, and never feeds P. (2) `coherent`
+  compares theater IDS, not labels — keep it keyed on `theater_id` so a label change can't silently
+  break the match. (3) DIAGNOSTIC — computed after P is final; it never feeds P or any fitted constant.
+  (4) This is the RELATIONAL (leverage×momentum) axis; the leave-one-out leverage vein and the
+  band-caveat family remain distinct — do not mine them for a "coherence of X" mirror without a fresh
+  decision rationale.
+
 ## 2026-07-08 (later) — honesty/awareness (MATH-ANALYTIC) — is the headline single-sourced (fragile) or broad-based (robust)
 - Item: roadmap 1.18 (new). Stays in the sensitivity family (1.9–1.11, 1.17) — the live vein per the
   1.17 notes — but on a fresh axis: not WHICH factor is load-bearing (leader) nor HOW MUCH memory

@@ -813,6 +813,23 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_the_escalation_coherence() {
+        // AWARENESS (WHERE, related): the model-state footer must surface whether escalation is
+        // building WHERE the number rests (coherent) or on a DIFFERENT emerging front (divergent) —
+        // the relation between the leverage leader and per-theater escalation momentum, server field
+        // escalation_coherence. Lock the render element + the consumer of the server field + both
+        // the coherent and the divergent copy so a refactor that drops either fails.
+        assert!(DASHBOARD_HTML.contains("f-coherence"),
+            "the model-state footer must carry the escalation-coherence element");
+        assert!(DASHBOARD_HTML.contains("d.escalation_coherence"),
+            "the readout must read the server-provided escalation_coherence relation");
+        assert!(DASHBOARD_HTML.contains("coherent — escalating where the number rests"),
+            "a coherent read must say escalation is building where the number rests");
+        assert!(DASHBOARD_HTML.contains("divergent — escalation building in"),
+            "a divergent read must name the emerging front the number does not rest on");
+    }
+
+    #[test]
     fn dashboard_renders_the_band_coverage_validation() {
         // HONESTY: the headline band is published as an ~80% interval; the caption below it must
         // consume the server-computed SELF-VALIDATION (server field band_coverage / EpochStore::

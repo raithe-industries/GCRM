@@ -586,7 +586,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       P(WWIII|E) = σ(logit P₀ + β·L) = <span id="f-post">—</span> · 30d: <span id="f-30d">—</span> · 90d: <span id="f-90d">—</span><br>
       <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). 'Leans on ≈N modalities' is the SUPPORT BREADTH — the effective number of modalities holding up the headline (participation ratio of the per-modality drops): ≈1 means single-sourced and fragile (that one channel vanishing collapses the read), a larger value means broad-based and robust. Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span><br>
       <span title="Leave-one-out sensitivity: the theater whose absence from the board would drop the headline P the most (server field load_bearing_theater) — the highest-LEVERAGE flashpoint, which the non-linear couplers can make different from the hottest one. Diagnostic only — it never feeds the number.">Load-bearing theater = <span id="f-loadtheater">—</span></span><br>
-      <span id="f-memory-row" title="How much of the headline is carried by remembered war-state — persistence floors holding a memory-hot theater's heat up through a news gap — rather than current fighting (server field memory_load). It re-scores every theater on fresh evidence and reports the pp the live read sits ABOVE that: the quantitative form of the ⏸ held flag. Diagnostic only — it never feeds the number.">Memory load = <span id="f-memory">—</span></span>
+      <span id="f-memory-row" title="How much of the headline is carried by remembered war-state — persistence floors holding a memory-hot theater's heat up through a news gap — rather than current fighting (server field memory_load). It re-scores every theater on fresh evidence and reports the pp the live read sits ABOVE that: the quantitative form of the ⏸ held flag. Diagnostic only — it never feeds the number.">Memory load = <span id="f-memory">—</span></span><br>
+      <span id="f-coherence-row" title="Whether escalation is building in the SAME theater the number rests on (coherent) or on a DIFFERENT emerging front (divergent) — the relation between the load-bearing theater (where the number rests) and per-theater escalation momentum (where the news flow is turning up), server field escalation_coherence. Coherent → the flashpoint holding up the read is also the one heating up (watch it). Divergent → risk is accumulating on a second front the headline does not yet rest on (a new place to watch). Diagnostic only — it never feeds the number.">Escalation locus = <span id="f-coherence">—</span></span>
     <div class="meta-pills" id="meta-row"></div>
   </div>
   <div class="right-panel">
@@ -1464,6 +1465,18 @@ function applyData(d){
       _mle.textContent='+'+(_ml.lift_pp||0).toFixed(2)+'pp from '+_n+' memory-held '+(_n===1?'theater':'theaters')+(_names?' ('+_names+')':'');
       _mlr.style.display='';}
     else{_mlr.style.display='none';}}
+  // Escalation coherence: is the number heating WHERE it rests (coherent) or on a DIFFERENT
+  // emerging front (divergent) — the relation between the load-bearing theater and per-theater
+  // escalation momentum. Honest-null: the row is HIDDEN when the read is unavailable (no
+  // load-bearing theater, or nothing decisively escalating), never shown as a hollow "coherent".
+  const _ec=d.escalation_coherence;const _ece=document.getElementById('f-coherence');const _ecr=document.getElementById('f-coherence-row');
+  if(_ece&&_ecr){
+    if(_ec&&_ec.available){const _mt=_ec.momentum_theater||'a theater';const _mm='+'+(_ec.momentum||0).toFixed(2);
+      _ece.textContent=_ec.coherent
+        ?'coherent — escalating where the number rests ('+_mt+' '+_mm+')'
+        :'divergent — escalation building in '+_mt+' ('+_mm+'), not where the number rests';
+      _ecr.style.display='';}
+    else{_ecr.style.display='none';}}
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];

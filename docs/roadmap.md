@@ -469,6 +469,27 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   the_drop_vector` (identity with the served profile's participation ratio + broad>single discrimination
   + empty-board=0.0; FAILS when the breadth is neutered to a constant). See improvement-log 2026-07-08 (later).
 
+- [x] **1.19 ESCALATION COHERENCE — is the number heating WHERE it rests, or on a different front** —
+  **DONE 2026-07-08 (late).** The operator saw the leverage leader (`load_bearing_theater`, WHERE the
+  number rests) and the per-theater `escalation_momentum` (WHERE the news flow is turning up) as two
+  separate surfaces, but no field RELATED them — and the relation is the decision: a 60% whose
+  load-bearing flashpoint is ALSO the one escalating (watch it, expect it to rise) reads identically to
+  a 60% resting on a stable flashpoint while escalation builds on a DIFFERENT, emerging front (a second
+  place to watch the headline doesn't yet reflect). `systemic_momentum` gives only the board-wide
+  DIRECTION; it cannot say whether that momentum coincides with the leverage. Added
+  `EscalationCoherence` on the snapshot: finds the most-escalating theater (highest
+  `escalation_momentum` clearing the escalation MIRROR of the de-escalation floor gate,
+  `-DEESCALATION_STEP_THRESHOLD` = +0.30) and compares its id to `load_bearing_theater.theater_id` —
+  `coherent` when they coincide, otherwise divergent with the emerging front named. `available:false`
+  (hidden) when no load-bearing theater or nothing decisively escalating. Diagnostic only — computed
+  AFTER P is final, never feeds P or any fitted constant; anchors bit-identical (backtest 25/25,
+  calibration evidence Brier 0.00092 unchanged). Served under `escalation_coherence`, rendered in the
+  model-state footer as an "Escalation locus" row (`#f-coherence`, honest-null hidden), watched by the
+  eyes gate (coherent/divergent line well-formed when visible). Locked by
+  `escalation_coherence_names_a_divergent_front_vs_a_coherent_one` (divergent brink-vs-escalating board
+  + coherent single-theater board + two honest-null boards; FAILS when `coherent` is neutered to a
+  constant). See improvement-log 2026-07-08 (late).
+
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
   peak")** — **DONE 2026-07-05.** The context strip showed "Session peak / Session low", computed

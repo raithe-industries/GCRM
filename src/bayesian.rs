@@ -1019,6 +1019,35 @@ impl BayesianRiskEngine {
                 held_theaters: held,
                 available: held_count > 0,
             };
+
+            // ── Escalation coherence (AWARENESS — is the number heating WHERE it rests?) ──
+            // Relate the two things the operator already sees separately: the LEVERAGE leader
+            // (`load_bearing_theater` — the leave-one-out flashpoint the number rests on) and the
+            // MOMENTUM leader (the theater whose recency-weighted `escalation_momentum` is highest).
+            // If they coincide, escalation is building where the number rests (coherent — watch that
+            // same place). If a DIFFERENT theater is decisively escalating, risk is accumulating on a
+            // second front the headline does not yet rest on (divergent — a new place to watch). The
+            // "decisive escalation" bar is the ESCALATION MIRROR of the existing de-escalation floor
+            // gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30) — symmetric with `theater_is_deescalating`,
+            // so escalation and de-escalation are judged decisive at the same magnitude. Display-only:
+            // it never feeds `l_sys`/P and touches no fitted constant. `available = false` (no
+            // load-bearing theater, or nothing decisively escalating) hides the read honestly.
+            let escalation_decisive = -crate::theater::DEESCALATION_STEP_THRESHOLD;
+            let mom_leader = snap.theaters.iter()
+                .filter(|t| t.escalation_momentum >= escalation_decisive)
+                .max_by(|a, b| a.escalation_momentum
+                    .partial_cmp(&b.escalation_momentum)
+                    .unwrap_or(std::cmp::Ordering::Equal));
+            snap.escalation_coherence = match (mom_leader, snap.load_bearing_theater.available) {
+                (Some(ml), true) => crate::models::EscalationCoherence {
+                    available:           true,
+                    coherent:            ml.theater_id == snap.load_bearing_theater.theater_id,
+                    momentum_theater:    ml.label.clone(),
+                    momentum_theater_id: ml.theater_id.clone(),
+                    momentum:            (ml.escalation_momentum * 1e3).round() / 1e3,
+                },
+                _ => crate::models::EscalationCoherence::default(),
+            };
         }
 
         // ── Step 8: Delta (change since the PREVIOUS snapshot) ──
@@ -2019,5 +2048,83 @@ mod tests {
         assert_eq!(rm.compute(), 2.0);
         rm.set_factor("b", true);
         assert_eq!(rm.compute(), 6.0);
+    }
+
+    #[test]
+    fn escalation_coherence_names_a_divergent_front_vs_a_coherent_one() {
+        // The escalation-coherence read RELATES the leverage leader (load_bearing_theater —
+        // WHERE the number rests) to the momentum leader (the theater whose recency-weighted
+        // escalation_momentum is highest — WHERE the news flow is turning up). Neither field
+        // alone can say whether those coincide; this locks that they are related honestly.
+        use crate::models::EventType;
+        // Local event builder: like the module `ev` closures but with an explicit escalation_step
+        // (raw signed step in [-1,+1]) so the theater's escalation_momentum is under test control.
+        let ev = |theater: &str, domain: &str, sev: f64, actors: &[&str], gp: bool, step: f64| {
+            let mut e = GeopoliticalEvent::new("t".into(), "src".into(), SourceTier::Tier1, Utc::now());
+            e.theater                   = Some(theater.to_string());
+            e.domain_signals            = [(domain.to_string(), 0.9)].into_iter().collect();
+            e.domain_tags               = vec![domain.to_string()];
+            e.severity                  = sev;
+            e.escalation_language_score = 0.4;
+            e.actor_ids                 = actors.iter().map(|s| s.to_string()).collect();
+            e.great_power_involved      = gp;
+            e.event_type                = EventType::MilitaryStrike;
+            e.escalation_step           = step;
+            e
+        };
+
+        // (A) DIVERGENT: a nuclear-brink two-great-power theater (nato_russia) is the highest-
+        //     LEVERAGE flashpoint (load-bearing) but is escalation-neutral (step≈0), while a
+        //     lower-leverage single-actor theater (us_iran) is the one DECISIVELY escalating
+        //     (step 0.9 → momentum ≈ 0.9). The number rests on nato_russia; escalation is
+        //     building on a different front (us_iran). The read must name that divergence.
+        let mut div = Vec::new();
+        for _ in 0..8 {
+            div.push(ev("nato_russia", "nuclear_posture",    0.98, &["united_states", "russia"], true, 0.02));
+            div.push(ev("nato_russia", "military_escalation", 0.9,  &["united_states", "russia"], true, 0.02));
+            div.push(ev("us_iran",     "military_escalation", 0.7,  &["iran"],                    false, 0.9));
+        }
+        let sd = minimal_engine().compute(&div);
+        assert_eq!(sd.load_bearing_theater.theater_id, "nato_russia",
+            "precondition: the brink two-GP theater must be load-bearing, got {:?}",
+            sd.load_bearing_theater.theater_id);
+        assert!(sd.escalation_coherence.available, "a divergent read must be available");
+        assert_eq!(sd.escalation_coherence.momentum_theater_id, "us_iran",
+            "the decisively-escalating theater is the momentum leader, got {:?}",
+            sd.escalation_coherence.momentum_theater_id);
+        assert!(!sd.escalation_coherence.coherent,
+            "momentum leader (us_iran) ≠ leverage leader (nato_russia) → divergent, not coherent");
+        assert!(sd.escalation_coherence.momentum >= 0.30,
+            "the named front must clear the decisive-escalation bar, got {}",
+            sd.escalation_coherence.momentum);
+
+        // (B) COHERENT: a single hot, decisively-escalating theater is BOTH the load-bearing and
+        //     the momentum leader — the number is heating where it rests.
+        let coh: Vec<_> = (0..8)
+            .map(|_| ev("us_iran", "military_escalation", 0.9, &["united_states", "iran"], true, 0.9))
+            .collect();
+        let sc = minimal_engine().compute(&coh);
+        assert!(sc.load_bearing_theater.available && sc.escalation_coherence.available,
+            "precondition: a single hot escalating theater is load-bearing and has a coherence read");
+        assert_eq!(sc.escalation_coherence.momentum_theater_id, sc.load_bearing_theater.theater_id,
+            "the momentum leader and leverage leader are the same theater here");
+        assert!(sc.escalation_coherence.coherent,
+            "momentum leader == leverage leader → coherent");
+
+        // (C) HONEST-NULL: a load-bearing theater exists but nothing is decisively escalating
+        //     (steps below the +0.30 bar) → the read is unavailable, never a hollow "coherent".
+        let quiet: Vec<_> = (0..8)
+            .map(|_| ev("us_iran", "military_escalation", 0.9, &["united_states", "iran"], true, 0.05))
+            .collect();
+        let sq = minimal_engine().compute(&quiet);
+        assert!(sq.load_bearing_theater.available,
+            "precondition: the hot theater is still load-bearing");
+        assert!(!sq.escalation_coherence.available,
+            "no theater clears the decisive-escalation bar → the coherence read is honest-null");
+
+        // (D) HONEST-NULL: an empty board has no leverage leader and no escalation → unavailable.
+        let se = minimal_engine().compute(&[]);
+        assert!(!se.escalation_coherence.available,
+            "a calm world names no escalation locus");
     }
 }

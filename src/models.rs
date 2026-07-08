@@ -971,6 +971,38 @@ pub struct MemoryLoad {
     pub available: bool,
 }
 
+// ── Escalation coherence (is the number heating WHERE it rests, or elsewhere?) ──
+
+/// Whether the board's escalation is building in the SAME theater the headline rests on
+/// (coherent) or on a DIFFERENT, emerging front (divergent). Two things the operator already
+/// sees separately — WHERE the number rests (`load_bearing_theater`, the leave-one-out
+/// leverage leader) and WHERE the news flow is turning up (per-theater `escalation_momentum`,
+/// the recency-weighted signed step) — but no field RELATED them, and the relation is the
+/// decision: if the flashpoint holding up the number is ALSO the one escalating, the read is
+/// likely to rise there and the operator watches that same place (coherent); if escalation is
+/// decisively building in a theater OTHER than the load-bearing one, risk is accumulating on a
+/// second front the headline does not yet rest on, and the operator has a NEW place to watch
+/// (divergent). `systemic_momentum` gives only the heat-weighted board-wide DIRECTION; it cannot
+/// say whether that momentum coincides with the leverage. A pure diagnostic over the
+/// already-scored board: it never feeds `l_sys`/P and touches no fitted constant. `available =
+/// false` (no load-bearing theater, or no theater is decisively escalating) hides the read.
+/// `#[serde(default)]` keeps older persisted snapshots loadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EscalationCoherence {
+    /// True when a load-bearing theater is named AND at least one theater is decisively
+    /// escalating (its momentum clears the escalation mirror of the de-escalation floor gate).
+    pub available: bool,
+    /// True when the most-escalating theater IS the load-bearing one — the number is heating
+    /// where it rests. False = divergent: escalation is building on a different front.
+    pub coherent: bool,
+    /// Human label of the most-escalating theater (the momentum leader). Empty when unavailable.
+    pub momentum_theater: String,
+    /// Stable id of the most-escalating theater, for keying. Empty when unavailable.
+    pub momentum_theater_id: String,
+    /// The momentum leader's escalation momentum in [−1, +1] (signed; positive = escalatory).
+    pub momentum: f64,
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1049,6 +1081,13 @@ pub struct RiskSnapshot {
     #[serde(default)]
     pub memory_load: MemoryLoad,
 
+    /// Whether escalation is building in the SAME theater the headline rests on (coherent) or
+    /// on a DIFFERENT, emerging front (divergent) — the relation between the leverage leader
+    /// (`load_bearing_theater`) and the momentum leader (per-theater `escalation_momentum`).
+    /// Computed in `compute` AFTER P is final, purely from the already-scored board; never feeds P.
+    #[serde(default)]
+    pub escalation_coherence: EscalationCoherence,
+
     /// True when the seismic monitor holds a live event the detector judges
     /// consistent with a nuclear test — near a known test site AND past the
     /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
@@ -1100,6 +1139,7 @@ impl Default for RiskSnapshot {
             load_bearing_modality: ModalitySensitivity::default(),
             load_bearing_theater: TheaterSensitivity::default(),
             memory_load: MemoryLoad::default(),
+            escalation_coherence: EscalationCoherence::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
         }

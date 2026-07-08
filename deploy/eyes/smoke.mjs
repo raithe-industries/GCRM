@@ -257,6 +257,28 @@ if (latest) {
     else ok(`memory-load footer populated (#f-memory = "${clip(mv)}")`);
   }
 
+  // Escalation-coherence footer (#f-coherence): is the number heating WHERE it rests (coherent) or
+  // on a DIFFERENT emerging front (divergent) — the relation between the load-bearing theater and
+  // per-theater escalation momentum. Honest-null (no load-bearing theater, or nothing decisively
+  // escalating) HIDES its row, so we cannot demand non-"—". Instead: the node must EXIST (a
+  // dropped/renamed element fails), and WHEN its row is visible it must carry a well-formed
+  // coherent/divergent line, never a stuck "—" or a stray token.
+  const ecEl = await page.$('#f-coherence');
+  if (!ecEl) fail.push('#f-coherence (escalation coherence) missing — the "where it rests vs where it heats" footer was dropped from the DOM');
+  else {
+    const ecVisible = await page.$eval('#f-coherence-row', (el) => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).catch(() => false);
+    const ec = await page.$eval('#f-coherence', (el) => el.textContent.trim()).catch(() => null);
+    if (!ecVisible) ok('escalation-coherence footer honest-null (hidden: no load-bearing theater / nothing decisively escalating)');
+    else if (!ec || ec === '—') fail.push('#f-coherence row is visible but stuck on the "—" placeholder — the escalation-coherence footer did not render');
+    else if (!/^coherent — escalating where the number rests \([^)]+\)$/.test(ec) &&
+             !/^divergent — escalation building in .+ \([^)]+\), not where the number rests$/.test(ec))
+      fail.push(`#f-coherence rendered a malformed coherence line ("${clip(ec)}") — expected "coherent — …" or "divergent — escalation building in X (…)"`);
+    else ok(`escalation-coherence footer populated (#f-coherence = "${clip(ec)}")`);
+  }
+
   // Band self-validation caption (#gauge-band-cov): the honest coverage read on the uncertainty band.
   // Unlike the surfaces above it has NO "—" sentinel — an honest-null (thin ring) renders EMPTY — so we
   // cannot demand non-empty without false-rolling a cold ring. Instead: the element must EXIST (a

@@ -188,6 +188,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // How much of the headline is carried by persistence MEMORY vs. fresh evidence — the
         // quantitative form of systemic_memory_held. Diagnostic; never feeds P.
         "memory_load": snap.memory_load,
+        // Is escalation building in the SAME theater the number rests on (coherent) or on a
+        // DIFFERENT emerging front (divergent) — the relation between load_bearing_theater and
+        // per-theater escalation_momentum. Diagnostic; never feeds P.
+        "escalation_coherence": snap.escalation_coherence,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -2483,6 +2487,16 @@ mod tests {
             "memory_load must carry the pp lift carried by memory");
         assert!(v["memory_load"]["held_theaters"].is_array(),
             "memory_load must carry the list of floor-held theaters");
+        // The escalation-coherence read (is the number heating WHERE it rests, or on a different
+        // front) is on the served contract — the relation between load_bearing_theater and
+        // per-theater escalation_momentum.
+        assert!(v["escalation_coherence"].is_object(), "escalation_coherence must be served");
+        assert!(v["escalation_coherence"]["available"].is_boolean(),
+            "escalation_coherence must carry an availability flag");
+        assert!(v["escalation_coherence"]["coherent"].is_boolean(),
+            "escalation_coherence must carry the coherent/divergent flag");
+        assert!(v["escalation_coherence"]["momentum_theater_id"].is_string(),
+            "escalation_coherence must carry the momentum leader's id");
     }
 
     // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────
