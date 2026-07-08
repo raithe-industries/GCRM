@@ -23,6 +23,7 @@ pub mod cwfis;
 pub mod cwfis_activefires;
 pub mod digitraffic_ais;
 pub mod drivebc;
+pub mod ea_flood;
 pub mod navcanada;
 pub mod nhc;
 pub mod nsw_rfs;
@@ -98,6 +99,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(nhc::Nhc),                        // Tropical cyclones (NOAA NHC, Atlantic/E-Pacific)
         Box::new(jma_typhoon::JmaTyphoon),         // Typhoons (JMA RSMC Tokyo, W-Pacific)
         Box::new(nwps_flood::NwpsFlood),           // River flooding (NOAA NWPS, observed flood category)
+        Box::new(ea_flood::EaFlood),               // UK flood warnings (EA, national severity level 1–3, England)
         Box::new(avalanche_ca::AvalancheCa),       // Avalanche danger ratings (Avalanche Canada, seasonal)
         Box::new(awc_sigmet::AwcSigmet),           // International SIGMETs (NOAA AWC, en-route aviation hazards)
         Box::new(spc_storm_reports::SpcStormReports), // Severe-storm reports (NOAA SPC, confirmed tornado/hail/wind)

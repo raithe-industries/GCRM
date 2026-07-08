@@ -405,6 +405,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // NWS observed flood category, e.g. "Major flooding" / "Near flood stage" —
         // the baseline-relative read (stage already compared to the gauge's thresholds).
         "nwps_flood" => ee_sources::nwps_flood::flood_chip(&e.raw),
+        // UK EA flood-warning tier + river/sea, e.g. "Severe Flood Warning · River Teme"
+        // — the national baseline-relative flood category (danger-to-life → be-prepared).
+        "ea_flood" => ee_sources::ea_flood::flood_chip(&e.raw),
         // Avalanche Canada current-day danger rating per elevation band, e.g.
         // "Alpine Considerable · Treeline Moderate · Below Low" (North American scale).
         "avalanche_ca" => ee_sources::avalanche_ca::danger_chip(&e.raw),
@@ -746,7 +749,7 @@ async fn feeds_payload() -> Value {
     use ee_sources::{
         acled_aggregated::AcledAggregated, alberta511::Alberta511, avalanche_ca::AvalancheCa, awc_sigmet::AwcSigmet, bmkg_quake::BmkgQuake, cbsa_bwt::CbsaBwt, cwfis::Cwfis,
         cwfis_activefires::CwfisActiveFires, digitraffic_ais::DigitrafficAis, drivebc::DriveBc,
-        eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
+        ea_flood::EaFlood, eccc_alerts::EcccAlerts, eccc_aqhi::EcccAqhi, eccc_marine::EcccMarine, emsc::Emsc,
         eonet::Eonet, eqcanada::EqCanada, firms::Firms, gdacs::Gdacs,
         geonet_quake::GeonetQuake, geonet_volcano::GeonetVolcano, gvp_volcano::GvpVolcano,
         healthmap::HealthMap, jma_quake::JmaQuake, jma_typhoon::JmaTyphoon, magma_volcano::MagmaVolcano,
@@ -766,7 +769,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -892,6 +895,12 @@ async fn feeds_payload() -> Value {
         // + Australian geography the global thermal-hotspot wildfire feeds
         // (FIRMS/CWFIS/EONET) don't carry. Empty feed (quiet/off-season) = 0 events.
         fetch_one("nsw_rfs", NswRfs, 12),
+        // UK Environment Agency — active flood warnings (severity level 1–3), joined
+        // to the flood-area catalogue for coordinates: the baseline-relative flood
+        // category (Severe Flood Warning / Flood Warning / Flood Alert) over England,
+        // extending the flood-with-baselines modality beyond the US-only nwps_flood.
+        // Empty (no active warnings) = 0 events. Two fetches, so allow a little time.
+        fetch_one("ea_flood", EaFlood, 14),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -954,6 +963,9 @@ async fn feeds_payload() -> Value {
         // NSW major incidents: a bad fire day runs to dozens-to-low-hundreds; 300 is
         // ample headroom, and severity-sort keeps the Emergency Warnings if it overflows.
         (au_incidents.0, au_incidents.1, "nsw_rfs", 300),
+        // Active UK flood warnings/alerts: even severe events run to a few dozen areas;
+        // 300 is ample and severity-sort keeps the Severe Flood Warnings on overflow.
+        (uk_floods.0, uk_floods.1, "ea_flood", 300),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
@@ -1471,6 +1483,29 @@ mod tests {
         // Action stage reads as near-flood; casing is tolerated.
         let e = mk(json!({"gaugelid": "TULO2", "status": "Action"}));
         assert_eq!(feed_detail(&e).as_deref(), Some("Near flood stage"));
+    }
+
+    #[test]
+    fn ea_flood_chip_surfaces_warning_tier_and_river() {
+        use chrono::Utc;
+        use ee_core::{EventKind, Geo, Severity};
+        let mk = |raw: Value| Event {
+            id: "ea-flood-x".into(),
+            source_id: "ea_flood".into(),
+            kind: EventKind::Weather,
+            title: "t".into(),
+            time: Utc::now(),
+            geo: Geo::new(0.0, 0.0),
+            severity: Severity::new(1.0),
+            url: None,
+            raw,
+        };
+        // `raw` is the warning item with the joined river merged in.
+        let e = mk(json!({"severityLevel": 1, "riverOrSea": "River Teme"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Severe Flood Warning · River Teme"));
+        // Flood Alert (level 3) with no river -> tier only; string level tolerated.
+        let e = mk(json!({"severityLevel": "3"}));
+        assert_eq!(feed_detail(&e).as_deref(), Some("Flood Alert"));
     }
 
     #[test]
