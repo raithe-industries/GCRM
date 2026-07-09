@@ -349,6 +349,9 @@ fn feed_detail(e: &Event) -> Option<String> {
             let status = e.raw.get("status").and_then(Value::as_str).unwrap_or("Under way");
             Some(format!("{sog:.1} kn · {status}"))
         }
+        // IMF PortWatch chokepoint transit deviation, e.g. "Transit down 63% vs norm
+        // (15 vs 40/day)" — the baseline-relative disruption read behind the dot.
+        "portwatch_chokepoints" => ee_sources::portwatch_chokepoints::transit_chip(&e.raw),
         // NGA ASAM hostile-act report: the escalation class + vessel targeted, e.g.
         // "Boarding · Bulk Carrier" / "Armed attack · Chemical Tanker".
         "asam" => ee_sources::asam::asam_chip(&e.raw),
@@ -756,7 +759,7 @@ async fn feeds_payload() -> Value {
         navcanada::NavCanada, nhc::Nhc, nsw_rfs::NswRfs,
         nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
-        opensky::OpenSky, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
+        opensky::OpenSky, portwatch_chokepoints::PortwatchChokepoints, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
         ucdp_ged::UcdpGed, usgs::Usgs,
         usgs_volcano::UsgsVolcano,
     };
@@ -769,7 +772,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -816,6 +819,11 @@ async fn feeds_payload() -> Value {
         fetch_one("navcanada", NavCanada, 14),
         // Fintraffic AIS — live Baltic vessel positions (fills the Vessel layer).
         fetch_one("digitraffic_ais", DigitrafficAis, 15),
+        // IMF PortWatch — daily maritime chokepoint transit vs. each chokepoint's own
+        // recent norm; only abnormally-low (closure/blockade) or -high (rerouting surge)
+        // chokepoints plot. Extends the Baltic-only Vessel layer to the Asian/Middle-East
+        // theaters (Hormuz, Taiwan Strait, Bab-el-Mandeb, Malacca). Auth-free ArcGIS.
+        fetch_one("portwatch_chokepoints", PortwatchChokepoints, 14),
         // (The live `asam` fetch was removed 2026-07-04, hours after adoption: NGA's
         //  MSI API no longer serves the product — `/api/publications/asam` returns an
         //  application-level 404 with a valid session, and the Esri Living Atlas
@@ -938,6 +946,8 @@ async fn feeds_payload() -> Value {
         (ca_borders.0, ca_borders.1, "cbsa_bwt", 60),
         (ca_notams.0, ca_notams.1, "navcanada", 600),
         (vessels.0, vessels.1, "digitraffic_ais", 800),
+        // At most 28 chokepoints, and only disrupted ones plot; 60 is ample headroom.
+        (chokepoints.0, chokepoints.1, "portwatch_chokepoints", 60),
         (conflict.0, conflict.1, "ucdp_ged", 800),
         (conflict_agg.0, conflict_agg.1, "acled_aggregated", 500),
         (storms.0, storms.1, "nhc", 60),

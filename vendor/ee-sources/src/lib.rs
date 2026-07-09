@@ -28,6 +28,7 @@ pub mod navcanada;
 pub mod nhc;
 pub mod nsw_rfs;
 pub mod nwps_flood;
+pub mod portwatch_chokepoints;
 pub mod spc_storm_reports;
 pub mod stuk_radiation;
 pub mod teleray;
@@ -93,6 +94,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(magma_volcano::MagmaVolcano), // Indonesia volcanic alert levels (PVMBG/MAGMA, Path-B snapshot)
         Box::new(healthmap::HealthMap::default()),
         Box::new(digitraffic_ais::DigitrafficAis), // Vessel layer (Baltic AIS)
+        Box::new(portwatch_chokepoints::PortwatchChokepoints), // Vessel layer (IMF PortWatch chokepoint transit disruption, global)
         Box::new(asam::Asam), // Vessel layer (NGA anti-shipping hostile-act reports, global)
         Box::new(ucdp_ged::UcdpGed),               // Conflict layer (georeferenced events)
         Box::new(acled_aggregated::AcledAggregated), // Conflict layer (ACLED weekly Admin-1 intensity, Path-B snapshot)
