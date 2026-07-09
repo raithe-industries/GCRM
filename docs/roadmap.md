@@ -489,6 +489,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `escalation_coherence_names_a_divergent_front_vs_a_coherent_one` (divergent brink-vs-escalating board
   + coherent single-theater board + two honest-null boards; FAILS when `coherent` is neutered to a
   constant). See improvement-log 2026-07-08 (late).
+- [x] **1.20 ESCALATION BREADTH — how many fronts are escalating AT ONCE (isolated vs. synchronized)** —
+  **DONE 2026-07-09.** The board could name the single momentum LEADER (`escalation_coherence`, 1.19)
+  and count HOT theaters (`couplers.concurrency`, which feeds P), but nothing answered "is escalation
+  isolated on one front, or building across several simultaneously" — historically the sharper
+  systemic-risk signature (synchronized multi-front escalation: 1914, 1938–39). Added
+  `EscalationBreadth` on the snapshot: counts the theaters clearing the SAME decisive bar 1.19 uses
+  (`escalation_momentum >= -DEESCALATION_STEP_THRESHOLD` = +0.30), lists them (label + momentum, sorted
+  desc), and flags `multi_front` (count ≥ 2). Deliberately momentum-breadth, distinct from the
+  heat-based `concurrency`: escalation can be broad while heat is concentrated (a cool theater turning
+  up fast) or narrow while heat is broad (many hot-but-stable standoffs). `available:false` (hidden)
+  when nothing decisively escalating. Diagnostic only — computed AFTER P is final, never feeds P or any
+  fitted constant; anchors bit-identical (backtest 25/25). Served under `escalation_breadth`, rendered
+  in the model-state footer as an "Escalation breadth" row (`#f-breadth`, honest-null hidden), watched
+  by the eyes gate (single/multi-front line well-formed when visible). Locked by
+  `escalation_breadth_counts_synchronized_fronts_not_just_the_leader` (multi-front board → count 2 +
+  multi_front + sorted; single-front board → count 1; honest-null board; FAILS when the compute is
+  neutered to default). See improvement-log 2026-07-09.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session

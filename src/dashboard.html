@@ -587,7 +587,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <span title="Leave-one-out sensitivity: the modality whose evidence, if it vanished, would drop the headline P the most (server field load_bearing_modality). 'Leans on ≈N modalities' is the SUPPORT BREADTH — the effective number of modalities holding up the headline (participation ratio of the per-modality drops): ≈1 means single-sourced and fragile (that one channel vanishing collapses the read), a larger value means broad-based and robust. Diagnostic only — it never feeds the number.">Load-bearing modality = <span id="f-loadbearing">—</span></span><br>
       <span title="Leave-one-out sensitivity: the theater whose absence from the board would drop the headline P the most (server field load_bearing_theater) — the highest-LEVERAGE flashpoint, which the non-linear couplers can make different from the hottest one. Diagnostic only — it never feeds the number.">Load-bearing theater = <span id="f-loadtheater">—</span></span><br>
       <span id="f-memory-row" title="How much of the headline is carried by remembered war-state — persistence floors holding a memory-hot theater's heat up through a news gap — rather than current fighting (server field memory_load). It re-scores every theater on fresh evidence and reports the pp the live read sits ABOVE that: the quantitative form of the ⏸ held flag. Diagnostic only — it never feeds the number.">Memory load = <span id="f-memory">—</span></span><br>
-      <span id="f-coherence-row" title="Whether escalation is building in the SAME theater the number rests on (coherent) or on a DIFFERENT emerging front (divergent) — the relation between the load-bearing theater (where the number rests) and per-theater escalation momentum (where the news flow is turning up), server field escalation_coherence. Coherent → the flashpoint holding up the read is also the one heating up (watch it). Divergent → risk is accumulating on a second front the headline does not yet rest on (a new place to watch). Diagnostic only — it never feeds the number.">Escalation locus = <span id="f-coherence">—</span></span>
+      <span id="f-coherence-row" title="Whether escalation is building in the SAME theater the number rests on (coherent) or on a DIFFERENT emerging front (divergent) — the relation between the load-bearing theater (where the number rests) and per-theater escalation momentum (where the news flow is turning up), server field escalation_coherence. Coherent → the flashpoint holding up the read is also the one heating up (watch it). Divergent → risk is accumulating on a second front the headline does not yet rest on (a new place to watch). Diagnostic only — it never feeds the number.">Escalation locus = <span id="f-coherence">—</span></span><br>
+      <span id="f-breadth-row" title="How many theaters are DECISIVELY ESCALATING at the same time (server field escalation_breadth) — isolated single-front escalation vs. a synchronized multi-front one, historically the sharper systemic-risk signature. This is momentum-breadth: it counts fronts whose news flow is turning up, deliberately distinct from the HOT-theater count (couplers.concurrency, which feeds the number) — escalation can be broad while heat is concentrated, or narrow while heat is broad. Diagnostic only — it never feeds the number.">Escalation breadth = <span id="f-breadth">—</span></span>
     </div>
     <div class="meta-pills" id="meta-row"></div>
   </div>
@@ -1478,6 +1479,19 @@ function applyData(d){
         :'divergent — escalation building in '+_mt+' ('+_mm+'), not where the number rests';
       _ecr.style.display='';}
     else{_ecr.style.display='none';}}
+  // Escalation breadth: how many fronts are decisively escalating AT ONCE (momentum-breadth) —
+  // isolated single-front vs. synchronized multi-front escalation. Honest-null: the row is HIDDEN
+  // when nothing is decisively escalating, never shown as a hollow "0 fronts".
+  const _eb=d.escalation_breadth;const _ebe=document.getElementById('f-breadth');const _ebr=document.getElementById('f-breadth-row');
+  if(_ebe&&_ebr){
+    if(_eb&&_eb.available&&_eb.count>0){const _fr=(_eb.fronts||[]).slice(0,3)
+        .map(f=>f[0]+' (+'+(f[1]||0).toFixed(2)+')').join(', ');
+      const _more=(_eb.fronts||[]).length>3?' +'+((_eb.fronts||[]).length-3)+' more':'';
+      _ebe.textContent=_eb.multi_front
+        ?_eb.count+' fronts escalating at once — '+_fr+_more+' (synchronized)'
+        :'single front escalating — '+_fr;
+      _ebr.style.display='';}
+    else{_ebr.style.display='none';}}
   document.getElementById('f-post').textContent=(pA*100).toFixed(6)+'%';document.getElementById('f-30d').textContent=(p30*100).toFixed(6)+'%';document.getElementById('f-90d').textContent=(p90*100).toFixed(6)+'%';
   const meta=d.meta||{};const _ev=meta.events_in_window||0;document.getElementById('ev-count').textContent=_ev+(_ev===1?' event':' events');document.getElementById('snap-id').textContent=d.snapshot_id.slice(0,8);
   const pills=[...(meta.regions_active||[]).map(r=>r.replace(/_/g,' ')).slice(0,4),...(meta.top_actors||[]).slice(0,4).map(a=>a.replace(/_/g,' '))];

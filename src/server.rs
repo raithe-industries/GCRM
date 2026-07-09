@@ -830,6 +830,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_renders_the_escalation_breadth() {
+        // AWARENESS (HOW MANY fronts at once): the model-state footer must surface whether escalation
+        // is isolated on a single front or synchronized across several — server field
+        // escalation_breadth. Lock the render element + the consumer of the server field + both the
+        // single-front and the multi-front copy so a refactor that drops either fails.
+        assert!(DASHBOARD_HTML.contains("f-breadth"),
+            "the model-state footer must carry the escalation-breadth element");
+        assert!(DASHBOARD_HTML.contains("d.escalation_breadth"),
+            "the readout must read the server-provided escalation_breadth count");
+        assert!(DASHBOARD_HTML.contains("single front escalating"),
+            "an isolated escalation must read as a single front");
+        assert!(DASHBOARD_HTML.contains("fronts escalating at once"),
+            "a synchronized escalation must name how many fronts are escalating at once");
+    }
+
+    #[test]
     fn dashboard_renders_the_band_coverage_validation() {
         // HONESTY: the headline band is published as an ~80% interval; the caption below it must
         // consume the server-computed SELF-VALIDATION (server field band_coverage / EpochStore::

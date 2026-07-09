@@ -22,6 +22,55 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-09 — awareness (MATH-ANALYTIC) — how many fronts are escalating AT ONCE (isolated vs. synchronized)
+- Item: roadmap 1.20 (new). A fresh COUNT axis over the escalation-momentum board — not WHICH front
+  leads (1.19 coherence) nor how HOT theaters are (concurrency), but HOW MANY are turning up together.
+- Diagnosis (pillar-3 AWARENESS weakest, one specific gap): the last ~8 runs deepened self-diagnostics,
+  but a `grep` confirmed no surface answers "is escalation isolated on one front, or synchronized across
+  several." `couplers.concurrency` counts HOT theaters (heat, feeds P); `escalation_coherence` (1.19)
+  names only the single momentum LEADER and relates it to the leverage leader; `systemic_momentum` is a
+  board-wide DIRECTION magnitude. A synchronized multi-front escalation is the historical signature of a
+  systemic crisis (1914, 1938–39) and reads very differently from the same magnitude on one contained
+  front — a decision-relevant distinction no field carried.
+- Change (a NEW computed gauge over the already-scored board; diagnostic-only, never feeds P): added
+  `EscalationBreadth` on the snapshot, computed in `bayesian::compute` right after the escalation-
+  coherence block (reusing the same `escalation_decisive` bar = `-DEESCALATION_STEP_THRESHOLD` = +0.30).
+  Counts theaters whose `escalation_momentum` clears that bar, lists them as (label, momentum) sorted
+  descending, and sets `multi_front = count >= 2`. Deliberately momentum-breadth, distinct from the
+  heat-based `concurrency`: escalation can be broad while heat is concentrated (a cool theater turning up
+  fast) or narrow while heat is broad (many hot-but-stable standoffs). `available:false` (row hidden)
+  when nothing decisively escalating — never a hollow "0 fronts". Served as `escalation_breadth`;
+  rendered in the model-state footer as an "Escalation breadth" row (`#f-breadth`, honest-null hidden):
+  "single front escalating — X (+m)" or "N fronts escalating at once — X (+m), Y (+m) … (synchronized)".
+  Eyes gate asserts the line is well-formed whenever the row is visible.
+- Metric moved: a NEW awareness read — the count of simultaneously-escalating fronts (isolated vs.
+  synchronized), a quantity no surface carried. +2 test fns (607 → 609 passed). NO calibration constant
+  touched — computed after P is final; the four anchors are bit-identical (`cargo test backtest` 25/25).
+- Proof: `cargo build --release` clean. `cargo test --release` **609 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from touched src/ files. `node --check deploy/eyes/smoke.mjs`
+  OK. Lock proven fails-without-change: replacing the breadth compute with `EscalationBreadth::default()`
+  makes `escalation_breadth_counts_synchronized_fronts_not_just_the_leader` FAIL (a 2-front board asserts
+  `available`/`count==2`/`multi_front`, which a defaulted read cannot satisfy → panic); restored → 609 green.
+- Tier: T1 (a NEW computed gauge — the count/membership of the decisively-escalating set, a statistic
+  over the full momentum vector that neither the single-leader coherence field nor the heat-based
+  concurrency carries. NOT a restyle/relocation of `escalation_coherence` — coherence names the max and
+  relates it to leverage; breadth counts the whole set above threshold and flags synchronization, a
+  distinct operator question; precedent: the sensitivity/band statistics are graded T1 as new statistics
+  over the scored board) · Touched: engine-behavior (new `EscalationBreadth` computed in `compute`,
+  consumed by the client via `escalation_breadth`; the lock fails when the compute is neutered to
+  default) · Lock-fails-without-change: yes (default-neuter proof above) · Counts: none of
+  Live-sources/Map-layers/Monitors moved — a diagnostic awareness read · consecutive_display_only=0 ·
+  display_only_in_last_7=1 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) the decisive bar is the SAME `escalation_decisive` the 1.19
+  coherence read uses (the mirror of the de-escalation floor gate) — keep breadth and coherence sharing
+  that bar so "which front is escalating" and "how many are escalating" can never disagree on membership.
+  (2) `fronts` are keyed by label for display but the count is what carries the read; keep it a count of
+  the momentum-clearing set, NOT a re-derivation from heat/concurrency — the whole point is that
+  momentum-breadth ≠ heat-breadth. (3) DIAGNOSTIC — computed after P is final; it never feeds P or any
+  fitted constant. (4) This is the COUNT (breadth) axis; 1.19 is the RELATIONAL (leverage×momentum) axis
+  and the leave-one-out leverage vein is distinct — do not mirror one onto the other without a fresh
+  decision rationale.
+
 ## 2026-07-08 (late) — awareness (MATH-ANALYTIC) — is the number heating WHERE it rests, or on a different front
 - Item: roadmap 1.19 (new). Deliberately OFF the pure leave-one-out LEVERAGE vein the sensitivity
   family (1.10/1.11/1.17/1.18) has mined for seven straight runs — a fresh RELATIONAL axis: not which

@@ -1048,6 +1048,29 @@ impl BayesianRiskEngine {
                 },
                 _ => crate::models::EscalationCoherence::default(),
             };
+
+            // ── Escalation breadth (AWARENESS — how many fronts are escalating AT ONCE?) ──
+            // Count the theaters that clear the SAME decisive-escalation bar the coherence read
+            // uses, rather than naming only the single leader. This distinguishes an isolated
+            // single-front escalation from a SYNCHRONIZED multi-front one — historically the
+            // sharper systemic-risk signature. It is momentum-breadth, deliberately distinct from
+            // `couplers.concurrency` (HOT-theater count, which feeds P): escalation can be broad
+            // while heat is concentrated (a cool theater turning up fast) or narrow while heat is
+            // broad (many hot-but-stable standoffs). Display-only: it never feeds `l_sys`/P and
+            // touches no fitted constant. `available = false` (nothing decisively escalating) hides
+            // the read honestly.
+            let mut fronts: Vec<(String, f64)> = snap.theaters.iter()
+                .filter(|t| t.escalation_momentum >= escalation_decisive)
+                .map(|t| (t.label.clone(), (t.escalation_momentum * 1e3).round() / 1e3))
+                .collect();
+            fronts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let breadth_count = fronts.len();
+            snap.escalation_breadth = crate::models::EscalationBreadth {
+                available:   breadth_count > 0,
+                count:       breadth_count,
+                multi_front: breadth_count >= 2,
+                fronts,
+            };
         }
 
         // ── Step 8: Delta (change since the PREVIOUS snapshot) ──
@@ -2126,5 +2149,75 @@ mod tests {
         let se = minimal_engine().compute(&[]);
         assert!(!se.escalation_coherence.available,
             "a calm world names no escalation locus");
+    }
+
+    #[test]
+    fn escalation_breadth_counts_synchronized_fronts_not_just_the_leader() {
+        // The escalation-BREADTH read counts how many theaters clear the SAME decisive bar the
+        // coherence read uses (+0.30), rather than naming only the single leader — distinguishing
+        // an isolated single-front escalation from a synchronized multi-front one. This locks that
+        // it counts the whole escalating set and flags multi_front honestly.
+        use crate::models::EventType;
+        let ev = |theater: &str, domain: &str, sev: f64, actors: &[&str], gp: bool, step: f64| {
+            let mut e = GeopoliticalEvent::new("t".into(), "src".into(), SourceTier::Tier1, Utc::now());
+            e.theater                   = Some(theater.to_string());
+            e.domain_signals            = [(domain.to_string(), 0.9)].into_iter().collect();
+            e.domain_tags               = vec![domain.to_string()];
+            e.severity                  = sev;
+            e.escalation_language_score = 0.4;
+            e.actor_ids                 = actors.iter().map(|s| s.to_string()).collect();
+            e.great_power_involved      = gp;
+            e.event_type                = EventType::MilitaryStrike;
+            e.escalation_step           = step;
+            e
+        };
+
+        // (A) MULTI-FRONT: two theaters decisively escalating AT ONCE (step 0.9 each → momentum
+        //     well past the +0.30 bar). The read must count BOTH and flag it synchronized —
+        //     something the single-leader coherence read cannot express.
+        let mut multi = Vec::new();
+        for _ in 0..8 {
+            multi.push(ev("nato_russia", "military_escalation", 0.9, &["united_states", "russia"], true, 0.9));
+            multi.push(ev("us_iran",     "military_escalation", 0.9, &["united_states", "iran"],  true, 0.9));
+        }
+        let sm = minimal_engine().compute(&multi);
+        assert!(sm.escalation_breadth.available, "two escalating fronts → the breadth read is available");
+        assert_eq!(sm.escalation_breadth.count, 2,
+            "both decisively-escalating theaters must be counted, got {} (fronts={:?})",
+            sm.escalation_breadth.count, sm.escalation_breadth.fronts);
+        assert!(sm.escalation_breadth.multi_front,
+            "count >= 2 → multi_front (synchronized escalation), got fronts={:?}",
+            sm.escalation_breadth.fronts);
+        // Fronts are sorted by momentum descending and each clears the decisive bar.
+        assert_eq!(sm.escalation_breadth.fronts.len(), 2);
+        assert!(sm.escalation_breadth.fronts.windows(2).all(|w| w[0].1 >= w[1].1),
+            "fronts must be sorted by momentum descending, got {:?}", sm.escalation_breadth.fronts);
+        assert!(sm.escalation_breadth.fronts.iter().all(|(_, m)| *m >= 0.30),
+            "every named front must clear the +0.30 decisive bar, got {:?}", sm.escalation_breadth.fronts);
+
+        // (B) SINGLE-FRONT: only one theater is decisively escalating; a second is escalation-neutral
+        //     (step ≈ 0). count == 1, multi_front == false — an isolated escalation.
+        let mut single = Vec::new();
+        for _ in 0..8 {
+            single.push(ev("nato_russia", "military_escalation", 0.9, &["united_states", "russia"], true, 0.9));
+            single.push(ev("us_iran",     "military_escalation", 0.9, &["united_states", "iran"],  true, 0.02));
+        }
+        let ss = minimal_engine().compute(&single);
+        assert!(ss.escalation_breadth.available, "one escalating front is still available");
+        assert_eq!(ss.escalation_breadth.count, 1,
+            "only one theater clears the decisive bar, got {} (fronts={:?})",
+            ss.escalation_breadth.count, ss.escalation_breadth.fronts);
+        assert!(!ss.escalation_breadth.multi_front,
+            "a single escalating front is not multi_front, got fronts={:?}", ss.escalation_breadth.fronts);
+
+        // (C) HONEST-NULL: nothing decisively escalating (steps below +0.30) → unavailable, count 0.
+        let quiet: Vec<_> = (0..8)
+            .map(|_| ev("us_iran", "military_escalation", 0.9, &["united_states", "iran"], true, 0.05))
+            .collect();
+        let sq = minimal_engine().compute(&quiet);
+        assert!(!sq.escalation_breadth.available,
+            "no theater clears the decisive-escalation bar → the breadth read is honest-null");
+        assert_eq!(sq.escalation_breadth.count, 0);
+        assert!(!sq.escalation_breadth.multi_front);
     }
 }

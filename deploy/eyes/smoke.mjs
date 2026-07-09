@@ -315,6 +315,27 @@ if (latest) {
     else ok(`escalation-coherence footer populated (#f-coherence = "${clip(ec)}")`);
   }
 
+  // Escalation-breadth footer (#f-breadth): how many fronts are decisively escalating AT ONCE —
+  // isolated single-front vs. a synchronized multi-front escalation. Honest-null (nothing decisively
+  // escalating) HIDES its row, so we cannot demand non-"—". Instead: the node must EXIST (a
+  // dropped/renamed element fails), and WHEN its row is visible it must carry a well-formed
+  // single/multi-front line, never a stuck "—" or a stray token.
+  const ebEl = await page.$('#f-breadth');
+  if (!ebEl) fail.push('#f-breadth (escalation breadth) missing — the "how many fronts escalating at once" footer was dropped from the DOM');
+  else {
+    const ebVisible = await page.$eval('#f-breadth-row', (el) => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).catch(() => false);
+    const eb = await page.$eval('#f-breadth', (el) => el.textContent.trim()).catch(() => null);
+    if (!ebVisible) ok('escalation-breadth footer honest-null (hidden: nothing decisively escalating)');
+    else if (!eb || eb === '—') fail.push('#f-breadth row is visible but stuck on the "—" placeholder — the escalation-breadth footer did not render');
+    else if (!/^single front escalating — .+$/.test(eb) &&
+             !/^\d+ fronts escalating at once — .+ \(synchronized\)$/.test(eb))
+      fail.push(`#f-breadth rendered a malformed breadth line ("${clip(eb)}") — expected "single front escalating — X" or "N fronts escalating at once — … (synchronized)"`);
+    else ok(`escalation-breadth footer populated (#f-breadth = "${clip(eb)}")`);
+  }
+
   // Band self-validation caption (#gauge-band-cov): the honest coverage read on the uncertainty band.
   // Unlike the surfaces above it has NO "—" sentinel — an honest-null (thin ring) renders EMPTY — so we
   // cannot demand non-empty without false-rolling a cold ring. Instead: the element must EXIST (a

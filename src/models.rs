@@ -1003,6 +1003,35 @@ pub struct EscalationCoherence {
     pub momentum: f64,
 }
 
+// ── Escalation breadth (how many fronts are escalating AT ONCE?) ──
+
+/// How many theaters are DECISIVELY ESCALATING simultaneously — the momentum-breadth of the board,
+/// distinct from every read already shown. `couplers.concurrency` counts theaters that are HOT
+/// (heat ≥ Crisis) and feeds P; `escalation_coherence` names only the single momentum LEADER and
+/// relates it to the leverage leader; `systemic_momentum` is a heat-weighted board-wide DIRECTION
+/// magnitude. None of them answer "is escalation isolated on one front, or building across several
+/// at the same time" — and that distinction is decision-relevant: a synchronized multi-front
+/// escalation is the historical signature of a systemic crisis (1914, 1938–39), materially more
+/// dangerous than the same magnitude on a single contained front, and escalation-breadth can be
+/// broad even when heat is concentrated (a cool theater turning up fast), or narrow when heat is
+/// broad (many hot-but-stable standoffs). Counts theaters whose `escalation_momentum` clears the
+/// escalation mirror of the de-escalation floor gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30, the
+/// same decisive bar `escalation_coherence` uses). A pure diagnostic over the already-scored board:
+/// it never feeds `l_sys`/P and touches no fitted constant. `available = false` (nothing decisively
+/// escalating) hides the read. `#[serde(default)]` keeps older persisted snapshots loadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EscalationBreadth {
+    /// True when at least one theater is decisively escalating.
+    pub available: bool,
+    /// How many theaters are decisively escalating at the same time.
+    pub count: usize,
+    /// True when `count >= 2` — escalation is synchronized across multiple fronts, not isolated.
+    pub multi_front: bool,
+    /// The escalating fronts as (label, momentum), sorted by momentum descending, so the operator
+    /// sees WHICH theaters are turning up together and how hard. Empty when unavailable.
+    pub fronts: Vec<(String, f64)>,
+}
+
 // ── Risk snapshot ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1088,6 +1117,14 @@ pub struct RiskSnapshot {
     #[serde(default)]
     pub escalation_coherence: EscalationCoherence,
 
+    /// How many theaters are decisively escalating AT ONCE (momentum-breadth of the board) —
+    /// isolated single-front escalation vs. a synchronized multi-front one. Distinct from
+    /// `couplers.concurrency` (HOT-theater count, which feeds P) and from `escalation_coherence`
+    /// (single momentum leader). Computed in `compute` AFTER P is final, purely from the
+    /// already-scored board; never feeds P.
+    #[serde(default)]
+    pub escalation_breadth: EscalationBreadth,
+
     /// True when the seismic monitor holds a live event the detector judges
     /// consistent with a nuclear test — near a known test site AND past the
     /// natural-earthquake discriminator (no aftershock sequence, or a CTBTO
@@ -1140,6 +1177,7 @@ impl Default for RiskSnapshot {
             load_bearing_theater: TheaterSensitivity::default(),
             memory_load: MemoryLoad::default(),
             escalation_coherence: EscalationCoherence::default(),
+            escalation_breadth: EscalationBreadth::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
         }

@@ -192,6 +192,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // DIFFERENT emerging front (divergent) — the relation between load_bearing_theater and
         // per-theater escalation_momentum. Diagnostic; never feeds P.
         "escalation_coherence": snap.escalation_coherence,
+        // How many theaters are decisively escalating AT ONCE (momentum-breadth) — isolated
+        // single-front vs. synchronized multi-front escalation. Distinct from couplers.concurrency
+        // (HOT-theater count, which feeds P). Diagnostic; never feeds P.
+        "escalation_breadth": snap.escalation_breadth,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -2497,6 +2501,17 @@ mod tests {
             "escalation_coherence must carry the coherent/divergent flag");
         assert!(v["escalation_coherence"]["momentum_theater_id"].is_string(),
             "escalation_coherence must carry the momentum leader's id");
+        // The escalation-breadth read (how many fronts are decisively escalating AT ONCE) is on the
+        // served contract — the momentum-breadth of the board, distinct from couplers.concurrency.
+        assert!(v["escalation_breadth"].is_object(), "escalation_breadth must be served");
+        assert!(v["escalation_breadth"]["available"].is_boolean(),
+            "escalation_breadth must carry an availability flag");
+        assert!(v["escalation_breadth"]["count"].is_number(),
+            "escalation_breadth must carry the count of simultaneously-escalating fronts");
+        assert!(v["escalation_breadth"]["multi_front"].is_boolean(),
+            "escalation_breadth must carry the synchronized-multi-front flag");
+        assert!(v["escalation_breadth"]["fronts"].is_array(),
+            "escalation_breadth must carry the list of escalating fronts");
     }
 
     // ── Headline-read contract v1 (RAITHE Global Monitor §7.1) ─────────────────
