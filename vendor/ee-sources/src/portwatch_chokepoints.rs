@@ -90,8 +90,31 @@ impl Source for PortwatchChokepoints {
     }
 
     async fn fetch(&self) -> anyhow::Result<Vec<Event>> {
-        let text = crate::http::fetch_text(self.url()).await?;
-        parse_portwatch(&text)
+        // Page ~a YEAR of daily rows (the server caps each response at 1000 rows ≈ 36
+        // days across the 28 chokepoints). The norm must span normal months: a short
+        // window's median is whatever the recent weeks were, and during the 2026
+        // Hormuz closure that baseline was the COLLAPSED state (7/day), which made
+        // partial recovery read as a +300% "surge" while the strait still ran at HALF
+        // its real norm. Against the year-scale median (64/day) the same day reads
+        // "down 50%" — the honest alarm (the ishormuzopenyet "% of 1-year average"
+        // convention). Pages fetched concurrently; a short page = end of data.
+        let mut features: Vec<Value> = Vec::new();
+        for page in 0..10u32 {
+            let url = format!("{}&resultOffset={}", self.url(), page * 1000);
+            let text = crate::http::fetch_text(&url).await?;
+            let root: Value = serde_json::from_str(&text)?;
+            if root.get("error").is_some() {
+                anyhow::bail!("portwatch: ArcGIS error response (page {page})");
+            }
+            let Some(arr) = root.get("features").and_then(Value::as_array) else { break };
+            let n = arr.len();
+            features.extend(arr.iter().cloned());
+            if n < 1000 {
+                break; // short page = end of the dataset
+            }
+        }
+        let merged = serde_json::json!({ "features": features }).to_string();
+        parse_portwatch(&merged)
     }
 }
 
@@ -109,6 +132,10 @@ fn as_f64_loose(v: &Value) -> Option<f64> {
 }
 
 /// ArcGIS `f=json` encodes date fields as epoch milliseconds; tolerate an ISO string too.
+/// The LIVE Daily_Chokepoints_Data service (verified 2026-07-09) actually returns bare
+/// `"YYYY-MM-DD"` strings — not the epoch-ms the schema anchor showed — so that form is
+/// first-class here: without it every row silently dropped and the connector shipped
+/// fetched=0 on day one.
 fn parse_arcgis_date(v: &Value) -> Option<DateTime<Utc>> {
     if let Some(ms) = v.as_i64() {
         return Utc.timestamp_millis_opt(ms).single();
@@ -120,8 +147,51 @@ fn parse_arcgis_date(v: &Value) -> Option<DateTime<Utc>> {
         if let Ok(dt) = DateTime::parse_from_rfc3339(s.trim()) {
             return Some(dt.with_timezone(&Utc));
         }
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d") {
+            return d.and_hms_opt(0, 0, 0).map(|ndt| Utc.from_utc_datetime(&ndt));
+        }
     }
     None
+}
+
+/// Fixed locations of the 28 PortWatch chokepoints, keyed by `portid`. The live daily
+/// layer returns NO geometry (verified 2026-07-09: `returnGeometry=true` still yields
+/// attribute-only features), so rows geolocate through this table. Coordinates pulled
+/// from IMF's own `PortWatch_chokepoints_database` FeatureServer (same ArcGIS org,
+/// lat/lon attributes) on 2026-07-09 — chokepoints are fixed geography, so a committed
+/// table is exact, not an approximation.
+fn chokepoint_coords(portid: &str) -> Option<(f64, f64)> {
+    match portid {
+        "chokepoint1" => Some((30.5933, 32.4369)),    // Suez Canal
+        "chokepoint2" => Some((9.1205, -79.7672)),    // Panama Canal
+        "chokepoint3" => Some((41.1693, 29.0915)),    // Bosporus Strait
+        "chokepoint4" => Some((12.7886, 43.3495)),    // Bab el-Mandeb Strait
+        "chokepoint5" => Some((1.5170, 102.6651)),    // Malacca Strait
+        "chokepoint6" => Some((26.2969, 56.8598)),    // Strait of Hormuz
+        "chokepoint7" => Some((-34.9273, 20.8827)),   // Cape of Good Hope
+        "chokepoint8" => Some((35.9423, -5.7549)),    // Gibraltar Strait
+        "chokepoint9" => Some((51.0302, 1.5058)),     // Dover Strait
+        "chokepoint10" => Some((55.5078, 12.8508)),   // Oresund Strait
+        "chokepoint11" => Some((24.7235, 119.8314)),  // Taiwan Strait
+        "chokepoint12" => Some((34.1308, 129.2092)),  // Korea Strait
+        "chokepoint13" => Some((41.3280, 140.3533)),  // Tsugaru Strait
+        "chokepoint14" => Some((20.4889, 121.3523)),  // Luzon Strait
+        "chokepoint15" => Some((-8.4191, 115.8014)),  // Lombok Strait
+        "chokepoint16" => Some((-8.3985, 125.0910)),  // Ombai Strait
+        "chokepoint17" => Some((38.3730, 120.9000)),  // Bohai Strait
+        "chokepoint18" => Some((-9.8625, 142.2475)),  // Torres Strait
+        "chokepoint19" => Some((-5.9668, 105.7752)),  // Sunda Strait
+        "chokepoint20" => Some((0.3523, 119.2571)),   // Makassar Strait
+        "chokepoint21" => Some((-52.6403, -69.5948)), // Magellan Strait
+        "chokepoint22" => Some((21.8153, -85.6473)),  // Yucatan Channel
+        "chokepoint23" => Some((19.9862, -73.6975)),  // Windward Passage
+        "chokepoint24" => Some((18.4487, -67.7114)),  // Mona Passage
+        "chokepoint25" => Some((7.4136, 117.1146)),   // Balabac Strait
+        "chokepoint26" => Some((65.9665, -165.5498)), // Bering Strait
+        "chokepoint27" => Some((12.4683, 120.4034)),  // Mindoro Strait
+        "chokepoint28" => Some((45.2668, 36.5439)),   // Kerch Strait
+        _ => None,
+    }
 }
 
 /// Slug for a stable feature id (lowercase alphanumerics, single dashes).
@@ -260,12 +330,24 @@ pub fn parse_portwatch(json: &str) -> anyhow::Result<Vec<Event>> {
 
     let mut out = Vec::new();
     for (portid, mut c) in groups {
+        // The live daily layer carries no geometry (attribute-only features, verified
+        // 2026-07-09) — geolocate through the fixed chokepoint table. Response geometry,
+        // when the service does send it, still wins (captured above).
+        if c.lat.is_nan() {
+            if let Some((la, lo)) = chokepoint_coords(&portid) {
+                c.lat = la;
+                c.lon = lo;
+            }
+        }
         let Some(geo) = Geo::new(c.lat, c.lon) else { continue };
         if c.rows.len() < MIN_BASELINE_DAYS + 1 {
             continue;
         }
-        // Newest first.
+        // Newest first; drop same-date duplicates (paged offsets can shift between
+        // requests when the upstream updates mid-pagination — a duplicated day must
+        // not double-weight the recent mean).
         c.rows.sort_by(|a, b| b.0.cmp(&a.0));
+        c.rows.dedup_by(|a, b| a.0 == b.0);
         let latest = c.rows[0].0;
         let recent_cut = latest - ChronoDuration::days(RECENT_DAYS);
 
@@ -363,6 +445,42 @@ mod tests {
             "features": features
         })
         .to_string()
+    }
+
+    #[test]
+    fn live_wire_shape_string_dates_no_geometry() {
+        // The REAL wire shape served in production (captured 2026-07-09): bare
+        // "YYYY-MM-DD" date strings and NO geometry key at all — both DIFFERENT from
+        // the epoch-ms + Point-geometry shape the GitHub schema anchor showed. That
+        // double mismatch shipped a fetched=0 connector on day one. Rows must parse
+        // via the bare-date branch and geolocate via the fixed chokepoint table.
+        let end = chrono::NaiveDate::parse_from_str("2026-07-05", "%Y-%m-%d").unwrap();
+        let feats: Vec<Value> = (0..36i64)
+            .map(|off| {
+                let d = end - ChronoDuration::days(off);
+                let n = if off < 7 { 15.0 } else { 40.0 }; // recent collapse vs norm
+                serde_json::json!({
+                    "attributes": {
+                        "date": d.format("%Y-%m-%d").to_string(),
+                        "portid": "chokepoint6",
+                        "portname": "Strait of Hormuz",
+                        "n_total": n
+                    }
+                    // deliberately NO "geometry" key — the live shape
+                })
+            })
+            .collect();
+        let ev = parse_portwatch(&wrap(feats)).unwrap();
+        assert_eq!(ev.len(), 1, "string-dated, geometry-less rows must still parse");
+        let hz = &ev[0];
+        assert_eq!(hz.id, "portwatch-chokepoint6");
+        let g = hz.geo.as_ref().expect("geo from the fixed chokepoint table");
+        assert!(
+            (g.lat - 26.2969).abs() < 0.01 && (g.lon - 56.8598).abs() < 0.01,
+            "must geolocate to the real Strait of Hormuz: got ({}, {})", g.lat, g.lon
+        );
+        assert_eq!(hz.time.format("%Y-%m-%d").to_string(), "2026-07-05");
+        assert!(hz.severity.value() >= 0.85, "a 62% transit collapse is a loud alarm");
     }
 
     #[test]
