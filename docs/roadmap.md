@@ -29,6 +29,33 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
 > the Nth light or mirroring a caveat onto another surface is annotation inflation, not improvement.
 > The open frontier is **§6 new signal · §7 platform · §8 monitors** below.
 
+> **OPERATOR DIRECTIVE — Robert, 2026-07-09 (binding on every run; supersedes tier-chasing):**
+> GCRM must be a *clean, mean, honest, intelligence-driven machine*. The audit that prompted
+> this found the routines optimizing for surface over signal. Standing rules:
+>
+> 1. **NO new dashboard surfaces** — footers, readouts, captions, chips, panels — of ANY kind
+>    without an explicit operator sign-off recorded in this file. Six new footers shipped in
+>    three weeks; two of them froze ALL deploys (~16 h total: the ce9be1f dropped-`</div>`,
+>    the 488075d gate-tightening against a pre-existing bug). The "honesty:"/"awareness:"
+>    annotation vein is **CLOSED** alongside the I&W board. Honesty lives in the NUMBER and
+>    the DATA, not in an Nth caption about the number.
+> 2. **NO new eyes-gate checks** (`deploy/eyes/smoke.mjs`) without operator sign-off. The gate's
+>    own charter says FLOOR, not CAGE — per-surface format regexes have made it a deploy-freezing
+>    cage. Geometric/structural floors stay; format-regex additions stop.
+> 3. **A `feed:` commit must prove LIVE non-emptiness before it counts.** `portwatch_chokepoints`
+>    shipped fetched=0 on day one (schema anchored to GitHub bytes that differed from the live
+>    wire: bare `"YYYY-MM-DD"` date strings + geometry-less features). GitHub-anchored shape is
+>    NOT proof of liveness. A new connector the sandbox cannot live-verify ships explicitly
+>    marked **unverified-live** in `data-sources.md` and is NOT claimed as a landed feed until a
+>    local session (full egress) captures a real response and confirms `fetched > 0` — or it
+>    honestly documents why empty-now is correct (off-season etc.).
+> 4. **Freshness is signal-priority #1.** A stale or self-emptied layer misleads the operator
+>    during an active war (the ACLED snapshot sat 4 months stale while US/Iran strikes resumed;
+>    UCDP lags ~5 weeks by nature — now vintage-labeled on the map). Prefer work that makes
+>    live data live, fresher, or honestly labeled over ANY presentation work.
+> 5. **Daily no-op ledgers re-verifying known walls are waste.** A gap confirmed web fetch-walled
+>    stays walled; re-check weekly at most, and spend the run on §6/§7/§8 instead.
+
 ---
 
 - [ ] **[candidate] 1.x Video↔wire corroboration threshold (duplicate weight)** — measured
