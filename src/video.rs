@@ -54,7 +54,7 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCzuqE7-t13O4NIDYJfakrhw", source: "democracynow-video", tier: SourceTier::Tier1 }, // operator tier call 2026-07-05
     VideoChannel { channel_id: "UCVG72F2Q5yCmLQfctNK6M2A", source: "zeteo-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCi7Zk9baY1tvdlgxIML8MXg", source: "ctvnews-video",      tier: SourceTier::Tier1 }, // operator-nominated 2026-07-05
-    VideoChannel { channel_id: "UCKjU3KzdbJE1EFcHVqXC3_g", source: "cbcnews-video",      tier: SourceTier::Tier2 }, // CBC News: The National — operator-nominated 2026-07-08; inherits the `cbc` text-roster Tier2 (bump to Tier1 alongside CTV if desired)
+    VideoChannel { channel_id: "UCKjU3KzdbJE1EFcHVqXC3_g", source: "cbcnews-video",      tier: SourceTier::Tier1 }, // CBC News: The National — operator tier call 2026-07-08 (Tier1, peer of BBC/DW/CTV video)
     // Analyst channels — operator-approved shortlist 2026-07-05 (weekly-cadence depth).
     VideoChannel { channel_id: "UCC3ehuUksTyQ7bbjGntmx3Q", source: "perun-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCwnKziETDbHJtx78nIkfYug", source: "caspianreport-video", tier: SourceTier::Tier2 },
