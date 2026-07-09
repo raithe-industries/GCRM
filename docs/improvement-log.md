@@ -22,6 +22,65 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-09 (late) — legibility (VISUAL-ANALYTIC) — the eyes gate JUDGES the small/short viewports it promised to
+- Item: roadmap 2.9 (new). Lane-2 VISUAL-ANALYTIC: extend the system's own eyes to SEE a legibility
+  weakness it was blind to.
+- Diagnosis (pillar-2 LEGIBILITY-verification weakest): the last ~9 runs all deepened pillar-3
+  AWARENESS footer self-diagnostics (memory load, coherence, breadth, band coverage/dwell/locus),
+  crowding ONE surface while the eyes gate — the system's own eyes — ran every check at a SINGLE
+  viewport (1440×900, `newPage` line 27). The HARD RAILS promise "the eyes gate judges" small/short-
+  viewport legibility, but a `grep` confirmed no viewport resize in `smoke.mjs`: the deliberate
+  `@media(max-width:680px)` and `@media(max-height:640px)` rules — each written to fix a DOCUMENTED
+  bug (5th stat clipped off the right edge; Chart.js resize→render loop squishing the timeline to
+  ~2px) — were re-checked by nothing. A CSS refactor breaking either breakpoint shipped a
+  clipped/squished phone cockpit with the gate green.
+- Change (extend the deploy-time eyes gate; no layout opinion): added check #9 to
+  `deploy/eyes/smoke.mjs`. After the desktop checks, re-drive the SAME loaded page at 390×844
+  (phone-portrait) and 1280×560 (short-landscape) via `page.setViewportSize` (verified to re-flow the
+  media queries and re-render Chart.js), asserting two invariants of ANY good responsive design:
+  (a) no horizontal page overflow — `document.body.scrollWidth ≤ body.clientWidth + 2px`, which
+  detects content spilling past the edge EVEN under the `overflow-x:hidden` that hides the scrollbar
+  but not the clip (empirically: an overflowing child reports `scrollWidth` 1200 vs `clientWidth` 390,
+  while an off-screen fixed `translateX(100%)` drawer does NOT inflate it → no false positive); and
+  (b) the `#timeline-chart` still renders above `MIN_GRAPH_H` (the resize-loop squish guard). The
+  fail message names the widest in-flow culprit (fixed/sticky skipped) and its overrun for diagnosis.
+- Metric moved: the eyes gate (Hold invariant) now covers 2 responsive viewports it never judged —
+  closing the small/short-viewport verification gap the HARD RAILS assumed was covered. Rust suite
+  unchanged (609 passed / 5 ignored) — this is a JS-gate-only change; the four anchors are untouched
+  (`cargo test backtest` green, no calibration constant read or written).
+- Proof: `cargo build --release` clean. `cargo test --release` **609 passed / 0 failed / 5 ignored**.
+  `node --check deploy/eyes/smoke.mjs` OK. Lock proven fails-without-change EMPIRICALLY: ran the
+  extracted check-#9 logic (identical `hOverflow` + resize) against the rendered `dashboard.html` —
+  the CURRENT layout PASSES both viewports (phone `body 390≤390`, short `1280≤1280`, timeline legible),
+  and a broken variant (a `width:1200px` element injected before `</body>`) FAILS phone-portrait with
+  the precise diagnostic "overflow 810px — .div@1200px/390px" (short-landscape correctly stays green,
+  the 1200px fits a 1280 viewport). So the check flags a real horizontal-clip regression and passes a
+  healthy layout.
+- Tier: T2 (VISUAL-ANALYTIC — a new deploy/eyes rung: the gate now VERIFIES a legibility surface —
+  responsive small/short-viewport layout — that existed but was unchecked; precedent: 2.7 "the eyes
+  gate can SEE the I&W board" was graded a creditable gate-extension, and the scorecard's
+  VISUAL-ANALYTIC lane names "viewport regressions" as an explicitly unverified surface to catch.
+  Not annotation: it adds a NEW thing the system can SEE about itself — whether the phone/short layout
+  is clipped or squished — not a caveat mirrored to an Nth surface) · Touched: display-only (a
+  deploy-gate/JS change — no Rust engine behavior, so counts as display-only for the streak; the
+  "lock" is the gate itself, proven fails-without by the injected-overflow test above) ·
+  Lock-fails-without-change: yes (empirical good-vs-broken proof above) · Counts: none of
+  Live-sources/Map-layers/Monitors moved — a gate-coverage rung · consecutive_display_only=1 ·
+  display_only_in_last_7=2 · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) STAGED — the cloud sandbox has no running service, so I could
+  not run the full `smoke.mjs` end-to-end (it needs `/api/latest`); I verified the check-#9 LOGIC
+  against the rendered static dashboard. The local deploy (`raithe-sync-deploy.sh`) runs the real
+  browser gate and promotes STAGED→DONE. (2) The overflow test MUST use `body.scrollWidth` (NOT
+  `documentElement.scrollWidth`, which the body's `overflow-x:hidden` CLAMPS to the viewport width —
+  measured, useless). (3) Off-screen fixed drawers (`.op-drawer`, `translateX(100%)`) are correctly
+  invisible to `body.scrollWidth`; do NOT switch to a per-element `getBoundingClientRect().right`
+  scan for the PASS/FAIL (it false-positives on the parked drawer — the culprit finder uses it only
+  for the fail MESSAGE and already skips fixed/sticky). (4) The two viewport sizes map 1:1 to the two
+  media queries (390-wide → `max-width:680px`; 560-tall → `max-height:640px`); keep both so neither
+  breakpoint goes unjudged again. (5) display_only_in_last_7 is now 2 — the cap is reached; the NEXT
+  run must be T1/T2-substantive (new source/gauge/theater/calibration or a monitor rung), not a 3rd
+  display-only.
+
 ## 2026-07-09 — awareness (MATH-ANALYTIC) — how many fronts are escalating AT ONCE (isolated vs. synchronized)
 - Item: roadmap 1.20 (new). A fresh COUNT axis over the escalation-momentum board — not WHICH front
   leads (1.19 coherence) nor how HOT theaters are (concurrency), but HOW MANY are turning up together.

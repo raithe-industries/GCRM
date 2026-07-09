@@ -391,6 +391,51 @@ if (latest) {
   }
 }
 
+// 9) RESPONSIVE / SMALL-VIEWPORT LEGIBILITY — every check above ran at ONE size (1440×900),
+//    but the dashboard ships deliberate layout rules for phones (`@media(max-width:680px)`:
+//    stack the columns, wrap the 5-stat strip to 2 cols) and short displays
+//    (`@media(max-height:640px)`: let the page scroll, pin the charts to fixed heights). Those
+//    rules exist to fix DOCUMENTED regressions — the 5th stat clipped off the right edge, and the
+//    Chart.js no-bounded-height resize→render loop squishing the timeline toward 2px. Nothing
+//    re-checked them, so a CSS refactor that broke either breakpoint would ship a horizontally-
+//    clipped or squished phone cockpit undetected. We re-drive the SAME loaded page at two sizes
+//    and assert two invariants of any good responsive design (no layout opinion): (a) the page body
+//    does not overflow horizontally — `body.scrollWidth` catches content spilling past the edge even
+//    under the `overflow-x:hidden` that hides the scrollbar but not the clip (the exact clipped-stat
+//    bug); off-screen fixed drawers (`translateX(100%)`) do NOT inflate it, so no false positive —
+//    and (b) the primary timeline graph is still rendered above the legibility floor.
+const OVF_TOL = 2; // px — sub-pixel rounding slack
+const hOverflow = () => page.evaluate(() => {
+  const b = document.body;
+  // Best-effort culprit for the diagnostic (fail message only): the in-flow element reaching
+  // furthest past the viewport's right edge, skipping fixed/sticky (a parked drawer is not a clip).
+  let worst = null, worstR = 0;
+  const vw = document.documentElement.clientWidth;
+  for (const el of document.body.querySelectorAll('*')) {
+    const pos = getComputedStyle(el).position;
+    if (pos === 'fixed' || pos === 'sticky') continue;
+    const r = el.getBoundingClientRect().right;
+    if (r > worstR) { worstR = r; worst = el.id ? '#' + el.id : '.' + (el.className && el.className.toString().trim().split(/\s+/)[0] || el.tagName.toLowerCase()); }
+  }
+  return { over: b.scrollWidth - b.clientWidth, sw: b.scrollWidth, cw: b.clientWidth, worst, worstR: Math.round(worstR), vw };
+});
+for (const [w, h, name] of [[390, 844, 'phone-portrait'], [1280, 560, 'short-landscape']]) {
+  await page.setViewportSize({ width: w, height: h });
+  await page.waitForTimeout(1000); // let the media query re-flow and Chart.js re-render at the new size
+  const ov = await hOverflow();
+  if (ov.over > OVF_TOL) {
+    fail.push(`${name} (${w}×${h}): page overflows horizontally by ${ov.over}px (body ${ov.sw}px > viewport ${ov.cw}px)` +
+      (ov.worst ? ` — widest in-flow element ${ov.worst} reaches ${ov.worstR}px past a ${ov.vw}px viewport` : '') +
+      ' — content is clipped off the right edge');
+  } else {
+    ok(`${name} (${w}×${h}): no horizontal overflow (body ${ov.sw}px ≤ viewport ${ov.cw}px)`);
+  }
+  const tlv = await box('#timeline-chart');
+  if (!tlv) fail.push(`${name}: #timeline-chart missing or not visible after resize`);
+  else if (tlv.height < MIN_GRAPH_H) fail.push(`${name}: #timeline-chart squished to ${Math.round(tlv.height)}px (legibility floor ${MIN_GRAPH_H}px) — the responsive height rule collapsed`);
+  else ok(`${name}: timeline graph legible ${Math.round(tlv.width)}×${Math.round(tlv.height)}px`);
+}
+
 await browser.close();
 
 if (fail.length) {

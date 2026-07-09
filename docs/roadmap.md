@@ -508,6 +508,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   neutered to default). See improvement-log 2026-07-09.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
+  The HARD RAILS say "src/dashboard.html stays legible on small/short viewports (rails scroll; the
+  eyes gate judges)", but `smoke.mjs` ran every check at ONE size (1440×900, `newPage` line 27) — it
+  never judged a phone or short display. The dashboard carries deliberate `@media(max-width:680px)`
+  (stack columns, wrap the 5-stat strip to 2 cols) and `@media(max-height:640px)` (scroll the page,
+  pin charts to fixed heights) rules written to fix DOCUMENTED bugs (5th stat clipped off the right
+  edge; Chart.js no-bounded-height resize→render loop squishing the timeline to ~2px) — a CSS
+  refactor breaking either shipped a clipped/squished phone cockpit with the gate green. Added
+  check #9: re-drive the SAME loaded page at 390×844 (phone-portrait) and 1280×560 (short-landscape)
+  and assert two invariants of ANY good responsive design — (a) no horizontal page overflow
+  (`body.scrollWidth ≤ clientWidth`, which catches content spilling past the edge even under the
+  `overflow-x:hidden` that hides the scrollbar but not the clip; off-screen fixed `translateX(100%)`
+  drawers verified NOT to inflate it, so no false positive) and (b) the timeline graph still renders
+  above the legibility floor. No layout opinion. Empirically verified against the rendered
+  dashboard: PASSES the current layout at both sizes, and a broken variant (an injected 1200px
+  element) FAILS phone-portrait with a precise culprit ("overflow 810px — .div@1200px/390px").
+  STAGED→DONE on the local deploy that runs the browser gate. See improvement-log 2026-07-09 (late).
 - [x] **2.8 The headline says WHERE it sits in its recent range (durable, not a per-tab "session
   peak")** — **DONE 2026-07-05.** The context strip showed "Session peak / Session low", computed
   client-side from `sessionPeak`/`sessionLow` — a per-tab min/max that drifted with tab uptime (two
