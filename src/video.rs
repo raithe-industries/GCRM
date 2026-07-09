@@ -54,6 +54,7 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCzuqE7-t13O4NIDYJfakrhw", source: "democracynow-video", tier: SourceTier::Tier1 }, // operator tier call 2026-07-05
     VideoChannel { channel_id: "UCVG72F2Q5yCmLQfctNK6M2A", source: "zeteo-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCi7Zk9baY1tvdlgxIML8MXg", source: "ctvnews-video",      tier: SourceTier::Tier1 }, // operator-nominated 2026-07-05
+    VideoChannel { channel_id: "UCKjU3KzdbJE1EFcHVqXC3_g", source: "cbcnews-video",      tier: SourceTier::Tier2 }, // CBC News: The National — operator-nominated 2026-07-08; inherits the `cbc` text-roster Tier2 (bump to Tier1 alongside CTV if desired)
     // Analyst channels — operator-approved shortlist 2026-07-05 (weekly-cadence depth).
     VideoChannel { channel_id: "UCC3ehuUksTyQ7bbjGntmx3Q", source: "perun-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCwnKziETDbHJtx78nIkfYug", source: "caspianreport-video", tier: SourceTier::Tier2 },
@@ -61,9 +62,14 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCPPfK7Nq_yQR84rn1wcTXBg", source: "anderspuck-video",   tier: SourceTier::Tier2 },
 ];
 
-/// Poll cadence. Broadcast channels upload a handful of clips per hour at most; 15
-/// minutes keeps "real-time as they hit YouTube" honest without hammering the feeds.
-pub const VIDEO_POLL_SECS: u64 = 900;
+/// Poll cadence. Broadcast channels upload a handful of clips per hour at most, so
+/// discovery is a cheap Atom-feed poll (CDN-cached, built for polling) — yt-dlp only
+/// fires for a genuinely NEW recent upload. Tightened 900→300s (2026-07-08) so breaking
+/// broadcast signal (e.g. a ceasefire collapsing) lands within ~5 min of captions
+/// appearing rather than up to 15. The floor beneath this is YouTube's own caption lag,
+/// which polling cannot beat; going much below 300s mostly adds re-probes of still-
+/// uncaptioned uploads and courts yt-dlp rate-limiting, so 300 is the ASAP/safety knee.
+pub const VIDEO_POLL_SECS: u64 = 300;
 /// Only ingest uploads younger than this — the monitor wants the live picture, and
 /// the article window/dedup already hold recent history.
 pub const VIDEO_MAX_AGE_HOURS: i64 = 24;
