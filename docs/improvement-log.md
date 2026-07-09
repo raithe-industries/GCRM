@@ -22,6 +22,49 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-09 (later) — honesty (MATH/ENGINE) — an outlet's own wire+video twins no longer corroborate themselves
+- Item: roadmap "1.x Video↔wire corroboration threshold" (the INDEPENDENCE facet of the operator
+  directive "duplicates must be found and removed appropriately from weight"; the threshold-fit facet
+  stays open pending labeled data).
+- Diagnosis (pillar-1 HONESTY weakest): `try_corroborate` judged source independence by the RAW source
+  string (`existing.source == incoming.source`). A single newsroom feeds GCRM through multiple channels
+  — wire (`bbc`), YouTube (`bbc-video`), rolling live transcript (`bbc-live`) — with DIFFERENT source
+  strings. So an outlet's own video twin of its wire story corroborated it as an independent second
+  witness, inflating `corroboration_count` and `credibility_weight`. Verified LIVE, not hypothetical:
+  5 roster outlets (bbc, aljazeera, cna, france24, skynews) run BOTH a wire and a `-video` feed; the
+  store near-dup comment already conceded the twin still reaches the event pipeline ("corroboration
+  credit is unaffected"). The number claimed "2 sources confirm this" where one newsroom did.
+- Change (engine-behavior, honesty firewall untouched): added `outlet_identity(source)` — strips the
+  `-video`/`-live` modality suffix to the newsroom identity. `try_corroborate` now judges independence
+  by outlet identity: a same-outlet cross-modal twin is still ABSORBED (returns true → not re-added as
+  a phantom second event that would double-count into modality weight) but does NOT boost
+  count/credibility (it is one voice, not a second witness). A DIFFERENT outlet's video still
+  corroborates normally. No calibration constant read or written; the exact-same-feed skip (edition
+  path) and the different-outlet corroboration contract are preserved.
+- Metric moved: corroboration credit is now honest about source independence — the same-outlet
+  double-count on 5 dual-feed outlets is removed from weight. +3 test fns (609 → 612 passed). Anchors
+  bit-identical (`cargo test backtest` 25/25 — the synthetic backtests carry no video events).
+- Proof: `cargo build --release` clean. `cargo test --release` **612 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings from `aggregator.rs`. Lock proven fails-without-change:
+  reverting the independence check to the raw-source comparison makes
+  `same_outlet_video_twin_absorbed_without_independence_boost` FAIL (`corroboration_count` left:2
+  right:1 — the original code boosts the same-outlet twin to 2); restored → 612 green.
+- Tier: T1 (engine-behavior — corroboration/independence logic changed, altering the credibility and
+  corroboration_count an outlet's twin feeds contribute; NOT a display annotation — it changes what the
+  number MEANS on the fallible dedup path). · Touched: engine-behavior · Lock-fails-without-change: yes
+  (revert-to-raw-source proof above: count 2≠1) · Counts: none of Live-sources/Map-layers/Monitors
+  moved (a correctness/honesty fix, not a new sight) · consecutive_display_only=0 (this run is
+  engine-behavior, resetting the streak) · display_only_in_last_7=2 (unchanged — the two prior
+  display-only runs age out on their own) · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `outlet_identity` strips ONLY the trailing `-video`/`-live`
+  modality suffix — it deliberately does NOT alias name-variant twins whose bases differ (`cbc` vs
+  `cbcnews-video`, `dw` vs `dwnews-video`); hard-coding an outlet alias table is fragile and was NOT
+  done. The 5 exact-base collisions (bbc/aljazeera/cna/france24/skynews) are the live, provable set; a
+  name-variant alias map is a separate, evidence-gated item if it ever proves load-bearing. (2) The
+  independence check reuses `outlet_identity` for the corroborating-sources list too, so an outlet that
+  corroborated via wire can't re-corroborate via its video twin. (3) The exact-same-feed loop skip and
+  test `corroboration_same_source_not_merged` are intentionally preserved — do not fold them together.
+
 ## 2026-07-09 (late) — legibility (VISUAL-ANALYTIC) — the eyes gate JUDGES the small/short viewports it promised to
 - Item: roadmap 2.9 (new). Lane-2 VISUAL-ANALYTIC: extend the system's own eyes to SEE a legibility
   weakness it was blind to.

@@ -42,6 +42,16 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   precision/recall table in the log entry; the threshold change must show measured
   over-merge risk < measured double-count reduction. (Operator-directed: "duplicates must
   be found and removed appropriately from weight.")
+  - PROGRESS 2026-07-09 (later): resolved a DISTINCT facet of the same directive — SAME-OUTLET
+    cross-modal independence. `try_corroborate` judged corroboration independence by the raw
+    source string, so an outlet's own wire (`bbc`) and `-video` (`bbc-video`) twins of one story
+    corroborated each other as two independent witnesses (5 roster outlets — bbc/aljazeera/cna/
+    france24/skynews — run both feeds; the store-dedup comment already conceded "corroboration
+    credit is unaffected"). Added `outlet_identity()` (strips the `-video`/`-live` modality
+    suffix); a same-outlet cross-modal twin is now ABSORBED as a duplicate but does NOT boost
+    corroboration_count/credibility. Locked by `same_outlet_video_twin_absorbed_without_independence_boost`
+    (+ `independent_outlet_video_still_corroborates` guards against over-suppression). This is the
+    independence half; the REMAINING threshold-fit (over/under-merge on labeled pairs) is still open.
 
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
 - [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now

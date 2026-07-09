@@ -2227,6 +2227,22 @@ impl Aggregator {
 const CORROBORATION_JACCARD_THRESHOLD: f64 = 0.40;
 const CORROBORATION_WINDOW_HOURS:      f64 = 72.0;
 
+/// The outlet identity behind a source string, with the modality suffix removed.
+///
+/// A single newsroom feeds GCRM through more than one channel: its wire/RSS source
+/// (`bbc`), its YouTube uploads (`bbc-video`), and — when enabled — its rolling live
+/// transcript (`bbc-live`). Those are ONE editorial voice, not independent witnesses.
+/// Corroboration and support-breadth credit must treat them as the same outlet, so the
+/// same story reported by `bbc` and `bbc-video` cannot inflate itself into "two sources
+/// confirm this." Five outlets in the current roster run both a wire and a `-video` feed
+/// (bbc, aljazeera, cna, france24, skynews), so this collision is live, not hypothetical.
+fn outlet_identity(source: &str) -> &str {
+    source
+        .strip_suffix("-video")
+        .or_else(|| source.strip_suffix("-live"))
+        .unwrap_or(source)
+}
+
 fn title_trigrams(s: &str) -> std::collections::HashSet<[char; 3]> {
     let chars: Vec<char> = s.to_lowercase().chars().collect();
     if chars.len() < 3 {
@@ -2249,9 +2265,12 @@ fn jaccard(a: &std::collections::HashSet<[char; 3]>, b: &std::collections::HashS
 /// Uses the CorroborationIndex for O(k) candidate lookup (M-01). For each
 /// candidate:
 ///   1. Skip if outside the 72-hour corroboration window.
-///   2. Skip if same source (corroboration requires independent sources).
+///   2. Skip if the exact same feed (an edition — handled by the store's Edition path).
 ///   3. Compute exact trigram Jaccard similarity.
-///   4. If Jaccard ≥ threshold, merge into the best-matching canonical event.
+///   4. If Jaccard ≥ threshold, merge into the best-matching canonical event — but only
+///      boost count/credibility if the incoming outlet is INDEPENDENT of the canonical
+///      event's sources (by [`outlet_identity`]); a same-outlet cross-modal twin is
+///      absorbed as a duplicate without the independence boost.
 ///
 /// Returns true if the incoming event was corroborated (merged into an existing
 /// event), false if it should be added to the window as a new event.
@@ -2296,12 +2315,19 @@ fn try_corroborate(
 
     if let Some(idx) = best_idx {
         let existing = &mut window[idx];
-        // Only a genuinely NEW source corroborates. The candidate loop already excludes the
-        // canonical (primary) source; this also blocks a non-primary source that already
-        // corroborated this event from inflating count/credibility AGAIN with a reworded
-        // headline. A repeat from a known source is still ABSORBED (returns true, so it isn't
-        // re-added as a phantom new event) — it just doesn't re-boost. (audit aggregator-4)
-        if existing.corroborating_sources.iter().any(|s| s == &incoming.source) {
+        // Only a genuinely INDEPENDENT outlet corroborates. Independence is judged by
+        // `outlet_identity`, not the raw source string, so an outlet's own wire + `-video` /
+        // `-live` twins of one story count as ONE voice — a `bbc-video` re-run of a `bbc`
+        // headline is absorbed as a duplicate but does NOT boost count/credibility (it is the
+        // same newsroom, not a second witness). This also blocks a non-primary outlet that
+        // already corroborated from inflating AGAIN with a reworded headline. A same-outlet
+        // repeat is still ABSORBED (returns true, so it isn't re-added as a phantom new event
+        // that would double-count into modality weight) — it just doesn't re-boost.
+        // (audit aggregator-4 + same-outlet cross-modal independence fix)
+        let incoming_outlet = outlet_identity(&incoming.source);
+        if outlet_identity(&existing.source) == incoming_outlet
+            || existing.corroborating_sources.iter().any(|s| outlet_identity(s) == incoming_outlet)
+        {
             return true;
         }
         existing.corroborating_sources.push(incoming.source.clone());
@@ -3981,6 +4007,68 @@ mod tests {
         let corroborated = try_corroborate(&incoming, &mut window, &now, &corr_index);
         assert!(!corroborated, "Same-source near-duplicate should not corroborate");
         assert_eq!(window[0].corroboration_count, 1);
+    }
+
+    #[test]
+    fn same_outlet_video_twin_absorbed_without_independence_boost() {
+        // An outlet's wire story and its OWN `-video` twin are one newsroom, not two
+        // independent witnesses. The twin must be ABSORBED (deduped → returns true, so it
+        // isn't re-added as a phantom second event that would double-count into modality
+        // weight) but must NOT boost corroboration_count / credibility — that would claim
+        // two independent sources where there is one. (Operator directive: duplicates
+        // removed from weight; five roster outlets run both a wire and a `-video` feed.)
+        let mut window = vec![
+            make_event_for_corroboration(
+                "Russia launches ballistic missile strike on Kyiv",
+                "bbc", SourceTier::Tier1, 1,
+            )
+        ];
+        let corr_index = build_corr_index(&window);
+        let start_count  = window[0].corroboration_count;
+        let start_weight = window[0].credibility_weight;
+        let incoming = make_event_for_corroboration(
+            "Russia fires ballistic missiles at Kyiv in overnight strike",
+            "bbc-video", SourceTier::Tier1, 1,
+        );
+        let now = Utc::now();
+        let absorbed = try_corroborate(&incoming, &mut window, &now, &corr_index);
+        assert!(absorbed, "same-outlet video twin must be absorbed, not left to re-add as a phantom event");
+        assert_eq!(window[0].corroboration_count, start_count,
+            "same-outlet video twin must NOT boost corroboration_count (not an independent source)");
+        assert_eq!(window[0].credibility_weight, start_weight,
+            "same-outlet video twin must NOT boost credibility (not an independent source)");
+        assert!(!window[0].corroborating_sources.iter().any(|s| s == "bbc-video"),
+            "the same-outlet twin must not be recorded as a corroborating source");
+    }
+
+    #[test]
+    fn independent_outlet_video_still_corroborates() {
+        // A DIFFERENT outlet's video IS a real second witness — the independence fix must
+        // not over-suppress it. `reuters-video` corroborating a `bbc` wire event still boosts.
+        let mut window = vec![
+            make_event_for_corroboration(
+                "North Korea fires intercontinental ballistic missile toward Japan",
+                "bbc", SourceTier::Tier1, 1,
+            )
+        ];
+        let corr_index = build_corr_index(&window);
+        let incoming = make_event_for_corroboration(
+            "North Korea launches intercontinental ballistic missile test toward Japan",
+            "reuters-video", SourceTier::Tier1, 1,
+        );
+        let now = Utc::now();
+        let corroborated = try_corroborate(&incoming, &mut window, &now, &corr_index);
+        assert!(corroborated, "an independent outlet's video is a genuine second witness");
+        assert_eq!(window[0].corroboration_count, 2);
+    }
+
+    #[test]
+    fn outlet_identity_strips_modality_suffixes() {
+        assert_eq!(outlet_identity("bbc-video"), "bbc");
+        assert_eq!(outlet_identity("aljazeera-live"), "aljazeera");
+        assert_eq!(outlet_identity("reuters"), "reuters");
+        // Only the trailing modality suffix is stripped — an internal hyphen is preserved.
+        assert_eq!(outlet_identity("times-of-israel"), "times-of-israel");
     }
 
     #[test]
