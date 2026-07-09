@@ -975,6 +975,19 @@ impl Ingestor {
         // transcript lands or it ages out.
         let mut titled: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
+            // A cycle is TWO passes over the watchlist. Splitting them is what makes EVERY
+            // channel's breaking headline immediate: Pass 1 does only the cheap title-first
+            // ingest (no subprocess), so a slow transcript fetch can never sit between a
+            // freshly-posted headline and the model — a stall on channel 1 no longer delays
+            // channel 21's headline. Pass 2 does the slow yt-dlp work AFTER every headline is
+            // already in. Feeds are fetched ONCE (Pass 1) and the gated candidates cached, so
+            // the transcript pass never re-hits YouTube. Feed fetches stay serial (gentle on
+            // the shared IP's YouTube quota — a 21-request burst is what gets rate-limited).
+            type Cand = (String, String, chrono::DateTime<chrono::Utc>); // (title, url, published)
+            let mut cycle: Vec<(&'static video::VideoChannel, Vec<Cand>)> =
+                Vec::with_capacity(video::VIDEO_CHANNELS.len());
+
+            // ── PASS 1 — TITLE-FIRST SWEEP (no yt-dlp) ──────────────────────────────────
             for ch in video::VIDEO_CHANNELS {
                 let feed_url = video::channel_feed_url(ch.channel_id);
                 let bytes = match client.get(&feed_url).send().await {
@@ -989,12 +1002,7 @@ impl Ingestor {
                     Ok(f) => f,
                     Err(e) => { debug!("video {}: parse: {e}", ch.source); continue; }
                 };
-                // yt-dlp launches this cycle (bounded). Phase A title-first ingests cost
-                // NO subprocess, so they never consume this budget — only the transcript
-                // fetches (Phase B backfill / Phase C analyst path) do. (Cap rationale:
-                // an uncaptioned-upload flood must not run unbounded 90s subprocesses and
-                // starve later channels. xhigh review finding 15.)
-                let mut attempted = 0usize;
+                let mut cands: Vec<Cand> = Vec::new();
                 for entry in parsed.entries.iter() {
                     let Some(title) = entry.title.as_ref().map(|t| {
                         video::strip_channel_suffix(&sanitize_feed_text(t.content.trim())).to_string()
@@ -1003,69 +1011,37 @@ impl Ingestor {
                     let url = canonicalize_url(
                         &entry.links.first().map(|l| l.href.clone()).unwrap_or_default());
                     if url.is_empty() || done.contains(&url) { continue; }
-                    // Shorts: sub-minute clips/teasers — near-zero transcript value,
-                    // pure feed clutter. The full story arrives as a normal upload.
+                    // Shorts: sub-minute clips/teasers — near-zero value, pure clutter.
                     if video::is_short(&url) { done.insert(url); continue; }
                     let published = match entry.published.or(entry.updated) {
                         Some(p) => p,
                         None => continue,
                     };
-                    let age = chrono::Utc::now() - published;
-                    if age > chrono::Duration::hours(video::VIDEO_MAX_AGE_HOURS) {
+                    if chrono::Utc::now() - published > chrono::Duration::hours(video::VIDEO_MAX_AGE_HOURS) {
                         done.insert(url.clone()); // aged out — never (re)transcribe
                         titled.remove(&url);
                         continue;
                     }
-
-                    // ── Phase B — TRANSCRIPT BACKFILL of a title-first row. The model
-                    //    already holds this video's headline event (Phase A); here we only
-                    //    enrich the DISPLAY body with captions once YouTube has them.
-                    //    store_article's update-in-place refreshes the same row; we do NOT
-                    //    re-send to NLP, so the headline is never double-counted.
-                    if titled.contains(&url) {
-                        if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { continue; }
-                        attempted += 1;
-                        match video::fetch_transcript(&url).await {
-                            Ok(Some(raw)) => {
-                                let transcript = video::condense_transcript(&raw, video::TRANSCRIPT_MAX_CHARS);
-                                let article = RawArticle::new(
-                                    url.clone(), title.clone(), transcript,
-                                    ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
-                                );
-                                ing.store_article(&article).await; // same URL → update-in-place
-                                done.insert(url.clone());
-                                titled.remove(&url);
-                                debug!("video {}: transcript backfilled \"{}\"", ch.source,
-                                       title.chars().take(60).collect::<String>());
-                            }
-                            Ok(None) => { /* captions still pending — retry next cycle */ }
-                            Err(e) => warn!("video {}: transcript backfill failed: {e}", ch.source),
-                        }
-                        continue;
-                    }
-
-                    // Dedup probe BEFORE any work — via the NON-MARKING `contains`, never
-                    // `is_new`: marking here poisoned both caches for any video that then
-                    // failed to ingest, killing the retry-until-captioned semantics and
-                    // suppressing an identically-titled REAL wire article. Marks are
-                    // recorded only at a successful ingest below. (xhigh review findings 1+3)
+                    let pub_utc = published.with_timezone(&chrono::Utc);
+                    // Already title-first'd (awaiting captions) → carry to Pass 2 for backfill.
+                    if titled.contains(&url) { cands.push((title, url, pub_utc)); continue; }
+                    // Dedup probe — NON-MARKING `contains` (marking here would poison the
+                    // retry-until-captioned path and suppress an identically-titled wire
+                    // article). Marks are recorded only at a successful ingest. (findings 1+3)
                     if ing.seen.lock().await.contains(&url, &title) { done.insert(url); continue; }
                     if ing.titles.lock().await.contains(&title) { done.insert(url); continue; }
 
                     // ── Phase A — TITLE-FIRST INGEST. A breaking broadcast headline is a
-                    //    self-contained signal that names its actors and escalation
-                    //    ("Trump declares end to Iran ceasefire, airstrikes resume"). The
-                    //    Atom feed carries it the instant the clip posts — often HOURS before
-                    //    YouTube captions it. So when the TITLE alone trips the geopolitical
-                    //    gate, ingest immediately with the headline as the body: the model +
-                    //    Video tab get the signal in SECONDS, no yt-dlp, no caption wait. The
-                    //    transcript backfills the display later (Phase B). Titles that do NOT
-                    //    trip the gate fall through to Phase C, preserving the analyst register
-                    //    (generic title, buried actors) that only the transcript reveals.
+                    //    self-contained signal ("Trump declares end to Iran ceasefire, airstrikes
+                    //    resume") the Atom feed carries the instant the clip posts — often HOURS
+                    //    before YouTube captions it. On a title-trigger, ingest NOW with the
+                    //    headline as the body: model + Video tab in SECONDS, no yt-dlp. The
+                    //    transcript backfills the display in Pass 2. ONE NLP send. Titles that do
+                    //    NOT trip the gate defer to Pass 2's analyst-register transcript gate.
                     if crate::nlp_sidecar::has_geopolitical_trigger(&title) {
                         let article = RawArticle::new(
                             url.clone(), title.clone(), title.clone(),
-                            ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
+                            ch.source.to_string(), ch.tier, pub_utc,
                         );
                         let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
                         let _ = ing.titles.lock().await.is_new(&article.title);
@@ -1075,34 +1051,68 @@ impl Ingestor {
                             warn!("video {}: article channel closed", ch.source);
                             return;
                         }
-                        titled.insert(url.clone()); // backfill the transcript into the row later
+                        titled.insert(url.clone());
                         info!("video {}: title-first ingested \"{}\"", ch.source,
                               title.chars().take(80).collect::<String>());
+                    }
+                    cands.push((title, url, pub_utc)); // Pass 2: backfill (if titled) or Phase C
+                }
+                cycle.push((ch, cands));
+            }
+
+            // ── PASS 2 — TRANSCRIPT WORK (yt-dlp) ───────────────────────────────────────
+            //    Runs after every headline is already in. Per channel: backfill title-first
+            //    rows with captions (Phase B) and analyst-gate the non-trigger titles
+            //    (Phase C). Bounded by the per-channel yt-dlp attempt cap so an uncaptioned-
+            //    upload flood can't run unbounded 90s subprocesses. (xhigh review finding 15)
+            for (ch, cands) in &cycle {
+                let mut attempted = 0usize;
+                for (title, url, pub_utc) in cands {
+                    if done.contains(url) { continue; }
+                    if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
+
+                    // Phase B — backfill a title-first row's transcript into the DISPLAY.
+                    // NOT re-sent to NLP, so the headline event is counted exactly once.
+                    if titled.contains(url) {
+                        attempted += 1;
+                        match video::fetch_transcript(url).await {
+                            Ok(Some(raw)) => {
+                                let transcript = video::condense_transcript(&raw, video::TRANSCRIPT_MAX_CHARS);
+                                let article = RawArticle::new(
+                                    url.clone(), title.clone(), transcript,
+                                    ch.source.to_string(), ch.tier, *pub_utc,
+                                );
+                                ing.store_article(&article).await; // same URL → update-in-place
+                                done.insert(url.clone());
+                                titled.remove(url);
+                                debug!("video {}: transcript backfilled \"{}\"", ch.source,
+                                       title.chars().take(60).collect::<String>());
+                            }
+                            Ok(None) => { /* captions still pending — retry next cycle */ }
+                            Err(e) => warn!("video {}: transcript backfill failed: {e}", ch.source),
+                        }
                         continue;
                     }
 
-                    // ── Phase C — TRANSCRIPT-GATED INGEST (analyst register). No trigger in
-                    //    the title, so the signal (if any) is in the transcript: fetch it,
-                    //    keep the video only if the transcript trips the gate, send the
-                    //    transcript to NLP. Bounded by the per-channel yt-dlp attempt cap.
-                    if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
+                    // Phase C — TRANSCRIPT-GATED INGEST (analyst register). No title trigger,
+                    // so the signal (if any) is in the transcript. Re-probe dedup (non-marking):
+                    // a wire copy may have landed between the passes.
+                    if ing.seen.lock().await.contains(url, title) { done.insert(url.clone()); continue; }
+                    if ing.titles.lock().await.contains(title) { done.insert(url.clone()); continue; }
                     attempted += 1;
-                    match video::fetch_transcript(&url).await {
+                    match video::fetch_transcript(url).await {
                         Ok(Some(raw_transcript)) => {
-                            // Signal-dense condensation: pack the NLP/enricher budget
-                            // with trigger-bearing sentences, not the first N minutes.
                             let transcript = video::condense_transcript(&raw_transcript, video::TRANSCRIPT_MAX_CHARS);
                             if !crate::nlp_sidecar::has_geopolitical_trigger(&transcript) {
                                 debug!("video {}: off-mission, skipped \"{}\"", ch.source,
                                        title.chars().take(60).collect::<String>());
-                                done.insert(url);
+                                done.insert(url.clone());
                                 continue;
                             }
                             let article = RawArticle::new(
                                 url.clone(), title.clone(), transcript,
-                                ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
+                                ch.source.to_string(), ch.tier, *pub_utc,
                             );
-                            // Successful ingest: NOW record the dedup marks.
                             let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
                             let _ = ing.titles.lock().await.is_new(&article.title);
                             ing.log_video_wire_pairs(&article).await;
@@ -1111,7 +1121,7 @@ impl Ingestor {
                                 warn!("video {}: article channel closed", ch.source);
                                 return;
                             }
-                            done.insert(url);
+                            done.insert(url.clone());
                             info!("video {}: ingested \"{}\"", ch.source, title.chars().take(80).collect::<String>());
                         }
                         Ok(None) => {
