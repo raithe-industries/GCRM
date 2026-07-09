@@ -95,7 +95,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .lm-val{font-size:13px;font-weight:500;font-family:monospace;color:var(--t1);transition:color .4s}
 .lm-sub{font-size:9px;color:var(--t3);margin-top:1px}
 .center-panel{display:flex;flex-direction:column;overflow:hidden}
-.domains{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
+.domains{display:grid;grid-template-columns:var(--dcols,repeat(5,1fr));gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .domain{background:var(--bg);padding:7px 9px;cursor:pointer;transition:background .2s}
 .domain:hover{background:var(--bg3)}
 .domain.active{background:#0d0d20;box-shadow:inset 0 0 0 1px var(--purple)}
@@ -377,6 +377,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .charts-area{display:block;height:auto;overflow:visible}
   .chart-card{height:auto;overflow:hidden}
   .chart-inner{height:205px;flex:none}
+  .domains{grid-template-columns:repeat(2,1fr)}       /* 5-across strip overflowed 390px by 18px; drop to 2 cols like .cmd-strip/.theater-ladder — the missing half of the ≤680px viewport-overflow fix */
   .theater-ladder{grid-template-columns:repeat(2,1fr)}
   .panel-body{flex:none;max-height:80vh;overflow-y:auto;font-size:13px}
   .alert-bar,.art-title,.src-name{font-size:13px}
@@ -1423,8 +1424,11 @@ function applyData(d){
   ab.className='alert-bar'+(al==='critical'?' critical':al==='elevated'?' elevated':'');ab.textContent=d.alert.message||'';
   const grid=document.getElementById('domain-grid');grid.innerHTML='';
   // Keep the card grid balanced to however many domains exist — one full row of
-  // equal cells, no orphaned card / empty trailing cells regardless of count.
-  grid.style.gridTemplateColumns='repeat('+DID.length+',1fr)';
+  // equal cells, no orphaned card / empty trailing cells regardless of count. Set it
+  // as the --dcols CUSTOM PROPERTY (consumed by .domains in CSS via var()), NOT an
+  // inline grid-template-columns: an inline value outranks the ≤680px media query and
+  // re-widens the strip to 5 cols on phones, overflowing the viewport. (viewport fix)
+  grid.style.setProperty('--dcols','repeat('+DID.length+',1fr)');
   DID.forEach((id,i)=>{const ds=doms[id]||{score:0,label:'low',confidence:0,event_count:0,great_power_events:0};const prev=prevDomainScores[id]||0;const delta=ds.score-prev;const pct=Math.round(ds.score*100);const col=dc(ds.score);let arrow='';if(Math.abs(delta)>0.01){arrow=delta>0?'<span class="ddelta" style="color:#E24B4A">▲</span>':'<span class="ddelta" style="color:#1D9E75">▼</span>';}const tag=DTAGS[id]||'?';const tagCol=TAG_COLORS[tag]||'#6060a0';const div=document.createElement('div');div.className=(_artDomainFilter===id)?'domain active':'domain';div.title='Click to audit '+DSHORT[i]+': filters the article feed to the signals feeding this score. "signals" = articles tagged to this domain; "gt-power" = those involving the US, Russia, China, or NATO.';div.onclick=()=>filterByDomain(id);div.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>'+DSHORT[i].toUpperCase()+'</span><span class="art-tag" style="background:'+tagCol+'22;color:'+tagCol+'">'+tag+'</span></div><div class="dbar"><div class="dfill" style="width:'+pct+'%;background:'+col+'"></div></div><div class="drow"><span class="dscore" style="color:'+col+'">'+pct+'%'+arrow+'</span><span class="dlabel '+(ds.label||'low')+'">'+(ds.label||'low')+'</span></div><div class="dconf">'+(ds.event_count||0)+' signals · '+Math.round((ds.confidence||0)*100)+'% conf'+(ds.great_power_events>0?' · '+ds.great_power_events+' gt-power':'')+'</div>';grid.appendChild(div);});
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
   dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
