@@ -377,6 +377,40 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-09 (Signal Hunter, later run)** — **HONEST NO-OP — every ranked mission gap
+  re-evaluated; all blocked this run by a total live-host web fetch WAF wall, no committed
+  real-bytes anchor available for any strong candidate, so any landing would be
+  documentation-guesswork (forbidden).** Root cause (control-tested): web fetch reaches ONLY
+  `raw.githubusercontent.com` (→ real file content); **every** live gov/OSINT host 403s —
+  verified against `earthquake.usgs.gov`, `acleddata.com`, `data.humdata.org`, `tfr.faa.gov`,
+  and the `fdw.fews.net/api/ipcphasemap` endpoint directly. web search works; raw-GitHub works;
+  arbitrary live fetch does not → Path-A liveness verification impossible this run. Ranked-gap
+  triage: (a) **Conflict-freshness / `acled_aggregated` refresh** — read the connector:
+  `MAX_ROW_AGE_DAYS = 42` age-gates against *today*, and the snapshot's newest `WEEK` is
+  `2026-03-07` (~124 d stale), so **every row already drops → the ACLED intensity layer
+  self-empties honestly** (no misleading data, no in-lane fix needed). Refresh still not
+  obtainable: `acleddata.com` + `data.humdata.org` both 403 web fetch (registration/ToS wall),
+  no fresh 2026 weekly-aggregate mirror on GitHub-raw → stays the local re-download job. (b)
+  **Military-posture / global airspace (top gap, navcanada = Canada-only)** — all NOTAM APIs
+  are **keyed/commercial** (Cirium/Laminar Data, FAA SWIM); the one auth-free airspace product,
+  **FAA TFRs**, is WAF-blocked (can't verify freshness), dominated by VIP/sporting/hazard
+  low-WWIII-signal restrictions, and carries deeply-nested DMS geometry — clears the 6-point bar
+  only technically, fails the "question an operator actually has" spirit → not a strong honest
+  landing. (c) **Maritime-security incident (asam-successor gap)** — re-searched: IMB (icc-ccs.org)
+  and ReCAAP publish **PDF reports only**; IMO GISIS needs registration → still no auth-free
+  machine-readable geocoded feed. (d) **FEWS NET / IPC acute food-insecurity** (the STRONG deferred
+  new modality — Sudan/Gaza famine, a first-order conflict amplifier) — endpoint re-confirmed
+  (`fdw.fews.net/api/ipcphasemap/?country=..&scenario=CS&collection_date=..&format=geojson`) but
+  the API **403s web fetch directly**, HDX 403s, and **no committed `ipcphasemap` GeoJSON sample
+  exists on GitHub-raw** to anchor the feature-property keys / confirm inline polygons → unchanged
+  from the 2026-07-06 block. (e) **Norway DSA RADNETT radiation** (would extend the nuclear-monitoring
+  modality to the Kola/Barents frontier — Russia's Northern Fleet & strategic-submarine base) — no
+  committed client/spec surfaced to anchor the Geonorge WFS schema; "blocked on anchoring" stands.
+  (f) **GDELT geo** (higher-frequency conflict) — ruled out again on the **authority / no-scrapers**
+  bar (auto-coded from global media, not a gov/national/scientific ground-truth source). No code
+  touched; tree left clean. Next run with live-host web fetch restored: FEWS NET IPC (Path-A schema
+  anchor) and the airspace gap are the priorities.
+
 - **2026-07-09 (Signal Hunter)** — **ADOPTED `portwatch_chokepoints` (IMF PortWatch daily
   maritime chokepoint transit disruption) — closes the Asian/Middle-East chokepoint axis of the
   #1 (maritime) gap; extends the Baltic-only Vessel layer to Hormuz / Taiwan Strait / Bab-el-Mandeb /
