@@ -55,6 +55,13 @@ pub const VIDEO_CHANNELS: &[VideoChannel] = &[
     VideoChannel { channel_id: "UCVG72F2Q5yCmLQfctNK6M2A", source: "zeteo-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCi7Zk9baY1tvdlgxIML8MXg", source: "ctvnews-video",      tier: SourceTier::Tier1 }, // operator-nominated 2026-07-05
     VideoChannel { channel_id: "UCKjU3KzdbJE1EFcHVqXC3_g", source: "cbcnews-video",      tier: SourceTier::Tier1 }, // CBC News: The National — operator tier call 2026-07-08 (Tier1, peer of BBC/DW/CTV video)
+    // Iran/Gulf-war + major-network expansion — operator-directed 2026-07-09 ("more video
+    // signals"; audit found the active-war theater under-covered). Feeds live-verified on add.
+    VideoChannel { channel_id: "UCWUREZPvqB6L1MuDV5ngiiw", source: "iranintl-video",     tier: SourceTier::Tier2 }, // Iran International English — densest Iran-war coverage; Tier2 (opposition-linked, treat as one witness)
+    VideoChannel { channel_id: "UCIZJ9a6P_nxCFJTmL0gh_IQ", source: "alarabiya-video",   tier: SourceTier::Tier2 }, // Al Arabiya English — Gulf/Saudi perspective on Hormuz/Iran
+    VideoChannel { channel_id: "UCeY0bbntWzzVIaj2z3QigXg", source: "nbcnews-video",     tier: SourceTier::Tier1 }, // NBC News
+    VideoChannel { channel_id: "UCBi2mrWuNuyYy4gbM6fU18Q", source: "abcnews-video",     tier: SourceTier::Tier1 }, // ABC News
+    VideoChannel { channel_id: "UCSrZ3UV4jOidv8ppoVuvW9Q", source: "euronews-video",    tier: SourceTier::Tier2 }, // euronews — European theater breadth
     // Analyst channels — operator-approved shortlist 2026-07-05 (weekly-cadence depth).
     VideoChannel { channel_id: "UCC3ehuUksTyQ7bbjGntmx3Q", source: "perun-video",        tier: SourceTier::Tier2 },
     VideoChannel { channel_id: "UCwnKziETDbHJtx78nIkfYug", source: "caspianreport-video", tier: SourceTier::Tier2 },
