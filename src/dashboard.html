@@ -1836,8 +1836,9 @@ const LAYER_HINTS={aircraft:'No aircraft in the current fetch — OpenSky anonym
   news:'News feeds the risk engine directly — a geocoded news layer is not planned'};
 
 function buildLayerPanel(d){
-  const feats=(d.feeds&&d.feeds.features)||[]; const kc={};
-  feats.forEach(f=>{const k=f.properties&&f.properties.kind;if(k)kc[k]=(kc[k]||0)+1;});
+  const feats=(d.feeds&&d.feeds.features)||[]; const kc={}; const kt={};
+  feats.forEach(f=>{const k=f.properties&&f.properties.kind;if(k)kc[k]=(kc[k]||0)+1;
+    const t=Date.parse(f.properties&&f.properties.time);if(k&&isFinite(t)&&(!(k in kt)||t>kt[k]))kt[k]=t;});
   const tcount=((d.theaters&&d.theaters.features)||[]).length;
   const byGroup={}; _layerMeta.forEach(l=>{(byGroup[l.group]=byGroup[l.group]||[]).push(l);});
   let html='';
@@ -1856,7 +1857,14 @@ function buildLayerPanel(d){
       const vis=isLayerVisible(l);
       const hint=(c===0&&LAYER_HINTS[l.kind])?LAYER_HINTS[l.kind]:'';
       const ct=(c===0&&hint)?'<span class="ct z">—</span>':`<span class="ct">${c}</span>`;
-      html+=`<label class="map-lyr"${hint?` title="${esc(hint)}"`:''}><input type="checkbox" ${vis?'checked':''} onchange="toggleLayer('${l.kind}','${l.id}',this.checked)"><span class="dot" style="background:${l.color}"></span>${esc(l.label)}${ct}</label>`;
+      // Vintage honesty: when a layer's NEWEST point is days old, it is a lagged
+      // dataset (UCDP candidate ≈5 weeks behind, committed snapshots), not a live
+      // picture — say so beside the count, so research-grade data can't masquerade
+      // as the current war. Live layers (newest <2d) stay unadorned.
+      let vint='';
+      if(l.id!=='theaters'&&c>0&&kt[l.kind]){const ageD=(Date.now()-kt[l.kind])/86400000;
+        if(ageD>=2){const dt=new Date(kt[l.kind]);vint=` <span class="ct z" title="Newest point in this layer — its actual data vintage. Everything after this date is NOT shown here.">thru ${dt.toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span>`;}}
+      html+=`<label class="map-lyr"${hint?` title="${esc(hint)}"`:''}><input type="checkbox" ${vis?'checked':''} onchange="toggleLayer('${l.kind}','${l.id}',this.checked)"><span class="dot" style="background:${l.color}"></span>${esc(l.label)}${ct}${vint}</label>`;
     });
   });
   document.getElementById('map-panel-body').innerHTML=html;
