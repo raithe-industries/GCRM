@@ -968,6 +968,12 @@ impl Ingestor {
         // marked done, so it retries each cycle until captions appear or the
         // age gate closes over it.
         let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Title-first rows awaiting their transcript. A breaking headline is ingested to
+        // the MODEL the instant it hits the Atom feed (Phase A), then its transcript
+        // refreshes the DISPLAY row on a later cycle (Phase B) WITHOUT a second NLP send —
+        // so the headline event is counted exactly once. A url leaves `titled` when its
+        // transcript lands or it ages out.
+        let mut titled: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
             for ch in video::VIDEO_CHANNELS {
                 let feed_url = video::channel_feed_url(ch.channel_id);
@@ -983,13 +989,13 @@ impl Ingestor {
                     Ok(f) => f,
                     Err(e) => { debug!("video {}: parse: {e}", ch.source); continue; }
                 };
+                // yt-dlp launches this cycle (bounded). Phase A title-first ingests cost
+                // NO subprocess, so they never consume this budget — only the transcript
+                // fetches (Phase B backfill / Phase C analyst path) do. (Cap rationale:
+                // an uncaptioned-upload flood must not run unbounded 90s subprocesses and
+                // starve later channels. xhigh review finding 15.)
                 let mut attempted = 0usize;
                 for entry in parsed.entries.iter() {
-                    // Cap ATTEMPTS (yt-dlp subprocess launches), not successes: a
-                    // livestream-clip flood of uncaptioned uploads would otherwise run
-                    // unbounded 90s subprocesses and starve the other channels — the
-                    // exact scenario the cap exists for. (xhigh review finding 15)
-                    if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
                     let Some(title) = entry.title.as_ref().map(|t| {
                         video::strip_channel_suffix(&sanitize_feed_text(t.content.trim())).to_string()
                     }) else { continue };
@@ -1006,39 +1012,87 @@ impl Ingestor {
                     };
                     let age = chrono::Utc::now() - published;
                     if age > chrono::Duration::hours(video::VIDEO_MAX_AGE_HOURS) {
-                        done.insert(url); // aged out — never transcribe
+                        done.insert(url.clone()); // aged out — never (re)transcribe
+                        titled.remove(&url);
                         continue;
                     }
-                    // Dedup probe BEFORE the expensive transcript fetch — via the
-                    // NON-MARKING `contains`, never `is_new`: marking here poisoned
-                    // both caches for any video that then failed to ingest (no
-                    // captions yet / off-mission / fetch error), which (a) killed the
-                    // designed retry-until-captioned — the next cycle read the mark
-                    // as "duplicate" and permanently done-marked the upload — and
-                    // (b) suppressed an identically-titled REAL wire article for the
-                    // dedup TTL, a story then existing in no form in the feed.
-                    // Marks are recorded only at successful store below.
-                    // (xhigh review findings 1+3)
+
+                    // ── Phase B — TRANSCRIPT BACKFILL of a title-first row. The model
+                    //    already holds this video's headline event (Phase A); here we only
+                    //    enrich the DISPLAY body with captions once YouTube has them.
+                    //    store_article's update-in-place refreshes the same row; we do NOT
+                    //    re-send to NLP, so the headline is never double-counted.
+                    if titled.contains(&url) {
+                        if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { continue; }
+                        attempted += 1;
+                        match video::fetch_transcript(&url).await {
+                            Ok(Some(raw)) => {
+                                let transcript = video::condense_transcript(&raw, video::TRANSCRIPT_MAX_CHARS);
+                                let article = RawArticle::new(
+                                    url.clone(), title.clone(), transcript,
+                                    ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
+                                );
+                                ing.store_article(&article).await; // same URL → update-in-place
+                                done.insert(url.clone());
+                                titled.remove(&url);
+                                debug!("video {}: transcript backfilled \"{}\"", ch.source,
+                                       title.chars().take(60).collect::<String>());
+                            }
+                            Ok(None) => { /* captions still pending — retry next cycle */ }
+                            Err(e) => warn!("video {}: transcript backfill failed: {e}", ch.source),
+                        }
+                        continue;
+                    }
+
+                    // Dedup probe BEFORE any work — via the NON-MARKING `contains`, never
+                    // `is_new`: marking here poisoned both caches for any video that then
+                    // failed to ingest, killing the retry-until-captioned semantics and
+                    // suppressing an identically-titled REAL wire article. Marks are
+                    // recorded only at a successful ingest below. (xhigh review findings 1+3)
                     if ing.seen.lock().await.contains(&url, &title) { done.insert(url); continue; }
                     if ing.titles.lock().await.contains(&title) { done.insert(url); continue; }
+
+                    // ── Phase A — TITLE-FIRST INGEST. A breaking broadcast headline is a
+                    //    self-contained signal that names its actors and escalation
+                    //    ("Trump declares end to Iran ceasefire, airstrikes resume"). The
+                    //    Atom feed carries it the instant the clip posts — often HOURS before
+                    //    YouTube captions it. So when the TITLE alone trips the geopolitical
+                    //    gate, ingest immediately with the headline as the body: the model +
+                    //    Video tab get the signal in SECONDS, no yt-dlp, no caption wait. The
+                    //    transcript backfills the display later (Phase B). Titles that do NOT
+                    //    trip the gate fall through to Phase C, preserving the analyst register
+                    //    (generic title, buried actors) that only the transcript reveals.
+                    if crate::nlp_sidecar::has_geopolitical_trigger(&title) {
+                        let article = RawArticle::new(
+                            url.clone(), title.clone(), title.clone(),
+                            ch.source.to_string(), ch.tier, published.with_timezone(&chrono::Utc),
+                        );
+                        let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
+                        let _ = ing.titles.lock().await.is_new(&article.title);
+                        ing.log_video_wire_pairs(&article).await;
+                        ing.store_article(&article).await;
+                        if ing.article_tx.send(article).await.is_err() {
+                            warn!("video {}: article channel closed", ch.source);
+                            return;
+                        }
+                        titled.insert(url.clone()); // backfill the transcript into the row later
+                        info!("video {}: title-first ingested \"{}\"", ch.source,
+                              title.chars().take(80).collect::<String>());
+                        continue;
+                    }
+
+                    // ── Phase C — TRANSCRIPT-GATED INGEST (analyst register). No trigger in
+                    //    the title, so the signal (if any) is in the transcript: fetch it,
+                    //    keep the video only if the transcript trips the gate, send the
+                    //    transcript to NLP. Bounded by the per-channel yt-dlp attempt cap.
+                    if attempted >= video::VIDEOS_PER_CHANNEL_PER_CYCLE { break; }
                     attempted += 1;
                     match video::fetch_transcript(&url).await {
                         Ok(Some(raw_transcript)) => {
                             // Signal-dense condensation: pack the NLP/enricher budget
                             // with trigger-bearing sentences, not the first N minutes.
                             let transcript = video::condense_transcript(&raw_transcript, video::TRANSCRIPT_MAX_CHARS);
-                            // Relevance gate: broadcast channels mix missions — sports,
-                            // royals, celebrations. Keep a video only when the TITLE or
-                            // the TRANSCRIPT carries a geopolitical trigger (actors +
-                            // conflict terms — the same gate that dispatches the LLM on
-                            // keyword-missed wire copy). Deliberately BROAD, not the
-                            // domain-keyword lexicon: the proven-valuable analyst
-                            // register ("the strait is not open") scores zero keywords
-                            // but names its actors, and a false keep costs one harmless
-                            // untagged row while a false drop loses real signal.
-                            if !crate::nlp_sidecar::has_geopolitical_trigger(&title)
-                                && !crate::nlp_sidecar::has_geopolitical_trigger(&transcript)
-                            {
+                            if !crate::nlp_sidecar::has_geopolitical_trigger(&transcript) {
                                 debug!("video {}: off-mission, skipped \"{}\"", ch.source,
                                        title.chars().take(60).collect::<String>());
                                 done.insert(url);
@@ -1051,34 +1105,7 @@ impl Ingestor {
                             // Successful ingest: NOW record the dedup marks.
                             let _ = ing.seen.lock().await.is_new(&article.url, &article.title);
                             let _ = ing.titles.lock().await.is_new(&article.title);
-                            // Labeled-pair collection (roadmap: cross-modal merge threshold):
-                            // log video↔wire title pairs in the ambiguous similarity band to
-                            // logs/video-pairs-<date>.jsonl for the operator's later labeling.
-                            // Data collection only — never feeds the model.
-                            {
-                                let store = ing.state.article_store.lock().await;
-                                let mut pairs: Vec<String> = Vec::new();
-                                for w in store.query(400, None, None) {
-                                    if w.source.ends_with("-video") || w.source.ends_with("-live") { continue; }
-                                    let s = video::title_trigram_jaccard(&article.title, &w.title);
-                                    if s >= video::PAIR_LOG_BAND.0 && s <= video::PAIR_LOG_BAND.1 {
-                                        pairs.push(serde_json::json!({
-                                            "t": chrono::Utc::now().to_rfc3339(),
-                                            "sim": (s * 1e3).round() / 1e3,
-                                            "video_source": article.source, "video_title": article.title,
-                                            "wire_source": w.source, "wire_title": w.title,
-                                        }).to_string());
-                                    }
-                                }
-                                drop(store);
-                                if !pairs.is_empty() {
-                                    let path = format!("logs/video-pairs-{}.jsonl", chrono::Utc::now().format("%Y-%m-%d"));
-                                    if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await {
-                                        use tokio::io::AsyncWriteExt;
-                                        let _ = f.write_all((pairs.join("\n") + "\n").as_bytes()).await;
-                                    }
-                                }
-                            }
+                            ing.log_video_wire_pairs(&article).await;
                             ing.store_article(&article).await;
                             if ing.article_tx.send(article).await.is_err() {
                                 warn!("video {}: article channel closed", ch.source);
@@ -1097,6 +1124,36 @@ impl Ingestor {
                 }
             }
             tokio::time::sleep(Duration::from_secs(video::VIDEO_POLL_SECS)).await;
+        }
+    }
+
+    /// Labeled-pair collection (roadmap: cross-modal merge threshold). Log video↔wire
+    /// title pairs in the ambiguous similarity band to logs/video-pairs-<date>.jsonl for
+    /// the operator's later labeling of a merge threshold. Data collection ONLY — never
+    /// feeds the model. Shared by the title-first (Phase A) and transcript (Phase C) paths.
+    async fn log_video_wire_pairs(&self, article: &RawArticle) {
+        let mut pairs: Vec<String> = Vec::new();
+        {
+            let store = self.state.article_store.lock().await;
+            for w in store.query(400, None, None) {
+                if w.source.ends_with("-video") || w.source.ends_with("-live") { continue; }
+                let s = crate::video::title_trigram_jaccard(&article.title, &w.title);
+                if s >= crate::video::PAIR_LOG_BAND.0 && s <= crate::video::PAIR_LOG_BAND.1 {
+                    pairs.push(serde_json::json!({
+                        "t": chrono::Utc::now().to_rfc3339(),
+                        "sim": (s * 1e3).round() / 1e3,
+                        "video_source": article.source, "video_title": article.title,
+                        "wire_source": w.source, "wire_title": w.title,
+                    }).to_string());
+                }
+            }
+        }
+        if !pairs.is_empty() {
+            let path = format!("logs/video-pairs-{}.jsonl", chrono::Utc::now().format("%Y-%m-%d"));
+            if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await {
+                use tokio::io::AsyncWriteExt;
+                let _ = f.write_all((pairs.join("\n") + "\n").as_bytes()).await;
+            }
         }
     }
 
