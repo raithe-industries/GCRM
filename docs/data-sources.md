@@ -243,8 +243,23 @@ Bias each run toward the least-covered axis below.
   the modality now covers the world's most active volcanic region (Indonesia, ~127 volcanoes).
   Next: **Italian INGV** (Etna/Stromboli) or **PHIVOLCS** (Philippines) if an auth-free geocoded
   product exists (neither exposed a clean machine-readable alert API on 2026-06-27 recon — INGV
-  publishes bulletins/webcams only, PHIVOLCS only HTML bulletins + a third-party GeoJSON);
-  **Icelandic Met Office** (IMO) volcano alerts for the N-Atlantic. **MAGMA snapshot refresh** is a
+  publishes bulletins/webcams only, PHIVOLCS only HTML bulletins + a third-party GeoJSON).
+  **Icelandic Met Office (IMO) volcano aviation colour code — SHARPENED 2026-07-10 to a concrete
+  landable lead (N-Atlantic gap; Reykjanes/Sundhnúkur is *actively erupting*, so high current operator
+  value):** IMO publishes an **auth-free ArcGIS REST service** at `luk.vedur.is/arcgis/rest/services/`
+  (folders eurovolc / futurevolc / grunnkort / nattura / ofanflod …; layers query as standard ArcGIS
+  `?f=json`, e.g. web search retrieved real JSON from `…/futurevolc/futurevolc_isn93/MapServer/49?f=pjson`).
+  This is the right *shape* for the operational alert-state modality (ICAO Green/Yellow/Orange/Red
+  per volcano + VONA) that `geonet_volcano`/`usgs_volcano`/`magma_volcano` already carry for their
+  regions — non-duplicative with the GVP/EONET eruption catalogues. **Blocked this run only on
+  anchoring to real committed bytes:** `luk.vedur.is` 403s web fetch (the standing egress wall — the
+  ArcGIS content is public, web search's crawler reaches it, but the sandbox egress does not), and the
+  browsed futurevolc layers are *historical* hazard/lava-geology polygons — the **live per-volcano ACC
+  status layer + its exact service path and field names** could not be pinned to committed GitHub bytes
+  (no committed client quotes it; `volcan01010` is a general GIS toolkit, not the live ACC feed).
+  **Landable when EITHER** the vedur ArcGIS host becomes web fetch-reachable (200 — then read the live
+  ACC layer directly) **OR** a committed consumer/fixture quoting the live ACC MapServer/FeatureServer
+  layer id + attribute keys surfaces on `raw.githubusercontent.com`. **MAGMA snapshot refresh** is a
   local re-capture job (origin host unreachable in-sandbox).
 - **Geography** — feeds are Canada/US-dense; SW-Pacific seeded via `geonet_volcano` (NZ),
   W-Pacific via `jma_typhoon`, **SE-Asia / Indonesia** via `magma_volcano` (PVMBG volcanoes)
@@ -376,6 +391,36 @@ Bias each run toward the least-covered axis below.
 
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
+
+- **2026-07-10 (Signal Hunter, later run)** — **HONEST NO-OP — ranked gaps re-evaluated + ONE
+  new candidate triaged; the standing egress wall (only `raw.githubusercontent.com` reachable via
+  web fetch — control-confirmed: `fdw.fews.net`, `gdacs.org`, `radnett.dsa.no`,
+  `geonorge.no/geonetworktest`, and `luk.vedur.is` all 403) leaves nothing anchorable to real
+  committed bytes, so no honest land is possible.** New candidate this run: **Iceland Met Office (IMO)
+  volcano aviation colour code** — a strong fit for the N-Atlantic operational alert-state volcano gap
+  (Reykjanes actively erupting = high current value), delivered via IMO's **auth-free ArcGIS REST
+  service** `luk.vedur.is/arcgis/rest/services/` (web search retrieved genuine ArcGIS JSON from it,
+  proving it's public + machine-readable). Blocked only on anchoring: `luk.vedur.is` 403s web fetch and
+  the browsable futurevolc layers are *historical* hazard/lava polygons, not the live per-volcano ACC
+  status layer, and no committed GitHub client quotes the live ACC layer path + field names → can't pin
+  the schema to real bytes this run without documentation-guesswork. Sharpened into a concrete DEFERRED
+  lead in the Volcano coverage-gaps section (landable when the host becomes web fetch-reachable OR a
+  committed consumer surfaces). Re-verified the standing walls unchanged: (a) **ACLED refresh** — snapshot
+  newest `WEEK` = `2026-03-07` (~125 d stale, past `MAX_ROW_AGE_DAYS=42` → layer self-empties honestly);
+  no fresh 2026 weekly-aggregate on GitHub-raw (searched `CENTROID_LATITUDE`/`WEEK` — only the official
+  site, the `cran/acled.api` R *client*, and licensed ArcGIS mirrors, all license/registration-gated),
+  `acleddata.com`+HDX 403, live event API permanently license-gated → local re-download job. (b)
+  **Radiation Asian/Kola extension** — Japan NRA RAMDAS (`radioactivity.nra.go.jp`) + Korea KINS IERNet
+  (`iernet.kins.re.kr`) + Norway DSA RADNETT: all gov hosts 403, **no committed client quotes any dose-rate
+  schema** (searches surfaced only OpenRadiation/Safecast citizen nets + admin-boundary GeoJSON, not the
+  official networks' feature schemas); RADNETT re-confirmed on Geonorge (metadata `e379ef5e-…`, auth-free
+  WFS likely) but `geonorge.no` 403 + no committed consumer → GetFeature keys still unpinnable. (c) **FEWS
+  NET / IPC** (STRONG deferred) — `fdw.fews.net/api/ipcphasemap/?format=geojson` 403, HDX 403, no committed
+  `ipcphasemap` GeoJSON sample on GitHub-raw → unchanged. (d) **Maritime-security incident** + **global
+  airspace/NOTAM** + **Taiwan-Strait ADIZ** — unchanged from earlier (website/PDF-only, keyed/commercial,
+  or researcher-compiled = fails the authority bar). Deliberately did NOT half-wire an off-mission
+  duplicate to look busy. No code touched; tree left clean. Next run: if live-host web fetch is restored,
+  the Iceland IMO ACC feed and FEWS NET IPC are the top landable priorities.
 
 - **2026-07-10 (Signal Hunter)** — **HONEST NO-OP — every ranked mission gap re-evaluated;
   all blocked by the standing egress wall + no committed real-bytes anchor for any strong
