@@ -543,6 +543,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `escalation_breadth_counts_synchronized_fronts_not_just_the_leader` (multi-front board → count 2 +
   multi_front + sorted; single-front board → count 1; honest-null board; FAILS when the compute is
   neutered to default). See improvement-log 2026-07-09.
+- [x] **1.21 Actor/site names substring-matched on the NUCLEAR cross-check paths → phantom
+  correlation** — **DONE 2026-07-10.** The third sibling of 1.7/1.8 (the substring→word-boundary
+  honesty fix), on the detector's nuclear cross-check paths, which were never routed through the
+  `contains_word` matcher those runs built. `news_escalation_score` filtered nuclear-tagged article
+  bodies with raw `body.contains(actor_name)` and the CTBTO↔seismic-alert correlation matched with
+  raw `lower.contains(actor)`/`lower.contains(site)` — so an actor/site name fired INSIDE ordinary
+  words: `india`⊂`indian ocean`/`indiana`, `china`⊂`indochina`. A nuclear-posture-tagged "Indian
+  Ocean" story inflated India's (Pokhran) seismic-alert confidence (up to +0.10), and a coincidental
+  CTBTO press item mentioning e.g. "Indochina" could correlate to China's Lop Nur alert off no real
+  geographic/actor link — escalating it to the CtbtoStatement level and flipping the board's nuclear
+  test-consistency read on a coincidence (the exact failure `audit detector-1` guards against, but its
+  guard used the leaky matcher). Fix routes both paths through a shared `mentions()` helper backed by
+  the crate's boundary-aware `contains_word` (whole-word; internal hyphens/spaces in multi-word site
+  names fine; empty name never matches, preserving the callers' old `!is_empty()` guard). No
+  calibration constant touched; the seismic/CTBTO paths carry no synthetic-backtest events, so the four
+  anchors are bit-identical (backtest 25/25). Locked by
+  `nuclear_cross_check_matches_actor_and_site_as_whole_words_not_substrings` (FAILS when `mentions`
+  reverts to `text.contains`: `!mentions("rising tension across the indian ocean", "india")` panics).
+  See improvement-log 2026-07-10.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

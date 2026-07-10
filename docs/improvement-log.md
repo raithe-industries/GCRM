@@ -22,7 +22,47 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
-## 2026-07-09 (later) — honesty (MATH/ENGINE) — an outlet's own wire+video twins no longer corroborate themselves
+## 2026-07-10 — honesty (ENGINE) — nuclear cross-check matches actor/site names as whole words, not substrings
+- Item: roadmap 1.21 (the third sibling of 1.7/1.8 substring→word-boundary honesty fixes).
+- Diagnosis (pillar-1 HONESTY weakest): 1.7/1.8 (2026-07-04) killed the substring-match defect on the
+  main scorer paths by building `processor::contains_word` (boundary-aware whole-word matcher), but the
+  DETECTOR's two nuclear cross-check paths were never routed through it. `news_escalation_score` (line
+  627) filtered nuclear-tagged article bodies with raw `body.contains(actor_name)`, and the
+  CTBTO↔seismic-alert correlation (819–820) matched with raw `lower.contains(actor)`/`lower.contains(site)`.
+  So an actor/site name fired INSIDE ordinary words: `india`⊂`indian ocean`/`indiana`, `china`⊂`indochina`.
+  Verified against the live site registry (KNOWN_TEST_SITES): actors are single tokens like `india`,
+  `china`, `russia`, `france` — exactly the leak-prone shapes.
+- Change (engine-behavior, honesty firewall untouched): added a shared `mentions(text, name)` helper in
+  detector.rs backed by `crate::processor::contains_word`, and routed both cross-check paths through it
+  (news-escalation body filter; CTBTO actor+site correlation). Whole-word now: a `nuclear_posture`-tagged
+  "Indian Ocean" story no longer inflates India's (Pokhran) seismic-alert confidence (was up to +0.10 via
+  compute_confidence), and a coincidental CTBTO press item mentioning "Indochina" no longer correlates to
+  China's Lop Nur alert with no real geographic/actor link (which would escalate it to CtbtoStatement and
+  flip the board's nuclear test-consistency read — the failure `audit detector-1` guards against, but its
+  guard used the leaky matcher). Multi-word names ("north korea", "lop nur", "punggye-ri") match on their
+  ends; empty name never matches (preserves the callers' old `!is_empty()` guard). No calibration constant
+  read or written.
+- Metric moved: the nuclear cross-check no longer fires on substring coincidences — corrected on the
+  fallible seismic/CTBTO honesty path. +1 test (612 → 613 passed). Anchors bit-identical (the seismic/CTBTO
+  paths carry no synthetic-backtest events; `cargo test backtest` 25/25).
+- Proof: `cargo build --release` clean. `cargo test --release` **613 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings. Lock proven fails-without-change: reverting `mentions` to
+  `text.contains(name)` makes `nuclear_cross_check_matches_actor_and_site_as_whole_words_not_substrings`
+  FAIL (panics on `!mentions("rising tension across the indian ocean", "india")` at detector.rs:1234);
+  restored → 613 green.
+- Tier: T1 (engine-behavior — corrects WHICH articles/statements count toward the nuclear-signal cross-check,
+  changing seismic-alert confidence and CTBTO correlation on the fallible detector path; NOT a display
+  annotation — it changes what the board's test-consistency read MEANS) · Touched: engine-behavior ·
+  Lock-fails-without-change: yes (revert-to-substring panic proof above) · Counts: none of
+  Live-sources/Map-layers/Monitors moved (a correctness/honesty fix, not a new sight) · consecutive_display_only=0
+  (this run is engine-behavior, resetting the streak) · display_only_in_last_7=1 (the 2026-07-09-late eyes-gate
+  run; the earlier one aged out) · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `mentions` deliberately routes through `processor::contains_word` (the
+  single boundary-aware matcher) rather than re-implementing — do not fork a second matcher. (2) The
+  CTBTO nuclear_keywords TITLE gate (line 799, `lower.contains(kw)`) is INTENTIONALLY left as substring: those
+  are multi-token detection phrases ("nuclear test", "underground test") that cannot hide mid-word, same
+  discipline 1.8 kept for multi-word domain keywords. (3) Site names carry internal hyphens ("punggye-ri");
+  `contains_word` boundary-checks only the ends, so the hyphen is fine — do not "normalize" it away.
 - Item: roadmap "1.x Video↔wire corroboration threshold" (the INDEPENDENCE facet of the operator
   directive "duplicates must be found and removed appropriately from weight"; the threshold-fit facet
   stays open pending labeled data).

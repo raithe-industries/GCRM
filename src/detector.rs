@@ -616,6 +616,7 @@ impl SeismicMonitor {
         async fn news_escalation_score(&self, actor: &str) -> f64 {
         let store = self.state.article_store.lock().await;
         let now   = Utc::now();
+        let name  = actor.replace('_', " ");
         let relevant: Vec<_> = store.articles.iter()
             .filter(|a| {
                 let age_h = (now - chrono::DateTime::parse_from_rfc3339(&a.published_at)
@@ -624,7 +625,7 @@ impl SeismicMonitor {
                     .num_hours() as f64;
                 age_h < 72.0
                     && a.domain_tags.contains(&"nuclear_posture".to_string())
-                    && a.body.to_lowercase().contains(&actor.replace('_', " "))
+                    && mentions(&a.body.to_lowercase(), &name)
             })
             .collect();
         (relevant.len() as f64 / 20.0).min(1.0)
@@ -816,8 +817,7 @@ impl CtbtoMonitor {
                         .filter(|a| {
                             let actor = a.actor.replace('_', " ");
                             let site  = a.nearest_site_name.to_lowercase();
-                            (!actor.is_empty() && lower.contains(&actor))
-                                || (!site.is_empty() && lower.contains(&site))
+                            mentions(&lower, &actor) || mentions(&lower, &site)
                         })
                         .max_by_key(|a| a.detected_at);
                     if let Some(alert) = matched {
@@ -833,6 +833,20 @@ impl CtbtoMonitor {
             }
         }
     }
+}
+
+/// Whole-word actor/site match for the nuclear cross-check correlation paths (the
+/// `news_escalation_score` news filter and the CTBTO↔seismic-alert correlation). A bare
+/// `str::contains` let an actor/site name match INSIDE an ordinary word — `"india"⊂"indian
+/// ocean"`, `"china"⊂"indochina"` — so a nuclear-posture-tagged "Indian Ocean" story inflated
+/// India's seismic-alert confidence and a coincidental CTBTO press item could correlate to the
+/// wrong actor's alert, flipping the board's nuclear test-consistency read off a coincidence.
+/// Routes through the crate's boundary-aware matcher (the 1.7/1.8 substring→word-boundary honesty
+/// fix) so the name must appear as a WHOLE word. Both args must already be lowercased; an empty
+/// `name` never matches (the callers used to guard this explicitly). Internal hyphens/spaces in
+/// multi-word site names ("lop nur", "punggye-ri") are fine — only the ends are boundary-checked.
+fn mentions(text: &str, name: &str) -> bool {
+    !name.is_empty() && crate::processor::contains_word(text, name)
 }
 
 fn extract_xml_text(xml: &str, tag: &str) -> Option<String> {
@@ -1201,6 +1215,27 @@ mod tests {
         assert!((conf_with_news - conf_no_news - 0.10).abs() < 1e-9,
             "news_escalation contribution should be exactly 0.10 at score=1.0, \
              got {:.4}", conf_with_news - conf_no_news);
+    }
+
+    #[test]
+    fn nuclear_cross_check_matches_actor_and_site_as_whole_words_not_substrings() {
+        // Both nuclear cross-check paths — the news_escalation_score body filter and the
+        // CTBTO↔seismic correlation — route actor/site matching through `mentions`. It must
+        // match a WHOLE word: a bare `str::contains` let an actor name fire inside an ordinary
+        // word ("india"⊂"indian ocean", "china"⊂"indochina"), casting phantom nuclear-news
+        // escalation and phantom CTBTO correlation off a coincidence and skewing the board's
+        // test-consistency read. Reverting `mentions` to `text.contains(name)` re-admits every
+        // negative case below and FAILS this test (the fails-without-change lock).
+        assert!(mentions("india test-fires a new missile", "india"));
+        assert!(mentions("statement on north korea nuclear test", "north korea"));
+        assert!(mentions("seismic event near lop nur test site", "lop nur"));
+        assert!(mentions("aftershock check at punggye-ri", "punggye-ri"));
+        // Substring-inside-a-word must NOT match (the phantom-correlation bug):
+        assert!(!mentions("rising tension across the indian ocean", "india"));
+        assert!(!mentions("naval movements off indiana's namesake", "india"));
+        assert!(!mentions("cold-war indochina archives declassified", "china"));
+        // Empty name never matches (callers relied on the old `!is_empty()` guard):
+        assert!(!mentions("any text at all", ""));
     }
 
     #[test]
