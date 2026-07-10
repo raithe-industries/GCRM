@@ -377,6 +377,52 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-10 (Signal Hunter)** — **HONEST NO-OP — every ranked mission gap re-evaluated;
+  all blocked by the standing egress wall + no committed real-bytes anchor for any strong
+  candidate.** Control-tested the wall first: web fetch reaches ONLY `raw.githubusercontent.com`
+  (→ real file content, verified against the live Linux README) — every live gov/OSINT host
+  403s (verified `earthquake.usgs.gov`, `gdacs.org`); web search works. Path-A liveness
+  verification therefore possible only via the committed-GitHub-bytes anchoring technique.
+  Ranked-gap triage (searched for an anchorable committed client/fixture for each):
+  (a) **Conflict-freshness / `acled_aggregated` refresh** (the flagged near-expiry job) —
+  confirmed the layer is **self-emptying honestly**: snapshot newest `WEEK` = `2026-03-07`
+  (~125 d stale) vs `MAX_ROW_AGE_DAYS = 42` against today → every row drops, layer honestly
+  dark, no misleading data. Refresh still NOT obtainable: `acleddata.com` + `data.humdata.org`
+  (HDX) both 403 web fetch (registration/ToS wall), and no fresh 2026 weekly-aggregate mirror
+  exists on GitHub-raw (searched `CENTROID_LATITUDE`/`WEEK` — only the official site + the
+  `dtacled/acledR` *client* library, no data bytes). ACLED live event API stays permanently
+  license-gated. Stays a local re-download job. (b) **Military-posture / global airspace**
+  (top gap, `navcanada` = Canada-only) — re-searched: every NOTAM API is keyed/commercial
+  (Cirium/Laminar Data, FAA SWIM via SkyLink/`faa-nms-api`); the openAIP tools are format
+  *converters* (AIXM/OpenAIR→GeoJSON), not an auth-free live-closure feed; the one auth-free
+  airspace product (FAA TFR) stays WAF-blocked + low-WWIII-signal (unchanged from 2026-07-09).
+  No anchorable auth-free feed. (c) **Asian maritime — maritime-security incident**
+  (`asam`-successor gap; the chokepoint-transit axis is already closed by `portwatch_chokepoints`)
+  — UKMTO + MDAT-GoG publish **warnings on their websites only** (no auth-free GeoJSON API, no
+  committed client); IMB + ReCAAP remain PDF-report only → still no auth-free machine-readable
+  geocoded feed. (d) **Radiation — Asian/Kola flashpoint extension** (would double-hit the
+  radiation modality + flashpoint geography) — **Japan NRA RAMDAS** (`radioactivity.nra.go.jp`,
+  Fukushima/Asian theatre): no confirmed public JSON API, no committed client; **Norway DSA
+  RADNETT** (Kola/Barents — Russia Northern Fleet): confirmed published on Geonorge (metadata
+  `e379ef5e-…`, auth-free WFS *likely*) but `geonorge.no` 403s web fetch and **no committed
+  consumer quotes the RADNETT feature schema** → still can't anchor the `GetFeature` property
+  keys to real bytes; **EU JRC EURDEP** (39-country near-real-time dose-rate exchange, the ideal
+  aggregate): **access-restricted, not auth-free** (the `OpenBfS/eurdep-parser` is a format
+  parser, not an open feed) → confirmed unusable. All radiation extensions stay blocked as the
+  2026-07-05/07 entries record. (e) **Taiwan-Strait military-posture** (PLA ADIZ incursions) —
+  ruled out on the **authority / no-scrapers** bar: the machine-readable geocoded datasets are
+  **researcher-compiled** (Gerald Brown / Ben Lewis / CSIS ChinaPower), not the MND's own product
+  (the MND daily report is authoritative but downsized since Jan-2024 and not clean per-record
+  geocoded JSON) — same disqualification as GDELT. (f) **FEWS NET / IPC food insecurity** (STRONG
+  deferred) — endpoint re-confirmed (`fdw.fews.net/api/ipcphasemap/?…&format=geojson`) but 403s
+  web fetch, HDX 403s, and no committed `ipcphasemap` GeoJSON sample surfaced on GitHub-raw to
+  anchor the property keys → unchanged from 2026-07-06/09. Deliberately did NOT half-wire an
+  easy but off-mission duplicate (a 2nd Australian fire feed via the exxamalte georss fixtures)
+  to look busy — a same-modality trivia layer ranks below every walled top gap. No code touched;
+  tree left clean. Next run with live-host web fetch restored: FEWS NET IPC (Path-A schema anchor)
+  and the airspace/maritime-security gaps are the priorities; a fresh ACLED aggregate on
+  GitHub-raw would make the conflict-freshness refresh landable.
+
 - **2026-07-09 (Signal Hunter, later run)** — **HONEST NO-OP — every ranked mission gap
   re-evaluated; all blocked this run by a total live-host web fetch WAF wall, no committed
   real-bytes anchor available for any strong candidate, so any landing would be
