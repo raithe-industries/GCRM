@@ -225,6 +225,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     an honest `regime_role` note, and rewrote both stale comments to the flat-prior v2 form. No constant
     touched (display/contract + docs only; backtest + Brier identical). Locked by
     `served_prior_is_v2_flat_not_a_v1_adjusted_prior`.
+  - PROGRESS 2026-07-10: pinned the **per-DOMAIN (per-modality) data-quality confidence** — the
+    last un-pinned provenance leg the 2026-06-14 entry flagged (the `15.0`/`3.0`/tier-weight inline
+    literals in `DomainScorer::score_all_scaled`). It is the "% conf" rendered in EACH modality cell
+    on the dashboard (`dashboard.html` DID.forEach grid), so per pillar-1 it must mean what it says,
+    yet it had NO named constants, NO rationale, and — unlike its fully-pinned snapshot sibling
+    `estimate_confidence` — NO contract lock. Named all six (`DOMAIN_CONFIDENCE_OFFLINE_FLOOR`,
+    `DOMAIN_TIER{1,2,3}_QUALITY`, `DOMAIN_CONFIDENCE_EVENT_SATURATION`,
+    `DOMAIN_CONFIDENCE_ACTOR_SATURATION`, `DOMAIN_CONF_W_{TIER,COUNT,ACTORS}`), added a compile-time
+    partition-of-unity `assert!` on the blend weights (a re-weight can't silently push a modality
+    conf > 1), and extracted the pure `domain_confidence(tiers, distinct_actors)`. Honesty finding
+    recorded in a rationale comment + a pinning assert: the Tier2 quality weight (0.65) is
+    DELIBERATELY distinct from `SourceTier::credibility_weight` (0.75) — different meaning, must not
+    be unified. Behaviour-preserving (in-range inputs → byte-identical value; backtest 25/25, Brier
+    identical). Locked by `domain_confidence_is_a_bounded_monotone_blend_with_an_offline_floor`
+    (offline floor at 0 events, `[0,1]` over a tier/count/actor grid, monotone non-decreasing in
+    count/actors/tier-quality, log-saturating volume, all-Tier1-saturated → exactly 1.0, Tier2≠0.75).
+    Remaining un-pinned for 1.2: only the regime × factor defaults (config surface, labeled
+    `RegimeFactor`s, not blind literals).
 - [x] **1.3 Coupler / theater cross-checks** — **DONE 2026-06-09.** Added 5 invariant tests in
   `src/theater.rs` that LOCK the model's core honesty properties, none of which were guarded
   before: bounded outputs over a 400-world deterministic fuzz (index ∈ [0,95], l_sys ≥ 0, heat

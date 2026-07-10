@@ -22,6 +22,51 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-10 (later) — honesty/provenance (MATH-ANALYTIC) — the per-modality "% conf" is pinned like its snapshot sibling
+- Item: roadmap 1.2 (Calibration-constant provenance) — the last un-pinned leg flagged 2026-06-14.
+- Diagnosis (pillar-1 HONESTY, provenance): the dashboard renders a per-modality "% conf" in every
+  domain cell (`dashboard.html` DID.forEach, `Math.round(ds.confidence*100)`). Its snapshot-level
+  sibling `estimate_confidence` was fully pinned in 2026-06 (named constants + compile-time
+  partition-of-unity assert + a fails-without lock test), but this GRANULAR one — the number the
+  operator reads PER modality — was still six bare inline literals in `DomainScorer::score_all_scaled`
+  (`0.05` floor, tier weights 1.00/0.65/0.20, `15.0` count-sat, `3.0` actor-sat, `0.5/0.35/0.15`
+  blend) with no rationale and NO contract lock. A future edit could silently make it non-monotone,
+  exceed [0,1], or break the weighted-mean, and the operator's per-modality confidence would then lie.
+- Change (behaviour-preserving provenance/honesty, no calibration constant moved): named all six
+  literals (`DOMAIN_CONFIDENCE_OFFLINE_FLOOR`, `DOMAIN_TIER{1,2,3}_QUALITY`,
+  `DOMAIN_CONFIDENCE_EVENT_SATURATION`, `DOMAIN_CONFIDENCE_ACTOR_SATURATION`,
+  `DOMAIN_CONF_W_{TIER,COUNT,ACTORS}`) each with a rationale, added a compile-time
+  `assert!(weights sum == 1.0)` (a re-weight can't silently push a modality conf > 1), and extracted
+  the pure `domain_confidence(tiers, distinct_actors)`. Documented + pinned a real honesty finding:
+  the confidence Tier2 weight (0.65) is DELIBERATELY distinct from `SourceTier::credibility_weight`
+  (0.75) — a data-QUALITY proxy vs a SCORE contribution — so the two maps must not be unified.
+- Metric moved: the per-modality confidence read is now provenance-pinned + contract-locked (parity
+  with the snapshot confidence). +1 test (613 → 614 passed). In-range inputs byte-identical, so
+  anchors bit-identical (`cargo test backtest` 25/25; calibration evidence unchanged).
+- Proof: `cargo build --release` clean. `cargo test --release` **614 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings. Lock proven fails-without-change: setting
+  `DOMAIN_TIER2_QUALITY` to 0.75 (unifying it with credibility_weight) makes
+  `domain_confidence_is_a_bounded_monotone_blend_with_an_offline_floor` FAIL (panic at bayesian.rs
+  "Tier2 confidence weight must stay 0.65"); restored → 614 green.
+- Tier: T3 (provenance/traceability on an operator-facing DISPLAY number — behaviour-preserving; no
+  new sight, no new surface, no new caveat). Chosen because no T1/T2 was doable well in-lane today:
+  new sources are the signal-hunter's lane (§6 ee-sources connectors), the I&W board + caveat family
+  are CLOSED, new dashboard surfaces + eyes-gate checks are operator-frozen, fitted constants are
+  Robert-gated, and the suite was already green (no failing/flaky test to fix). · Touched: display-only
+  (behaviour-preserving — but a genuine NEW contract lock, not a redundant assert: it fails when the
+  formula is broken, proof above) · Lock-fails-without-change: yes (Tier2→0.75 panic proof) · Counts:
+  none of Live-sources/Map-layers/Monitors moved · consecutive_display_only=1 · display_only_in_last_7=2
+  (this run + the 2026-07-09-late eyes-gate run; the engine-behavior runs between don't count) ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `DOMAIN_TIER2_QUALITY=0.65` is INTENTIONALLY ≠ credibility_weight's
+  0.75 — the lock test asserts the inequality; do not "clean up" by unifying them. (2) These constants
+  are DISPLAY-only (computed in Step 9 after the forecast) — they never feed P; changing them moves the
+  operator's confidence cell, not the number. (3) The last un-pinned 1.2 leg is now just the regime ×
+  factor defaults (a config surface, already labeled `RegimeFactor`s, not blind literals) — 1.2 is
+  effectively drained of engine literals.
+
+---
+
 ## 2026-07-10 — honesty (ENGINE) — nuclear cross-check matches actor/site names as whole words, not substrings
 - Item: roadmap 1.21 (the third sibling of 1.7/1.8 substring→word-boundary honesty fixes).
 - Diagnosis (pillar-1 HONESTY weakest): 1.7/1.8 (2026-07-04) killed the substring-match defect on the

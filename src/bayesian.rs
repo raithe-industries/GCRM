@@ -300,6 +300,80 @@ pub fn estimate_confidence(avg_domain_conf: f64, events: usize, sources: usize) 
     (blended.clamp(0.0, 1.0) * 1e3).round() / 1e3
 }
 
+// ── Per-domain (per-modality) data-quality confidence ────────────────────────────
+// The granular sibling of `estimate_confidence` above: the "% conf" the dashboard
+// renders inside each modality cell (`dashboard.html`, the DID.forEach domain grid).
+// It answers "how much evidence does THIS modality's score rest on" for one domain,
+// where `estimate_confidence` answers it for the whole snapshot. Same discipline —
+// named constants, a compile-time partition-of-unity assert, a pure lockable core —
+// so the number the operator reads per modality can't silently drift. DISPLAY-ONLY:
+// like its snapshot sibling it is computed after the forecast and never feeds P.
+
+/// Confidence for a domain the window never saw (zero in-window events): a small
+/// non-zero floor so the cell reads "5% conf" (evidence-thin) rather than a hard 0
+/// that could be misread as a broken/absent modality. Mirrors the snapshot
+/// `CONFIDENCE_OFFLINE_FLOOR` intent at the per-domain grain.
+const DOMAIN_CONFIDENCE_OFFLINE_FLOOR: f64 = 0.05;
+
+/// Source-tier quality weights for the per-domain confidence read. DELIBERATELY
+/// distinct from `SourceTier::credibility_weight` (Tier2 = 0.75 there): that weight
+/// scales a source's contribution to the SCORE, whereas this is a data-QUALITY proxy
+/// for the confidence display, where a Tier2 outlet is discounted a little harder
+/// (0.65) so the operator's "% conf" leans on Tier1 corroboration. Do NOT unify the
+/// two maps — they mean different things and changing 0.65 would move the display.
+const DOMAIN_TIER1_QUALITY: f64 = 1.00;
+const DOMAIN_TIER2_QUALITY: f64 = 0.65;
+const DOMAIN_TIER3_QUALITY: f64 = 0.20;
+
+/// Event count at which the per-domain volume term saturates (log scale). Far below
+/// the snapshot `CONFIDENCE_EVENT_SATURATION` (200) because this is ONE modality: ~15
+/// in-window stories on a single domain is already well-corroborated; more is chatter.
+const DOMAIN_CONFIDENCE_EVENT_SATURATION: f64 = 15.0;
+
+/// Distinct tracked-actor count at which the actor-breadth term saturates: ~3 tracked
+/// great-power actors implicated in one modality is treated as full actor breadth.
+const DOMAIN_CONFIDENCE_ACTOR_SATURATION: f64 = 3.0;
+
+/// Blend weights for the per-domain confidence: source-tier quality dominates, volume
+/// next, actor breadth last. Sum to 1.0 so the result is a bounded weighted mean.
+const DOMAIN_CONF_W_TIER:   f64 = 0.50;
+const DOMAIN_CONF_W_COUNT:  f64 = 0.35;
+const DOMAIN_CONF_W_ACTORS: f64 = 0.15;
+// Enforce the partition of unity at compile time — a future re-weight can't silently
+// push a per-modality confidence above 1.0 (same guard the snapshot blend carries).
+const _: () = assert!(DOMAIN_CONF_W_TIER + DOMAIN_CONF_W_COUNT + DOMAIN_CONF_W_ACTORS == 1.0);
+
+fn source_tier_quality(t: SourceTier) -> f64 {
+    match t {
+        SourceTier::Tier1 => DOMAIN_TIER1_QUALITY,
+        SourceTier::Tier2 => DOMAIN_TIER2_QUALITY,
+        SourceTier::Tier3 => DOMAIN_TIER3_QUALITY,
+    }
+}
+
+/// Per-domain data-quality confidence in [0,1] — the "% conf" rendered per modality.
+/// Pure (so it is locked by the `domain_confidence_*` tests) and DISPLAY-ONLY: never
+/// feeds the forecast. `tiers` is one entry per in-window event that fed this domain's
+/// score (so `tiers.len()` is the domain's event count); `distinct_actors` is the count
+/// of distinct tracked actors implicated in the domain. Monotone non-decreasing in the
+/// event count, in `distinct_actors`, and in source-tier quality; returns the offline
+/// floor when the domain saw no events. Behaviour of the former inline block, verbatim.
+pub fn domain_confidence(tiers: &[SourceTier], distinct_actors: usize) -> f64 {
+    if tiers.is_empty() {
+        return DOMAIN_CONFIDENCE_OFFLINE_FLOOR;
+    }
+    let n = tiers.len() as f64;
+    let tier_quality = tiers.iter().map(|&t| source_tier_quality(t)).sum::<f64>() / n;
+    let count_factor = ((1.0 + n).ln()
+        / (1.0 + DOMAIN_CONFIDENCE_EVENT_SATURATION).ln()).min(1.0);
+    let actor_conf =
+        (distinct_actors as f64 / DOMAIN_CONFIDENCE_ACTOR_SATURATION).min(1.0);
+    (tier_quality * DOMAIN_CONF_W_TIER
+        + count_factor * DOMAIN_CONF_W_COUNT
+        + actor_conf * DOMAIN_CONF_W_ACTORS)
+        .clamp(0.0, 1.0)
+}
+
 /// Logistic function. Maps log-odds → probability in (0, 1).
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
@@ -559,21 +633,16 @@ impl DomainScorer {
                 0.0
             };
 
-            let confidence = if event_count == 0 {
-                0.05
-            } else {
-                let tiers = domain_tiers.get(domain).cloned().unwrap_or_default();
-                let tier_quality = tiers.iter().map(|t| match t {
-                    SourceTier::Tier1 => 1.00,
-                    SourceTier::Tier2 => 0.65,
-                    SourceTier::Tier3 => 0.20,
-                }).sum::<f64>() / event_count as f64;
-                let count_factor = ((1.0 + event_count as f64).ln()
-                    / (1.0 + 15.0_f64).ln()).min(1.0);
-                let actor_conf = (domain_actors.get(domain)
-                    .map(|s| s.len()).unwrap_or(0) as f64 / 3.0).min(1.0);
-                (tier_quality * 0.5 + count_factor * 0.35 + actor_conf * 0.15)
-                    .clamp(0.0, 1.0)
+            // Per-modality data-quality confidence (the "% conf" cell). Named
+            // constants + a pure lockable core — see `domain_confidence` above. The
+            // tier list has one entry per in-window event that scored this domain, so
+            // its length is the domain's event_count; distinct tracked actors give the
+            // breadth term. Empty tiers (a quiet domain) → the offline floor.
+            let confidence = {
+                let empty = Vec::new();
+                let tiers = domain_tiers.get(domain).unwrap_or(&empty);
+                let distinct_actors = domain_actors.get(domain).map(|s| s.len()).unwrap_or(0);
+                domain_confidence(tiers, distinct_actors)
             };
 
             scores.insert(domain.to_string(), DomainScore {
@@ -1944,6 +2013,79 @@ mod tests {
         let way_over = estimate_confidence(0.0, CONFIDENCE_EVENT_SATURATION as usize * 50, 0);
         assert!((at_sat - CONF_W_EVENTS).abs() < 2e-3, "volume term saturates at its weight");
         assert!(way_over <= CONF_W_EVENTS + 1e-9 && way_over >= at_sat,
+            "beyond saturation the volume term is capped at its weight");
+    }
+
+    #[test]
+    fn domain_confidence_is_a_bounded_monotone_blend_with_an_offline_floor() {
+        use SourceTier::{Tier1, Tier2, Tier3};
+        // Weights are a partition of unity (the compile-time assert backs this) → the
+        // per-modality "% conf" is a true weighted mean in [0,1]; restate as a guard.
+        assert!((DOMAIN_CONF_W_TIER + DOMAIN_CONF_W_COUNT + DOMAIN_CONF_W_ACTORS - 1.0).abs() < 1e-12);
+
+        // A domain the window never saw → exactly the offline floor (not a hard 0).
+        assert_eq!(domain_confidence(&[], 0), DOMAIN_CONFIDENCE_OFFLINE_FLOOR);
+        assert_eq!(domain_confidence(&[], 5), DOMAIN_CONFIDENCE_OFFLINE_FLOOR);
+
+        // Bounded in [0,1] across a wide grid of tier mixes, counts, and actor breadth;
+        // and a fully-corroborated modality (all Tier1, saturating volume + breadth)
+        // reads exactly 1.0 — the weighted mean of three saturated unit terms.
+        let mixes: &[&[SourceTier]] = &[
+            &[Tier3], &[Tier2], &[Tier1],
+            &[Tier1, Tier2, Tier3], &[Tier1, Tier1, Tier2, Tier3, Tier3],
+        ];
+        for m in mixes {
+            for &ac in &[0usize, 1, 3, 10] {
+                let c = domain_confidence(m, ac);
+                assert!((0.0..=1.0).contains(&c), "domain conf {c} out of range");
+            }
+        }
+        let all_tier1: Vec<SourceTier> = vec![Tier1; DOMAIN_CONFIDENCE_EVENT_SATURATION as usize];
+        assert!((domain_confidence(&all_tier1, DOMAIN_CONFIDENCE_ACTOR_SATURATION as usize) - 1.0).abs() < 1e-9,
+            "saturated single-tier-1 modality should read full confidence");
+
+        // The Tier2 quality weight is DELIBERATELY the confidence-specific 0.65, NOT
+        // SourceTier::credibility_weight's 0.75 — a single Tier2 event with no actors
+        // gives tier_quality=0.65, count_factor at n=1, and actor 0. Pin the exact value
+        // so a future run can't silently unify the two maps.
+        let one_t2 = domain_confidence(&[Tier2], 0);
+        let expect_t2 = DOMAIN_TIER2_QUALITY * DOMAIN_CONF_W_TIER
+            + ((1.0 + 1.0_f64).ln() / (1.0 + DOMAIN_CONFIDENCE_EVENT_SATURATION).ln()).min(1.0)
+                * DOMAIN_CONF_W_COUNT;
+        assert!((one_t2 - expect_t2).abs() < 1e-12, "Tier2 confidence weight must stay 0.65");
+        assert!((DOMAIN_TIER2_QUALITY - SourceTier::Tier2.credibility_weight()).abs() > 1e-9,
+            "the confidence tier map is intentionally distinct from credibility_weight");
+
+        // Monotone NON-DECREASING in event count (more corroborating events on the same
+        // tier quality never lowers per-modality confidence), holding actors fixed.
+        let mut prev = domain_confidence(&[Tier2], 1);
+        for n in [2usize, 4, 8, 15, 40] {
+            let tiers = vec![Tier2; n];
+            let c = domain_confidence(&tiers, 1);
+            assert!(c + 1e-12 >= prev, "confidence must not fall as events rise (n={n})");
+            prev = c;
+        }
+        // Monotone NON-DECREASING in distinct-actor breadth — more implicated actors
+        // never lowers it, holding the tier list fixed.
+        let base: &[SourceTier] = &[Tier1, Tier2, Tier2];
+        let mut preva = domain_confidence(base, 0);
+        for ac in [1usize, 2, 3, 10] {
+            let c = domain_confidence(base, ac);
+            assert!(c + 1e-12 >= preva, "confidence must not fall as actors rise (ac={ac})");
+            preva = c;
+        }
+        // Higher source-tier quality → higher confidence at equal count/actors: an
+        // all-Tier1 modality out-reads an all-Tier3 one of the same size.
+        let n3_hi = domain_confidence(&[Tier1, Tier1, Tier1], 1);
+        let n3_lo = domain_confidence(&[Tier3, Tier3, Tier3], 1);
+        assert!(n3_hi > n3_lo, "better source tiers must raise per-modality confidence");
+
+        // Volume term log-saturates at DOMAIN_CONFIDENCE_EVENT_SATURATION: a flood of
+        // low-grade Tier3 events beyond saturation adds essentially nothing.
+        let at_sat = domain_confidence(&vec![Tier3; DOMAIN_CONFIDENCE_EVENT_SATURATION as usize], 0);
+        let way_over = domain_confidence(&vec![Tier3; DOMAIN_CONFIDENCE_EVENT_SATURATION as usize * 50], 0);
+        let cap = DOMAIN_TIER3_QUALITY * DOMAIN_CONF_W_TIER + DOMAIN_CONF_W_COUNT;
+        assert!(way_over <= cap + 1e-9 && way_over >= at_sat - 1e-12,
             "beyond saturation the volume term is capped at its weight");
     }
 
