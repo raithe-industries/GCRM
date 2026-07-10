@@ -1014,9 +1014,10 @@ pub struct EscalationCoherence {
 /// escalation is the historical signature of a systemic crisis (1914, 1938–39), materially more
 /// dangerous than the same magnitude on a single contained front, and escalation-breadth can be
 /// broad even when heat is concentrated (a cool theater turning up fast), or narrow when heat is
-/// broad (many hot-but-stable standoffs). Counts theaters whose `escalation_momentum` clears the
-/// escalation mirror of the de-escalation floor gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30, the
-/// same decisive bar `escalation_coherence` uses). A pure diagnostic over the already-scored board:
+/// broad (many hot-but-stable standoffs). Counts theaters whose `escalation_momentum` STRICTLY clears
+/// the escalation mirror of the de-escalation floor gate (`m > +0.30`, the true reflection of the
+/// strict `m < -0.30` de-escalation gate — the same decisive bar, at the same strictness, that
+/// `escalation_coherence` uses). A pure diagnostic over the already-scored board:
 /// it never feeds `l_sys`/P and touches no fitted constant. `available = false` (nothing decisively
 /// escalating) hides the read. `#[serde(default)]` keeps older persisted snapshots loadable.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

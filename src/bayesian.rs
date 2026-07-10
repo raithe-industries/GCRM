@@ -1097,13 +1097,18 @@ impl BayesianRiskEngine {
             // same place). If a DIFFERENT theater is decisively escalating, risk is accumulating on a
             // second front the headline does not yet rest on (divergent — a new place to watch). The
             // "decisive escalation" bar is the ESCALATION MIRROR of the existing de-escalation floor
-            // gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30) — symmetric with `theater_is_deescalating`,
-            // so escalation and de-escalation are judged decisive at the same magnitude. Display-only:
-            // it never feeds `l_sys`/P and touches no fitted constant. `available = false` (no
-            // load-bearing theater, or nothing decisively escalating) hides the read honestly.
+            // gate (`-DEESCALATION_STEP_THRESHOLD` = +0.30) — a TRUE mirror of `theater_is_deescalating`,
+            // so escalation and de-escalation are judged decisive at the same magnitude AND with the
+            // same strictness. The de-escalation gate is strict (`m < -0.30`), so its exact reflection
+            // is strict `m > +0.30` — NOT `>=`: at the boundary a rounded `escalation_momentum` of
+            // exactly `0.300` is reachable, and an inclusive bar would count it as decisively escalating
+            // while its `-0.300` mirror is (correctly) NOT decisively de-escalating, breaking the
+            // symmetry this comment promises. Display-only: it never feeds `l_sys`/P and touches no
+            // fitted constant. `available = false` (no load-bearing theater, or nothing decisively
+            // escalating) hides the read honestly.
             let escalation_decisive = -crate::theater::DEESCALATION_STEP_THRESHOLD;
             let mom_leader = snap.theaters.iter()
-                .filter(|t| t.escalation_momentum >= escalation_decisive)
+                .filter(|t| t.escalation_momentum > escalation_decisive)
                 .max_by(|a, b| a.escalation_momentum
                     .partial_cmp(&b.escalation_momentum)
                     .unwrap_or(std::cmp::Ordering::Equal));
@@ -1129,7 +1134,7 @@ impl BayesianRiskEngine {
             // touches no fitted constant. `available = false` (nothing decisively escalating) hides
             // the read honestly.
             let mut fronts: Vec<(String, f64)> = snap.theaters.iter()
-                .filter(|t| t.escalation_momentum >= escalation_decisive)
+                .filter(|t| t.escalation_momentum > escalation_decisive) // strict — the true mirror of the strict de-escalation gate (see above)
                 .map(|t| (t.label.clone(), (t.escalation_momentum * 1e3).round() / 1e3))
                 .collect();
             fronts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -2361,5 +2366,62 @@ mod tests {
             "no theater clears the decisive-escalation bar → the breadth read is honest-null");
         assert_eq!(sq.escalation_breadth.count, 0);
         assert!(!sq.escalation_breadth.multi_front);
+    }
+
+    #[test]
+    fn escalation_decisive_bar_is_a_strict_mirror_of_the_de_escalation_gate() {
+        // The escalation reads (coherence + breadth) document their +0.30 bar as the TRUE mirror
+        // of the strict de-escalation floor gate (`theater_is_deescalating`: `m < -0.30`). The
+        // exact reflection of strict `< -0.30` is strict `> +0.30`, NOT `>=`. This locks the
+        // boundary: a theater whose (1e-3-rounded) `escalation_momentum` is EXACTLY +0.300 must
+        // NOT count as decisively escalating — because its −0.300 mirror is (correctly) NOT
+        // decisively de-escalating (theater::escalation_momentum_surfaces_the_signed_news_flow_direction
+        // locks that gate as strict at momentum == DEESCALATION_STEP_THRESHOLD). An inclusive `>=`
+        // bar would count +0.300 while excluding
+        // −0.300, breaking the symmetry the field docs promise. Fails-without-change: under `>=`
+        // the boundary theater is available in both reads and these asserts flip.
+        use crate::models::EventType;
+        let ev = |theater: &str, step: f64| {
+            let mut e = GeopoliticalEvent::new("t".into(), "src".into(), SourceTier::Tier1, Utc::now());
+            e.theater                   = Some(theater.to_string());
+            e.domain_signals            = [("military_escalation".to_string(), 0.9)].into_iter().collect();
+            e.domain_tags               = vec!["military_escalation".to_string()];
+            e.severity                  = 0.9;
+            e.escalation_language_score = 0.4;
+            e.actor_ids                 = vec!["united_states".to_string(), "iran".to_string()];
+            e.great_power_involved      = true;
+            e.event_type                = EventType::MilitaryStrike;
+            e.escalation_step           = step;
+            e
+        };
+
+        // All events carry escalation_step == +0.30, so the weighted-mean momentum is exactly
+        // 0.30 and the stored (1e-3-rounded) field is exactly 0.300 — the boundary value.
+        let boundary: Vec<_> = (0..8).map(|_| ev("us_iran", 0.30)).collect();
+        let sb = minimal_engine().compute(&boundary);
+
+        // Precondition: the theater is present and its rounded momentum sits exactly on the bar.
+        let m = sb.theaters.iter()
+            .find(|t| t.theater_id == "us_iran")
+            .map(|t| t.escalation_momentum)
+            .expect("us_iran theater must be present");
+        assert!((m - 0.300).abs() < 1e-9,
+            "precondition: the boundary theater's rounded momentum must be exactly 0.300, got {m}");
+        assert!(sb.load_bearing_theater.available,
+            "precondition: the hot boundary theater is load-bearing");
+
+        // The strict bar excludes the boundary in BOTH reads → honest-null, not a phantom front.
+        assert!(!sb.escalation_breadth.available,
+            "momentum exactly at +0.300 does not STRICTLY clear +0.30 → breadth honest-null");
+        assert_eq!(sb.escalation_breadth.count, 0,
+            "no theater strictly clears the bar → count 0, got fronts={:?}", sb.escalation_breadth.fronts);
+        assert!(!sb.escalation_coherence.available,
+            "momentum exactly at +0.300 names no coherence momentum leader (strict bar)");
+
+        // Guard the fix isn't over-strict: a hair above the bar (+0.301) DOES count.
+        let above: Vec<_> = (0..8).map(|_| ev("us_iran", 0.301)).collect();
+        let sa = minimal_engine().compute(&above);
+        assert!(sa.escalation_breadth.available && sa.escalation_breadth.count == 1,
+            "momentum just above +0.30 is a decisive front, got fronts={:?}", sa.escalation_breadth.fronts);
     }
 }

@@ -561,6 +561,12 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `escalation_breadth_counts_synchronized_fronts_not_just_the_leader` (multi-front board → count 2 +
   multi_front + sorted; single-front board → count 1; honest-null board; FAILS when the compute is
   neutered to default). See improvement-log 2026-07-09.
+  - FOLLOW-UP 2026-07-10 (later²): the +0.30 decisive bar was INCLUSIVE (`>=`) while the docs (and 1.19)
+    promise it is the exact *mirror* of the STRICT de-escalation gate (`m < -0.30`). Flipped both
+    escalation-read filters to strict `>` so an exactly-`+0.300` front no longer phantom-counts as
+    synchronized/coherent while its `-0.300` mirror (correctly) doesn't de-escalate. `theater_is_deescalating`
+    (feeds the floor→P) untouched. New lock `escalation_decisive_bar_is_a_strict_mirror_of_the_de_escalation_gate`
+    pins the boundary. See improvement-log 2026-07-10 (later²).
 - [x] **1.21 Actor/site names substring-matched on the NUCLEAR cross-check paths → phantom
   correlation** — **DONE 2026-07-10.** The third sibling of 1.7/1.8 (the substring→word-boundary
   honesty fix), on the detector's nuclear cross-check paths, which were never routed through the

@@ -22,6 +22,52 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-10 (later²) — honesty (ENGINE) — the escalation "decisive" bar is a STRICT mirror of the de-escalation gate, as its docs promise
+- Item: ad-hoc (correctness defect surfaced by an engine bug-hunt; a doc-contradicted `>=` vs strict `<`).
+- Diagnosis (pillar-1 HONESTY weakest): `escalation_coherence`/`escalation_breadth` (1.19/1.20) both
+  document their +0.30 "decisive escalation" bar as the *exact mirror* of the de-escalation floor gate —
+  models.rs:1017-1019 ("the escalation mirror … the same decisive bar") and bayesian.rs:1099-1104
+  ("symmetric with `theater_is_deescalating`, judged decisive at the same magnitude"). But
+  `theater_is_deescalating` is STRICT (`m < -0.30`), while both escalation reads counted a front with
+  INCLUSIVE `t.escalation_momentum >= +0.30`. The true reflection of strict `< -0.30` is strict
+  `> +0.30`, not `>=`. At the boundary this diverges: a theater whose 1e-3-rounded momentum is EXACTLY
+  `+0.300` (reachable — momentum is `(mean_step*1e3).round()/1e3`, so events all at `escalation_step=0.30`
+  land there) counted as a decisively-escalating front (could set `multi_front=true`, become the coherence
+  `momentum_theater`, flip the `coherent` bool), while its `-0.300` mirror is (correctly) NOT decisively
+  de-escalating. The number didn't mean what its own contract said.
+- Change (behaviour-changing on a reachable boundary; honesty firewall untouched): flipped both
+  display-side filters `>=` → `>` (bayesian.rs:1111 coherence momentum-leader, :1137 breadth fronts) so
+  the escalation bar is the strict reflection of the strict de-escalation gate. Tightened the two doc
+  comments (bayesian inline + models.rs field doc) to state the strict-mirror reasoning so a future edit
+  can't "clean up" back to `>=`. Deliberately did NOT touch `theater_is_deescalating` — it feeds the
+  persistence floor (→ P), so its strict `<` is the authoritative side and stays byte-identical.
+- Metric moved: the escalation-breadth/coherence reads now honour their documented mirror at the exact
+  boundary (an isolated `+0.300` front no longer reads as a synchronized/coherent escalation). +1 test
+  (614 → 615 passed). Display-only for P: `escalation_*` never feed `l_sys`; anchors bit-identical
+  (`cargo test backtest` 25/25; calibration evidence Brier 0.00092 / in-band 4/4, unchanged).
+- Proof: `cargo build --release` clean. `cargo test --release` **615 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings. Lock proven fails-without-change: reverting BOTH filters
+  to `>=` (keeping the test) makes `escalation_decisive_bar_is_a_strict_mirror_of_the_de_escalation_gate`
+  FAIL (panic at bayesian.rs:2414 — the boundary `+0.300` theater becomes a phantom breadth front);
+  restored `>` → 615 green.
+- Tier: T1 (engine-behavior — corrects WHICH theaters count as decisively escalating at the boundary,
+  changing the served `escalation_breadth.count`/`multi_front` and `escalation_coherence.coherent` in a
+  reachable edge case; the diagnostic now MEANS what its contract states — a correctness/honesty fix, not
+  a new annotation). Chosen because no new-source work is in-lane (signal-hunter owns §6), the I&W board +
+  caveat family are CLOSED, new dashboard surfaces/eyes checks are operator-frozen, fitted constants are
+  Robert-gated, and the suite was green (no failing/flaky test to fix first) — an engine bug-hunt found
+  this as the one concrete defect. · Touched: engine-behavior · Lock-fails-without-change: yes (revert-to-`>=`
+  panic proof above) · Counts: none of Live-sources/Map-layers/Monitors moved (a correctness fix, not a new
+  sight) · consecutive_display_only=0 (this run is engine-behavior, resetting the streak) ·
+  display_only_in_last_7=2 (the 2026-07-10-late provenance run + the 2026-07-09-late eyes-gate run) ·
+  consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) The escalation bar is `> +0.30` and the de-escalation gate is
+  `< -0.30` — a matched STRICT pair. Do NOT unify them to `>=`/`<=`; the lock test pins the `+0.300`
+  boundary. (2) `theater_is_deescalating` compares the RAW `escalation_momentum(tev)` while the escalation
+  reads compare the 1e-3-ROUNDED stored field — the boundary is defined on the rounded display value the
+  operator actually sees; that is intentional, not a bug to "align." (3) This is display-only for P — the
+  reads never feed `l_sys`; the change moves the awareness fields, never the headline number.
+
 ## 2026-07-10 (later) — honesty/provenance (MATH-ANALYTIC) — the per-modality "% conf" is pinned like its snapshot sibling
 - Item: roadmap 1.2 (Calibration-constant provenance) — the last un-pinned leg flagged 2026-06-14.
 - Diagnosis (pillar-1 HONESTY, provenance): the dashboard renders a per-modality "% conf" in every
