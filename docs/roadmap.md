@@ -618,6 +618,23 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   Four anchors bit-identical (backtest 25/25 — none has a Stable theater with a lone alliance invocation).
   Locked by the strengthened test (FAILS when the half-tier gate reverts to `alliance_invoked` alone —
   the Stable case re-leaks 0.5). See improvement-log 2026-07-11 (later).
+- [x] **1.24 I&W alliance light contradicted itself after the 1.23 coupler de-leak — a not-tripped
+  light still named a theater + asserted an Article 5 signal** — **DONE 2026-07-11 (later²).** 1.23
+  heat-gated the alliance coupler but left the `alliance_invoked` I&W light (indicators.rs) stale: its
+  `tripped` keyed on the heat-gated `c.alliance_activation > 0.0`, while its `theater`/`detail` keyed on
+  the bare `alliance_invoked` flag via an unconditional hottest-invoker pick. So a lone treaty-
+  consultation headline in a STABLE theater (heat < 0.06, coupler 0.0) served `tripped:false` yet
+  `theater:Some(label)` + `detail:"Article 5 / collective-defense signal: <label>"` — a self-
+  contradictory served light (indicators are in the public JSON) naming a theater that contributes
+  nothing to P. The stale doc comment even claimed the coupler "is > 0.0 exactly when some theater is
+  found" — false post-1.23. Gated the theater/detail pick on `c.alliance_activation > 0.0` (the SAME
+  condition as `tripped`), so the light's three fields agree by construction and Some↔coupler-live is
+  restored (same light↔number discipline the nuclear-brink light keeps via `theater_is_nuclear_brink`);
+  when the coupler is live the hottest invoker is provably active (≥Tension), so the naming is unchanged
+  for every real trip. Rewrote the stale comment. Diagnostic/display honesty — touches no P, no fitted
+  constant; four anchors bit-identical (backtest 25/25). Locked by
+  `alliance_light_stable_only_invocation_reads_clear_and_unnamed` (FAILS without the gate — the Stable-
+  only case re-serves theater=Some/detail=signal against tripped=false). See improvement-log 2026-07-11 (later²).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

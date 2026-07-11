@@ -251,19 +251,29 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         detail: format!("entanglement {:.2}", c.gp_entanglement),
     };
 
-    // 9. Mutual-defense alliance invoked. Name the theater carrying the
-    //    collective-defense signal (same theater-attribution idiom as the kinetic /
-    //    nuclear / chokepoint / cross-domain lights), so the operator can see WHERE
-    //    Article 5 tripped rather than a bare global "Article 5 / collective-defense
-    //    signal". The coupler `alliance_activation` is derived from these theaters'
-    //    `alliance_invoked` flags, so it is > 0.0 exactly when some theater is found.
-    //    Pick the HOTTEST alliance-invoked theater (not merely the first in list
-    //    order): a HOT invocation is what drives `alliance_activation` to its 1.0
-    //    apex, so naming the hottest keeps the label pointed at the theater actually
-    //    carrying the signal rather than a cold invocation that happens to sort first.
-    let alliance_theater = theaters.iter()
-        .filter(|t| t.alliance_invoked)
-        .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal));
+    // 9. Mutual-defense alliance invoked. This light is a strict read of the alliance
+    //    COUPLER (`alliance_activation`) — the quantity that actually feeds the headline
+    //    P — so the light, the theater it names, and the number can never disagree (the
+    //    same discipline as the nuclear-brink light sharing `theater_is_nuclear_brink`
+    //    with `brink_mult`). The coupler activates only for an invocation in a theater at
+    //    or above Tension (`heat ≥ STABLE_HEAT_CEILING`; a Stable theater contributes
+    //    ZERO — the honesty floor de-leaked 2026-07-11, commit 0741264). So the theater
+    //    and detail are attached EXACTLY when the coupler is live, and the HOTTEST
+    //    alliance-invoked theater — the one whose (hot) invocation drives
+    //    `alliance_activation` toward its 1.0 apex — is then guaranteed active, never a
+    //    cold stray. A lone treaty-consultation headline in an otherwise-quiet theater
+    //    leaves the coupler at 0.0, so the light reads clear AND names no theater, rather
+    //    than a not-tripped light that still asserts an "Article 5 / collective-defense
+    //    signal" in a theater that contributes nothing to P (the pre-fix contradiction:
+    //    `tripped` keyed on the heat-gated coupler while theater/detail keyed on the bare
+    //    `alliance_invoked` flag, so the two diverged for a Stable-only invocation).
+    let alliance_theater = if c.alliance_activation > 0.0 {
+        theaters.iter()
+            .filter(|t| t.alliance_invoked)
+            .max_by(|a, b| a.heat.partial_cmp(&b.heat).unwrap_or(std::cmp::Ordering::Equal))
+    } else {
+        None
+    };
     let ind_alliance = Indicator {
         id: "alliance_invoked", label: "Mutual-defense alliance invoked",
         tripped: c.alliance_activation > 0.0,
@@ -807,6 +817,33 @@ mod tests {
         assert!(!alliance.tripped, "no invoked alliance must read clear");
         assert!(alliance.theater.is_none(), "a clear alliance light must name no theater");
         assert_eq!(alliance.detail, "None");
+    }
+
+    #[test]
+    fn alliance_light_stable_only_invocation_reads_clear_and_unnamed() {
+        // Honesty lock (post 2026-07-11 coupler de-leak): a mutual-defense invocation in a
+        // STABLE theater (heat < STABLE_HEAT_CEILING) no longer activates the coupler, so
+        // `alliance_activation == 0.0`. The light's THREE fields must agree — a not-tripped
+        // light must not simultaneously name a theater and assert an Article 5 signal. This
+        // is the exact "stray treaty-consultation headline in a quiet theater" case the
+        // coupler's honesty floor describes as reachable.
+        let mut snap = RiskSnapshot::default();
+        let mut stable = theater("us_iran", EscalationRung::Stable, false,
+            &[("military_escalation", 0.02)], &["iran", "united_states"]);
+        stable.alliance_invoked = true;
+        stable.heat = 0.03; // Stable — strictly below STABLE_HEAT_CEILING (0.06)
+        snap.theaters = vec![stable];
+        // Coupler as theater.rs computes it for a Stable-only invocation: ZERO.
+        snap.couplers.alliance_activation = 0.0;
+        let inds = evaluate(&snap);
+        let alliance = inds.iter().find(|i| i.id == "alliance_invoked").unwrap();
+        assert!(!alliance.tripped,
+            "a Stable-only invocation leaves the coupler at 0.0 → the light reads clear");
+        assert!(alliance.theater.is_none(),
+            "a not-tripped alliance light must name NO theater (it did before the fix)");
+        assert_eq!(alliance.detail, "None",
+            "a not-tripped alliance light must not assert an Article 5 signal, got {:?}",
+            alliance.detail);
     }
 
     #[test]
