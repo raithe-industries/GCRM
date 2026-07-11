@@ -34,6 +34,7 @@ pub mod stuk_radiation;
 pub mod teleray;
 pub mod ucdp_ged;
 pub mod usgs_volcano;
+pub mod wa_dfes;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
 pub mod eccc_marine;
@@ -109,6 +110,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(stuk_radiation::StukRadiation), // Radiation: external dose rate above background (STUK/FMI, Finland)
         Box::new(teleray::Teleray), // Radiation: ambient gamma dose rate above background (IRSN/ASNR Téléray, France)
         Box::new(nsw_rfs::NswRfs), // Wildfire layer: NSW RFS major fire/emergency incidents + official alert levels (Australia)
+        Box::new(wa_dfes::WaDfes), // Emergency-warning layer: WA DFES all-hazard warnings + AWS warning levels (Western Australia)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

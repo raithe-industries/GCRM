@@ -445,6 +445,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // incident type + fire size, e.g. "Watch and Act · Bush Fire · 315512 ha" /
         // "Bush Fire · 10 ha" — the operational read behind the incident dot.
         "nsw_rfs" => ee_sources::nsw_rfs::incident_chip(&e.raw),
+        // WA DFES warning: the official Australian Warning System level + the affected
+        // region, e.g. "Watch and Act · Pilbara" — the operational read behind the dot.
+        "wa_dfes" => ee_sources::wa_dfes::warning_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -761,7 +764,7 @@ async fn feeds_payload() -> Value {
         ontario511::Ontario511,
         opensky::OpenSky, portwatch_chokepoints::PortwatchChokepoints, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
         ucdp_ged::UcdpGed, usgs::Usgs,
-        usgs_volcano::UsgsVolcano,
+        usgs_volcano::UsgsVolcano, wa_dfes::WaDfes,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft rotate across
@@ -772,7 +775,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods, wa_warnings) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -909,6 +912,12 @@ async fn feeds_payload() -> Value {
         // extending the flood-with-baselines modality beyond the US-only nwps_flood.
         // Empty (no active warnings) = 0 events. Two fetches, so allow a little time.
         fetch_one("ea_flood", EaFlood, 14),
+        // WA DFES — EmergencyWA all-hazard public warnings (bushfire / cyclone /
+        // flood / storm / hazmat) with their official Australian Warning System
+        // level (Emergency Warning / Watch and Act / Advice), plotted at each
+        // warning's point: the emergency-warning modality extended to a second,
+        // all-hazard Australian state. Empty feed (no current warnings) = 0 events.
+        fetch_one("wa_dfes", WaDfes, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -976,6 +985,9 @@ async fn feeds_payload() -> Value {
         // Active UK flood warnings/alerts: even severe events run to a few dozen areas;
         // 300 is ample and severity-sort keeps the Severe Flood Warnings on overflow.
         (uk_floods.0, uk_floods.1, "ea_flood", 300),
+        // WA all-hazard warnings: even a bad day runs to a few dozen; 300 is ample
+        // headroom, and severity-sort keeps the Emergency Warnings on any overflow.
+        (wa_warnings.0, wa_warnings.1, "wa_dfes", 300),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
