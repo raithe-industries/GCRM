@@ -34,6 +34,7 @@ pub mod stuk_radiation;
 pub mod teleray;
 pub mod ucdp_ged;
 pub mod usgs_volcano;
+pub mod vigicrues;
 pub mod wa_dfes;
 pub mod eccc_alerts;
 pub mod eccc_aqhi;
@@ -103,6 +104,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(jma_typhoon::JmaTyphoon),         // Typhoons (JMA RSMC Tokyo, W-Pacific)
         Box::new(nwps_flood::NwpsFlood),           // River flooding (NOAA NWPS, observed flood category)
         Box::new(ea_flood::EaFlood),               // UK flood warnings (EA, national severity level 1–3, England)
+        Box::new(vigicrues::Vigicrues),            // France flood-vigilance levels (Vigicrues, national 1–4 scale)
         Box::new(avalanche_ca::AvalancheCa),       // Avalanche danger ratings (Avalanche Canada, seasonal)
         Box::new(awc_sigmet::AwcSigmet),           // International SIGMETs (NOAA AWC, en-route aviation hazards)
         Box::new(spc_storm_reports::SpcStormReports), // Severe-storm reports (NOAA SPC, confirmed tornado/hail/wind)

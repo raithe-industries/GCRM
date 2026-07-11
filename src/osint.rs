@@ -411,6 +411,9 @@ fn feed_detail(e: &Event) -> Option<String> {
         // UK EA flood-warning tier + river/sea, e.g. "Severe Flood Warning · River Teme"
         // — the national baseline-relative flood category (danger-to-life → be-prepared).
         "ea_flood" => ee_sources::ea_flood::flood_chip(&e.raw),
+        // Vigicrues flood-vigilance tier + reach, e.g. "Vigilance Rouge · Rhône aval"
+        // — France's national baseline-relative flood category (green→red scale).
+        "vigicrues" => ee_sources::vigicrues::vigilance_chip(&e.raw),
         // Avalanche Canada current-day danger rating per elevation band, e.g.
         // "Alpine Considerable · Treeline Moderate · Below Low" (North American scale).
         "avalanche_ca" => ee_sources::avalanche_ca::danger_chip(&e.raw),
@@ -764,7 +767,7 @@ async fn feeds_payload() -> Value {
         ontario511::Ontario511,
         opensky::OpenSky, portwatch_chokepoints::PortwatchChokepoints, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
         ucdp_ged::UcdpGed, usgs::Usgs,
-        usgs_volcano::UsgsVolcano, wa_dfes::WaDfes,
+        usgs_volcano::UsgsVolcano, vigicrues::Vigicrues, wa_dfes::WaDfes,
     };
 
     // Pull the geocoded feeds concurrently, each time-boxed. Aircraft rotate across
@@ -775,7 +778,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods, wa_warnings) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods, fr_floods, wa_warnings) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -912,6 +915,12 @@ async fn feeds_payload() -> Value {
         // extending the flood-with-baselines modality beyond the US-only nwps_flood.
         // Empty (no active warnings) = 0 events. Two fetches, so allow a little time.
         fetch_one("ea_flood", EaFlood, 14),
+        // Vigicrues — France's national flood-vigilance service: one reach per feature
+        // with its current 1–4 vigilance level (green→red), plotted at the reach
+        // centroid for reaches on vigilance (level ≥ 2). Extends the baseline-relative
+        // flood modality (US nwps_flood, England ea_flood) to France / continental
+        // Europe. Empty / all-green (calm) = 0 events. Auth-free GeoJSON.
+        fetch_one("vigicrues", Vigicrues, 12),
         // WA DFES — EmergencyWA all-hazard public warnings (bushfire / cyclone /
         // flood / storm / hazmat) with their official Australian Warning System
         // level (Emergency Warning / Watch and Act / Advice), plotted at each
@@ -985,6 +994,9 @@ async fn feeds_payload() -> Value {
         // Active UK flood warnings/alerts: even severe events run to a few dozen areas;
         // 300 is ample and severity-sort keeps the Severe Flood Warnings on overflow.
         (uk_floods.0, uk_floods.1, "ea_flood", 300),
+        // French flood-vigilance reaches on alert: even a widespread event runs to a
+        // few dozen reaches; 300 is ample and severity-sort keeps the Rouge reaches.
+        (fr_floods.0, fr_floods.1, "vigicrues", 300),
         // WA all-hazard warnings: even a bad day runs to a few dozen; 300 is ample
         // headroom, and severity-sort keeps the Emergency Warnings on any overflow.
         (wa_warnings.0, wa_warnings.1, "wa_dfes", 300),
