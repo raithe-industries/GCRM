@@ -602,6 +602,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   documented as needing a stoplist, out of scope. Locked by
   `location_extraction_matches_stems_at_word_start_not_mid_token` (FAILS when `starts_word` reverts to
   `tl.contains`: Tirana→Iran re-appears). See improvement-log 2026-07-11.
+- [x] **1.23 Alliance coupler's HALF tier leaked from a Stable theater → a quiet world inflated the
+  headline** — **DONE 2026-07-11 (later).** The `STABLE_HEAT_CEILING` honesty floor comment and its
+  lock test both PROMISED "a Stable theater contributes EXACTLY ZERO to the alliance amplifier, or a
+  quiet world would silently inflate the headline" — but the alliance half tier gated on
+  `alliance_invoked` ALONE (no heat gate), so a Stable theater (heat < 0.06 — "nothing happening there
+  worth amplifying") with one treaty-consultation headline set `alliance_activation = 0.5`, lifting
+  `coupling_multiplier` to 1.15 and `l_sys`/P(WWIII) ~15% off a quiet world. The full tier already
+  gated on `heat ≥ HOT_HEAT`; the half tier must gate on `heat ≥ STABLE_HEAT_CEILING` (its own floor).
+  Extracted the tiering into one `alliance_activation_of` helper used by both `compute` (live P) and
+  `aggregate_core` (the LOO-sensitivity counterfactual) so they can't diverge, corrected both
+  misleading doc comments, and gave the toothless `quiet_theater_never_leaks_into_couplers` (which only
+  asserted the CONSTANT `HOT_HEAT > STABLE_HEAT_CEILING`, vacuously true under the bug) real teeth: it
+  now builds a Stable+alliance theater and asserts 0.0 (was 0.5), a Tension one → 0.5, a hot one → 1.0.
+  Four anchors bit-identical (backtest 25/25 — none has a Stable theater with a lone alliance invocation).
+  Locked by the strengthened test (FAILS when the half-tier gate reverts to `alliance_invoked` alone —
+  the Stable case re-leaks 0.5). See improvement-log 2026-07-11 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

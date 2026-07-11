@@ -54,11 +54,14 @@ const HOT_RAMP: f64 = 0.06;
 /// happening there worth amplifying. This is the honesty floor the systemic
 /// couplers must respect: a Stable theater must contribute EXACTLY ZERO to the
 /// concurrency / great-power-entanglement / alliance amplifiers, or a quiet world
-/// would silently inflate the headline. That holds today because the concurrency
-/// ramp's lower edge (HOT_HEAT − HOT_RAMP = 0.12) and the entanglement/alliance
-/// gate (heat ≥ HOT_HEAT = 0.18) both sit strictly above this ceiling — a
-/// relationship LOCKED by `quiet_theater_never_leaks_into_couplers` so a future
-/// recalibration of the ramp can't dishonestly let stable theaters leak.
+/// would silently inflate the headline. That holds because the concurrency ramp's
+/// lower edge (HOT_HEAT − HOT_RAMP = 0.12) and the great-power-entanglement gate
+/// (heat ≥ HOT_HEAT = 0.18) both sit strictly above this ceiling, and the alliance
+/// coupler's LOWEST (half) tier gates on heat ≥ this ceiling itself — so a Stable
+/// theater (heat strictly below it) enters none of them. LOCKED by
+/// `quiet_theater_never_leaks_into_couplers` so a future recalibration of the ramp —
+/// or a regression like the pre-fix alliance tier that gated on `alliance_invoked`
+/// alone and let a Stable theater leak +0.5 — can't dishonestly inflate a quiet world.
 const STABLE_HEAT_CEILING: f64 = 0.06;
 
 // ── Escalation-rung heat boundaries ──────────────────────────────────────────
@@ -123,9 +126,10 @@ pub const FORECAST_INDEX_CEILING: f64 = 95.0;
 pub const COUPLING_GP_WEIGHT: f64 = 0.45;
 
 /// Alliance-activation weight in the coupling multiplier: a mutual-defense invocation in a
-/// hot theater adds up to +30% (half that for an invocation in a non-hot theater). Below
-/// the GP weight — an alliance call is a strong escalator but a step short of great powers
-/// already directly entangled.
+/// hot theater adds up to +30% (half that for an invocation in a non-hot but ACTIVE theater —
+/// heat ≥ `STABLE_HEAT_CEILING`, i.e. at least Tension; a Stable theater contributes zero, per
+/// the honesty floor). Below the GP weight — an alliance call is a strong escalator but a step
+/// short of great powers already directly entangled.
 pub const COUPLING_ALLIANCE_WEIGHT: f64 = 0.30;
 
 /// Distinct great powers that must be directly entangled across hot theaters to SATURATE
@@ -283,6 +287,27 @@ pub fn aggregate_l_sys_fresh(states: &[TheaterState]) -> f64 {
     )
 }
 
+/// Alliance-activation coupler tier read off the board. FULL (1.0) when a mutual-defense
+/// invocation lands in a HOT theater (heat ≥ `HOT_HEAT`); HALF (0.5) for an invocation in a
+/// non-hot but ACTIVE theater (heat ≥ `STABLE_HEAT_CEILING`, i.e. at least Tension); ZERO
+/// otherwise. A Stable theater (heat strictly below the ceiling — nothing happening there worth
+/// amplifying) NEVER contributes, honoring the `STABLE_HEAT_CEILING` honesty floor: a quiet world
+/// with a stray treaty-consultation headline must not silently inflate the headline. The half tier
+/// previously gated on `alliance_invoked` ALONE, so a Stable theater leaked 0.5 into the coupling
+/// multiplier (a ~15% l_sys/P lift the floor comment claimed could not happen); the `≥ ceiling`
+/// gate closes that leak while keeping the intended half-weight for a genuinely-active non-hot
+/// front. Both `compute` (displayed heat) and `aggregate_core` (counterfactual heat basis) flow
+/// through this one tiering so they can never disagree.
+fn alliance_activation_of(states: &[TheaterState], heat_of: impl Fn(&TheaterState) -> f64) -> f64 {
+    if states.iter().any(|s| s.alliance_invoked && heat_of(s) >= HOT_HEAT) {
+        1.0
+    } else if states.iter().any(|s| s.alliance_invoked && heat_of(s) >= STABLE_HEAT_CEILING) {
+        0.5
+    } else {
+        0.0
+    }
+}
+
 /// Shared systemic-aggregation core: given a per-theater `heat_of` basis and an optional suppressed
 /// modality (which only zeroes the nuclear brink), rebuild concurrency, great-power entanglement,
 /// alliance activation and the nuclear brink and return `l_sys`. Both the displayed-basis
@@ -309,14 +334,9 @@ fn aggregate_core(
     }
     let gp_entanglement = (gp_set.len() as f64 / GP_ENTANGLEMENT_SATURATION).min(1.0);
 
-    // Alliance activation: any mutual-defense invocation, doubled in a hot theater.
-    let alliance_activation = if states.iter().any(|s| s.alliance_invoked && heat_of(s) >= HOT_HEAT) {
-        1.0
-    } else if states.iter().any(|s| s.alliance_invoked) {
-        0.5
-    } else {
-        0.0
-    };
+    // Alliance activation: a mutual-defense invocation, doubled in a hot theater, half in a
+    // non-hot but active one, ZERO in a Stable theater (the honesty floor — see the helper).
+    let alliance_activation = alliance_activation_of(states, &heat_of);
 
     // Hottest theater drives the base intensity.
     let max_heat = states.iter().map(&heat_of).fold(0.0_f64, f64::max);
@@ -678,14 +698,9 @@ impl TheaterEngine {
         }
         let gp_entanglement = (gp_set.len() as f64 / GP_ENTANGLEMENT_SATURATION).min(1.0);
 
-        // Alliance activation: any mutual-defense invocation in a hot theater.
-        let alliance_activation = if states.iter().any(|s| s.alliance_invoked && s.heat >= HOT_HEAT) {
-            1.0
-        } else if states.iter().any(|s| s.alliance_invoked) {
-            0.5
-        } else {
-            0.0
-        };
+        // Alliance activation: a mutual-defense invocation, doubled in a hot theater, half in a
+        // non-hot but active one, ZERO in a Stable theater (the honesty floor — see the helper).
+        let alliance_activation = alliance_activation_of(&states, |s| s.heat);
 
         // The hottest theater drives the headline index and the systemic-likelihood
         // base intensity.
@@ -1909,12 +1924,44 @@ mod tests {
             assert_eq!(c, 0.0, "stable heat {h} leaked {c} concurrency into the amplifier");
         }
 
-        // (3) Great-power entanglement and alliance activation both gate on
-        //     `heat >= HOT_HEAT`, which is strictly above the Stable ceiling — so a
-        //     stable theater can never enter either set.
+        // (3) Great-power entanglement gates on `heat >= HOT_HEAT`, strictly above the Stable
+        //     ceiling — so a stable theater can never enter that set.
         assert!(HOT_HEAT > STABLE_HEAT_CEILING,
-            "entanglement/alliance gate {} must stay above the Stable ceiling {}",
+            "entanglement gate {} must stay above the Stable ceiling {}",
             HOT_HEAT, STABLE_HEAT_CEILING);
+
+        // (4) The ALLIANCE amplifier is the one that used to leak: its full tier gates on
+        //     `heat >= HOT_HEAT`, but its HALF tier must gate on `heat >= STABLE_HEAT_CEILING`,
+        //     NOT on `alliance_invoked` alone. Exercise the live tiering (`alliance_activation_of`)
+        //     directly so the invariant is pinned on BEHAVIOUR, not on a constant relationship the
+        //     buggy `alliance_invoked`-only branch satisfied vacuously.
+        let mk = |heat: f64, alliance_invoked: bool| TheaterState {
+            theater_id: "t".into(), label: "T".into(),
+            rung: EscalationRung::Stable, rung_label: EscalationRung::Stable.label().into(),
+            heat, modality_scores: HashMap::new(), trend: "stable".into(), delta: 0.0,
+            event_count: 0, gp_involved: false, alliance_invoked, top_actors: vec![],
+            top_driver: String::new(), rising_driver: String::new(),
+            secondary_driver: String::new(), held_by_floor: false,
+            fresh_rung_label: EscalationRung::Stable.label().into(), escalation_momentum: 0.0,
+        };
+        // A Stable theater (heat below the ceiling) with a mutual-defense invocation contributes
+        // ZERO — the leak the honesty floor forbids. (Pre-fix this returned 0.5, lifting
+        // `coupling_multiplier` to 1.15 and inflating a quiet world's headline ~15%.)
+        assert_eq!(
+            alliance_activation_of(&[mk(STABLE_HEAT_CEILING - 1e-3, true)], |s| s.heat), 0.0,
+            "a Stable theater's alliance invocation must NOT leak into the coupler");
+        // The moment the theater is active (≥ Tension, at the ceiling) the intended half tier engages.
+        assert_eq!(
+            alliance_activation_of(&[mk(STABLE_HEAT_CEILING, true)], |s| s.heat), 0.5,
+            "a non-hot but active theater keeps the intended half alliance weight");
+        // A hot invocation is the full tier.
+        assert_eq!(
+            alliance_activation_of(&[mk(HOT_HEAT, true)], |s| s.heat), 1.0,
+            "a hot theater's alliance invocation is the full tier");
+        // No invocation → zero regardless of heat.
+        assert_eq!(
+            alliance_activation_of(&[mk(1.0, false)], |s| s.heat), 0.0,
+            "no invocation → no alliance activation");
     }
 
     #[test]
