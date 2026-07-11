@@ -1296,8 +1296,20 @@ impl NlpProcessor {
             "europe", "middle east", "asia pacific",
         ];
 
+        // Match each location stem at a WORD START, not as a bare substring. Substring matching
+        // (the sibling defect to 1.7/1.8/1.21, on the served WHERE) let a stem hide MID-token and
+        // phantom-tag the location/region: `iran`⊂`tirana` datelined a Balkans story to Iran,
+        // `china`⊂`indochina` tagged a SE-Asia history piece China, `syria`⊂`assyria` — each
+        // injecting a bogus front into the operator's `regions_active`. `starts_word` keeps every
+        // demonym/plural form the substring era caught (the stem is a word-start PREFIX:
+        // `iran`→`iranian`, `israel`→`israeli`, `pakistan`→`pakistani`, `india`→`indian`/`Sino-Indian`,
+        // multi-word `north korea`→`north koreans`) while dropping the mid-word hits — the same
+        // honest middle `score_domains` uses for `WORD_START_DOMAIN_KWS`. Residual `india`⊂`indiana`
+        // stays (a legit word-start prefix, not fixable by boundary alone — it needs a stoplist, not
+        // this change); it is rare and never mis-attributes a great-power theater (that keys off the
+        // already-boundary-aware `actor_ids`, not this display location).
         for candidate in &location_candidates {
-            if tl.contains(candidate) {
+            if starts_word(tl, candidate) {
                 let display = candidate
                     .split_whitespace()
                     .map(|w| {
@@ -1970,5 +1982,29 @@ mod tests {
         let event = proc.process(&article).unwrap();
         assert!(event.location.to_lowercase().contains("taiwan") ||
                 event.region.as_deref().unwrap_or("").contains("asia"));
+    }
+
+    #[test]
+    fn location_extraction_matches_stems_at_word_start_not_mid_token() {
+        // Sibling of the 1.7/1.8/1.21 substring→boundary honesty fixes, on the served WHERE.
+        // A bare-substring location stem hid MID-token and phantom-tagged the location/region
+        // (`iran`⊂`tirana`, `china`⊂`indochina`, `syria`⊂`assyria`), injecting a bogus front into
+        // the operator's `regions_active`. `starts_word` drops those mid-word hits.
+        let proc = NlpProcessor::new();
+        // Mid-token stems must NOT tag a location (no actor fallback here → honest empty).
+        let (loc, region) = proc.extract_location("tirana summit reshapes the balkans", &[]);
+        assert!(loc.is_empty() && region.is_none(),
+            "Tirana (Albania) must not phantom-tag Iran: got loc={loc:?} region={region:?}");
+        assert!(proc.extract_location("french indochina history revisited", &[]).0.is_empty(),
+            "Indochina must not phantom-tag China");
+        assert!(proc.extract_location("assyrian heritage site shelled", &[]).0.is_empty(),
+            "Assyria must not phantom-tag Syria");
+        // Word-start demonym/prefix forms the substring era caught must STILL match (no recall loss).
+        assert_eq!(proc.extract_location("iranian drones cross the gulf", &[]).0, "Iran",
+            "the `iranian` demonym must still resolve to Iran");
+        assert_eq!(proc.extract_location("israeli strike hits damascus", &[]).0, "Israel",
+            "the `israeli` demonym must still resolve to Israel");
+        assert_eq!(proc.extract_location("north korean missile test overnight", &[]).0, "North Korea",
+            "multi-word `north korea` must still match with a suffix");
     }
 }

@@ -586,6 +586,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `nuclear_cross_check_matches_actor_and_site_as_whole_words_not_substrings` (FAILS when `mentions`
   reverts to `text.contains`: `!mentions("rising tension across the indian ocean", "india")` panics).
   See improvement-log 2026-07-10.
+- [x] **1.22 Location stems substring-matched mid-token → phantom region on the served WHERE** —
+  **DONE 2026-07-11.** The fourth sibling of 1.7/1.8/1.21, on `extract_location` — the one actor/keyword
+  matcher left on bare substring. `tl.contains(candidate)` let a location stem hide MID-token and
+  phantom-tag the served location/region: `iran`⊂`tirana` datelined a Balkans story to Iran,
+  `china`⊂`indochina` tagged a SE-Asia piece China, `syria`⊂`assyria` — each injecting a bogus front
+  into the operator's `regions_active` (Step-4 metadata) and the event's displayed `location`/`region`.
+  Routed the stem match through the existing `starts_word` (the same word-START matcher `score_domains`
+  uses for `WORD_START_DOMAIN_KWS`): keeps every demonym/plural prefix the substring era caught
+  (`iran`→`iranian`, `israel`→`israeli`, `pakistan`→`pakistani`, `india`→`indian`/`Sino-Indian`,
+  multi-word `north korea`→`north koreans`) while dropping the mid-word hits. No recall loss (a real
+  location is never a mid-token occurrence); no calibration constant touched — the theater/great-power
+  attribution keys off the already-boundary-aware `actor_ids`, not this display location, so the four
+  anchors are bit-identical (backtest 25/25). Residual `india`⊂`indiana` (a legit word-start prefix)
+  documented as needing a stoplist, out of scope. Locked by
+  `location_extraction_matches_stems_at_word_start_not_mid_token` (FAILS when `starts_word` reverts to
+  `tl.contains`: Tirana→Iran re-appears). See improvement-log 2026-07-11.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

@@ -22,6 +22,52 @@ probe. Display-only/noop runs are capped (≤2 consecutive, ≤2 of any trailing
 
 ---
 
+## 2026-07-11 — honesty (ENGINE) — location stems match at a word START, not mid-token (the served WHERE stops phantom-tagging)
+- Item: roadmap 1.22 (the fourth sibling of the 1.7/1.8/1.21 substring→boundary honesty vein).
+- Diagnosis (pillar-1 HONESTY weakest): the last three substantive runs all found real contract-vs-code
+  honesty defects in the engine, and the operator directive (2026-07-09) closed the surface/feed/eyes
+  lanes to me and told me honesty lives in the NUMBER and the DATA. A grep of the actor/keyword matchers
+  found ONE path still on bare substring: `extract_location` (processor.rs:1300) filtered its country/
+  region stems with `tl.contains(candidate)`. So a stem hid MID-token and phantom-tagged the served
+  WHERE — `iran`⊂`tirana` datelined a Balkans story to Iran, `china`⊂`indochina` tagged a SE-Asia piece
+  China, `syria`⊂`assyria` — injecting a bogus front into the operator's `regions_active` (Step-4
+  metadata) and the event's displayed `location`/`region`. The sibling scorer paths were boundary-fixed
+  by 1.7/1.8/1.21; this served-data path was the last one leaking.
+- Change (behaviour-changing on served WHERE data; honesty firewall untouched): routed the stem match
+  through the existing `starts_word` (the word-START matcher `score_domains` already uses for
+  `WORD_START_DOMAIN_KWS`) instead of `tl.contains`. Word-start keeps every demonym/plural PREFIX the
+  substring era caught (`iran`→`iranian`, `israel`→`israeli`, `pakistan`→`pakistani`, `india`→`indian`/
+  `Sino-Indian`, multi-word `north korea`→`north koreans`) while dropping the mid-word hits — a strict
+  improvement, since a real location is never a mid-token occurrence (verified on a 10-case probe). The
+  residual `india`⊂`indiana` (a legit word-start prefix, not separable by boundary alone) is documented
+  in-code as needing a stoplist, out of scope for this change.
+- Metric moved: the served location/region no longer phantom-tags a front off a mid-word stem collision.
+  +1 test (615 → 616 passed). No calibration constant touched; the theater/great-power attribution keys
+  off the already-boundary-aware `actor_ids`, not this display location, so the four anchors are
+  bit-identical (`cargo test backtest` 25/25; calibration evidence Brier 0.00092 / in-band 4/4, unchanged).
+- Proof: `cargo build --release` clean. `cargo test --release` **616 passed / 0 failed / 5 ignored**.
+  `cargo clippy --release -p gcrm` — 0 warnings. Lock proven fails-without-change: reverting `starts_word`
+  → `tl.contains` (keeping the test) makes `location_extraction_matches_stems_at_word_start_not_mid_token`
+  FAIL (Tirana re-tags Iran → the `loc.is_empty()` assert panics); restored → 616 green.
+- Tier: T1 (engine-behavior — corrects WHICH location/region the served WHERE reports for a real class of
+  wire shapes, changing `event.location`/`event.region`/`regions_active`; a correctness/honesty fix on
+  served data, not a new annotation or surface — honest per the operator directive that honesty lives in
+  the DATA). Chosen because §6 new-source is the signal-hunter's lane, the I&W board + caveat family are
+  CLOSED, new dashboard surfaces + eyes checks are operator-frozen (2026-07-09 directive), fitted
+  constants are Robert-gated, and the suite was green (no failing/flaky test to fix first) — an engine
+  bug-hunt of the actor/keyword matchers found this as the one path still on bare substring. · Touched:
+  engine-behavior · Lock-fails-without-change: yes (Tirana→Iran revert panic proof above) · Counts: none
+  of Live-sources/Map-layers/Monitors moved (a correctness fix, not a new sight) · consecutive_display_only=0
+  (engine-behavior) · display_only_in_last_7=2 (the 2026-07-10-late provenance run + the 2026-07-09-late
+  eyes-gate run) · consecutive_noop=0 · noop_in_last_3=0
+- Notes future runs MUST respect: (1) `extract_location` now uses `starts_word`, matching `score_domains`;
+  do NOT "clean up" back to `tl.contains` — the lock pins Tirana↛Iran. (2) The demonym forms are kept by
+  DESIGN (word-start prefix), matching the actor extractor's documented "country stems catch adjective
+  forms" intent; word-start is the honest middle between substring (mid-word phantoms) and whole-word
+  (drops demonyms). (3) Residual `india`⊂`indiana` is a known, in-code-documented limitation — fixing it
+  needs a stoplist, not a matcher swap; it never touches great-power/theater attribution (that keys off
+  `actor_ids`). (4) This changes DISPLAY/awareness data (`regions_active`, `location`), never P.
+
 ## 2026-07-10 (later²) — honesty (ENGINE) — the escalation "decisive" bar is a STRICT mirror of the de-escalation gate, as its docs promise
 - Item: ad-hoc (correctness defect surfaced by an engine bug-hunt; a doc-contradicted `>=` vs strict `<`).
 - Diagnosis (pillar-1 HONESTY weakest): `escalation_coherence`/`escalation_breadth` (1.19/1.20) both
