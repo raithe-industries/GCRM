@@ -169,6 +169,31 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   keys is found. (The IPC `ipcinfo.org` API is the keyed alternative → would ship DORMANT; IPC also
   publishes GeoJSON to auth-free **HDX** `data.humdata.org` — a possible Path-B mirror if a stable
   per-region file + schema can be pinned.)
+- **Norway RADNETT gamma dose network** (DSA — Direktoratet for strålevern og atomsikkerhet) —
+  **STRONG deferral, verified 2026-07-12; blocked ONLY on endpoint/schema anchoring under the
+  total egress wall.** This is the **highest-value new radiation geography still open**: a
+  **NATO Arctic frontline** network on the doorstep of Russia's **Kola Peninsula** (Northern
+  Fleet SSBN bases, Andreyeva Bay/Zapadnaya Litsa nuclear infrastructure) — a first-order
+  WWIII-risk observable the DE/FI/FR trio (`odlinfo`/`stuk_radiation`/`teleray`) doesn't reach.
+  Clears the six-point bar on the merits: **authoritative** (DSA, the national radiation & nuclear
+  safety authority), **auth-free** (open data, `radnett.dsa.no` published hourly; also registered on
+  Geonorge as *"RADNETT — doseratemålestasjoner"*, record `e379ef5e-8851-4305-b900-44a4587cf14c`,
+  under Kartverket's free WMS/WFS/GeoJSON services), **geocoded** (33 fixed stations nationwide),
+  **fresh** (updated once per hour, last-24h + monthly/yearly series), **signal-meaningful** (dose
+  rate in **µSv/h** — the *universal natural-background baseline* argument that let `odlinfo`/`stuk`/
+  `teleray` in, so an elevation is interpretable without a per-station table; NOT the ECCC-hydrometric
+  nonsense-number trap), **non-duplicative** (new authority + new geography; the drop-the-all-clear
+  pattern gives 0 events in healthy peacetime). **The one unmet requirement:** anchor the live data
+  endpoint URL + wire schema. Under this run's *total* egress wall — `radnett.dsa.no`, the Geonorge
+  record host, **and even the plain non-WAF `opendata.fmi.fi`** all 403 web fetch — the live endpoint
+  can't be inspected, and no committed GitHub consumer quoting RADNETT's data URL + field schema
+  surfaced (unlike the `bundesAPI`/`StukFi`/`kalisio` anchors the DE/FI/FR connectors used). **Landable
+  next run** if EITHER a `raw.githubusercontent.com` client/fixture quoting the endpoint + schema
+  surfaces, OR the Geonorge WFS `GetCapabilities`/`GetFeature` (or `radnett.dsa.no`'s backing
+  JSON/GeoJSON) becomes web fetch-reachable (200) to confirm the feature type carries live per-station
+  dose VALUES (not just station locations — the open question a bare `doseratemålestasjoner` catalog
+  layer raises). (Supersedes the vague 2026-07-07 "RADNETT found on Geonorge" note with a concrete
+  landable spec.)
 
 ---
 
@@ -404,6 +429,34 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-12 (Signal Hunter, later run)** — **HONEST NO-OP — top gaps re-confirmed walled; two
+  candidates newly evaluated (one strong DEFERRED recorded, one REJECTED), egress wall re-confirmed
+  total.** Re-ran the ranked triage and pushed two fresh leads to a verdict rather than repeat the
+  earlier entry: (a) **`acled_aggregated` refresh** (top action — snapshot newest `WEEK` `2026-03-07`,
+  now ~127 d stale, layer honestly dark): re-verified unreachable — `acleddata.com`, `data.humdata.org`
+  (web UI **and** the CKAN `api/3/action/package_search`) all 403; every download is **myACLED
+  login-gated** and the license forbids redistribution, so **no auth-free copy and no fresh 2026
+  weekly-aggregate mirror on GitHub-raw** exists (the ACLED GitHub tooling — `acledR`,
+  `blazeiburgess/acled`, PyPI `acled` — are *keyed API clients*, not committed data). Remains the
+  documented **local re-download job**; no honest in-sandbox re-commit possible. (b) **Norway RADNETT**
+  (DSA gamma dose network — Arctic/Kola, highest-value new radiation geography) — **evaluated to a
+  STRONG DEFERRED** (see DEFERRED section): clears the six-point bar on the merits (DSA-authoritative,
+  auth-free hourly, 33 geocoded stations, **µSv/h** so signal-meaningful, non-duplicative NATO-frontline
+  geography), blocked ONLY on anchoring the live endpoint URL + schema — `radnett.dsa.no` + the Geonorge
+  record host both 403 and no committed GitHub client quotes RADNETT's data URL/fields. (c) **US EPA
+  RadNet** (Envirofacts REST, `USEPA/XCode-RadNet-Sample-Envirofacts-API` client exists to anchor) —
+  **REJECTED on signal-meaningfulness:** RadNet's near-real-time product is raw **gamma gross count
+  rate (cpm)**, not dose rate — no universal baseline across detectors/geology, so a plotted count is
+  exactly the ECCC-hydrometric "nonsense number" the rule forbids (do not re-chase without a precomputed
+  per-monitor baseline). (d) **Japan NRA RAMDAS** (Asian-theatre radiation) — unchanged: no confirmable
+  auth-free machine-readable geocoded endpoint, no anchorable GitHub client. (e) **Military-posture /
+  maritime-security / global NOTAM** — unchanged, all walled (NGA `broadcast-warn` WAF-session-only,
+  FAA/ICAO NOTAM keyed, ReCAAP/IMB/ONI website-PDF/unverified). **Egress reality re-confirmed TOTAL this
+  run:** even the plain non-WAF `opendata.fmi.fi` WFS (which `stuk_radiation` fetches live in prod) 403s
+  web fetch — so Path-A live-verification is impossible and only `raw.githubusercontent.com` anchoring can
+  land a feed. Deliberately did **not** half-wire an off-mission duplicate or fabricate ACLED bytes.
+  **No code touched; tree left clean; ledger-only.** Next run: land Norway RADNETT if a GitHub-raw client
+  or a web fetch-200 endpoint surfaces; ACLED restores only via the local re-download job.
 - **2026-07-12 (Signal Hunter)** — **HONEST NO-OP — the four top-ranked mission gaps re-evaluated,
   all re-confirmed walled by the standing egress wall + no anchorable auth-free source; one
   incremental finding recorded.** Reachability unchanged: web fetch reaches only
