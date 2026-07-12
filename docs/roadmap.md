@@ -653,6 +653,21 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `templated_brief_lists_an_override_elevated_theater_below_the_heat_boundary` (FAILS without the fix —
   reverting the filter to `heat >= 0.18` drops the heat-0.10 Systemic-rung theater from the list).
   See improvement-log 2026-07-12.
+- [x] **1.26 Calibration evidence was direction-BLIND — a uniform upward bias hid behind the Brier/RMSE**
+  — **DONE 2026-07-12 (later).** The methodology-page calibration readout reported only Brier
+  (0.00092), RMSE (3.04pp), and 4/4-in-band — all MAGNITUDE reads that square the error and cannot say
+  WHICH WAY the model is biased. In fact the live model over-states at EVERY anchor (quiet +0.62pp,
+  Ukraine +4.24pp, current +0.01pp, Cuba +4.30pp → mean signed error **+2.29pp, unanimous 4/4**), a
+  uniform lean the direction-blind aggregate concealed while presenting the calibration as near-perfect.
+  Added the calibration-in-the-large: `signed_bias` (mean model−anchor error) + `unanimous` (every anchor
+  errs the same way) on `CalibrationEvidence`, surfaced as a directional sentence on the methodology
+  fragment ("the model over-states risk … at every one of the 4 anchors") and in the
+  `calibration_evidence_report` readout. Diagnostic/evidence only — never feeds P, touches no fitted
+  constant; the four anchors are bit-identical (backtest 26/26). Grep-proven the signed-bias/over-states
+  state was on ZERO prior surfaces. Locked by `calibration_evidence_reports_the_signed_directional_bias`
+  (identity vs the per-anchor deltas + the live-unanimous-upward fact + an all-negative set reads
+  under-stating + a symmetric set nets to zero; FAILS when the html direction clause is neutered).
+  See improvement-log 2026-07-12 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

@@ -694,17 +694,37 @@ fn cross_entropy(pairs: &[(f64, f64)]) -> f64 {
 }
 
 /// Aggregate calibration evidence for the live model against the anchored analogs.
-struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize }
+/// `signed_bias`/`unanimous` are the DIRECTIONAL companion to the direction-blind
+/// magnitude reads (`brier`/`rmse`): whether the model systematically over- or
+/// under-states risk across the anchored scale (calibration-in-the-large), and whether
+/// every anchor errs the SAME way (a uniform bias, sharper evidence than the mean alone).
+struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize, signed_bias: f64, unanimous: bool }
+
+/// Mean SIGNED error (model − anchor) of the (prediction, target) pairs — the
+/// calibration-in-the-large. Unlike Brier/RMSE (which square the error and so are blind to
+/// direction), the sign says WHICH WAY the model is biased: positive = over-states risk,
+/// negative = under-states. Empty → 0.0.
+fn signed_bias(pairs: &[(f64, f64)]) -> f64 {
+    if pairs.is_empty() { return 0.0; }
+    pairs.iter().map(|(p, t)| p - t).sum::<f64>() / pairs.len() as f64
+}
 
 fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
     let anchors = calibration_anchors();
     let pairs: Vec<(f64, f64)> = anchors.iter().map(|a| (a.p, a.centre)).collect();
     let brier = brier_score(&pairs);
+    let bias = signed_bias(&pairs);
+    // Unanimous = every anchor errs the same way (all ≥ centre or all ≤ centre). A uniform
+    // directional miss is stronger evidence of a real bias than a mean that could net out
+    // opposite-signed errors — the direction-blind aggregate cannot show it at all.
+    let unanimous = anchors.iter().all(|a| a.p >= a.centre) || anchors.iter().all(|a| a.p <= a.centre);
     let ev = CalibrationEvidence {
         brier,
         rmse: brier.sqrt(),
         in_band: anchors.iter().filter(|a| a.p >= a.lo && a.p <= a.hi).count(),
         n: anchors.len(),
+        signed_bias: bias,
+        unanimous,
     };
     (ev, anchors)
 }
@@ -729,12 +749,25 @@ pub fn calibration_evidence_html() -> String {
             "<tr><td>{}</td><td>{:.2}%</td><td>~{:.0}%</td><td>{:+.2}pp</td></tr>",
             label(a.name), a.p * 100.0, a.centre * 100.0, (a.p - a.centre) * 100.0));
     }
+    // Directional read: Brier/RMSE square the error, so they cannot say WHICH WAY the model
+    // is biased — a good Brier is fully consistent with the model erring the SAME way at every
+    // anchor. State the calibration-in-the-large so a uniform lean is not hidden behind the
+    // magnitude score. eps below display rounding → "neither over- nor under-states".
+    let dir = if ev.signed_bias > 0.00005 { "over-states" }
+              else if ev.signed_bias < -0.00005 { "under-states" }
+              else { "neither over- nor under-states" };
+    let uni = if ev.unanimous { format!(" &mdash; and does so at every one of the {} anchors (a uniform lean, not opposite errors netting out)", ev.n) }
+              else { String::new() };
     format!(
         "<table><tr><th>Analog</th><th>Model P (annualized)</th><th>Anchor</th><th>&Delta;</th></tr>{rows}</table>\n\
          <p>Aggregate fidelity vs the anchored centres: <b>Brier {:.6}</b> &middot; <b>RMSE {:.2}pp</b> &middot; \
          <b>{}/{} within band</b> &mdash; computed live from the running model at startup with proper scoring \
-         rules (0 is a perfect match to the anchors; lower is better).</p>",
-        ev.brier, ev.rmse * 100.0, ev.in_band, ev.n)
+         rules (0 is a perfect match to the anchors; lower is better).</p>\n\
+         <p>Directional calibration (calibration-in-the-large): mean signed error <b>{:+.2}pp</b> &mdash; the model \
+         <b>{}</b> risk relative to the anchored centres{}. Brier and RMSE measure only the MAGNITUDE of the miss \
+         and are blind to its sign; this is the direction the operator should read the headline with.</p>",
+        ev.brier, ev.rmse * 100.0, ev.in_band, ev.n,
+        ev.signed_bias * 100.0, dir, uni)
 }
 
 /// The live model's annualized P (as a percentage) for a named calibration analog —
@@ -829,11 +862,48 @@ fn calibration_evidence_report() {
             a.lo * 100.0, a.hi * 100.0, inb);
     }
     let xe = cross_entropy(&anchors.iter().map(|a| (a.p, a.centre)).collect::<Vec<_>>());
-    eprintln!("aggregate: Brier={:.5}  RMSE={:.2}pp  cross-entropy={:.4}  in-band={}/{}\n",
+    eprintln!("aggregate: Brier={:.5}  RMSE={:.2}pp  cross-entropy={:.4}  in-band={}/{}",
         ev.brier, ev.rmse * 100.0, xe, ev.in_band, ev.n);
+    eprintln!("direction: signed-bias={:+.2}pp  ({}, {})\n",
+        ev.signed_bias * 100.0,
+        if ev.signed_bias > 0.0 { "over-states" } else if ev.signed_bias < 0.0 { "under-states" } else { "unbiased" },
+        if ev.unanimous { "uniform across all anchors" } else { "mixed direction" });
 
     // Robust invariants only — evidence, not a brittle trip-wire.
     assert_eq!(ev.in_band, ev.n, "all anchored analogs must land in their target band");
     // Loose sanity ceiling: cannot fail while in-band, documents the metric's scale.
     assert!(ev.brier < 0.03, "calibration Brier unexpectedly high: {:.5}", ev.brier);
+}
+
+/// The Brier/RMSE aggregate is direction-BLIND (it squares the error), yet the live model
+/// currently errs UPWARD at every anchor — a uniform +bias a magnitude-only readout hides.
+/// This locks the calibration-in-the-large diagnostic that surfaces it: the sign is computed,
+/// equals the mean of the per-anchor deltas the table already shows, and reaches the
+/// methodology fragment with the right direction. (Fails-without: reverting the diagnostic
+/// drops `signed_bias`/the html clause and this stops compiling / asserting.)
+#[test]
+fn calibration_evidence_reports_the_signed_directional_bias() {
+    let (ev, anchors) = calibration_evidence();
+    // Identity: signed_bias IS the mean of the per-anchor signed errors the table renders.
+    let mean_err = anchors.iter().map(|a| a.p - a.centre).sum::<f64>() / anchors.len() as f64;
+    assert!((ev.signed_bias - mean_err).abs() < 1e-12,
+        "signed_bias must equal the mean per-anchor signed error, got {:+.6} vs {:+.6}",
+        ev.signed_bias, mean_err);
+    // The live model over-states at EVERY anchor right now — the exact hidden pattern this
+    // diagnostic exists to surface (a >0 mean that a direction-blind score cannot express).
+    assert!(ev.signed_bias > 0.0, "expected a positive (over-stating) live bias, got {:+.4}", ev.signed_bias);
+    assert!(anchors.iter().all(|a| a.p >= a.centre), "every live anchor currently errs upward");
+    assert!(ev.unanimous, "a uniform upward miss must read as unanimous");
+    // The methodology fragment must STATE the direction, not just the magnitude.
+    let html = calibration_evidence_html();
+    assert!(html.contains("calibration-in-the-large") && html.contains("over-states"),
+        "the calibration evidence fragment must state the over-stating directional bias");
+    // Discrimination (fails-without): an all-NEGATIVE-error set is UNDER-stating — a sign a
+    // squared/absolute magnitude measure could never tell apart from over-stating.
+    let neg = [(0.10, 0.20), (0.30, 0.45), (0.50, 0.60)];
+    assert!(signed_bias(&neg) < 0.0, "all-negative errors → an under-stating (negative) bias");
+    // A symmetric set nets to ~0 while its magnitude is large — bias and Brier are orthogonal.
+    let sym = [(0.10, 0.20), (0.30, 0.20)];
+    assert!(signed_bias(&sym).abs() < 1e-12, "opposite-signed errors net to zero bias");
+    assert!(signed_bias(&[]) == 0.0, "empty → 0.0");
 }
