@@ -443,18 +443,7 @@ impl SeismicMonitor {
             {
                 let now = Utc::now();
                 let mut alerts = monitor.state.nuclear_alerts.lock().await;
-                alerts.retain(|a| {
-                    // Aftershock sequence detected → natural earthquake, not a test.
-                    if a.aftershock_checked && a.aftershock_count > 0 { return false; }
-                    // Single-network anomaly that never corroborated → expire after 24h.
-                    if a.level == SeismicAlertLevel::Anomaly
-                        && (now - a.detected_at) > chrono::Duration::hours(24) {
-                        return false;
-                    }
-                    // Escalated alerts persist longer but still expire after 7 days.
-                    if (now - a.detected_at) > chrono::Duration::days(7) { return false; }
-                    true
-                });
+                alerts.retain(|a| alert_should_retain(a, now));
             }
         }
     }
@@ -722,6 +711,29 @@ async fn check_aftershocks(
 /// is background seismicity, not a sequence, so it must not clear an explosion-consistent
 /// anomaly. (audit detector-3)
 const AFTERSHOCK_SEQUENCE_MIN: usize = 2;
+
+/// Whether a live nuclear-seismic alert should be RETAINED on the board (true) or pruned
+/// (false) at wall-clock `now`. This is the SAME natural-earthquake boundary `check_aftershocks`
+/// enforces: a real aftershock SEQUENCE (≥ `AFTERSHOCK_SEQUENCE_MIN` nearby M≥2.5 events) marks a
+/// tectonic source → prune; a SINGLE coincidental nearby quake is background seismicity, NOT a
+/// sequence, and must not clear an explosion-consistent anomaly. The prune previously used a bare
+/// `aftershock_count > 0`, which deleted the exact `count == 1` alert `check_aftershocks`
+/// deliberately KEEPS as ambiguous — resurrecting, one poll later, the false-calm bias
+/// detector-3 removed (and, for a CTBTO-confirmed within-radius event carrying count==1, silently
+/// flipping the served `seismic_test_consistent` I&W light true→false). Keyed on the named
+/// constant so the two paths can never drift again. (audit detector-3)
+fn alert_should_retain(a: &SeismicAlert, now: DateTime<Utc>) -> bool {
+    // Aftershock SEQUENCE detected → natural earthquake, not a test.
+    if a.aftershock_checked && a.aftershock_count >= AFTERSHOCK_SEQUENCE_MIN { return false; }
+    // Single-network anomaly that never corroborated → expire after 24h.
+    if a.level == SeismicAlertLevel::Anomaly
+        && (now - a.detected_at) > chrono::Duration::hours(24) {
+        return false;
+    }
+    // Escalated alerts persist longer but still expire after 7 days.
+    if (now - a.detected_at) > chrono::Duration::days(7) { return false; }
+    true
+}
 
 impl SeismicMonitor {
     fn build_description_static(a: &SeismicAlert) -> String {
@@ -1194,6 +1206,53 @@ mod tests {
         let mut ctbto = make_alert(8.0, 5.0, 90.0, 2);
         ctbto.level = SeismicAlertLevel::CtbtoStatement;
         assert!(ctbto.is_test_consistent(), "a CTBTO statement inside the radius qualifies");
+    }
+
+    #[test]
+    fn prune_keeps_a_single_aftershock_alert_but_clears_a_real_sequence() {
+        // detector-3 boundary, enforced in the board-PRUNE path too (not only check_aftershocks):
+        // a SINGLE coincidental nearby quake is background seismicity, not a sequence, and must NOT
+        // delete an explosion-consistent anomaly. The prune previously used a bare `> 0`, which one
+        // poll later deleted the exact count==1 alert check_aftershocks deliberately KEEPS as
+        // ambiguous — resurrecting the false-calm bias detector-3 removed. Lock the aligned
+        // `>= AFTERSHOCK_SEQUENCE_MIN` boundary shared by both paths.
+        let now = Utc::now();
+
+        // count == 1, checked → ambiguous, must be RETAINED (the case the old `> 0` wrongly pruned).
+        let mut single = make_alert(1.0, 5.0, 30.0, 3);
+        single.aftershock_checked = true;
+        single.aftershock_count   = 1;
+        assert!(alert_should_retain(&single, now),
+            "a single coincidental aftershock is background, not a sequence — must be retained");
+
+        // count >= AFTERSHOCK_SEQUENCE_MIN → real Omori sequence, natural source → prune.
+        let mut sequence = make_alert(1.0, 5.0, 30.0, 3);
+        sequence.aftershock_checked = true;
+        sequence.aftershock_count   = AFTERSHOCK_SEQUENCE_MIN;
+        assert!(!alert_should_retain(&sequence, now),
+            "a real aftershock sequence marks a tectonic source — must be pruned");
+
+        // A CTBTO-confirmed within-radius alert carrying count==1 stays test-consistent AND retained
+        // — the served `seismic_test_consistent` light must not flip dark on one background quake.
+        let mut ctbto = make_alert(8.0, 5.0, 90.0, 2);
+        ctbto.level = SeismicAlertLevel::CtbtoStatement;
+        ctbto.aftershock_checked = true;
+        ctbto.aftershock_count   = 1;
+        assert!(ctbto.is_test_consistent(), "CTBTO within-radius is explosion-consistent");
+        assert!(alert_should_retain(&ctbto, now),
+            "a single background quake must not prune a CTBTO-confirmed explosion-consistent alert");
+
+        // Regression guard: the age-based expiries still fire.
+        let mut stale_anomaly = make_alert(1.0, 5.0, 30.0, 1);
+        stale_anomaly.level = SeismicAlertLevel::Anomaly;
+        stale_anomaly.detected_at = now - chrono::Duration::hours(25);
+        assert!(!alert_should_retain(&stale_anomaly, now),
+            "an uncorroborated Anomaly older than 24h still expires");
+        let mut ancient = make_alert(1.0, 5.0, 30.0, 3);
+        ancient.level = SeismicAlertLevel::AftershockAbsent;
+        ancient.detected_at = now - chrono::Duration::days(8);
+        assert!(!alert_should_retain(&ancient, now),
+            "any alert older than 7d still expires");
     }
 
     #[test]

@@ -668,6 +668,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (identity vs the per-anchor deltas + the live-unanimous-upward fact + an all-negative set reads
   under-stating + a symmetric set nets to zero; FAILS when the html direction clause is neutered).
   See improvement-log 2026-07-12 (later).
+- [x] **1.27 The seismic alert-PRUNE resurrected the false-calm bias detector-3 removed — a single
+  background quake deleted an explosion-consistent anomaly one poll later** — **DONE 2026-07-12 (later²).**
+  `check_aftershocks` was correctly fixed under audit detector-3 to clear an alert only on a real
+  aftershock SEQUENCE (`>= AFTERSHOCK_SEQUENCE_MIN = 2` nearby M≥2.5), and to KEEP the ambiguous
+  `count == 1` case ("Do NOT clear — leave the level as-is"). But the SEPARATE board-prune loop in
+  `SeismicMonitor::run` (detector.rs) still deleted any checked alert with `aftershock_count > 0` — so a
+  shallow within-radius M≥4.5 event with exactly ONE coincidental background quake, which
+  `check_aftershocks` deliberately kept, was silently pruned from the dashboard on the very next 60 s
+  poll. For a CTBTO-confirmed within-radius event carrying `count == 1` this also flipped the served
+  `seismic_test_consistent` I&W light true→false — a false calm on the strongest physical nuclear
+  indicator. Extracted the prune predicate into `alert_should_retain(a, now)` keyed on the named
+  `AFTERSHOCK_SEQUENCE_MIN` (so the prune and `check_aftershocks` can never drift again) and aligned the
+  boundary to `>= AFTERSHOCK_SEQUENCE_MIN`. Engine-behavior; touches no fitted constant, does not feed P
+  (the seismic light is board-only). Locked by `prune_keeps_a_single_aftershock_alert_but_clears_a_real_
+  sequence` (retains count==1 incl. the CTBTO case, prunes count>=2, age-expiries still fire; FAILS when
+  the boundary is reverted to `> 0` — count==1 alert wrongly pruned). See improvement-log 2026-07-12 (later²).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
