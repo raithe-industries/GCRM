@@ -404,6 +404,35 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-12 (Signal Hunter)** — **HONEST NO-OP — the four top-ranked mission gaps re-evaluated,
+  all re-confirmed walled by the standing egress wall + no anchorable auth-free source; one
+  incremental finding recorded.** Reachability unchanged: web fetch reaches only
+  `raw.githubusercontent.com`; every live gov/OSINT host 403s (control-confirmed this run on
+  `acleddata.com`, `data.humdata.org`, `fdw.fews.net`, `help.fews.net`, `data.go.kr`,
+  `en.wikipedia.org`), and GitHub *code-search* is out of session scope, so external schemas can be
+  anchored only via a known `raw.githubusercontent.com` fixture. Ranked triage:
+  (a) **Conflict-freshness / `acled_aggregated` refresh** (top action — snapshot newest `WEEK`
+  `2026-03-07`, now **~127 d stale**, past `MAX_ROW_AGE_DAYS=42`, so the ACLED intensity layer is
+  honestly **dark**): a fresh admin1-centroid aggregate is unreachable — `acleddata.com` download is
+  registration-gated ("available to all registered users"), HDX org page 403s and its ACLED datasets
+  are country-level (no `ADMIN1`/`CENTROID_*` schema), and a targeted search found **no fresh 2026
+  weekly-aggregate mirror on GitHub-raw** → no honest re-commit possible in-sandbox; the documented
+  **local/manual re-download job** is the only path (unchanged from 2026-07-08…11). (b) **Radiation
+  Asian-theatre extension** (highest achievable WWIII signal — DPRK/China/Fukushima): **Japan NRA
+  RAMDAS** (`radioactivity.nra.go.jp`) is authoritative + real-time but exposes **no confirmable
+  auth-free machine-readable geocoded endpoint and no committed GitHub client to anchor the schema** →
+  unanchorable (unchanged). **Korea KINS IERNet** — sharpened this run: its `data.go.kr` OpenAPI
+  (dataset 15125092; also the Busan real-time set 15004511) is **serviceKey-gated** (registration) →
+  would ship **DORMANT**, and the schema/geocoding is unconfirmable (`data.go.kr` 403s web fetch) →
+  deferred, key-free preferred. (c) **FEWS NET / IPC food-insecurity** (STRONG deferred) —
+  `fdw.fews.net/api/ipcphasemap/?format=geojson` **and** `help.fews.net` both 403 again; no committed
+  `ipcphasemap` GeoJSON sample on GitHub-raw → still unanchorable (unchanged). (d)
+  **Maritime-security incident** + **global airspace/NOTAM** + **military-posture observables** —
+  unchanged (ASAM dead / ReCAAP-IMB-ONI walled; NOTAM APIs keyed/commercial; no authoritative
+  auth-free geocoded exercise/mobilization/closure feed). Deliberately did **not** half-wire an
+  off-mission duplicate or fabricate ACLED figures to look busy. **No code touched; tree left clean;
+  ledger-only.** Next run: the ACLED layer restores only when the local re-download job runs; the top
+  in-sandbox-landable priorities remain a web fetch-reachable Iceland IMO ACC feed or FEWS NET IPC.
 - **2026-07-11 (Signal Hunter, later run)** — **ADOPTED `vigicrues` (Vigicrues / SCHAPI France
   national flood-vigilance levels) — Path A, anchored to committed GitHub bytes.** Re-calibrated
   the egress wall first (control probes): web fetch reaches ONLY `raw.githubusercontent.com` (→ real
