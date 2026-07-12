@@ -22,7 +22,7 @@ use tracing::{info, warn};
 
 use crate::aggregator::SharedState;
 use crate::llm_enricher::LlmEnricher;
-use crate::models::LlmSettings;
+use crate::models::{EscalationRung, LlmSettings};
 
 /// How often the brief is regenerated.
 const BRIEF_INTERVAL_SECS: u64 = 300; // 5 minutes
@@ -72,6 +72,21 @@ fn theaters_sorted(snap: &Value) -> Vec<&Value> {
     let mut ts: Vec<&Value> = snap.get("theaters").and_then(|v| v.as_array()).map(|a| a.iter().collect()).unwrap_or_default();
     ts.sort_by(|a, b| f(b, "/heat").partial_cmp(&f(a, "/heat")).unwrap_or(std::cmp::Ordering::Equal));
     ts
+}
+
+/// The authoritative escalation-rung level (0..5) of a serialized theater, read from the
+/// engine's own `/rung` field — the SAME rung the board renders — so the brief can never
+/// disagree with the board about how elevated a theater is. Crucially this respects the
+/// rung OVERRIDES (`rung_for`: a chemical/bio attack floors a theater at Limited War, a
+/// confirmed nuclear detonation forces Systemic) which raise the rung independently of
+/// `heat`: a nuclear-use theater can sit at heat well below the Crisis heat boundary yet be
+/// the apex front, so filtering on raw heat would silently drop it. Missing/unknown rung →
+/// level 0 (Stable), the fail-safe that leaves such a theater out of the elevated list.
+fn theater_rung_level(t: &Value) -> u8 {
+    t.get("rung").cloned()
+        .and_then(|v| serde_json::from_value::<EscalationRung>(v).ok())
+        .map(|r| r.level())
+        .unwrap_or(0)
 }
 
 /// The model's own one-line account of WHICH coupling channel is turning a regional
@@ -149,8 +164,21 @@ fn templated_brief(snap: &Value) -> String {
     let driver = s(snap, "/systemic/driver");
     let coupling_driver = s(snap, "/couplers/coupling_driver");
 
-    let hot: Vec<String> = theaters_sorted(snap).into_iter()
-        .filter(|t| f(t, "/heat") >= 0.18)
+    // "Elevated" is judged by the AUTHORITATIVE rung (Crisis+), not a raw-heat proxy. The old
+    // `heat >= 0.18` cut was an un-named duplicate of the engine's Tension→Crisis heat boundary
+    // (HOT_HEAT), and — being on raw heat — it silently dropped the two rung OVERRIDES: a
+    // chemical/bio attack (floored at Limited War) and a confirmed nuclear detonation (forced to
+    // Systemic) can sit below that heat while being the most dangerous front on the board. Keying
+    // off `rung` includes exactly the same heat-driven theaters (rung ≥ Crisis ⇔ heat ≥ HOT_HEAT)
+    // and additionally the override-elevated ones, so the fallback brief can no longer omit a
+    // nuclear-war theater the board is flagging. Ordered rung-first (then heat) so the apex front
+    // leads even when its heat is low — a Systemic theater must never be buried below a Crisis one.
+    let mut hot_ts: Vec<&Value> = theaters_sorted(snap).into_iter()
+        .filter(|t| theater_rung_level(t) >= EscalationRung::Crisis.level())
+        .collect();
+    hot_ts.sort_by(|a, b| theater_rung_level(b).cmp(&theater_rung_level(a))
+        .then(f(b, "/heat").partial_cmp(&f(a, "/heat")).unwrap_or(std::cmp::Ordering::Equal)));
+    let hot: Vec<String> = hot_ts.into_iter()
         .map(|t| format!("{} ({})", s(t, "/label"), s(t, "/rung_label")))
         .collect();
 
@@ -198,9 +226,9 @@ mod tests {
             "alert": { "level": "critical" },
             "couplers": { "gp_entanglement": 1.0, "concurrency": 3.0, "alliance_activation": 0.0, "guardrail_collapse": 1.0, "coupling_driver": "great-power entanglement" },
             "theaters": [
-                { "label": "US/Israel–Iran", "rung_label": "Great-Power War", "heat": 0.83, "trend": "rising", "top_actors": ["united_states","iran"] },
-                { "label": "NATO–Russia",    "rung_label": "Great-Power War", "heat": 0.77, "trend": "stable", "top_actors": ["russia","ukraine"] },
-                { "label": "Korean Peninsula","rung_label": "Stable",          "heat": 0.01, "trend": "stable", "top_actors": [] }
+                { "label": "US/Israel–Iran", "rung": "great_power_war", "rung_label": "Great-Power War", "heat": 0.83, "trend": "rising", "top_actors": ["united_states","iran"] },
+                { "label": "NATO–Russia",    "rung": "great_power_war", "rung_label": "Great-Power War", "heat": 0.77, "trend": "stable", "top_actors": ["russia","ukraine"] },
+                { "label": "Korean Peninsula","rung": "stable",          "rung_label": "Stable",          "heat": 0.01, "trend": "stable", "top_actors": [] }
             ]
         })
     }
@@ -221,6 +249,36 @@ mod tests {
         assert!(b.contains("76/100"));
         assert!(b.contains("US/Israel–Iran"));
         assert!(!b.contains("Korean Peninsula"), "stable theater should not be listed as elevated");
+    }
+
+    #[test]
+    fn templated_brief_lists_an_override_elevated_theater_below_the_heat_boundary() {
+        // HONESTY/AWARENESS lock: the "elevated theaters" filter must key off the AUTHORITATIVE
+        // rung, not raw heat. `rung_for` floors a chemical/bio attack at Limited War and forces a
+        // confirmed nuclear detonation to Systemic REGARDLESS of heat — so such a theater can sit
+        // below the Tension→Crisis heat boundary (0.18) yet be the apex front. The pre-fix filter
+        // `heat >= 0.18` silently DROPPED it, so the LLM-offline fallback brief could omit a
+        // nuclear-war theater the board was flagging. Construct exactly that: a nuclear-use theater
+        // at heat 0.10 (Systemic rung) plus a conventional Crisis theater and a Stable one.
+        let mut snap = sample();
+        snap["theaters"] = json!([
+            { "label": "US/Israel–Iran", "rung": "crisis",  "rung_label": "Crisis",      "heat": 0.40, "trend": "rising", "top_actors": ["united_states","iran"] },
+            { "label": "Kashmir LoC",    "rung": "systemic", "rung_label": "Systemic War","heat": 0.10, "trend": "rising", "top_actors": ["india","pakistan"] },
+            { "label": "Korean Peninsula","rung": "stable",  "rung_label": "Stable",      "heat": 0.03, "trend": "stable", "top_actors": [] }
+        ]);
+        let b = templated_brief(&snap);
+        // (1) The nuclear-use Systemic theater is LISTED even though heat 0.10 < 0.18 — the defect.
+        assert!(b.contains("Kashmir LoC (Systemic War)"),
+            "an override-elevated (nuclear-use → Systemic) theater below the heat boundary must \
+             still be named as elevated, got:\n{b}");
+        // (2) It LEADS the elevated list (rung-first ordering): the apex front must not be buried
+        //     below a merely-hotter conventional Crisis.
+        assert!(b.contains("Kashmir LoC (Systemic War); US/Israel–Iran (Crisis)"),
+            "the most severe rung must lead the elevated list regardless of heat, got:\n{b}");
+        // (3) The Stable theater is still excluded — the fix widens by RUNG, not by dropping the
+        //     hot-only discipline.
+        assert!(!b.contains("Korean Peninsula"),
+            "a Stable theater must remain excluded from the elevated list, got:\n{b}");
     }
 
     #[test]

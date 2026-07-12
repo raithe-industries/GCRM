@@ -635,6 +635,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   constant; four anchors bit-identical (backtest 25/25). Locked by
   `alliance_light_stable_only_invocation_reads_clear_and_unnamed` (FAILS without the gate — the Stable-
   only case re-serves theater=Some/detail=signal against tripped=false). See improvement-log 2026-07-11 (later²).
+- [x] **1.25 Fallback analyst brief dropped an override-elevated theater below the heat boundary — a
+  nuclear-use/chemical-attack front could be OMITTED from the LLM-offline brief** — **DONE 2026-07-12.**
+  `templated_brief` (the deterministic brief served whenever the LLM enricher is down — a real state,
+  cap=2 VRAM/GPU-bound) filtered its "Theaters currently elevated" list by a raw `heat >= 0.18`. That
+  `0.18` was an un-named duplicate of `HOT_HEAT` (the Tension→Crisis heat boundary), and being on raw
+  heat it silently ignored the two `rung_for` OVERRIDES: a chemical/bio attack floors a theater at
+  Limited War and a confirmed nuclear detonation forces Systemic REGARDLESS of heat (`rung_for(0.10,
+  nuclear_used=true) == Systemic`). So a nuclear-war theater sitting below 0.18 heat (sparse coverage)
+  was dropped from the operator's fallback brief while the board + headline flagged it — the apex front,
+  omitted at the worst moment. Re-keyed the filter to the AUTHORITATIVE rung (`/rung`, deserialized to
+  `EscalationRung` so there's one source of truth): `rung.level() >= Crisis` is behaviour-identical to
+  `heat >= HOT_HEAT` for every heat-driven theater and ADDITIVELY includes the override-elevated ones;
+  the list is also now ordered rung-first (then heat) so a low-heat Systemic front leads instead of being
+  buried below a hotter conventional Crisis. Display/awareness honesty — touches no P, no fitted constant;
+  four anchors bit-identical (backtest 25/25). Locked by
+  `templated_brief_lists_an_override_elevated_theater_below_the_heat_boundary` (FAILS without the fix —
+  reverting the filter to `heat >= 0.18` drops the heat-0.10 Systemic-rung theater from the list).
+  See improvement-log 2026-07-12.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
