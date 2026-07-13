@@ -684,6 +684,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (the seismic light is board-only). Locked by `prune_keeps_a_single_aftershock_alert_but_clears_a_real_
   sequence` (retains count==1 incl. the CTBTO case, prunes count>=2, age-expiries still fire; FAILS when
   the boundary is reverted to `> 0` — count==1 alert wrongly pruned). See improvement-log 2026-07-12 (later²).
+- [x] **1.28 The `multi_theater` I&W light displayed its own trip threshold on a NOT-tripped board —
+  a rounding-vs-raw-gate contradiction the operator reads as broken** — **DONE 2026-07-13.** The last
+  flagged of the three lower-severity honesty defects the 1.27 audit left open. `couplers.concurrency`
+  is a CONTINUOUS smoothstep sum (`Σ smoothstep(heat, HOT_HEAT±HOT_RAMP)`), and the light rendered it
+  with plain `format!("{:.1} theaters hot", c.concurrency)` while gating `tripped` on the raw
+  `c.concurrency >= 1.8`. So a sub-threshold value in [1.75, 1.8) rounds UP to "1.8" — the very trip
+  threshold — on a **dark** light: the number and the light contradict each other (the same
+  light↔number discipline 1.24 restored on the alliance light, and the last board light where the
+  shown value could disagree with its trip state). Named the gate `MULTI_THEATER_TRIP = 1.8` (one
+  source of truth) and floored the shown count to the 0.1 display step via `floor1`; because the
+  threshold is an exact multiple of 0.1, `floor1(x) >= TRIP ⇔ x >= TRIP`, so the displayed count agrees
+  with `tripped` in BOTH directions (under-reads by <0.1, never over-reads past the gate). VERIFIED the
+  sibling `gp_entanglement` light is quantization-SAFE — `gp_entanglement = len/3.0 ∈ {0, .33, .67, 1}`
+  never renders "0.60" under `{:.2}` — so the 1.27 note's hypothesis held for `multi_theater` only and
+  that light was left untouched (no cosmetic churn). Display-only for P (indicators are board-only,
+  never feed `l_sys`/P); the four anchors are bit-identical. Locked by
+  `multi_theater_count_never_reads_above_its_own_trip_gate` (1.75 → "1.7" not "1.8"; a 1.50–2.50 grid
+  proving displayed-≥-gate ⇔ tripped; FAILS when `floor1` is reverted to the raw value — renders "1.8
+  theaters hot" on the dark light). See improvement-log 2026-07-13.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

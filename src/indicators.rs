@@ -57,6 +57,23 @@ impl Serialize for Indicator {
 /// lights red automatically without a parallel edit to the frontend.
 pub const APEX_INDICATORS: &[&str] = &["gp_kinetic", "nuclear_brink"];
 
+/// Concurrency (fractional count of simultaneously-hot theaters) at/above which the
+/// `multi_theater` light trips — ~two hot theaters. Named so the trip gate and the
+/// light's displayed count share ONE source of truth: a light and its own number must
+/// never contradict each other on the board.
+const MULTI_THEATER_TRIP: f64 = 1.8;
+
+/// Round a value DOWN to one decimal place for board display. `concurrency` is a
+/// continuous smoothstep sum, so plain `{:.1}` rounds a sub-threshold value like 1.75
+/// UP to "1.8" — the very trip threshold — making a *not-tripped* light show its own
+/// gate value (a self-contradiction the operator reads as a broken board). Flooring to
+/// the display step guarantees `floor1(x) >= MULTI_THEATER_TRIP` ⇔ `x >= MULTI_THEATER_TRIP`
+/// (the threshold is an exact multiple of 0.1), so the shown count agrees with `tripped`
+/// in BOTH directions. It slightly under-reads (shows a floor), never over-reads.
+fn floor1(x: f64) -> f64 {
+    (x * 10.0).floor() / 10.0
+}
+
 fn modality(snap_theater: &crate::models::TheaterState, m: &str) -> f64 {
     snap_theater.modality_scores.get(m).copied().unwrap_or(0.0)
 }
@@ -199,8 +216,8 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
     // 6. Multiple theaters concurrently hot.
     let ind_concurrency = Indicator {
         id: "multi_theater", label: "Multiple theaters concurrently hot",
-        tripped: c.concurrency >= 1.8, theater: None,
-        detail: format!("{:.1} theaters hot", c.concurrency),
+        tripped: c.concurrency >= MULTI_THEATER_TRIP, theater: None,
+        detail: format!("{:.1} theaters hot", floor1(c.concurrency)),
     };
 
     // 7. Active escalation at a flashpoint — a theater already at Crisis or above that
@@ -445,6 +462,48 @@ mod tests {
             "the retired guardrails board light must not come back (it observes only settings.yml)");
         assert!(inds.iter().all(|i| !i.tripped),
             "a railed guardrail_collapse coupler alone must trip nothing on the board");
+    }
+
+    #[test]
+    fn multi_theater_count_never_reads_above_its_own_trip_gate() {
+        // A light and its own number must agree. `concurrency` is a continuous
+        // smoothstep sum, so a sub-threshold value like 1.75 rounds UP to "1.8" under
+        // plain `{:.1}` — showing the trip threshold on a NOT-tripped light (the operator
+        // reads a broken board). Flooring to the display step makes the shown count agree
+        // with `tripped` in both directions. This FAILS without the fix (1.75 → "1.8").
+        let detail_of = |conc: f64| -> (bool, String) {
+            let snap = RiskSnapshot {
+                couplers: SystemicCouplers { concurrency: conc, ..Default::default() },
+                ..Default::default()
+            };
+            let ind = evaluate(&snap).into_iter().find(|i| i.id == "multi_theater").unwrap();
+            (ind.tripped, ind.detail)
+        };
+
+        // Just below the gate: not tripped, and the shown count must NOT display "1.8".
+        let (t_lo, d_lo) = detail_of(1.75);
+        assert!(!t_lo, "concurrency 1.75 is below the {MULTI_THEATER_TRIP} gate");
+        assert_eq!(d_lo, "1.7 theaters hot",
+            "a not-tripped multi_theater light must not display its own trip threshold");
+        assert!(!d_lo.contains("1.8"),
+            "the shown count `{d_lo}` contradicts tripped=false");
+
+        // Boundary at the gate and above: tripped, shown count reads at/above the gate.
+        let (t_eq, d_eq) = detail_of(1.80);
+        assert!(t_eq && d_eq == "1.8 theaters hot");
+        let (t_hi, d_hi) = detail_of(1.83);
+        assert!(t_hi && d_hi == "1.8 theaters hot",
+            "a tripped light shows the floored count (never below the gate: 1.83 -> 1.8)");
+
+        // The core invariant, over a grid straddling the gate: displayed-count-at-or-above
+        // the gate ⇔ tripped, in BOTH directions — no configuration can contradict.
+        for k in 150..=250 {
+            let conc = k as f64 / 100.0;
+            let (tripped, detail) = detail_of(conc);
+            let shown: f64 = detail.trim_end_matches(" theaters hot").parse().unwrap();
+            assert_eq!(shown >= MULTI_THEATER_TRIP, tripped,
+                "shown {shown} vs tripped {tripped} disagree at concurrency {conc}");
+        }
     }
 
     #[test]
