@@ -703,6 +703,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   `multi_theater_count_never_reads_above_its_own_trip_gate` (1.75 → "1.7" not "1.8"; a 1.50–2.50 grid
   proving displayed-≥-gate ⇔ tripped; FAILS when `floor1` is reverted to the raw value — renders "1.8
   theaters hot" on the dark light). See improvement-log 2026-07-13.
+- [x] **1.29 "South China Sea" (a LOCATION) was registered as an ACTOR → phantom great-power
+  involvement from a pure-geography mention** — **DONE 2026-07-13 (later).** `is_great_power` and the
+  bare country matcher both work by SUBSTRING, and `"china"` sits inside `"south china sea"`: an
+  actor row `("south china sea","South China Sea")` collapsed via longest-substring `normalize_actor`
+  to actor_id `"china"`, and `is_great_power("South China Sea")` fired on `.contains("china")`. So a
+  story naming NO great power ("Philippine fishermen near a reef in the South China Sea") served
+  `great_power_involved=true`, injected a phantom `"china"` actor into `gp_entanglement` / the
+  US–China theater, and mislabeled the actor as a body of water. Word-boundary matching cannot fix it
+  (`"china"` IS a whole word inside the phrase — even removing the actor row leaves the bare `"china"`
+  stem substring-matching inside the sea), so the GP-bearing location phrases (`"south china sea"`,
+  `"east china sea"`) are BLANKED before actor extraction; the sea is still recovered as a LOCATION by
+  `extract_location`/`resolve_region` (region asia_pacific → theater), so no WHERE signal is lost. A
+  China named OUTSIDE the phrase still counts (the mask is surgical). Sibling of 1.7/1.8/1.21/1.22, on
+  the actor side. Locked by `south_china_sea_geography_names_no_great_power_actor` (geography-only →
+  no gp, no `"china"` id, theater still `us_china_taiwan`; China-named → gp holds; FAILS when the mask
+  is bypassed — great_power_involved flips true). See improvement-log 2026-07-13 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

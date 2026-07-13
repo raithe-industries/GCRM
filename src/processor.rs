@@ -856,6 +856,34 @@ fn kw_hit(tl: &str, kw: &str, boundary: &[&str]) -> bool {
     if boundary.contains(&kw) { contains_word(tl, kw) } else { tl.contains(kw) }
 }
 
+/// LOCATION phrases whose name embeds a great-power actor stem: `"china"` sits inside both
+/// `"south china sea"` and `"east china sea"`. The bare country matcher extracts actors by
+/// substring (kept so it still catches adjective forms), and `is_great_power` tests the display
+/// string by substring too — so a PURE-GEOGRAPHY mention of the sea (China not an acting party)
+/// used to serve `great_power_involved = true`, inject a phantom `china` actor_id, and feed it into
+/// `gp_entanglement` / the US–China theater. Word-boundary matching can't fix this — `china` IS a
+/// whole word inside "south china sea" — so the phrase itself is blanked before ACTOR extraction,
+/// leaving only a great power named OUTSIDE it to count. The sea is still recovered as a LOCATION
+/// by `extract_location` / `resolve_region` (region → theater), so no WHERE signal is lost. Sibling
+/// of the 1.7/1.8/1.21/1.22 substring→boundary honesty fixes, on the actor side.
+const GP_BEARING_LOCATIONS: &[&str] = &["south china sea", "east china sea"];
+
+/// Blank every [`GP_BEARING_LOCATIONS`] phrase in a lowercased title, replacing each with an
+/// equal-length run of spaces so the surrounding tokens keep their byte offsets (the ASCII phrases
+/// have byte-length == char-count). Returns the input untouched (borrowed) when none is present —
+/// the common case pays nothing.
+fn mask_gp_bearing_locations(tl: &str) -> std::borrow::Cow<'_, str> {
+    if GP_BEARING_LOCATIONS.iter().any(|loc| tl.contains(loc)) {
+        let mut out = tl.to_string();
+        for loc in GP_BEARING_LOCATIONS {
+            out = out.replace(loc, &" ".repeat(loc.len()));
+        }
+        std::borrow::Cow::Owned(out)
+    } else {
+        std::borrow::Cow::Borrowed(tl)
+    }
+}
+
 // ── Nuclear / WMD / civilian indicator terms ─────────────────────────────────
 
 const NUCLEAR_TERMS: &[&str] = &[
@@ -923,7 +951,9 @@ fn actor_entity_patterns() -> Vec<(&'static str, &'static str)> {
         ("people's republic of china","China"),
         ("north korea",               "North Korea"),
         ("south korea",               "South Korea"),
-        ("south china sea",           "South China Sea"),
+        // NB: "south china sea" is a LOCATION, not an actor — it is masked before matching (see
+        // mask_gp_bearing_locations / GP_BEARING_LOCATIONS) so the embedded "china" stem cannot
+        // phantom-tag a great power, and recovered as a location by extract_location.
         ("saudi arabia",              "Saudi Arabia"),
         ("united kingdom",            "United Kingdom"),
         ("united nations",            "United Nations"),
@@ -1253,6 +1283,13 @@ impl NlpProcessor {
     }
 
     fn extract_actors(&self, tl: &str) -> (Vec<String>, Vec<String>, bool) {
+        // Great-power stems hide inside LOCATION names ("china" ⊂ "south china sea"): mask those
+        // phrases so a pure-geography mention cannot phantom-tag the great power (see
+        // mask_gp_bearing_locations). Matching runs against the masked text; the display strings
+        // come from the pattern table, and the location/region is recovered separately by
+        // extract_location from the original title, so no WHERE signal is lost.
+        let masked = mask_gp_bearing_locations(tl);
+        let tl: &str = &masked;
         let mut seen_ids: Vec<String>       = Vec::new();
         let mut actors:   Vec<String>       = Vec::new();
         let mut matched_spans: Vec<(usize, usize)> = Vec::new();
@@ -1784,6 +1821,43 @@ mod tests {
         let event = proc.process(&article).unwrap();
         assert!(event.domain_tags.contains(&"military_escalation".to_string()));
         assert_eq!(event.theater.as_deref(), Some("us_china_taiwan"));
+    }
+
+    #[test]
+    fn south_china_sea_geography_names_no_great_power_actor() {
+        // HONESTY (substring-in-location class — siblings 1.7/1.8/1.21/1.22, on the ACTOR side):
+        // "South China Sea" is a LOCATION whose name embeds the great-power stem "china". The bare
+        // country matcher (substring) extracted China as an ACTOR from a pure-geography mention, and
+        // `is_great_power` fired on the "china" that display contains — so a story with NO great
+        // power acting served `great_power_involved = true`, injected a phantom `china` actor_id, and
+        // fed it into `gp_entanglement` / the US–China theater. Word-boundary matching cannot fix it
+        // ("china" is a whole word inside the phrase), so the phrase is masked before actor
+        // extraction. FAILS when the mask is stashed (great_power_involved → true, actor_ids gains
+        // "china"). The theater is still recovered from the REGION, not fabricated from the actor.
+        let mut proc = NlpProcessor::new();
+        let geo = proc.process(&make_article(
+            "Philippine coast guard shadows fishing boats near a reef in the South China Sea",
+            "The standoff over the disputed shoal involved no warships",
+        )).unwrap();
+        assert!(!geo.great_power_involved,
+            "a pure-geography South China Sea story names no great power, got actors {:?}", geo.actors);
+        assert!(!geo.actor_ids.iter().any(|id| id == "china"),
+            "geography 'South China Sea' must not inject a 'china' actor_id, got {:?}", geo.actor_ids);
+        assert!(!geo.actors.iter().any(|a| a == "South China Sea"),
+            "a sea is a location, not an actor, got actors {:?}", geo.actors);
+        // The flashpoint is still LOCATED via region (asia_pacific → US–China), not lost.
+        assert_eq!(geo.theater.as_deref(), Some("us_china_taiwan"),
+            "the SCS location must still resolve its theater via region, got {:?}", geo.theater);
+
+        // The mask is surgical: a China named OUTSIDE the sea phrase still counts as a great power.
+        let named = proc.process(&make_article(
+            "China deploys a carrier group to the South China Sea",
+            "Beijing warships enter the contested waters in force",
+        )).unwrap();
+        assert!(named.great_power_involved,
+            "a China named outside the location phrase must still count as a great power");
+        assert!(named.actor_ids.iter().any(|id| id == "china"),
+            "China-as-actor must survive the location mask, got {:?}", named.actor_ids);
     }
 
     #[test]
