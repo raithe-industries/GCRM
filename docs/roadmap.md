@@ -719,6 +719,22 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   the actor side. Locked by `south_china_sea_geography_names_no_great_power_actor` (geography-only →
   no gp, no `"china"` id, theater still `us_china_taiwan`; China-named → gp holds; FAILS when the mask
   is bypassed — great_power_involved flips true). See improvement-log 2026-07-13 (later).
+- [x] **1.30 Actor country stems substring-matched MID-token → phantom actor / great-power
+  involvement (the residual 1.29 left open)** — **DONE 2026-07-13 (later²).** The bare country/
+  proper-noun stems (`china`, `iran`, `syria`, `russia`, …) in `extract_actors` matched by plain
+  `tl.find(pat)` (substring), so a stem hidden MID-token phantom-tagged the actor — and for a
+  great-power stem, `great_power_involved` — in the false-alarm direction: `china`⊂`indochina` (a
+  distinct region, NOT China — the exact residual 1.29's note flagged), `iran`⊂`tirana`,
+  `syria`⊂`assyria`, `russia`⊂`belorussia`. The WHERE side (`extract_location`) already made this
+  substring→word-start switch in 1.22; the ACTOR side was the un-switched sibling. Added
+  `find_word_start` (the index-returning companion to `starts_word`: a boundary only BEFORE the
+  needle, any suffix may follow) and routed the non-boundary actor branch through it, so demonym
+  SUFFIXES still resolve (`russia`→`russian`, `iran`→`iranian`) while mid-token hits are dropped.
+  The GP-bearing-location mask (1.29) stays — `"china"` is a WHOLE WORD inside `"south china sea"`,
+  which word-start alone cannot catch. Locked by `actor_country_stems_match_at_word_start_not_mid_token`
+  (indochina/tirana/assyria → no gp, no china/iran id; iranian/russian demonyms still resolve, gp
+  holds; FAILS when the branch is reverted to `tl.find` — actors become China/Iran/Syria). See
+  improvement-log 2026-07-13 (later²).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**

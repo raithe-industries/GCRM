@@ -813,6 +813,20 @@ pub(crate) fn find_word(haystack: &str, needle: &str) -> Option<usize> {
     })
 }
 
+/// Like [`find_word`] but requires a boundary only BEFORE the needle — any suffix may follow.
+/// The index-returning companion to `starts_word`, used for the country/proper-noun actor stems:
+/// they must still catch demonym SUFFIXES (`russia`→`russian`, `iran`→`iranian`, `india`→`indian`)
+/// yet must NOT fire when the stem hides MID-token (`china`⊂`indochina`, `iran`⊂`tirana`,
+/// `syria`⊂`assyria`, `russia`⊂`belorussia`) — the same substring→word-start honesty fix
+/// `extract_location` already applies on the WHERE side. Whole-word matching would wrongly drop
+/// the wanted demonyms; substring matching wrongly keeps the mid-token hits.
+pub(crate) fn find_word_start(haystack: &str, needle: &str) -> Option<usize> {
+    let hb = haystack.as_bytes();
+    haystack
+        .match_indices(needle)
+        .find_map(|(i, _)| (i == 0 || !hb[i - 1].is_ascii_alphanumeric()).then_some(i))
+}
+
 /// True if `needle` occurs in `haystack` as a whole word — so the hostile token "fire" does NOT
 /// match inside "ceasefire" and "war" does not match "warning". Used for the sentiment lexicons
 /// (audit processor-4), the boundary keyword lists below, and the nlp_sidecar dispatch gate —
@@ -930,8 +944,8 @@ fn severity_base(et: &EventType) -> f64 {
 ///       `cuba`-class hazards; the rest (`biden`, `mossad`, `wagner`, …) included on the same
 ///       rationale even where no common carrier word exists today.
 /// Country/proper-noun stems are deliberately NOT here — they SHOULD prefix-match their
-/// adjective forms (`russia`→`russian`, `iran`→`iranian`), which the dictionary otherwise
-/// catches only via explicit phrases.
+/// adjective forms (`russia`→`russian`, `iran`→`iranian`), so they match at a WORD START via
+/// `find_word_start` (keeps the demonym suffix, drops the mid-token hit), not whole-word here.
 const BOUNDARY_ACTOR_PATS: &[&str] = &[
     "pla", "cia", "fbi", "idf", "mi6", "irgc", "isis", "isil", "aukus", "quad", "nato", "dprk",
     "putin", "zelensky", "biden", "trump", "netanyahu", "khamenei", "mossad", "wagner",
@@ -1298,12 +1312,17 @@ impl NlpProcessor {
             let pat: &str = pattern;
             // Short acronyms match as whole words only (see BOUNDARY_ACTOR_PATS): as bare
             // substrings they hide inside ordinary words (plan/official/senator/crisis) and
-            // phantom-tag actors and great-power involvement. Country stems keep substring
-            // matching so they still catch adjective forms (russia→russian).
+            // phantom-tag actors and great-power involvement. Country/proper-noun stems match at a
+            // WORD START (find_word_start): they still catch demonym suffixes (russia→russian,
+            // iran→iranian) but no longer fire when the stem hides MID-token — `china`⊂`indochina`,
+            // `iran`⊂`tirana`, `syria`⊂`assyria`, `russia`⊂`belorussia` — which the old substring
+            // matcher tagged, fabricating an actor (and, for a great-power stem, great_power_involved)
+            // in the false-alarm direction. This mirrors the substring→word-start fix
+            // `extract_location` already made on the WHERE side (1.22).
             let hit = if BOUNDARY_ACTOR_PATS.contains(&pat) {
                 find_word(tl, pat)
             } else {
-                tl.find(pat)
+                find_word_start(tl, pat)
             };
             if let Some(pos) = hit {
                 let end = pos + pat.len();
@@ -1858,6 +1877,35 @@ mod tests {
             "a China named outside the location phrase must still count as a great power");
         assert!(named.actor_ids.iter().any(|id| id == "china"),
             "China-as-actor must survive the location mask, got {:?}", named.actor_ids);
+    }
+
+    #[test]
+    fn actor_country_stems_match_at_word_start_not_mid_token() {
+        // HONESTY (substring-in-token class, ACTOR side — sibling of the `extract_location` WHERE
+        // fix 1.22): the bare country stems (`china`, `iran`, `syria`, `russia`, …) were matched by
+        // plain substring, so a stem hidden MID-token phantom-tagged the actor — and for a
+        // great-power stem, `great_power_involved` — in the false-alarm direction. `china`⊂`indochina`
+        // (a distinct region, NOT China) is the residual the 1.29 mask-fix explicitly left open.
+        // `find_word_start` keeps demonym recall (russia→russian) while dropping the mid-token hits.
+        let proc = NlpProcessor::new();
+
+        // A pure-geography Indochina mention names NO great power: "china" hides inside "indochina"
+        // (and "iran"⊂"tirana", "syria"⊂"assyria" — the whole mid-token class).
+        let (actors, ids, gp) = proc.extract_actors("french indochina border clash near tirana as assyria ruins reopen");
+        assert!(!gp,
+            "'Indochina'/'Tirana'/'Assyria' embed china/iran/syria mid-token — no great power is acting, got actors {actors:?}");
+        assert!(!ids.iter().any(|id| id == "china"),
+            "'Indochina' must not inject a 'china' actor_id, got {ids:?}");
+        assert!(!ids.iter().any(|id| id == "iran"),
+            "'Tirana' must not inject an 'iran' actor_id, got {ids:?}");
+
+        // Demonym recall is preserved: the country stem still prefix-matches at a word start.
+        let (_, ids2, gp2) = proc.extract_actors("iranian drones and russian forces mass as strikes hit the front");
+        assert!(ids2.iter().any(|id| id == "iran"),
+            "the 'iranian' demonym must still resolve to Iran via word-start, got {ids2:?}");
+        assert!(ids2.iter().any(|id| id == "russia" || id == "russia_military"),
+            "'Russian forces' must still resolve to Russia via word-start, got {ids2:?}");
+        assert!(gp2, "a genuinely named Iran/Russia story is great-power involved");
     }
 
     #[test]
