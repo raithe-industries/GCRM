@@ -29,6 +29,7 @@ pub mod nhc;
 pub mod nsw_rfs;
 pub mod nwps_flood;
 pub mod portwatch_chokepoints;
+pub mod qfes_bushfire;
 pub mod spc_storm_reports;
 pub mod stuk_radiation;
 pub mod teleray;
@@ -113,6 +114,7 @@ pub fn registry() -> Vec<Box<dyn Source>> {
         Box::new(teleray::Teleray), // Radiation: ambient gamma dose rate above background (IRSN/ASNR Téléray, France)
         Box::new(nsw_rfs::NswRfs), // Wildfire layer: NSW RFS major fire/emergency incidents + official alert levels (Australia)
         Box::new(wa_dfes::WaDfes), // Emergency-warning layer: WA DFES all-hazard warnings + AWS warning levels (Western Australia)
+        Box::new(qfes_bushfire::QfesBushfire), // Wildfire layer: QFES current bushfire incidents + AWS warning levels (Queensland)
         // Credentialed global feeds (dormant until their key/account env is set).
         Box::new(firms::Firms::default()),
         Box::new(acled::Acled::default()),

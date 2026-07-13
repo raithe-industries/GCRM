@@ -451,6 +451,10 @@ fn feed_detail(e: &Event) -> Option<String> {
         // WA DFES warning: the official Australian Warning System level + the affected
         // region, e.g. "Watch and Act · Pilbara" — the operational read behind the dot.
         "wa_dfes" => ee_sources::wa_dfes::warning_chip(&e.raw),
+        // QFES bushfire: the official Australian Warning System level + the place +
+        // status, e.g. "Watch and Act · Julago · Going" — the operational read behind
+        // the dot; a routine notice leads with the place ("Information · Starcke").
+        "qfes_bushfire" => ee_sources::qfes_bushfire::incident_chip(&e.raw),
         // Marine warning name → the standardized ECCC mean-wind band it denotes, with
         // units ("Gale warning" → "34–47 kn winds"); non-wind hazards fall to the tier.
         "eccc_marine" => ee_sources::eccc_marine::warning_chip(&e.raw),
@@ -765,7 +769,7 @@ async fn feeds_payload() -> Value {
         navcanada::NavCanada, nhc::Nhc, nsw_rfs::NswRfs,
         nwps_flood::NwpsFlood, nws::Nws, odlinfo::Odlinfo,
         ontario511::Ontario511,
-        opensky::OpenSky, portwatch_chokepoints::PortwatchChokepoints, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
+        opensky::OpenSky, portwatch_chokepoints::PortwatchChokepoints, qfes_bushfire::QfesBushfire, quebec511::Quebec511, spc_storm_reports::SpcStormReports, stuk_radiation::StukRadiation,
         ucdp_ged::UcdpGed, usgs::Usgs,
         usgs_volcano::UsgsVolcano, vigicrues::Vigicrues, wa_dfes::WaDfes,
     };
@@ -778,7 +782,7 @@ async fn feeds_payload() -> Value {
     // fill the North-American gap; three global feeds (EMSC quakes, GVP volcanoes,
     // HealthMap outbreaks) populate the rest of the world.
     let (win_a, win_b) = opensky_phase_windows(OPENSKY_PHASE.fetch_add(1, Ordering::Relaxed));
-    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods, fr_floods, wa_warnings) = tokio::join!(
+    let (quakes, disasters, weather, ac_a, ac_b, natural, ca_alerts, ca_fires, ca_quakes, ca_air, gl_quakes, gl_volc, gl_health, gl_fires, on_roads, ca_marine, ca_active_fires, bc_roads, ab_roads, qc_roads, ca_borders, ca_notams, vessels, chokepoints, conflict, conflict_agg, storms, typhoons, nz_volc, us_volc, id_volc, floods, avalanche, sigmets, storm_reports, id_felt, jp_felt, nz_felt, de_radiation, fi_radiation, au_incidents, uk_floods, fr_floods, wa_warnings, qld_fires) = tokio::join!(
         fetch_one("usgs", Usgs { feed: "all_day".into() }, 8),
         fetch_one("gdacs", Gdacs, 10),
         fetch_one("nws", Nws, 10),
@@ -927,6 +931,13 @@ async fn feeds_payload() -> Value {
         // warning's point: the emergency-warning modality extended to a second,
         // all-hazard Australian state. Empty feed (no current warnings) = 0 events.
         fetch_one("wa_dfes", WaDfes, 12),
+        // QFES — Queensland Fire Department current bushfire incidents with their
+        // official Australian Warning System level (Emergency Warning / Watch and
+        // Act / Advice / Information), plotted at each incident's point: the
+        // emergency-warning modality + Wildfire layer extended to a third Australian
+        // state (Queensland). Auth-free public S3 GeoJSON, live-verified. Empty feed
+        // (no current incidents — quiet/off-season) = 0 events.
+        fetch_one("qfes_bushfire", QfesBushfire, 12),
     );
 
     let mut errors: Vec<String> = Vec::new();
@@ -1000,6 +1011,9 @@ async fn feeds_payload() -> Value {
         // WA all-hazard warnings: even a bad day runs to a few dozen; 300 is ample
         // headroom, and severity-sort keeps the Emergency Warnings on any overflow.
         (wa_warnings.0, wa_warnings.1, "wa_dfes", 300),
+        // QLD bushfire incidents: a bad fire day runs to dozens; 300 is ample
+        // headroom, and severity-sort keeps the Emergency Warnings on any overflow.
+        (qld_fires.0, qld_fires.1, "qfes_bushfire", 300),
     ] {
         // Keep the dots that MATTER when a feed overflows its cap (severity, then
         // recency) — plain truncation cut in arbitrary provider order.
