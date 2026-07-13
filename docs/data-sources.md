@@ -195,6 +195,48 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   dose VALUES (not just station locations — the open question a bare `doseratemålestasjoner` catalog
   layer raises). (Supersedes the vague 2026-07-07 "RADNETT found on Geonorge" note with a concrete
   landable spec.)
+- **Fintraffic Digitraffic nautical warnings** (`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`)
+  — **STRONG deferral, verified 2026-07-13; blocked ONLY on anchoring the wire schema to real committed
+  bytes.** This is the **highest-value NEW lead for the #1 mission gap (military-posture observables:
+  exercises / mobilization / closures).** Fintraffic (the same authoritative Finnish state operator whose
+  AIS already powers the live `digitraffic_ais`) publishes POOKI-sourced navigational warnings as an
+  **auth-free GeoJSON** feed on the **same host proven live in prod by `digitraffic_ais`** (a polite
+  `Digitraffic-User` header; web fetch 403s exactly as it does for the AIS endpoint, so prod would serve it
+  fine — this is a Path-A-anchored case, NOT an egress wall). **Signal VERIFIED real + on-mission** (web search
+  2026-07-13): the active warnings include **Finnish Defence Forces firing exercises** and **"area temporarily
+  dangerous to shipping"** notices (e.g. area KR-107) in the **Gulf of Finland** — the NATO/Russia Baltic
+  frontier, first-order WWIII-risk military-posture signal (naval live-firing / danger zones / restricted
+  areas), a modality no current feed carries (distinct from `digitraffic_ais` per-vessel positions, the
+  `portwatch_chokepoints` transit aggregate, and the Canada-only `navcanada` NOTAMs). Clears the merits bar:
+  **authoritative** (Fintraffic / Traficom, via POOKI), **auth-free**, **machine-readable** (GeoJSON
+  FeatureCollection), **geocoded** (per-warning Point/LineString/Polygon geometry → centroid), **fresh**
+  (continuously updated), **non-duplicative** (new military-posture modality + Baltic). **The one unmet
+  requirement:** anchor the exact response **property keys** (area/contents/type/navtext/validity/geometry)
+  to real committed bytes. Unlike AIS (whose schema is documented in `tmfg/digitraffic` `pages/ais-kuvaus-en.md`),
+  the nautical-warning product has **NO committed API-description page** (`meriliikenne-en.md` covers AIS /
+  harbours / Aton faults but not warnings; the digitraffic docs report "no metadata available"), the serving
+  service repo is **not locatable** (absent from `digitraffic-marine` Java controllers AND from
+  `digitraffic-cdk/marine`), and no committed consumer quotes the warning-feature field names, so an honest
+  fixture can't be written this run. To filter to the militarily-meaningful subset (drop mundane
+  buoy/cable/light notices) the connector needs those exact type/contents keys. **Landable next run** if EITHER
+  a `raw.githubusercontent.com` client/fixture (or a committed OpenAPI) quoting the `nautical-warning`
+  feature-property keys surfaces, OR the live endpoint becomes web fetch-reachable (200) to inspect the wire
+  shape. (Same `Digitraffic-User` header + shared `crate::http` client as `digitraffic_ais`; the AIS
+  connector is the drop-in template.)
+- **SERNAGEOMIN / RNVV Chile — volcano Technical Alert levels** (Verde/Amarilla/Naranja/Roja) —
+  **DEFERRED 2026-07-13; walled this run.** Would open **South America, a currently BLANK continent** on the
+  map (the geography gap after Australia + Europe were seeded). Authoritative (SERNAGEOMIN's Red Nacional de
+  Vigilancia Volcánica / OVDAS, 45 of 92 active volcanoes under 24/7 real-time watch), a defined 4-level
+  baseline alert scale (**signal-meaningful**, same operational-alert-state modality as `geonet_volcano` /
+  `usgs_volcano` / `magma_volcano` — new authority + new continent, so non-duplicative despite the covered
+  modality). **Blocked on both anchoring paths this run:** the RNVV/SERNAGEOMIN hosts (`rnvv.sernageomin.cl`,
+  `www.sernageomin.cl`), the ArcGIS **sharing REST** (`arcgis.com/sharing/rest/content/items/.../data`), and the
+  public **dashboard item data** all **403 web fetch**, and their own `sdngsig.sernageomin.cl` ArcGIS server
+  returns an **auth login** page; no committed consumer quotes an auth-free per-volcano alert FeatureServer.
+  **Landable when EITHER** a public `services*.arcgis.com` (Esri-hub) VicEmergency-style FeatureServer serving
+  the current per-volcano alert level (queryable `f=geojson`) is pinned, **OR** a committed client/fixture
+  quoting the RNVV alert endpoint + field keys surfaces, **OR** an auth-free RNVV JSON/GeoJSON becomes
+  web fetch-reachable (200).
 
 ---
 
@@ -243,6 +285,13 @@ Bias each run toward the least-covered axis below.
   is an analytics web-service, not a live-positions GeoJSON). None is a Path-A or Path-B fit.
   (The only clean HTTP AIS on the map remains `digitraffic_ais`, Fintraffic/Baltic — an
   equivalent auth-free HTTP AIS for an **Asian chokepoint** theater has not surfaced.)
+  **Military-posture sub-gap (the #1 mission gap) — best lead now is Fintraffic Digitraffic
+  nautical warnings** (`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`; see DEFERRED):
+  auth-free GeoJSON on the already-live `digitraffic_ais` host, carrying **Finnish Defence Forces
+  firing exercises + "area temporarily dangerous to shipping" danger zones in the Gulf of Finland**
+  (verified 2026-07-13) — naval live-firing / restricted-area military-posture signal in the
+  NATO/Russia Baltic frontier. Blocked only on anchoring the warning-feature property keys to
+  committed bytes (no committed API doc/consumer found this run).
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV) and EXTENDED
   2026-06-28 with `acled_aggregated` (**ACLED weekly Admin-1 intensity, Path-B snapshot**) —
   the ACLED aggregated-weekly product is now LANDED (the licensed event `acled` stays dormant).
@@ -434,6 +483,37 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-13 (Signal Hunter, later run)** — **HONEST NO-OP after genuinely evaluating the ranked gaps;
+  no source half-wired.** Walked the mission ranking, biased to the #1 gap (military-posture) and the blank
+  continents. **Best NEW lead found & verified: Fintraffic Digitraffic nautical warnings** (`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`)
+  — the strongest military-posture candidate yet: web search confirmed the **live active feed carries Finnish
+  Defence Forces firing exercises + "area temporarily dangerous to shipping" (area KR-107) in the Gulf of
+  Finland** (NATO/Russia Baltic frontier), auth-free GeoJSON on the **same Fintraffic host already live in prod
+  via `digitraffic_ais`** (so it's Path-A, not egress-walled — web fetch 403s only for the missing
+  `Digitraffic-User` header). Clears the merits bar (authoritative/auth-free/machine-readable/geocoded/fresh/
+  non-duplicative — new military-posture modality). **Deferred, NOT landed, on the one honest blocker:** the
+  exact warning-feature **property keys** can't be anchored to committed bytes — the product has **no committed
+  API-doc page** (checked `tmfg/digitraffic` `pages/`: AIS has `ais-kuvaus-en.md`, warnings have none;
+  `esimerkit-en.md` has no warning example), the serving service is **absent from both `digitraffic-marine`
+  (Java controllers: ais/portcall/sse/reader only) and `digitraffic-cdk/marine`**, and no committed consumer
+  quotes the field names. Writing a fixture on guessed keys would fake the anchor → **STRONG DEFERRED** (see
+  DEFERRED; drop-in template = `digitraffic_ais`; landable when a committed client/OpenAPI or a 200 live-verify
+  surfaces the keys). **Also evaluated & deferred:** (b) **SERNAGEOMIN/RNVV Chile volcano alert levels** —
+  would open **South America (a blank continent)**; authoritative + auth-free + a defined 4-level scale, but
+  the RNVV/SERNAGEOMIN hosts, the ArcGIS **sharing REST**, and the **dashboard item-data** endpoints **all 403
+  web fetch** this run and their own ArcGIS server is auth-gated → walled (see DEFERRED). (c) **VicEmergency /
+  EMV Victoria all-hazard feed** (`emergency.vic.gov.au/public/osom-geojson.json`) — feed URL + property schema
+  ARE anchorable to the committed `kuchel77/python-aio-geojson-vicemergency-incidents` client (`category1`/
+  `category2`/`sourceTitle`/`sourceOrg`/`location`/`status`/`feedtype`), BUT it's a 4th Australian
+  emergency-warning feed (incremental to `nsw_rfs`/`wa_dfes`/`qfes_bushfire`) AND the committed client exposes
+  **no clean AWS warning-LEVEL field** (it filters on `category1`/`status`, and the osom-geojson mixes many
+  mundane incidents), so signal-meaningfulness couldn't be confirmed without a real sample → triaged, landable
+  once the warning-level encoding is pinned to real bytes (e.g. a public Esri-hub `services*.arcgis.com`
+  FeatureServer with a typed level field). (d) **ACLED `acled_aggregated` refresh** (snapshot newest `WEEK`
+  `2026-03-07`, now ~128 d stale → layer honestly dark) — re-confirmed license-gated with redistribution
+  forbidden and no auth-free 2026 admin1 GitHub-raw mirror (unchanged from the earlier 2026-07-13 entry); not
+  re-chased. **Iceland IMO ACC + Norway RADNETT** (top walled leads) — hosts still 403 web fetch, unchanged.
+  **Green-proof:** N/A — no code touched; `src/osint.rs`, `vendor/ee-sources/` unchanged; ledger-only commit.
 - **2026-07-13 (Signal Hunter)** — **ADOPTED `qfes_bushfire` (Queensland Fire Department current
   bushfire incidents + AWS warning levels) — Path A, LIVE-VERIFIED.** Re-walked the ranked gaps first
   and re-confirmed the top ones still blocked: (a) **conflict-freshness / `acled_aggregated` refresh**
