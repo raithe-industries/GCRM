@@ -451,22 +451,28 @@ fn make_event_from_llm(article: &RawArticle, x: &LlmExtraction) -> GeopoliticalE
 /// Fast check: does the article title contain geopolitical trigger terms?
 /// Used to decide whether to run LLM on articles the keyword gate rejected.
 /// This gate feeds the (deliberately narrow, VRAM-capped) LLM worker pool, so a
-/// phantom trigger is a real dispatch cost — the short tokens below therefore
-/// match whole-word only, mirroring processor::BOUNDARY_ACTOR_PATS. Country
-/// stems stay substring-matched on purpose: they must catch their adjective
-/// forms ("Iranian", "Russian"). (audit-news d2)
+/// phantom trigger is a real dispatch cost — the short tokens that hide inside
+/// ordinary words therefore match whole-word only, mirroring
+/// processor::BOUNDARY_ACTOR_PATS. Stems that must catch a suffix form stay
+/// substring ("Iranian", "Zelenskyy", "Houthis"); person/org names with no such
+/// form (`putin`/`trump`/`hamas`) are whole-word. (audit-news d2)
 pub(crate) fn has_geopolitical_trigger(title: &str) -> bool {
     let t = title.to_lowercase();
-    // Great powers / key actors — substring (stems + multiword phrases are safe)
+    // Great powers / key actors — country/government stems & multiword phrases stay
+    // substring: a stem must catch its adjective/suffix forms ("Iranian", "Zelenskyy",
+    // "Houthis") and a multiword phrase can't hide inside a single word.
     const ACTORS: &[&str] = &[
         "china", "russia", "united states", "iran", "north korea", "israel",
         "ukraine", "taiwan", "pentagon", "kremlin", "beijing", "moscow",
-        "white house", "xi jinping", "putin", "trump", "zelensky", "netanyahu",
-        "hezbollah", "hamas", "houthi",
+        "white house", "xi jinping", "zelensky", "netanyahu",
+        "hezbollah", "houthi",
     ];
-    // Short actor tokens that hide inside ordinary words: `pla`⊂plan/plant/display,
-    // `nato`⊂senator, `irgc` kept with its peers — whole-word matched.
-    const ACTORS_WORD: &[&str] = &["pla", "irgc", "nato"];
+    // Short actor tokens that hide inside ordinary words — whole-word matched:
+    // acronyms (`pla`⊂plan/plant/display, `nato`⊂senator, `irgc` with its peers) AND
+    // person/org names with NO adjective/derived form to lose, so substring buys no
+    // recall but costs phantom dispatches (mirrors processor::BOUNDARY_ACTOR_PATS):
+    // `putin`⊂disputing/computing, `trump`⊂trumpeted, `hamas`⊂bahamas.
+    const ACTORS_WORD: &[&str] = &["pla", "irgc", "nato", "putin", "trump", "hamas"];
     // Conflict / escalation terms — substring (deliberate stems: "escalat",
     // "sanction", "strike"→"airstrikes" etc.)
     const TERMS: &[&str] = &[
@@ -553,6 +559,12 @@ mod tests {
             "Couple wins award for local coupon app",
             "Senator unveils display of new stadium",
             "Company shack conversions win design prize",
+            // Person/org names with no derived form — must be whole-word, not substring:
+            // `trump`⊂trumpeted, `hamas`⊂bahamas, `putin`⊂disputing/computing. None of
+            // these titles is geopolitical, yet all fired under the old substring list.
+            "Officials trumpeted the new stadium deal",
+            "Bahamas beach resort reopens after the storm",
+            "Analysts keep disputing the quarterly computing forecast",
         ] {
             assert!(!has_geopolitical_trigger(title),
                 "'{title}' must not trigger the LLM dispatch gate");
@@ -571,6 +583,13 @@ mod tests {
             "Government systems hacked overnight",
             "NATO ministers meet in emergency session",
             "Iranian officials detained two foreign nationals", // country stem keeps adjective recall
+            // Whole-word person/org names still fire on real mentions (and across a
+            // hyphen/possessive boundary), the recall the substring list used to give:
+            "Trump and Putin to meet in Geneva",
+            "Hamas-linked cell uncovered near the border", // hamas across a hyphen boundary
+            // Substring stems keep their suffix-form recall (whole-word would drop these):
+            "Zelenskyy warns of a hard winter ahead",  // zelensky⊂zelenskyy
+            "Houthis seize a tanker in the Red Sea",   // houthi⊂houthis
         ] {
             assert!(has_geopolitical_trigger(title),
                 "'{title}' must trigger the LLM dispatch gate");

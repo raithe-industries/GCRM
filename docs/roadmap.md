@@ -102,6 +102,37 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   on config (no computed value / no P moves) → Touched: display-only for streak purposes; take it on a
   run with display-only headroom (surfaced 2026-07-14 by a fresh served-path bug-hunt).
 
+- [ ] **[candidate] 1.z `set_regime_multiplier` gates the RAW value but stores the ROUNDED one — a
+  sub-0.0001 input rounds to 0.0 and collapses the regime product (the "model destruction" its own
+  bound documents preventing)** — `set_regime_multiplier` (api.rs:336) rejects `multiplier <= 0.0 ||
+  > 10.0` with the comment "Multiplier sanity bounds — prevent accidental model destruction", but the
+  value actually stored/served/fed-forward is `(body.multiplier * 1e4).round() / 1e4`. Any raw input in
+  `(0.0, 0.00005)` passes the `> 0.0` gate yet rounds to exactly `0.0`, so `regime_product` (api.rs:202)
+  multiplies by zero → the whole product collapses to 0.0 regardless of other active factors, and
+  `guardrail_from_regime(0.0)` feeds the systemic amplifier — precisely the destruction the bound is
+  documented to block. Served `product`/`multiplier` then read 0.0, outside the documented `(0.0,10.0]`.
+  FEEDS P + SERVED. Reachability is contrived (an operator entering a sub-0.0001 multiplier behind the
+  op key), which is why it was parked not taken. FIX (small): gate on the ROUNDED value — compute
+  `let m = (body.multiplier*1e4).round()/1e4;` first, reject `m <= 0.0 || m > 10.0`, store `m`. GATE: an
+  api.rs test posting `0.00004` asserts a 400 (or that the stored/served multiplier stays > 0) — FAILS
+  today. Touched: engine-behavior (guards a P-feeding path). (Surfaced 2026-07-14 by a served-path bug-hunt.)
+
+- [ ] **[candidate] 1.aa `trend_window`/`uncertainty_window`/`read_range_window` omit the `t > now`
+  upper-bound guard their doc + four sibling diagnostics enforce — a future-dated ring entry leaks into
+  the served trend/uncertainty/read-range** — these three EpochStore window loops (aggregator.rs:646 /
+  :716 / :792) guard only the lower bound (`if t < cutoff { break; }`), but their docs promise the
+  CLOSED interval `[now − window_secs, now]` ("same discipline as trend_window/uncertainty_window") and
+  the four siblings that claim that same discipline — `band_coverage_window` (:927), `alert_dwell_window`
+  (:1106, "// ignore any future-dated tick (clock skew)"), `lead_concentration_window` (:1183),
+  `momentum_lead_lag_window` (:1290) — all carry an `if t > now { continue; }`. So a future-dated entry
+  (NTP step-back, or ticks persisted while the clock was ahead then reloaded via `load_epoch`) is counted
+  by trend/uncertainty/read_range but excluded by the others, and the served `trend_6h`/`uncertainty`/
+  `read_range` disagree with the doc and with the sibling diagnostics on the same tick. SERVED (never
+  feeds P). Reachability needs clock skew / future-dated persistence. FIX: add the `if t > now { continue; }`
+  guard to all three loops. GATE: inject a `t > now` ring entry and assert it is excluded from each of the
+  three reads (a `> now` entry must not move the baseline/spread/range) — FAILS today. Touched:
+  engine-behavior. (Surfaced 2026-07-14 by a served-path bug-hunt.)
+
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
 - [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now
   scores the live model against Robert's anchored band CENTRES with proper scoring rules
@@ -771,6 +802,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   events accrue. Locked by `domain_confidence_never_falls_when_a_corroborating_event_arrives` (an
   adversarial strong→noise growth sequence + the exact [T1,T1]→[T1,T1,T3] pathology; FAILS when the
   body is reverted to the mean — panic at bayesian.rs:2121). See improvement-log 2026-07-14.
+
+- [x] **1.32 The LLM-dispatch gate substring-matched person/org names it documents as whole-word —
+  `putin`/`trump`/`hamas` phantom-triggered the VRAM-capped enricher (and skewed video sentence
+  selection)** — **DONE 2026-07-14 (later).** `has_geopolitical_trigger` (nlp_sidecar.rs) — the gate
+  deciding whether an article the keyword pass rejected is worth an LLM dispatch, and (via
+  `video::condense_transcript`) which transcript sentences are kept in the 6000-char signal budget —
+  documents that "the short tokens ... match whole-word only, mirroring processor::BOUNDARY_ACTOR_PATS
+  ... person/org names ... have no adjective/derived forms." But `putin`/`trump`/`hamas` sat in the
+  plain-substring `ACTORS` list, so `trump`⊂trumpeted, `hamas`⊂bahamas, `putin`⊂disputing/computing
+  each fired the gate on ordinary non-geopolitical headlines — a contract-vs-code contradiction and a
+  phantom dispatch into the cap=2 GPU pool (delaying a real enrichment) + a false-positive sentence
+  displacing genuine signal from the video budget. Moved exactly those three to the whole-word
+  `ACTORS_WORD` list (mirroring `BOUNDARY_ACTOR_PATS`); kept `zelensky`/`houthi` substring so their
+  suffix forms ("Zelenskyy", "Houthis") still fire — strictly removes false positives, zero recall
+  loss. Locked by the extended `geopolitical_trigger_short_tokens_do_not_fire_inside_ordinary_words`
+  (trumpeted/bahamas/computing) + `..._whole_words_and_morphology_still_fire` (real Trump/Putin/Hamas
+  mentions + Zelenskyy/Houthis suffix recall); FAILS when the three are reverted to substring (panic at
+  nlp_sidecar.rs:569, "'Officials trumpeted…' must not trigger"). See improvement-log 2026-07-14 (later).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
