@@ -333,6 +333,24 @@ pub struct SetMultiplierBody {
     multiplier: f64,
 }
 
+/// Round an operator-supplied regime multiplier to the stored precision (1e-4) and
+/// validate the ROUNDED value against the sanity bounds `(0.0, 10.0]`.
+///
+/// The value actually stored/served/fed-forward is the rounded one, so the bound MUST
+/// be checked on that value — not on the raw input. Gating the raw input lets a
+/// sub-0.00005 multiplier pass `> 0.0` yet round to exactly 0.0, which collapses
+/// `regime_product` to zero and feeds `guardrail_from_regime(0.0)` — precisely the
+/// "accidental model destruction" the bound is documented to prevent, and it also serves
+/// a `product`/`multiplier` of 0.0, outside the documented `(0.0, 10.0]`. Returns `None`
+/// (→ 400) when the rounded value is out of range.
+fn validated_multiplier(raw: f64) -> Option<f64> {
+    let m = (raw * 1e4).round() / 1e4;
+    if m <= 0.0 || m > 10.0 {
+        return None;
+    }
+    Some(m)
+}
+
 pub async fn set_regime_multiplier(
     State(state): State<OperatorState>,
     headers: HeaderMap,
@@ -341,13 +359,16 @@ pub async fn set_regime_multiplier(
 ) -> impl IntoResponse {
     if let Err(e) = check_key_and_rate(&headers, &state) { return e.into_response(); }
 
-    // Multiplier sanity bounds — prevent accidental model destruction
-    if body.multiplier <= 0.0 || body.multiplier > 10.0 {
-        return (
+    // Multiplier sanity bounds — prevent accidental model destruction. Validate the
+    // ROUNDED value (the one actually stored), so a sub-0.00005 input cannot round to
+    // 0.0 and collapse the regime product past the `> 0.0` gate.
+    let new_multiplier = match validated_multiplier(body.multiplier) {
+        Some(m) => m,
+        None => return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Multiplier must be in range (0.0, 10.0]"})),
-        ).into_response();
-    }
+        ).into_response(),
+    };
 
     let mut factors = state.regime.lock().await;
     match factors.iter_mut().find(|f| f.id == id) {
@@ -357,7 +378,7 @@ pub async fn set_regime_multiplier(
         ).into_response(),
         Some(factor) => {
             let old    = factor.multiplier;
-            factor.multiplier = (body.multiplier * 1e4).round() / 1e4;
+            factor.multiplier = new_multiplier;
             let new_val = factor.multiplier;
             drop(factors);
             // Sync to shared_regime so Aggregator picks up the new multiplier
@@ -929,23 +950,39 @@ mod tests {
     }
 
     // ── multiplier bounds ─────────────────────────────────────────────────────
+    // These exercise `validated_multiplier`, the SINGLE gate the handler uses — the
+    // bound is checked on the ROUNDED value that is actually stored, so a sub-0.00005
+    // input cannot slip past `> 0.0` and round to 0.0 (collapsing the regime product).
 
     #[test]
     fn multiplier_zero_is_invalid() {
-        let m = 0.0f64;
-        assert!(m <= 0.0);
+        assert_eq!(validated_multiplier(0.0), None);
     }
 
     #[test]
     fn multiplier_above_ten_is_invalid() {
-        let m = 10.1f64;
-        assert!(m > 10.0);
+        assert_eq!(validated_multiplier(10.1), None);
     }
 
     #[test]
     fn multiplier_one_is_valid() {
-        let m = 1.0f64;
-        assert!(m > 0.0 && m <= 10.0);
+        assert_eq!(validated_multiplier(1.0), Some(1.0));
+        assert_eq!(validated_multiplier(10.0), Some(10.0));
+    }
+
+    #[test]
+    fn multiplier_that_rounds_to_zero_is_rejected_not_stored_as_zero() {
+        // 0.00004 passes the raw `> 0.0` gate but rounds to exactly 0.0 at 1e-4
+        // precision. Storing that collapses `regime_product` to 0.0 and feeds
+        // `guardrail_from_regime(0.0)` — the "model destruction" the bound documents
+        // preventing. The rounded-value gate must REJECT it.
+        assert_eq!((0.00004_f64 * 1e4).round() / 1e4, 0.0,
+            "precondition: 0.00004 rounds to 0.0 at the stored precision");
+        assert_eq!(validated_multiplier(0.00004), None,
+            "a sub-0.00005 multiplier rounds to 0.0 and must be rejected, not stored");
+        // The smallest input that survives rounding (0.00005 → 0.0001) is accepted,
+        // and is served strictly > 0 as the documented bound requires.
+        assert_eq!(validated_multiplier(0.00005), Some(0.0001));
     }
 
     // ── operator_routes builds ────────────────────────────────────────────────

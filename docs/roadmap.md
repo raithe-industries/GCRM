@@ -102,9 +102,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   on config (no computed value / no P moves) → Touched: display-only for streak purposes; take it on a
   run with display-only headroom (surfaced 2026-07-14 by a fresh served-path bug-hunt).
 
-- [ ] **[candidate] 1.z `set_regime_multiplier` gates the RAW value but stores the ROUNDED one — a
+- [x] **[candidate] 1.z `set_regime_multiplier` gates the RAW value but stores the ROUNDED one — a
   sub-0.0001 input rounds to 0.0 and collapses the regime product (the "model destruction" its own
-  bound documents preventing)** — `set_regime_multiplier` (api.rs:336) rejects `multiplier <= 0.0 ||
+  bound documents preventing)** — **DONE 2026-07-14 (later²).** Extracted `validated_multiplier(raw)`
+  (rounds to 1e-4, gates the ROUNDED value, one source of truth) and routed the handler through it, so
+  a sub-0.00005 input (rounds to 0.0) is now rejected 400 instead of stored as 0.0. Locked by
+  `multiplier_that_rounds_to_zero_is_rejected_not_stored_as_zero` (fails when the gate is reverted to
+  the raw value → `validated_multiplier(0.00004)` returns `Some(0.0)`). See improvement-log 2026-07-14
+  (later²). — `set_regime_multiplier` (api.rs:336) rejects `multiplier <= 0.0 ||
   > 10.0` with the comment "Multiplier sanity bounds — prevent accidental model destruction", but the
   value actually stored/served/fed-forward is `(body.multiplier * 1e4).round() / 1e4`. Any raw input in
   `(0.0, 0.00005)` passes the `> 0.0` gate yet rounds to exactly `0.0`, so `regime_product` (api.rs:202)
