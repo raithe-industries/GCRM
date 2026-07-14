@@ -356,14 +356,25 @@ fn source_tier_quality(t: SourceTier) -> f64 {
 /// feeds the forecast. `tiers` is one entry per in-window event that fed this domain's
 /// score (so `tiers.len()` is the domain's event count); `distinct_actors` is the count
 /// of distinct tracked actors implicated in the domain. Monotone non-decreasing in the
-/// event count, in `distinct_actors`, and in source-tier quality; returns the offline
-/// floor when the domain saw no events. Behaviour of the former inline block, verbatim.
+/// event count, in `distinct_actors`, and in the best source-tier quality; returns the
+/// offline floor when the domain saw no events. The quality term is the BEST (max) source
+/// tier, not the arithmetic mean: evidence is additive, so a corroborating event — even a
+/// low-tier one — must never LOWER the read. (The former mean form violated the
+/// monotonicity contract stated above: a Tier3 event joining a Tier1 set dropped the mean
+/// quality enough to net-decrease confidence, so the operator saw "% conf" FALL exactly as
+/// a story spread to more outlets. `max` is identical to the mean for any single-tier list,
+/// so calibration and every prior lock are byte-identical.)
 pub fn domain_confidence(tiers: &[SourceTier], distinct_actors: usize) -> f64 {
     if tiers.is_empty() {
         return DOMAIN_CONFIDENCE_OFFLINE_FLOOR;
     }
     let n = tiers.len() as f64;
-    let tier_quality = tiers.iter().map(|&t| source_tier_quality(t)).sum::<f64>() / n;
+    // Best available source tier sets the quality (monotone envelope), NOT the mean —
+    // a weaker corroborating source can never dilute a stronger one's confidence.
+    let tier_quality = tiers
+        .iter()
+        .map(|&t| source_tier_quality(t))
+        .fold(0.0_f64, f64::max);
     let count_factor = ((1.0 + n).ln()
         / (1.0 + DOMAIN_CONFIDENCE_EVENT_SATURATION).ln()).min(1.0);
     let actor_conf =
@@ -2092,6 +2103,35 @@ mod tests {
         let cap = DOMAIN_TIER3_QUALITY * DOMAIN_CONF_W_TIER + DOMAIN_CONF_W_COUNT;
         assert!(way_over <= cap + 1e-9 && way_over >= at_sat - 1e-12,
             "beyond saturation the volume term is capped at its weight");
+    }
+
+    #[test]
+    fn domain_confidence_never_falls_when_a_corroborating_event_arrives() {
+        use SourceTier::{Tier1, Tier2, Tier3};
+        // Evidence is ADDITIVE: a new event — even a weak (Tier3) one joining a strong
+        // (Tier1) set — must never LOWER per-modality confidence. The former arithmetic-mean
+        // quality term violated this: it diluted the read, so the operator saw "% conf" FALL
+        // as a story spread from a Tier1 wire to more (lower-tier) outlets — a wrong-direction
+        // signal that contradicted the "monotone non-decreasing in the event count" contract.
+        // Grow the tier list one event at a time across an adversarial strong→noise sequence
+        // and assert monotone non-decrease at every step, holding actors fixed.
+        let seq = [Tier1, Tier3, Tier3, Tier2, Tier3, Tier1];
+        let mut cur: Vec<SourceTier> = Vec::new();
+        let mut prev = f64::NEG_INFINITY;
+        for &t in &seq {
+            cur.push(t);
+            let c = domain_confidence(&cur, 2);
+            assert!(c + 1e-12 >= prev,
+                "confidence fell when a corroborating {t:?} event arrived: {prev} -> {c}");
+            prev = c;
+        }
+        // The exact pathology the max-quality fix removes: a lone Tier3 joining two Tier1s
+        // (mean quality 1.0 -> 0.733) used to net-drop the read; the best-tier envelope holds
+        // quality at 1.0 so the added event's count term can only raise it.
+        let strong = domain_confidence(&[Tier1, Tier1], 2);
+        let plus_weak = domain_confidence(&[Tier1, Tier1, Tier3], 2);
+        assert!(plus_weak + 1e-12 >= strong,
+            "a low-tier corroboration must not lower confidence ({strong} -> {plus_weak})");
     }
 
     #[test]

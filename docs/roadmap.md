@@ -80,6 +80,28 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     (+ `independent_outlet_video_still_corroborates` guards against over-suppression). This is the
     independence half; the REMAINING threshold-fit (over/under-merge on labeled pairs) is still open.
 
+- [ ] **[candidate] 1.y Methodology alert bands render from `AlertSettings::default()`, not the live
+  config — a served page that claims it "cannot disagree with the classification"** — `ServerState::new`
+  (src/server.rs:66) fills the served `/methodology` page's Elevated/Critical/30-day band figures from
+  `crate::models::AlertSettings::default()` (0.025 / 0.08 / 0.01), NOT the loaded `settings.alerts`. The
+  adjacent comment (server.rs:62-65) AND the served prose (methodology.html) promise the opposite — that
+  the bands are "read from the engine's live `AlertSettings` … so the prose, the colour, and the chart
+  cannot disagree with the classification." But the engine CLASSIFIES with `settings.alerts`
+  (main.rs → `BayesianRiskEngine::new(.., settings.alerts.elevated, settings.alerts.critical)`) and the
+  live snapshot serves those live thresholds — so the dashboard is live-correct and only the methodology
+  page is pinned to defaults. Invisible TODAY only because committed `settings.yml` == defaults; the
+  moment an operator tunes `alerts:` the whitepaper silently states the WRONG bands for the whole run,
+  contradicting the live hero readout + timeline reference lines. Contrast the genuinely drift-proof
+  neighbours (`{{FORECAST_PROB_CEILING}}`, `{{BASELINE_ANNUAL_PCT}}`) — those are compile-time CONSTANTS
+  (a real single source of truth); `AlertSettings` is runtime CONFIG, so `::default()` breaks the very
+  anti-drift guarantee the comment copies. FIX (small, self-contained): thread `&settings.alerts` into
+  `ServerState::new` (the value is already in scope at the call site, next to where it is handed to the
+  aggregator) and substitute from it. GATE: a `server.rs` test rendering the methodology HTML with a
+  CUSTOM `AlertSettings` (e.g. critical 0.12) asserts the page shows "12.0%" and NOT the default "8.0%"
+  — FAILS today, passes after. NOTE for the taxonomy: this changes a served DISPLAY string conditioned
+  on config (no computed value / no P moves) → Touched: display-only for streak purposes; take it on a
+  run with display-only headroom (surfaced 2026-07-14 by a fresh served-path bug-hunt).
+
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
 - [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now
   scores the live model against Robert's anchored band CENTRES with proper scoring rules
@@ -735,6 +757,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (indochina/tirana/assyria → no gp, no china/iran id; iranian/russian demonyms still resolve, gp
   holds; FAILS when the branch is reverted to `tl.find` — actors become China/Iran/Syria). See
   improvement-log 2026-07-13 (later²).
+
+- [x] **1.31 Per-modality "% conf" FELL as corroboration arrived — the mean-quality term violated
+  its own monotonicity contract** — **DONE 2026-07-14.** `domain_confidence` (bayesian.rs, the
+  served "% conf" per modality) documented itself "Monotone non-decreasing in the event count," but
+  built `tier_quality` as the ARITHMETIC MEAN of the source tiers. A corroborating LOW-tier event
+  joining a strong set dropped the mean enough to net-DECREASE confidence, so the operator watched a
+  modality's "% conf" FALL exactly as its story spread from a Tier1 wire to more (lower-tier) outlets
+  — a wrong-direction signal (reachable on today's mixed-tier live data: a nuclear story draws Tier1
+  wires AND Tier3 aggregators). Replaced the mean with the BEST (max) source tier — the monotone
+  envelope for additive evidence: byte-identical to the mean for any single-tier list (so every prior
+  lock + all calibration are unchanged; confidence never feeds P), and now strictly non-decreasing as
+  events accrue. Locked by `domain_confidence_never_falls_when_a_corroborating_event_arrives` (an
+  adversarial strong→noise growth sequence + the exact [T1,T1]→[T1,T1,T3] pathology; FAILS when the
+  body is reverted to the mean — panic at bayesian.rs:2121). See improvement-log 2026-07-14.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
