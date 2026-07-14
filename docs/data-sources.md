@@ -236,7 +236,18 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   **Landable when EITHER** a public `services*.arcgis.com` (Esri-hub) VicEmergency-style FeatureServer serving
   the current per-volcano alert level (queryable `f=geojson`) is pinned, **OR** a committed client/fixture
   quoting the RNVV alert endpoint + field keys surfaces, **OR** an auth-free RNVV JSON/GeoJSON becomes
-  web fetch-reachable (200).
+  web fetch-reachable (200). **SHARPENED 2026-07-14:** the concrete data product is **Chile's national ArcGIS-Hub
+  open-data portal** `plataformadedatos.cl` — dataset **"Active and monitored volcanoes"** at
+  `plataformadedatos.cl/datasets/en/675E7F2BA04771F`, which the portal advertises in **GeoJSON** with fields
+  **ID / Name / Alert Level / Region(s) / Province(s) / Commune(s) / Latitude / Longitude** (exactly the
+  per-volcano alert-level + point schema the connector needs — this is the pinnable product, not a dashboard).
+  Still **blocked on reading it this run:** `plataformadedatos.cl` 403s web fetch (gov WAF), and the Esri layer
+  behind it is unreachable too — **both `www.arcgis.com/sharing/rest/search` AND `hub.arcgis.com/api/v3/datasets`
+  403 web fetch** (the Esri corporate WAF, same wall as `services*.arcgis.com`), so the underlying FeatureServer
+  URL + exact field keys can't be pinned; `github.com` code-search was **429 rate-limited (1 h)** all run, blocking
+  a committed-consumer hunt. **Landable next run** when EITHER the Hub v3 dataset API / ArcGIS sharing-search
+  becomes web fetch-reachable (200 — read the FeatureServer URL + field names straight from `675E7F2BA04771F`),
+  OR a committed client/fixture quoting that layer's REST URL + attribute keys surfaces on `raw.githubusercontent.com`.
 
 ---
 
@@ -483,6 +494,37 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-14 (Signal Hunter)** — **HONEST NO-OP after genuinely evaluating the ranked gaps under a
+  near-total web fetch wall; no source half-wired.** This run's environment was maximally hostile: gov hosts +
+  the whole Esri stack (`www.arcgis.com/sharing`, `hub.arcgis.com`, `services*.arcgis.com`) 403 web fetch, and
+  **`github.com` was 429 rate-limited (Retry-After 3600) all run**, so committed-schema browsing was dead. Only
+  `raw.githubusercontent.com` and **public S3** passed (confirmed: the `qfes_bushfire` QLD S3 bucket returned 48
+  live features dated 2026-07-14 — S3 is the standing exception to the wall). Walked the mission ranking:
+  **(1) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED, same wall as
+  2026-07-13: live endpoint 403s, and **no committed schema anchor exists** — the `tmfg/digitraffic` marine doc
+  (`meriliikenne-en.md`) covers AIS/harbours/AtoN but NOT nautical warnings, and the `thjr/hass-digitraffic`
+  add-on supports weather/AIS/train sensors but NOT warnings; with `github.com` 429 a deeper consumer hunt was
+  impossible. Stays the #1 DEFERRED lead. **(2) `acled_aggregated` refresh** (conflict freshness) — the committed
+  snapshot's newest `WEEK` is **2026-03-07 (~129 d old ≫ the 42-day `MAX_ROW_AGE_DAYS` gate)**, so the ACLED
+  Middle-East Conflict layer is **currently self-emptied / dark — the honest read of a stale snapshot** (working
+  as designed). RE-CONFIRMED the refresh is **local-only, not web fetch-doable**: `acleddata.com` 403s and the
+  Aggregated Data product **requires a registered myACLED account** to download (web search-confirmed) — matches
+  the 2026-07-12 finding. The layer relights only when the LOCAL re-download job re-commits a fresh
+  `acled_aggregated_snapshot.csv`. **(3) SERNAGEOMIN Chile volcanoes / South America** (blank continent) —
+  RE-VERIFIED BLOCKED but **SHARPENED to a concrete pinnable product**: the dataset
+  `plataformadedatos.cl/datasets/en/675E7F2BA04771F` ("Active and monitored volcanoes", advertised GeoJSON with
+  ID/Name/Alert Level/Region/Lat/Lon) — but `plataformadedatos.cl` + the entire Esri stack 403 and `github.com`
+  429, so the FeatureServer URL/keys can't be pinned this run (see the updated DEFERRED entry). **(4) European
+  radiation extension** (nuclear modality — highest-signal after the DE/FI/FR trio) — evaluated: **no
+  raw.githubusercontent-anchorable consumer** for a new-country network surfaced (EURDEP is access-controlled;
+  RIVM/Belgium-Telerad/Swiss-NADAM expose no committed client to anchor); Norway RADNETT stays the deferred lead.
+  **(5) VicEmergency (Victoria all-hazard)** — technically landable via the `exxamalte/python-aio-geojson-vicemergency-incidents`
+  committed fixture (raw.githubusercontent is reachable), but **DECLINED as surface-not-signal**: a 4th Australian
+  state (bushfire/flood) after NSW/WA/QLD is geography-padding, not a WWIII-risk observable — landing it only to
+  avoid a no-op would violate the binding "signal over surface" governance. No code change; tree clean;
+  ledger-only commit (sharpened SERNAGEOMIN + this entry). Standing first picks the moment the wall lifts:
+  Fintraffic nautical warnings (Path A, needs the warning-feature property keys) and the Chile `675E7F2BA04771F`
+  volcano layer (needs the Esri host or a committed consumer to become readable).
 - **2026-07-13 (Signal Hunter, later run)** — **HONEST NO-OP after genuinely evaluating the ranked gaps;
   no source half-wired.** Walked the mission ranking, biased to the #1 gap (military-posture) and the blank
   continents. **Best NEW lead found & verified: Fintraffic Digitraffic nautical warnings** (`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`)
