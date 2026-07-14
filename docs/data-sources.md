@@ -494,6 +494,48 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-14 (Signal Hunter, later run)** — **HONEST NO-OP after genuinely evaluating the ranked
+  gaps; no source half-wired — but a SUBSTANTIVE run: the #1 lead was resolved by directly inspecting the
+  serving repo (github.com browsable this run, unlike the recent 429 runs).** Today's web fetch wall was
+  near-total: gov/OSINT + the whole Esri stack (`hub.arcgis.com`, `opendata.arcgis.com`), `fdw.fews.net`,
+  `api.ipcinfo.org`, `data.humdata.org` (HDX), `api.reliefweb.int`, **and even `earthquake.usgs.gov` +
+  `www.gdacs.org`** all 403; reachable this run were **`raw.githubusercontent.com`, `github.com` blob/tree
+  pages, and public S3** (confirmed: the `qfes_bushfire` QLD S3 bucket returned 49 live features dated
+  2026-07-14). Walked the mission ranking:
+  **(1) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — **DEFINITIVELY re-confirmed
+  blocked, this time by browsing the serving repo directly** (prior runs inferred it under github-429).
+  `github.com/tmfg/digitraffic-marine` tree: base package `fi/livi/digitraffic/meri` has
+  `controller/{ais,exception,info,portcall,reader,sse}` and `dto/{ais,data/v1,geojson,info/v1,mqtt,portcall/v1,sse/v1}`
+  — **NO nautical-warning controller/DTO/model anywhere in it**, and github code-search needs auth. So the
+  `/api/nautical-warning/v1/` endpoint is served by a DIFFERENT (unlocatable) service and its warning-feature
+  property keys are committed nowhere reachable — the honest fixture still can't be written. Upgrades the
+  DEFERRED entry from "serving service not locatable (inferred)" to "confirmed absent from digitraffic-marine
+  by tree inspection." Stays the #1 DEFERRED lead (Path A, needs the property keys). **(2) Humanitarian /
+  FEWS-NET IPC** (genuinely-new instability modality — Sudan/Gaza famine as conflict amplifiers; top-tier
+  value, NOT padding) — **SHARPENED but still blocked.** The FEWS help center documents the `ipcphase.geojson`
+  property keys (`id, scenario, start_date, end_date, collection_date, value`) and confirms `ipcphasemap`
+  **dissolves internal boundaries → inline dissolved-polygon geometry per phase**; HDX also hosts per-country
+  **"IPC - Acute Food Insecurity Classification" GeoJSON** (`res_format=GeoJSON`) as a candidate Path-B mirror.
+  BUT `fdw.fews.net` + `api.ipcinfo.org` + HDX + `opendata.arcgis.com` ALL 403 this run, and no committed
+  real `ipcphasemap`/`ipcphase` GeoJSON sample surfaced on GitHub-raw (`prio-data/FEWSNet_to_PG` still uses
+  the geometryless CSV; `nutriverse/ipctools` is malnutrition/MUAC, not the FDW geojson) — so I can neither
+  obtain a real Path-B fixture NOR prove Path-A liveness (web fetch-200). Writing a fixture from doc-only keys
+  = faking the anchor (forbidden). Landable when EITHER `fdw.fews.net`/`api.ipcinfo.org`/HDX becomes
+  web fetch-reachable (200) OR a committed real IPC GeoJSON sample surfaces on `raw.githubusercontent.com`.
+  **(3) Chile SERNAGEOMIN volcanoes / South America** (blank continent) — RE-WALLED: `hub.arcgis.com` +
+  `opendata.arcgis.com` 403 (Esri corporate WAF), the `675E7F2BA04771F` FeatureServer URL/keys still can't be
+  pinned, and no committed consumer of the plataformadedatos.cl volcano layer surfaced. **(4) `acled_aggregated`
+  refresh** — unchanged: snapshot newest `WEEK` `2026-03-07` (~129 d stale → ME Conflict layer honestly dark),
+  refresh is myACLED-login-gated → local-only, not web fetch-doable. **Also enumerated the kalisio krawler
+  ecosystem** (source of the live `teleray`/`vigicrues`) for a new gap-closer — recorded non-fits so future
+  runs don't re-chase: **k-openradiation** = OpenRadiation *citizen-science* crowdsourced (fails bar 1
+  authoritative), **k-openaq** = keyed (OpenAQ v3 API key) + weak-signal air-quality dup of `eccc_aqhi`,
+  **k-firms**/**k-teleray**/**k-vigicrues** already live, **k-rte** = single-country FR grid scalar (IESO-class
+  deferral, not geocoded per-event). None authoritative + gap-closing + non-padding. **Green-proof:** N/A —
+  no code touched; `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only commit. Standing first picks
+  when the wall lifts: Fintraffic nautical warnings (needs the warning-feature keys — served outside
+  digitraffic-marine), the FEWS-NET IPC `ipcphasemap`/HDX GeoJSON (needs a 200 or a committed sample), and the
+  Chile `675E7F2BA04771F` volcano layer (needs the Esri host or a committed consumer to become readable).
 - **2026-07-14 (Signal Hunter)** — **HONEST NO-OP after genuinely evaluating the ranked gaps under a
   near-total web fetch wall; no source half-wired.** This run's environment was maximally hostile: gov hosts +
   the whole Esri stack (`www.arcgis.com/sharing`, `hub.arcgis.com`, `services*.arcgis.com`) 403 web fetch, and
