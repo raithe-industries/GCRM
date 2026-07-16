@@ -169,7 +169,13 @@ dots. Ready for a future cyber-advisories panel/surface, not the map.
   live endpoint becomes web fetch-reachable (200), OR a consumer quoting the map product's exact property
   keys is found. (The IPC `ipcinfo.org` API is the keyed alternative → would ship DORMANT; IPC also
   publishes GeoJSON to auth-free **HDX** `data.humdata.org` — a possible Path-B mirror if a stable
-  per-region file + schema can be pinned.)
+  per-region file + schema can be pinned.) **FEWS NET public S3 ruled out as a GeoJSON path (2026-07-16):**
+  FEWS NET does publish HFIC spatial data on the reachable-class **public S3 bucket
+  `shapefiles.fews.net.s3.amazonaws.com`**, but it serves **binary zipped SHAPEFILES** (not hand-parseable),
+  and 503'd unreliably this run — the auth-free **GeoJSON** product remains only on the 403'd `fdw.fews.net`
+  API / ipcinfo mapping tool / HDX. The Nature/JRC **HFID** harmonized dataset is **historical (2007→2024)**,
+  fails freshness. So the landable trigger is unchanged: a web fetch-200 on `fdw.fews.net`/HDX **or** a
+  committed real `ipcphasemap`/`ipcphase` GeoJSON sample on `raw.githubusercontent.com`.
 - **Norway RADNETT gamma dose network** (DSA — Direktoratet for strålevern og atomsikkerhet) —
   **STRONG deferral, verified 2026-07-12; blocked ONLY on endpoint/schema anchoring under the
   total egress wall.** This is the **highest-value new radiation geography still open**: a
@@ -484,6 +490,11 @@ Bias each run toward the least-covered axis below.
   on anchoring the `ipcphasemap` GeoJSON schema to real committed bytes. Adjacent leads if FEWS/IPC
   stays blocked: **FAO–WFP Hunger Hotspots** (PDF/report — geometry-anchoring risk), the **Global
   Report on Food Crises** (annual, too lagged), and **HDX**-mirrored IPC GeoJSON (Path-B snapshot).
+  **FEWS NET public S3 (`shapefiles.fews.net`) checked 2026-07-16 and ruled out as a GeoJSON path** — it's
+  reachable-class but serves **binary shapefiles** (not hand-parseable) + 503-unreliable; the auth-free
+  GeoJSON is only on the 403'd `fdw.fews.net`/HDX. The JRC **HFID** dataset is historical (2007→2024, not
+  fresh). So this gap stays blocked on a GeoJSON-serving host becoming reachable (a `fdw.fews.net`/HDX 200
+  or a committed real `ipcphasemap` sample) — do NOT re-chase GeoJSON on the FEWS S3 bucket.
 - **Cyber surface** — `cisa_kev` + `cccs` exist but aren't surfaced; a non-map cyber panel
   would unlock them.
 
@@ -494,6 +505,38 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-16 (Signal Hunter, later run)** — **HONEST NO-OP after a fresh, tenacious walk of the
+  ranked gaps; no source half-wired — but with ONE new, concrete finding that sharpens the humanitarian
+  deferral.** Wall was the standard shape, re-characterized by live probes: **reachable = public S3 +
+  `raw.githubusercontent.com` only.** Positive control: the `qfes_bushfire` QLD S3 bucket returned **50
+  live features, newest `ItemDateTimeLocal_ISO` 2026-07-16T08:04+10:00** — S3 exception healthy. Walked
+  the mission ranking: **(1) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) —
+  RE-VERIFIED BLOCKED: the live `warnings/active` endpoint AND `meri.digitraffic.fi/swagger/openapi.json`
+  both 403; a GitHub-scoped web search for a consumer quoting the warning-feature property keys again
+  surfaced only the AIS/harbour doc (`meriliikenne-en.md`) — no committed schema anchor, honest fixture
+  still unwritable. Stays #1 DEFERRED (Path A, needs the warning-feature keys). **(2) Humanitarian /
+  FEWS-NET IPC** (genuinely-new instability modality — Sudan/Gaza famine as conflict amplifiers) —
+  RE-VERIFIED BLOCKED, but **NEW reachable avenue found and ruled out**: FEWS NET publishes its HFIC
+  spatial data on the **public S3 bucket `shapefiles.fews.net.s3.amazonaws.com`** (reachable-class, like
+  QFES) — BUT it serves **binary zipped SHAPEFILES**, not hand-parseable GeoJSON (the bucket name is
+  literal), and it **503'd unreliably** every fetch this run (list + the `HFIC/FEWS_NET_Food_Security_Data_v3.pdf`
+  doc, ×5); the auth-free **GeoJSON** product is only via `fdw.fews.net` (403) / the ipcinfo mapping tool /
+  HDX (403). Also checked the **Nature/JRC "Harmonized Food Insecurity Dataset" (HFID)** — it's a
+  **historical research dataset (Jun-2007→May-2024)**, fails the freshness bar. So FEWS/IPC stays blocked:
+  the reachable FEWS host is shapefile-binary, the GeoJSON host is 403. **(3) Iceland volcano ACC**
+  (N-Atlantic gap; Reykjanes actively erupting — high current value) — RE-WALLED: `gis.vedur.is` NXDOMAIN,
+  the WFS/ArcGIS live host 403s, no committed consumer quotes the live per-volcano ACC layer id/keys; the
+  ACC "map" is a daily 09:00-UTC image, no documented per-volcano JSON API. **(4) `acled_aggregated`
+  refresh** (conflict freshness) — the committed snapshot's newest `WEEK` is still **2026-03-07 (~131 d ≫
+  the 42-day `MAX_ROW_AGE_DAYS` gate)**, so the ACLED Middle-East Conflict layer is **self-emptied / honestly
+  dark** (working as designed). Refresh RE-CONFIRMED **myACLED-login-gated, no auth-free public mirror on
+  GitHub** (web search: the Aggregated Data product is a registered-tier download; third-party repos all need
+  an API key) → local-only, not web fetch-doable. **Green-proof:** N/A — no code touched; `src/osint.rs` +
+  `vendor/ee-sources/` unchanged; ledger-only commit; tree left clean. Standing first picks when the wall
+  lifts: Fintraffic nautical warnings (web fetch-200 on the live endpoint would let me read the wire shape
+  and land it Path A on the already-live `digitraffic_ais` host), FEWS-NET IPC `ipcphasemap`/HDX GeoJSON
+  (needs a 200 on `fdw.fews.net`/HDX or a committed real sample — the FEWS S3 bucket is NOT that path, it's
+  shapefile-only), and the Chile `675E7F2BA04771F` volcano layer.
 - **2026-07-16 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious re-probe of the ranked
   gaps; no source half-wired.** The wall this run was the standard shape, re-characterized by live
   probes (not re-cited from prior runs): **reachable = public S3 + `raw.githubusercontent.com` only.**
