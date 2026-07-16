@@ -494,6 +494,44 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-16 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious re-probe of the ranked
+  gaps; no source half-wired.** The wall this run was the standard shape, re-characterized by live
+  probes (not re-cited from prior runs): **reachable = public S3 + `raw.githubusercontent.com` only.**
+  Positive controls: the `qfes_bushfire` QLD S3 bucket
+  (`publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/.../bushfireAlert.json`) returned **53 live
+  features, newest `ItemDateTimeLocal_ISO` 2026-07-16T06:45+10:00** — S3 remains the standing exception
+  and that live layer is healthy. Everything else 403'd this run: `meri.digitraffic.fi` (+ its
+  `/swagger/openapi.json`), `hub.arcgis.com/api/v3`, `data.humdata.org` (HDX package_search),
+  `www.gdacs.org`, `api.reliefweb.int`, `emergency.vic.gov.au`, `data.eso.sa.gov.au` (SA CFS),
+  `www.fire.tas.gov.au`, `www.ndbc.noaa.gov`, `api.weather.gc.ca`; two hosts NXDOMAIN'd
+  (`warnings.dfes.wa.gov.au`, a Thai TMD alerts host). Walked the mission ranking:
+  **(1) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED:
+  the live `warnings/active` endpoint AND `meri.digitraffic.fi/swagger/openapi.json` both 403, and a
+  fresh GitHub-scoped web search for a consumer quoting the warning-feature property keys surfaced only
+  the AIS/harbour/AtoN docs (`meriliikenne-en.md`) and the `digitraffic-marine` repo — which the
+  2026-07-14 tree inspection already confirmed carries **no** nautical-warning controller/DTO. No
+  committed schema anchor exists; the honest fixture still can't be written. Stays the #1 DEFERRED lead
+  (Path A, needs the warning-feature keys — served by an unlocatable service). **(2) Humanitarian /
+  FEWS-NET IPC** (genuinely-new instability modality — Sudan/Gaza famine as conflict amplifiers) —
+  RE-VERIFIED BLOCKED: `fdw.fews.net`, `api.ipcinfo.org`, and HDX all 403, and no committed real
+  `ipcphasemap`/`ipcphase` GeoJSON sample surfaced on GitHub-raw, so neither a Path-B fixture nor a
+  Path-A 200 is obtainable (a fixture from doc-only keys would be faking the anchor — forbidden).
+  **(3) Chile SERNAGEOMIN volcanoes / South America** (blank continent) — RE-WALLED: `hub.arcgis.com`
+  403 (Esri WAF), the `675E7F2BA04771F` FeatureServer URL/keys still unpinnable, no committed consumer
+  surfaced. **(4) `acled_aggregated` refresh** (conflict freshness) — the committed snapshot's newest
+  `WEEK` is **2026-03-07 (~131 d old ≫ the 42-day `MAX_ROW_AGE_DAYS` gate)**, so the ACLED Middle-East
+  Conflict layer is **self-emptied / honestly dark** (working as designed). Refresh RE-CONFIRMED
+  local-only, not web fetch-doable (`acleddata.com` 403; the Aggregated Data product needs a registered
+  myACLED login). **(5) New geography — Australian remaining states** (VIC/SA/TAS, to extend the
+  emergency-warning modality past NSW/WA/QLD) — probed VicEmergency + SA CFS + Tasmania Fire Service
+  live: **all 403** (unlike QFES they are NOT on public S3), and no committed HA fixture was needed to
+  discover that they're unreachable this run; incremental geography anyway, below the top gaps.
+  **Green-proof:** N/A — no code touched; `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only
+  commit; tree left clean. Standing first picks when the wall lifts: Fintraffic nautical warnings (needs
+  the warning-feature keys — a web fetch-200 on the live endpoint would let me read the wire shape and
+  land it Path A on the already-live `digitraffic_ais` host), the FEWS-NET IPC `ipcphasemap`/HDX GeoJSON
+  (needs a 200 or a committed real sample), and the Chile `675E7F2BA04771F` volcano layer (needs the
+  Esri host or a committed consumer to become readable).
 - **2026-07-14 (Signal Hunter, later run)** — **HONEST NO-OP after genuinely evaluating the ranked
   gaps; no source half-wired — but a SUBSTANTIVE run: the #1 lead was resolved by directly inspecting the
   serving repo (github.com browsable this run, unlike the recent 429 runs).** Today's web fetch wall was
