@@ -80,8 +80,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
     (+ `independent_outlet_video_still_corroborates` guards against over-suppression). This is the
     independence half; the REMAINING threshold-fit (over/under-merge on labeled pairs) is still open.
 
-- [ ] **[candidate] 1.y Methodology alert bands render from `AlertSettings::default()`, not the live
-  config — a served page that claims it "cannot disagree with the classification"** — `ServerState::new`
+- [x] **[candidate] 1.y Methodology alert bands render from `AlertSettings::default()`, not the live
+  config — a served page that claims it "cannot disagree with the classification"** — **DONE 2026-07-16
+  (later).** Threaded `&settings.alerts` into `ServerState::new` (a 3rd param) and rendered the
+  `{{ALERT_*}}` placeholders from it instead of `AlertSettings::default()`, so the whitepaper now states
+  the operator's LIVE bands. Locked by `methodology_renders_alert_bands_from_the_live_config_not_defaults`
+  (drives `ServerState::new` with a tuned config `critical=0.12` and asserts the page shows `12.0%`/`5.0%`/
+  `3.0%` and NONE of the defaults `8.0%`/`2.5%`/`1.0%` — FAILS when the render is re-pinned to `::default()`).
+  See improvement-log 2026-07-16 (later). — `ServerState::new`
   (src/server.rs:66) fills the served `/methodology` page's Elevated/Critical/30-day band figures from
   `crate::models::AlertSettings::default()` (0.025 / 0.08 / 0.01), NOT the loaded `settings.alerts`. The
   adjacent comment (server.rs:62-65) AND the served prose (methodology.html) promise the opposite — that

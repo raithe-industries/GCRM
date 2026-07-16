@@ -56,14 +56,19 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(app_state: SharedState, base_path: &str) -> (Self, broadcast::Sender<Arc<String>>) {
+    pub fn new(
+        app_state: SharedState,
+        base_path: &str,
+        alerts: &crate::models::AlertSettings,
+    ) -> (Self, broadcast::Sender<Arc<String>>) {
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
         let html = Arc::new(generate_dashboard_html(base_path));
-        // The alert-band prose is rendered from the engine's AlertSettings (the same
-        // source the dashboard hero/timeline read live) so the methodology can never
-        // disagree with the running classification — same anti-drift pattern as the
-        // forecast ceiling above.
-        let alerts = crate::models::AlertSettings::default();
+        // The alert-band prose is rendered from the engine's LIVE AlertSettings (the
+        // same `settings.alerts` the classifier and the dashboard hero/timeline read)
+        // so the methodology can never disagree with the running classification — same
+        // anti-drift pattern as the forecast ceiling above. NB: must be the live config,
+        // NOT AlertSettings::default() — the moment an operator tunes `alerts:` the
+        // defaults would silently mis-state every band for the whole run.
         let methodology = Arc::new(
             render_base_path(METHODOLOGY_HTML, base_path)
                 .replace("{{CALIBRATION_EVIDENCE}}", &crate::backtest::calibration_evidence_html())
@@ -1554,7 +1559,7 @@ mod tests {
 
     #[test]
     fn methodology_base_path_substituted() {
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         assert!(state.methodology_html.contains("/risk/"),
             "base path must be substituted into methodology links");
         assert!(!state.methodology_html.contains("{{BASE_PATH}}"),
@@ -1566,7 +1571,7 @@ mod tests {
         // 1.1b: the methodology page must surface the model's live calibration fidelity,
         // computed at startup — not a hand-written table that goes stale. Guards both that
         // the placeholder is substituted and that the readout (Brier + in-band) is present.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         assert!(!state.methodology_html.contains("{{CALIBRATION_EVIDENCE}}"),
             "the calibration-evidence placeholder must be substituted at startup");
         assert!(state.methodology_html.contains("Brier"),
@@ -1582,7 +1587,7 @@ mod tests {
         // can never disagree with the running classification (anti-drift). Guards that
         // every alert placeholder is substituted and that the rendered values match the
         // settings the engine actually uses.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         let m = &*state.methodology_html;
         for tok in ["{{ALERT_ELEVATED}}", "{{ALERT_CRITICAL}}", "{{ALERT_30D}}"] {
             assert!(!m.contains(tok), "alert placeholder {tok} must be substituted at startup");
@@ -1601,6 +1606,30 @@ mod tests {
     }
 
     #[test]
+    fn methodology_renders_alert_bands_from_the_live_config_not_defaults() {
+        // 1.y: the methodology bands must render from the LIVE `settings.alerts`, not
+        // AlertSettings::default(). The sibling test above uses the committed defaults, so
+        // it could not tell live config from default (settings.yml == defaults today). This
+        // one drives ServerState::new with a TUNED config and proves the whitepaper follows
+        // it — otherwise the page silently states the wrong bands the moment an operator
+        // tunes `alerts:`, contradicting its own "cannot disagree with the classification"
+        // prose and the live hero readout / timeline reference lines.
+        let custom = crate::models::AlertSettings { elevated: 0.05, critical: 0.12, thirty_day_warn: 0.03 };
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &custom);
+        let m = &*state.methodology_html;
+        // The tuned bands must appear verbatim...
+        assert!(m.contains("5.0%"),  "methodology must render the LIVE elevated band (5.0%)");
+        assert!(m.contains("12.0%"), "methodology must render the LIVE critical band (12.0%)");
+        assert!(m.contains("3.0%"),  "methodology must render the LIVE 30-day band (3.0%)");
+        // ...and NONE of the defaults may leak through (2.5% / 8.0% / 1.0%) — a default
+        // still on the page means the render is pinned to ::default(), the 1.y defect.
+        for def in ["2.5%", "8.0%", "1.0%"] {
+            assert!(!m.contains(def),
+                "methodology must NOT fall back to default band {def} when the live config differs");
+        }
+    }
+
+    #[test]
     fn methodology_renders_guardrail_collapse_from_the_model_constants() {
         // 2.3 (regime internals): the methodology now quantifies HOW the operator-tunable
         // regime factors enter the model — the guardrail-collapse mechanism. Its two
@@ -1608,7 +1637,7 @@ mod tests {
         // point) are rendered from the engine's own GUARDRAIL_AMPLIFIER / GUARDRAIL_REGIME_SPAN
         // (single source of truth), so the whitepaper can never disagree with
         // bayesian::guardrail_from_regime. Anti-drift, same pattern as the alert bands.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         let m = &*state.methodology_html;
         for tok in ["{{GUARDRAIL_AMPLIFIER_PCT}}", "{{GUARDRAIL_SATURATION_X}}"] {
             assert!(!m.contains(tok), "guardrail placeholder {tok} must be substituted at startup");
@@ -1638,7 +1667,7 @@ mod tests {
         // explains it, and its two figures (the hold fraction and the half-life stretch) are
         // rendered from theater.rs's own FLOOR_FRACTION / WAR_STATE_HALF_LIFE_SCALE (single
         // source of truth), so the prose can never disagree with the running model.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         let m = &*state.methodology_html;
         for tok in ["{{FLOOR_FRACTION_PCT}}", "{{WAR_STATE_HALF_LIFE_SCALE}}"] {
             assert!(!m.contains(tok), "persistence placeholder {tok} must be substituted at startup");
@@ -1667,7 +1696,7 @@ mod tests {
         // each coupler adds to L_sys — rendered from theater.rs's own constants (single
         // source of truth), so the whitepaper can never disagree with the running model.
         // Anti-drift, same pattern as the guardrail figures.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         let m = &*state.methodology_html;
         for tok in ["{{COUPLING_GP_PCT}}", "{{COUPLING_ALLIANCE_PCT}}", "{{GP_ENTANGLEMENT_SAT}}",
                     "{{BREADTH_ASYMPTOTE_PCT}}", "{{BRINK_AMPLIFIER_PCT}}"] {
@@ -1719,7 +1748,7 @@ mod tests {
         // silently drift from the running model the way the old hand-written 0.85
         // doc comments did. Guards that the placeholder is substituted and that the
         // rendered value matches the constant.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         assert!(!state.methodology_html.contains("{{FORECAST_PROB_CEILING}}"),
             "the forecast-ceiling placeholder must be substituted at startup");
         let rendered = format!("{:.2}", crate::models::FORECAST_PROB_CEILING);
@@ -1733,7 +1762,7 @@ mod tests {
         // It is rendered from BASELINE_ANNUAL (single source of truth), so a recalibration
         // of the prior can never leave the whitepaper quoting a stale percentage — the same
         // anti-drift guarantee as the forecast ceiling and alert bands.
-        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk");
+        let (state, _) = ServerState::new(crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
         let m = &*state.methodology_html;
         assert!(!m.contains("{{BASELINE_ANNUAL_PCT}}"),
             "the baseline-prior placeholder must be substituted at startup");
@@ -2001,7 +2030,7 @@ mod tests {
     fn server_state_creates_broadcast_channel() {
         // Verify ServerState::new returns a functional broadcast sender
         let app_state = crate::aggregator::AppState::new();
-        let (state, tx) = ServerState::new(app_state, "");
+        let (state, tx) = ServerState::new(app_state, "", &crate::models::AlertSettings::default());
         // Subscribe and verify we can send/receive
         let mut rx = state.broadcast_tx.subscribe();
         let msg = Arc::new("test".to_string());
@@ -2013,7 +2042,7 @@ mod tests {
     #[test]
     fn route_count() {
         let app_state      = crate::aggregator::AppState::new();
-        let (state, _)     = ServerState::new(Arc::clone(&app_state), "");
+        let (state, _)     = ServerState::new(Arc::clone(&app_state), "", &crate::models::AlertSettings::default());
         let op_state       = crate::api::OperatorState::new(
             app_state,
             "test_key".into(),
@@ -2029,7 +2058,7 @@ mod tests {
     #[test]
     fn route_build_with_base_path_does_not_panic() {
         let app_state  = crate::aggregator::AppState::new();
-        let (state, _) = ServerState::new(Arc::clone(&app_state), "/risk");
+        let (state, _) = ServerState::new(Arc::clone(&app_state), "/risk", &crate::models::AlertSettings::default());
         let op_state   = crate::api::OperatorState::new(app_state, "test_key".into(), vec![]);
         let _router = build_router(state, op_state, "/risk");
     }

@@ -328,7 +328,8 @@ async fn main() {
     }
 
     // ── Server state ──────────────────────────────────────────────────────────
-    let (server_state, _broadcast_tx) = ServerState::new(Arc::clone(&app_state), &settings.dashboard.base_path);
+    let (server_state, _broadcast_tx) =
+        ServerState::new(Arc::clone(&app_state), &settings.dashboard.base_path, &settings.alerts);
 
     // ── Ingestor ──────────────────────────────────────────────────────────────
     let ingestor = Ingestor::new(
