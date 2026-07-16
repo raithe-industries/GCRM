@@ -122,9 +122,14 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   api.rs test posting `0.00004` asserts a 400 (or that the stored/served multiplier stays > 0) — FAILS
   today. Touched: engine-behavior (guards a P-feeding path). (Surfaced 2026-07-14 by a served-path bug-hunt.)
 
-- [ ] **[candidate] 1.aa `trend_window`/`uncertainty_window`/`read_range_window` omit the `t > now`
+- [x] **[candidate] 1.aa `trend_window`/`uncertainty_window`/`read_range_window` omit the `t > now`
   upper-bound guard their doc + four sibling diagnostics enforce — a future-dated ring entry leaks into
-  the served trend/uncertainty/read-range** — these three EpochStore window loops (aggregator.rs:646 /
+  the served trend/uncertainty/read-range** — **DONE 2026-07-16.** Added `if t > now { continue; }` to
+  all three EpochStore window loops, mirroring the four siblings, so the served trend/uncertainty/
+  read-range now honor the CLOSED `[now − window, now]` interval their docs promise. Locked by
+  `future_dated_ring_entry_is_excluded_from_trend_uncertainty_and_read_range` (fails when the guard is
+  reverted → a future 0.95 sets the range high to 0.95 and flips position near-high→upper). See
+  improvement-log 2026-07-16. — these three EpochStore window loops (aggregator.rs:646 /
   :716 / :792) guard only the lower bound (`if t < cutoff { break; }`), but their docs promise the
   CLOSED interval `[now − window_secs, now]` ("same discipline as trend_window/uncertainty_window") and
   the four siblings that claim that same discipline — `band_coverage_window` (:927), `alert_dwell_window`

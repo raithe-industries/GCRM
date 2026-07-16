@@ -668,6 +668,9 @@ impl EpochStore {
                 Some(dt) => dt.with_timezone(&Utc),
                 None => continue,
             };
+            if t > now {
+                continue; // ignore future-dated ticks (clock skew) — same discipline as the sibling diagnostics
+            }
             if t < cutoff {
                 break;
             }
@@ -731,6 +734,9 @@ impl EpochStore {
                 Some(dt) => dt.with_timezone(&Utc),
                 None => continue,
             };
+            if t > now {
+                continue; // ignore future-dated ticks (clock skew) — same discipline as the sibling diagnostics
+            }
             if t < cutoff {
                 break;
             }
@@ -808,6 +814,9 @@ impl EpochStore {
                 Some(dt) => dt.with_timezone(&Utc),
                 None => continue,
             };
+            if t > now {
+                continue; // ignore future-dated ticks (clock skew) — same discipline as the sibling diagnostics
+            }
             if t < cutoff {
                 break;
             }
@@ -3701,6 +3710,48 @@ mod tests {
         assert_eq!(r["available"], true);
         assert!((r["hi"].as_f64().unwrap() - 0.45).abs() < 1e-9, "the 30h-old 0.90 spike must be excluded");
         assert_eq!(r["position"], "near-high");
+    }
+
+    #[test]
+    fn future_dated_ring_entry_is_excluded_from_trend_uncertainty_and_read_range() {
+        // A future-dated tick (NTP step-back, or ticks persisted while the clock ran ahead then
+        // reloaded via load_epoch) must be IGNORED by trend/uncertainty/read_range — the served
+        // window is the CLOSED interval [now − window, now], exactly as the four sibling
+        // diagnostics (band_coverage/alert_dwell/lead_concentration/momentum_lead_lag) already
+        // enforce with `if t > now { continue; }`. Without the guard a future 0.95 would set the
+        // range high, widen the uncertainty band, and inflate the trend sample count.
+        let now = Utc::now();
+        let build = |with_future: bool| {
+            let mut es = EpochStore::new();
+            for (i, p) in [0.40, 0.42, 0.41, 0.45, 0.44, 0.50, 0.55].iter().enumerate() {
+                es.push(epoch_at(3600 * (10 - i as i64), now, *p)); // all inside the 24h window
+            }
+            if with_future {
+                es.push(epoch_at(-3600, now, 0.95)); // 1h in the FUTURE — an extreme read
+            }
+            es
+        };
+        let win = 24 * 3600;
+
+        // read_range: the future 0.95 must not become the window high nor drag the position down.
+        let base_rr = build(false).read_range_window(0.60, now, win, 5);
+        let fut_rr = build(true).read_range_window(0.60, now, win, 5);
+        assert_eq!(fut_rr, base_rr, "a future-dated entry must not change the read-range");
+        assert!(
+            (fut_rr["hi"].as_f64().unwrap() - 0.55).abs() < 1e-9,
+            "hi stays the in-window max, not the future 0.95"
+        );
+        assert_eq!(fut_rr["position"], "near-high");
+
+        // uncertainty: the future extreme must not widen the empirical central-80% spread.
+        let base_un = build(false).uncertainty_window(0.60, 0.9, now, win);
+        let fut_un = build(true).uncertainty_window(0.60, 0.9, now, win);
+        assert_eq!(fut_un, base_un, "a future-dated entry must not widen the uncertainty band");
+
+        // trend: the future entry must not inflate the sample count or move the baseline.
+        let base_tr = build(false).trend_window(0.60, now, win, 2);
+        let fut_tr = build(true).trend_window(0.60, now, win, 2);
+        assert_eq!(fut_tr, base_tr, "a future-dated entry must not change the trend read");
     }
 
     // ── EpochStore::momentum_lead_lag — the "leading" claim is MEASURED, not asserted ──────
