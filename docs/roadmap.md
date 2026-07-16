@@ -149,6 +149,27 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   three reads (a `> now` entry must not move the baseline/spread/range) — FAILS today. Touched:
   engine-behavior. (Surfaced 2026-07-14 by a served-path bug-hunt.)
 
+- [x] **[candidate] 1.ab `nuclear_use_in` — the SOLE apex-rung trigger — had no NEGATION guard, so a
+  report of the ABSENCE of a strike forced the systemic (index-pegged-at-95) rung** — **DONE 2026-07-16
+  (later²).** `nuclear_use_in` (src/theater.rs) is the only path to `EscalationRung::Systemic`, which pegs
+  the headline at `FORECAST_INDEX_CEILING = 95` and floods P(WWIII). It declined threat/test/allegation/
+  drill/advocacy/interrogative framing but had NO negation handling — so a headline carrying a use-phrase
+  (`nuclear strike`/`nuclear detonation`…) + `nuclear_indicator` that REPORTED THE ABSENCE of a strike
+  ("No nuclear strike occurred", "no evidence of a nuclear detonation", "report debunked as a hoax") FALSELY
+  forced the catastrophe rung — the single most consequential false-positive in the system. FIX (engine-
+  behavior; no P math, no fitted constant, no anchor touched — backtest titles carry no use-phrase so the
+  four anchors are bit-identical): after the interrogative + global non-use scans, require ≥1 use-phrase
+  occurrence that is NOT locally negated. Two mechanisms — (a) scoped preceding negators {no,not,never,nor}
+  within 4 tokens immediately BEFORE the phrase (before-only: "no survivors"/"no doubt" trail a REAL
+  detonation, so a global scan would kill recall); (b) an unambiguous report-is-untrue family
+  {hoax,debunked,disproven,disproved,fabricated,fabrication,untrue,misinformation,disinformation,nonexistent}
+  added to the global `NON_USE_TOKENS`. Also switched the deciding match from substring to word-sequence.
+  Locked by `negated_nuclear_report_does_not_force_systemic_rung` (7 negated/untrue cases must decline —
+  FAILS when the negation logic is stashed, "No nuclear strike…" pegs Systemic) + `negation_after_the_phrase_
+  still_fires_systemic_rung` (recall guard: a trailing "no survivors" must NOT mute a real confirmation). See
+  improvement-log 2026-07-16 (later²). Touched: engine-behavior. (Surfaced 2026-07-16 by a fresh apex-trigger
+  bug-hunt.)
+
 ## 1. Honesty — model / math / calibration  (the number must mean what it says)
 - [x] **1.1 Calibration evidence harness** — **DONE 2026-06-09.** `src/backtest.rs` now
   scores the live model against Robert's anchored band CENTRES with proper scoring rules

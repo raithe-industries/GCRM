@@ -538,10 +538,15 @@ fn rung_for(heat: f64, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
 /// was used"), never in the conditional/subjunctive or alongside drill/test framing.
 ///
 /// We therefore require a use-phrase AND the absence of any whole-word non-use framing
-/// token. Whole-word matching (split on non-alphanumerics) avoids substring traps such
-/// as "latest"→"test". The `any()` over the whole window keeps recall high for a real
-/// detonation (which spawns many headlines): a single clean confirmation still trips
-/// the rung even if other headlines carry threat/test framing.
+/// token AND at least one phrase occurrence that is not directly NEGATED ("No nuclear
+/// strike occurred", "report debunked as a hoax"). Whole-word matching (split on
+/// non-alphanumerics) avoids substring traps such as "latest"→"test"; the untrue-report
+/// family (hoax/debunked/fabricated…) is scanned globally, while the bare negators
+/// (no/not/never) are scanned only in the tokens immediately BEFORE the phrase — global
+/// would be unsafe, since "no survivors"/"no doubt" trail a REAL detonation. The `any()`
+/// over the whole window keeps recall high for a real detonation (which spawns many
+/// headlines): a single clean confirmation still trips the rung even if other headlines
+/// carry threat/test/negation framing.
 fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
     const USE_PHRASES: &[&str] = &[
         "nuclear detonation", "nuclear weapon used", "nuclear weapon was used",
@@ -596,7 +601,29 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         // tokens above. (Recall tradeoff accepted: a real exchange spawns cleaner confirming
         // headlines that `any()` still trips on.)
         "exchange", "exchanges",
+        // Report-is-UNTRUE framing — a report characterised as a hoax / debunked / disproven /
+        // fabricated is definitively NOT a detonation ("Nuclear strike report debunked as a
+        // hoax", "Nuclear detonation claim was fabricated"). Unlike the bare negators handled
+        // in the scoped pass below (`no`/`not`/`never`, unsafe as a global scan because
+        // "no survivors"/"no doubt" trail a REAL detonation), these words never co-occur with
+        // a genuine confirmation, so they are safe whole-word anywhere in the window. ("false"
+        // is deliberately omitted — "false flag" can accompany a real attribution dispute.)
+        "hoax", "debunked", "disproven", "disproved", "fabricated",
+        "fabrication", "untrue", "misinformation", "disinformation", "nonexistent",
     ];
+
+    // Bare negators that REVERSE a use-phrase when they sit immediately before it
+    // ("No nuclear strike occurred", "there was no nuclear detonation", "no evidence of a
+    // nuclear strike", "not a nuclear strike but a conventional blast"). These are UNSAFE as a
+    // global whole-word scan — "nuclear detonation confirmed; no survivors" / "…no doubt" trail
+    // a REAL detonation — so they only count within the small window of tokens IMMEDIATELY
+    // BEFORE the phrase. Scanned before-only (never after): a trailing "no"/"not" usually
+    // modifies a different noun ("no survivors"), whereas a preceding one negates the phrase.
+    const NEGATORS: &[&str] = &["no", "not", "never", "nor"];
+    // How many tokens before the phrase's first word to scan for a negator. 4 covers
+    // "no evidence of a nuclear strike" / "no sign of a nuclear detonation" while staying tight
+    // enough that a real confirmation ("…nuclear detonation confirmed") is never mislabelled.
+    const NEG_LOOKBACK: usize = 4;
 
     // Whole-word question words that, when they LEAD a headline, mark it as an
     // explainer/hypothetical rather than a confirmed-use report ("Can the president
@@ -612,18 +639,29 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         if !e.nuclear_indicator { return false; }
         let t = e.title.to_lowercase();
         if !USE_PHRASES.iter().any(|p| t.contains(p)) { return false; }
+        let words: Vec<&str> = t
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
         // A headline that OPENS with a question word is an explainer/hypothetical, not a
         // confirmed-detonation report — decline before the token scan.
-        if let Some(first) = t
-            .split(|c: char| !c.is_alphanumeric())
-            .find(|w| !w.is_empty())
-        {
+        if let Some(&first) = words.first() {
             if INTERROGATIVE_LEAD.contains(&first) { return false; }
         }
-        let non_use_framing = t
-            .split(|c: char| !c.is_alphanumeric())
-            .any(|w| NON_USE_TOKENS.contains(&w));
-        !non_use_framing
+        if words.iter().any(|w| NON_USE_TOKENS.contains(w)) { return false; }
+        // Require at least one use-phrase occurrence that is NOT locally negated. A negator in
+        // the NEG_LOOKBACK tokens immediately before the phrase ("no nuclear strike") reverses
+        // it; a phrase with only negated occurrences is a report of a NON-event. Word-sequence
+        // matching (not substring) also drops the phrase's own substring traps.
+        USE_PHRASES.iter().any(|p| {
+            let pw: Vec<&str> = p.split(' ').collect();
+            words.windows(pw.len()).enumerate().any(|(i, w)| {
+                w == pw.as_slice()
+                    && !words[i.saturating_sub(NEG_LOOKBACK)..i]
+                        .iter()
+                        .any(|pre| NEGATORS.contains(pre))
+            })
+        })
     })
 }
 
@@ -2478,6 +2516,51 @@ mod tests {
             assert_ne!(t.rung, EscalationRung::Systemic,
                 "non-use headline must not force the systemic rung: {title:?}");
         }
+    }
+
+    #[test]
+    fn negated_nuclear_report_does_not_force_systemic_rung() {
+        // A headline REPORTING THE ABSENCE of a strike carries the use-phrase and is tagged
+        // nuclear_indicator, but reports a NON-event — it must never force the apex Systemic
+        // rung that pegs the index at 95. The threat/test/allegation guards did not cover
+        // negation, so before this fix "No nuclear strike occurred" alone pegged P(WWIII).
+        // Two mechanisms are exercised: scoped preceding negators (no/not/never) and the
+        // global untrue-report family (hoax/debunked/fabricated).
+        let cases = [
+            "No nuclear strike: tensions ease after border standoff",
+            "There was no nuclear detonation, defence ministry confirms",
+            "Investigators find no evidence of a nuclear strike",
+            "Not a nuclear strike but a conventional blast, officials clarify",
+            "Nuclear strike report debunked as a hoax",
+            "Nuclear detonation claim was fabricated, agency says",
+            "Reports of a nuclear detonation are untrue, ministry says",
+        ];
+        for title in cases {
+            let mut te = TheaterEngine::new();
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+            e.title = title.to_string();
+            e.nuclear_indicator = true;
+            let out = te.compute(&[e]);
+            let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+            assert_ne!(t.rung, EscalationRung::Systemic,
+                "negated / untrue nuclear report must not force the systemic rung: {title:?}");
+        }
+    }
+
+    #[test]
+    fn negation_after_the_phrase_still_fires_systemic_rung() {
+        // Recall guard for the negation fix: a NEGATOR that trails the use-phrase usually
+        // modifies a different noun ("no survivors"), not the phrase — a real detonation is
+        // still confirmed. The scoped negator scan is BEFORE-only precisely so this keeps
+        // firing; if it ever scanned after the phrase, this real confirmation would be muted.
+        let mut te = TheaterEngine::new();
+        let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        e.title = "Nuclear detonation confirmed over the city; no survivors reported".into();
+        e.nuclear_indicator = true;
+        let out = te.compute(&[e]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert_eq!(t.rung, EscalationRung::Systemic,
+            "a trailing negator must not mute a real confirmed detonation");
     }
 
     // ── Systemic cross-check invariants (roadmap 1.3) ──────────────────────────
