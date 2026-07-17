@@ -116,6 +116,24 @@ impl ServerState {
                 .replace("{{WAR_STATE_HALF_LIFE_SCALE}}",
                          &format!("{:.0}×", crate::theater::WAR_STATE_HALF_LIFE_SCALE)),
         );
+        // Render-completeness self-check: a placeholder added to the HTML whose `.replace()`
+        // was never wired would ship raw template syntax (`{{ALERT_CRITICAL}}`, a broken
+        // honesty claim) to the operator, silently — the per-token render tests each only
+        // check their OWN token and cannot see a NEW one. Scan both fully-rendered pages and
+        // log loudly if any survives. Prod-safe: it never panics (a cosmetic render defect
+        // must not take the service down) and the raw token still ships — it screams broken
+        // rather than hiding — but ops now gets alerted instead of the defect going unseen.
+        for (name, page) in [("dashboard", &*html), ("methodology", &*methodology)] {
+            let leftover = unsubstituted_placeholders(page);
+            if !leftover.is_empty() {
+                error!(
+                    "served {name} page carries {} unsubstituted template placeholder(s) — the \
+                     operator sees raw template syntax on an honesty surface: {}",
+                    leftover.len(),
+                    leftover.join(", ")
+                );
+            }
+        }
         let state = Self {
             app_state,
             broadcast_tx:     tx.clone(),
@@ -169,6 +187,42 @@ fn generate_dashboard_html(base_path: &str) -> String {
                  &format!("{:.0}", crate::backtest::analog_model_pct("ukraine_2022").unwrap_or(39.0)))
         .replace("{{ANALOG_CUBA_PCT}}",
                  &format!("{:.0}", crate::backtest::analog_model_pct("cuba_1962").unwrap_or(80.0)))
+}
+
+/// Scan a fully-RENDERED page for any surviving `{{TOKEN}}` template placeholder — the
+/// `{{[A-Z0-9_]+}}` form the startup substitution above fills in. Once
+/// [`generate_dashboard_html`] and the methodology substitution have run, a served page must
+/// carry ZERO of these: a leftover token means a placeholder was added to the HTML but its
+/// `.replace()` was never wired (or was renamed), so the operator would see raw template
+/// syntax like `{{ALERT_CRITICAL}}` on an honesty surface — a silent honesty defect the
+/// per-token render tests structurally CANNOT catch (each only checks its OWN known token).
+/// Returns the distinct leftover tokens in first-seen order for a precise diagnostic. Pure /
+/// byte-scanned (the token run is ASCII, so the slice is always a char boundary).
+fn unsubstituted_placeholders(rendered: &str) -> Vec<String> {
+    let b = rendered.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i + 1 < b.len() {
+        if b[i] == b'{' && b[i + 1] == b'{' {
+            let mut j = i + 2;
+            while j < b.len()
+                && (b[j].is_ascii_uppercase() || b[j].is_ascii_digit() || b[j] == b'_')
+            {
+                j += 1;
+            }
+            // A real placeholder is `{{` + a non-empty A-Z0-9_ run + `}}`.
+            if j > i + 2 && j + 1 < b.len() && b[j] == b'}' && b[j + 1] == b'}' {
+                let tok = rendered[i..j + 2].to_string();
+                if !out.contains(&tok) {
+                    out.push(tok);
+                }
+                i = j + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
 }
 
 // ── Snapshot broadcaster ──────────────────────────────────────────────────────
@@ -1627,6 +1681,45 @@ mod tests {
             assert!(!m.contains(def),
                 "methodology must NOT fall back to default band {def} when the live config differs");
         }
+    }
+
+    #[test]
+    fn served_pages_carry_no_unsubstituted_template_placeholder() {
+        // The per-token render tests above each assert their OWN known placeholder is filled,
+        // but NONE of them would catch a NEW `{{FOO}}` added to the HTML whose `.replace()` was
+        // never wired — the operator would then see raw template syntax like `{{ALERT_CRITICAL}}`
+        // on an honesty surface. This comprehensive gate asserts the fully-rendered dashboard AND
+        // methodology carry ZERO surviving `{{TOKEN}}` (the startup self-check in ServerState::new
+        // logs the same condition in prod). It is the one test that FAILS the moment a placeholder
+        // is added without its substitution — closing the template-drift hole on the served pages.
+        let (state, _) = ServerState::new(
+            crate::aggregator::AppState::new(), "/risk", &crate::models::AlertSettings::default());
+        let dash = generate_dashboard_html("/risk");
+        let meth = &*state.methodology_html;
+        assert!(unsubstituted_placeholders(&dash).is_empty(),
+            "dashboard shipped unsubstituted placeholder(s): {:?}", unsubstituted_placeholders(&dash));
+        assert!(unsubstituted_placeholders(meth).is_empty(),
+            "methodology shipped unsubstituted placeholder(s): {:?}", unsubstituted_placeholders(meth));
+        // Substitution genuinely ran (guards against a vacuous pass on an empty/short page): a
+        // known live value is present on each — the calibration evidence on the whitepaper, the
+        // elevation-threshold constant on the dashboard.
+        assert!(meth.contains("Brier"),
+            "methodology must carry the rendered calibration-evidence block (the {{CALIBRATION_EVIDENCE}} fragment)");
+        assert!(dash.contains(&format!("{}", crate::models::ELEVATION_THRESHOLD)),
+            "dashboard must render the elevation-threshold value");
+        // The detector BITES: an injected raw token is reported by exact value (proves the guard
+        // is not vacuously empty — the fails-without-change demonstration for this render gate).
+        let injected = format!("{meth}{{{{ZZ_TEST_TOKEN}}}}");
+        assert_eq!(unsubstituted_placeholders(&injected), vec!["{{ZZ_TEST_TOKEN}}".to_string()],
+            "the placeholder detector must flag an injected raw `{{{{ZZ_TEST_TOKEN}}}}`");
+        // And a non-default base_path still fully renders (exercises the BASE_PATH / LOGO_VER
+        // substitution path, which "/risk" above would fill identically).
+        let (state2, _) = ServerState::new(
+            crate::aggregator::AppState::new(), "/gcrm", &crate::models::AlertSettings::default());
+        assert!(unsubstituted_placeholders(&generate_dashboard_html("/gcrm")).is_empty(),
+            "dashboard under a non-default base_path shipped an unsubstituted placeholder");
+        assert!(unsubstituted_placeholders(&state2.methodology_html).is_empty(),
+            "methodology under a non-default base_path shipped an unsubstituted placeholder");
     }
 
     #[test]

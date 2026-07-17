@@ -111,8 +111,43 @@ try {
   if (stray) fail.push(`unbalanced <div> tree: ${stray} stray </div> with no opening <div> — the markup structure is broken`);
   if (stack.length) fail.push(`unbalanced <div> tree: ${stack.length} unclosed <div> (still open at EOF: ${stack.slice(-3).join(' › ')}) — a dropped </div> silently reparents following siblings and collapses the layout, with NO JS error to flag it`);
   if (!stray && !stack.length) ok(`HTML <div> tree balanced (${opens} divs, well-formed)`);
+
+  // 1c) RENDER-COMPLETENESS — the startup substitution fills `{{TOKEN}}` placeholders
+  //     (`{{ELEVATION_THRESHOLD}}`, `{{BASELINE_ANNUAL_PCT}}`, …) with live model values. A
+  //     placeholder added to the HTML whose `.replace()` was never wired ships raw template
+  //     syntax to the operator — a broken honesty claim with NO JS error to flag it. Scan the
+  //     RAW served HTML (the pre-substitution `raw` above, already fetched) for any surviving
+  //     `{{[A-Z0-9_]+}}`. (Mirrors the server-side self-check + Rust test, but at the wire.)
+  const rawLeft = raw.match(/\{\{[A-Z0-9_]+\}\}/g) || [];
+  if (rawLeft.length) fail.push(`/risk ships ${rawLeft.length} unsubstituted template placeholder(s) (${[...new Set(rawLeft)].slice(0, 4).join(', ')}) — raw template syntax reached the operator`);
+  else ok('no unsubstituted template placeholders on /risk');
 } catch (e) {
   fail.push(`structural-integrity check could not fetch raw HTML: ${e.message}`);
+}
+
+// 1d) METHODOLOGY HONESTY PAGE — the served whitepaper (calibration evidence, anchor table,
+//     alert bands — the last two made load-bearing by the 1.y/1.33 work) is the system's honesty
+//     surface, yet every check above only ever loaded /risk, so a broken methodology render
+//     shipped UNSEEN. Fetch /methodology and assert it (a) serves real HTML, (b) carries NO
+//     unsubstituted `{{TOKEN}}` placeholder, and (c) actually rendered its live figures — the
+//     calibration-evidence block and a real alert-band %. No opinion on the prose, only "is the
+//     honesty page whole".
+try {
+  const methURL = URL.replace(/\/+$/, '') + '/methodology';
+  const mres = await fetch(methURL, { signal: AbortSignal.timeout(8000) });
+  if (!mres.ok) {
+    fail.push(`/methodology honesty page returned HTTP ${mres.status} — the whitepaper is not being served`);
+  } else {
+    const mraw = await mres.text();
+    const mLeft = mraw.match(/\{\{[A-Z0-9_]+\}\}/g) || [];
+    if (mraw.length < 500) fail.push(`/methodology served only ${mraw.length} bytes — the honesty whitepaper did not render`);
+    else if (mLeft.length) fail.push(`/methodology ships ${mLeft.length} unsubstituted template placeholder(s) (${[...new Set(mLeft)].slice(0, 4).join(', ')}) — raw template syntax on an honesty surface`);
+    else if (!/Brier/.test(mraw)) fail.push('/methodology is missing the rendered calibration-evidence block (no "Brier") — the {{CALIBRATION_EVIDENCE}} fragment did not render');
+    else if (!/\d+\.\d+%/.test(mraw)) fail.push('/methodology is missing a rendered alert-band % — the {{ALERT_*}} bands did not render');
+    else ok('/methodology honesty page whole (no raw placeholder, calibration + bands rendered)');
+  }
+} catch (e) {
+  fail.push(`/methodology honesty page did not load: ${e.message}`);
 }
 
 // 2) Primary P(WWIII) timeline graph: present and NOT collapsed/squished.

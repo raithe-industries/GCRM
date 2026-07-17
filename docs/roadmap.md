@@ -879,6 +879,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   neutered to 1.0/None. See improvement-log 2026-07-17.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.10 The served honesty pages are verified COMPLETE — no page ships a raw `{{TOKEN}}`
+  template placeholder** — **STAGED 2026-07-17 (later).** The dashboard and methodology pages are
+  built by a hand-maintained `.replace()` chain (`generate_dashboard_html` / `ServerState::new`) that
+  fills `{{[A-Z0-9_]+}}` placeholders with live model values. A placeholder added to the HTML whose
+  `.replace()` was never wired (or renamed) ships raw template syntax like `{{ALERT_CRITICAL}}` to the
+  operator on an honesty surface — and the per-token render tests each check only their OWN known
+  token, so none of them catch a NEW one. Added `unsubstituted_placeholders(&str)` (pure byte-scan),
+  a prod-safe startup self-check (`error!`, never panics — a cosmetic render defect must not down the
+  service) that logs any leftover on both pages, and a comprehensive Rust test
+  `served_pages_carry_no_unsubstituted_template_placeholder` (asserts BOTH fully-rendered pages carry
+  zero `{{TOKEN}}`, that live values actually rendered — Brier on the whitepaper, the elevation
+  threshold on the dashboard — that the detector bites an injected token, and that a non-default
+  base_path renders clean). Also extended `smoke.mjs`: check #1c (the /risk raw HTML carries no
+  `{{...}}`) and #1d (fetch `/methodology` — a honesty page the eyes gate never loaded — and assert
+  200 + no `{{...}}` + the calibration-evidence block and a real alert-band % rendered). Gate:
+  injecting a fake `{{ZZ_DRIFT_PROBE}}` into methodology.html makes the Rust test FAIL precisely
+  (`methodology shipped unsubstituted placeholder(s): ["{{ZZ_DRIFT_PROBE}}"]`); reverted → green.
+  STAGED→DONE on the local deploy that runs the browser gate. See improvement-log 2026-07-17 (later).
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
   The HARD RAILS say "src/dashboard.html stays legible on small/short viewports (rails scroll; the
   eyes gate judges)", but `smoke.mjs` ran every check at ONE size (1440×900, `newPage` line 27) — it
