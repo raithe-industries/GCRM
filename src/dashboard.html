@@ -630,7 +630,7 @@ let _lastCalTs=null,_firstSnapReceived=false;
 // no frames). _lastSnapMs is the wall-clock receipt time of the last snapshot;
 // renderFreshness() rewrites the header status from it on a timer so a stale read
 // announces itself instead of masquerading as "Live" with a frozen timestamp.
-let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false,_thinSourced=false,_sourcesActive=0,_wsConnected=false;
+let _lastSnapMs=0,_lastComputedAt=null,_dataBlind=false,_thinSourced=false,_obsGap=false,_obsCov=null,_sourcesActive=0,_wsConnected=false;
 // Last board state, cached so the timer-driven watchdog can re-flag the I&W summary as
 // STALE during a stall (renderIndicators only runs on snapshot arrival, which by
 // definition is never stale — so the board would otherwise keep a frozen all-clear).
@@ -668,6 +668,12 @@ function renderFreshness(){
     // outage). The headline is a measurement, not the baseline — but it rests on a
     // narrow base, so a flat "Live" would overstate how broadly corroborated it is.
     ts.textContent='⚠ THIN COVERAGE · '+_sourcesActive+' feed'+(_sourcesActive===1?'':'s')+' reporting';ts.style.color='var(--amber)';
+  }else if(_obsGap){
+    // Snapshots and feeds are live, but part of the aggregation window went UNOBSERVED
+    // (host/ingestion outage — the store can come back warm with pre-outage events while
+    // the world went unwatched) or the newest signal is stale. The number holds by the
+    // declared error posture; the header must say the pipe wasn't watching, not "Live".
+    ts.textContent='⚠ OBSERVATION GAP · window '+(_obsCov!=null?Math.round(_obsCov*100)+'% observed':'partly observed');ts.style.color='var(--amber)';
   }else{
     ts.textContent='Live · '+toET(_lastComputedAt);ts.style.color='';
   }
@@ -920,6 +926,8 @@ const INFO={
     <p><b>Confidence</b> is how much to trust the current estimate, from the quality and quantity of evidence behind it — <b>not</b> how dangerous the world is.</p>
     <span class="ih">Formula</span>
     <p><code>avg domain confidence ×{{CONF_W_DOMAIN}} + event volume ×{{CONF_W_EVENTS}} + active sources ×{{CONF_W_SOURCES}}</code>. Event volume saturates near {{CONFIDENCE_EVENT_SAT}} events in the window; sources near {{CONFIDENCE_SOURCE_SAT}} feeds.</p>
+    <span class="ih">Observation factor</span>
+    <p>The blend measures how much evidence sits in the window; it is then multiplied by an <b>observation factor</b> measuring whether the pipe actually <i>watched</i> the window: the share of its {{OBS_BUCKET_H}}h buckets that saw live signal ({{OBS_BUCKET_SAT}}+ events reads a bucket fully observed) × a freshness term that halves every {{OBS_STALE_HL_H}}h once the newest signal is older than {{OBS_GRACE_H}}h. An ingestion outage — even one that comes back with the store still warm — reads as reduced confidence and an <b>observation gap</b> caveat (coverage under {{OBS_COV_FLOOR_PCT}}%), never as a certain read. Every per-modality "% conf" carries the same discount. The forecast itself is unchanged: by the declared error posture it holds through news gaps — only the claimed certainty falls.</p>
     <span class="ih">Bands</span>
     <p><b>High ≥80%</b> · Medium ≥50% · Low below. Under ~80% the estimate leans more on priors than on fresh signal, and the model badge reads <b>◐ CALIBRATING</b> until confidence crosses 90%.</p>`},
   trend:{title:'6h Trend',html:`
@@ -1103,7 +1111,10 @@ function renderLocus(d){
     const cur=w.current, cp=(w.current_pct||0).toFixed(0), v=w.verdict||'';
     // Base clause: the live lead's day-share. When another theater actually led more of the day
     // than the current one (a fresh entrant), name it so the operator isn't misled by the live tag.
-    let txt=cur+' — '+cp+'% of 24h';
+    // The share is quoted against the SPAN the ring actually covers (server span_secs) — right
+    // after a restart that's hours, not the full day, and "of 24h" would overclaim it.
+    const spanLbl=(typeof w.span_secs==='number'&&w.span_secs<23*3600)?('last '+Math.max(1,Math.round(w.span_secs/3600))+'h'):'24h';
+    let txt=cur+' — '+cp+'% of '+spanLbl;
     if(w.top&&w.top!==cur) txt+=' ('+w.top+' led '+(w.top_pct||0).toFixed(0)+'%)';
     else if(v) txt+=' ('+v+')';
     if(w.top&&w.top!==cur&&v) txt+=' · '+v;
@@ -1194,6 +1205,13 @@ function renderIndicators(inds){
       // events) is the stronger state and is checked first, so the two never collide.
       summ.textContent=(tripped?(tripped+' / '+inds.length+' tripped'):'all-clear')
         +' · thin coverage · '+_sourcesActive+' feed'+(_sourcesActive===1?'':'s');
+      summ.style.color=apexTrip>0?'var(--red)':'var(--amber)';
+    }else if(_obsGap){
+      // Observation-gap sibling: every light rests on a window the pipe only PARTLY
+      // watched (host outage / post-outage catch-up) — a trip count or an all-clear
+      // must carry that caveat, mirroring the header's OBSERVATION GAP watchdog.
+      summ.textContent=(tripped?(tripped+' / '+inds.length+' tripped'):'all-clear')
+        +' · observation gap · window '+(_obsCov!=null?Math.round(_obsCov*100)+'%':'partly')+' observed';
       summ.style.color=apexTrip>0?'var(--red)':'var(--amber)';
     }else{
       summ.textContent=inds.length?(tripped+' / '+inds.length+' tripped'+(apexTrip?' · '+apexTrip+' APEX':'')):'awaiting data';
@@ -1339,7 +1357,7 @@ function applyData(d){
   // data age, so a stalled worker or a silently-hung WebSocket can't keep claiming
   // the read is current with a frozen timestamp (pillar-1 honesty: the number must
   // mean what it says).
-  _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();_dataBlind=!!(d.meta&&d.meta.data_blind);_thinSourced=!!(d.meta&&d.meta.thinly_sourced);_sourcesActive=(d.meta&&d.meta.sources_active)||0;renderFreshness();
+  _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();_dataBlind=!!(d.meta&&d.meta.data_blind);_thinSourced=!!(d.meta&&d.meta.thinly_sourced);_obsGap=!!(d.meta&&d.meta.observation_gap);_obsCov=(d.meta&&typeof d.meta.window_coverage==='number')?d.meta.window_coverage:null;_sourcesActive=(d.meta&&d.meta.sources_active)||0;renderFreshness();
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';
@@ -1408,7 +1426,7 @@ function applyData(d){
   // Indications & Warning board — render the live indicator lights (the "why").
   renderIndicators(d.indicators||[]);
   const confL=confLabel(conf);document.getElementById('cmd-conf').textContent=confL;document.getElementById('cmd-conf').style.color=conf>=.8?'#1D9E75':conf>=.5?'#EF9F27':'#7070a0';
-  document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality';
+  document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality'+(_obsGap?' · obs gap':'');
   const _ct=trend6h(d,pA);const trendEl=document.getElementById('cmd-trend');
   if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=_ct.pegged?PEGGED_COLOR:trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};

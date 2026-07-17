@@ -204,6 +204,15 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
             "at_ceiling":               crate::bayesian::is_at_forecast_ceiling(snap.p_wwiii_annual),
             "breadth_saturated":        snap.couplers.breadth_saturated,
             "read_held_by_floor":       crate::theater::systemic_read_is_floor_held(&snap.theaters),
+            // Observation-coverage honesty (bayesian::observation_coverage): how much of
+            // the aggregation window the pipe actually WATCHED, the newest live signal's
+            // age, the confidence discount they applied, and the caveat flag. Distinct
+            // from data_blind/thinly_sourced — a store still warm with pre-outage events
+            // is neither blind nor thin, yet the world went unwatched (2026-07-17).
+            "window_coverage":          snap.window_coverage,
+            "newest_event_age_secs":    snap.newest_event_age_secs,
+            "observation_factor":       snap.observation_factor,
+            "observation_gap":          snap.observation_gap,
             "sources_active":           snap.sources_active,
             "great_power_events":       snap.great_power_events,
             "regions_active":           snap.regions_active,
@@ -1180,6 +1189,7 @@ impl EpochStore {
         let cutoff = now - chrono::Duration::seconds(window_secs);
         let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         let mut total = 0usize;
+        let mut oldest_counted: Option<DateTime<Utc>> = None;
         for e in self.ring.iter().rev() {
             let t = match e
                 .get("t")
@@ -1201,9 +1211,21 @@ impl EpochStore {
             };
             *counts.entry(lead.to_string()).or_insert(0) += 1;
             total += 1;
+            oldest_counted = Some(t); // newest→oldest walk: last counted tick is the oldest
         }
         if total < min_samples {
             return serde_json::json!({ "available": false, "samples": total });
+        }
+        // Span honesty: many ticks ≠ much time. A freshly restarted 1 Hz ring clears the
+        // sample floor within seconds while spanning minutes, and a day-share verdict
+        // ("entrenched" = one flashpoint owned most of 24h) fabricated from that is the
+        // post-restart lie the 2026-07-17 outage exposed. Honest-null until real span accrues.
+        let span_secs = oldest_counted.map(|o| (now - o).num_seconds().max(0)).unwrap_or(0);
+        if span_secs < LEAD_CONC_MIN_SPAN_SECS {
+            return serde_json::json!({
+                "available": false, "reason": "short_history",
+                "samples": total, "span_secs": span_secs,
+            });
         }
         // Modal lead over the window (ties broken alphabetically for a stable, deterministic pick).
         let (top, top_n) = counts
@@ -1235,6 +1257,9 @@ impl EpochStore {
             "samples":     total,
             "verdict":     verdict,
             "window_secs": window_secs,
+            // Actual span the counted ticks cover (≥ MIN_SPAN, ≤ window) — the dashboard
+            // renders the day-share against THIS, so "of 24h" is never claimed off 7h of ring.
+            "span_secs":   span_secs,
         })
     }
 
@@ -1487,6 +1512,11 @@ const FLAT_RANGE_PP: f64 = 0.3;
 // degenerate concentration off a handful of ticks (matches READ_RANGE_MIN_SAMPLES).
 const LEAD_CONC_WINDOW_SECS: i64 = 24 * 3600;
 const LEAD_CONC_MIN_SAMPLES: usize = 30;
+/// Minimum SPAN the counted ticks must cover before a verdict renders — a quarter of
+/// the window. The sample floor above is COUNT-based, and a 1 Hz ring satisfies it
+/// seconds after a restart: the 2026-07-17 post-outage board claimed "entrenched ·
+/// 100% of 24h" off ~15 minutes of ring. A verdict about the day needs day-scale span.
+const LEAD_CONC_MIN_SPAN_SECS: i64 = LEAD_CONC_WINDOW_SECS / 4;
 
 // Alert-dwell parameter (DISPLAY/diagnostic only — never touches P or any fitted constant). The
 // minimum contiguous in-band ticks before a dwell duration is claimed: below this the ring is too
@@ -2596,7 +2626,9 @@ mod tests {
         assert!(v["meta"].is_object());
         for k in ["events_in_window", "data_blind", "thinly_sourced", "at_ceiling",
                   "breadth_saturated", "read_held_by_floor", "sources_active",
-                  "regions_active", "aggregation_window_hours", "max_window_events"] {
+                  "regions_active", "aggregation_window_hours", "max_window_events",
+                  "window_coverage", "newest_event_age_secs", "observation_factor",
+                  "observation_gap"] {
             assert!(!v["meta"][k].is_null(), "contract v1 meta key missing: {k}");
         }
 
@@ -3468,10 +3500,11 @@ mod tests {
     fn lead_concentration_window_reports_entrenched_when_one_theater_dominates() {
         // 36 of 40 in-window ticks led by Taiwan, current lead Taiwan → the locus was ENTRENCHED
         // on one flashpoint, and the current lead held ~90% of the day. Locks the concentration
-        // math and the ≥70% entrenched verdict; also proves distinct-front counting.
+        // math and the ≥70% entrenched verdict; also proves distinct-front counting. Ticks span
+        // ~7h (over the MIN_SPAN quarter-window floor) so the day-share verdict is earned.
         let now = Utc::now();
         let mut es = EpochStore::new();
-        for i in 0..36 { es.push(epoch_at_lead(3600 - i, now, 0.60, "Taiwan Strait")); }
+        for i in 0..36 { es.push(epoch_at_lead(25200 - i * 600, now, 0.60, "Taiwan Strait")); }
         for i in 0..4  { es.push(epoch_at_lead(120 - i, now, 0.60, "Ukraine")); }
         let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
         assert_eq!(r["available"], true);
@@ -3482,6 +3515,24 @@ mod tests {
         assert_eq!(r["top_pct"].as_f64().unwrap(), 90.0);
         assert_eq!(r["current_pct"].as_f64().unwrap(), 90.0);
         assert_eq!(r["verdict"], "entrenched");
+        assert!(r["span_secs"].as_i64().unwrap() >= LEAD_CONC_MIN_SPAN_SECS,
+                "the verdict must report the span it actually rests on");
+    }
+
+    #[test]
+    fn lead_concentration_window_honest_null_on_a_short_post_restart_ring() {
+        // 40 decisive one-hertz ticks spanning ~15 MINUTES clear the sample floor but cannot
+        // support a verdict ABOUT THE DAY ("entrenched" = one flashpoint owned most of 24h).
+        // A freshly restarted ring reads honest-null until real span accrues — the 2026-07-17
+        // post-outage board claimed "entrenched · 100% of 24h" off a 15-minute ring.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        for i in 0..40 { es.push(epoch_at_lead(900 - i * 20, now, 0.60, "Taiwan Strait")); }
+        let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
+        assert_eq!(r["available"], false);
+        assert_eq!(r["reason"], "short_history");
+        assert_eq!(r["samples"], 40, "the honest-null still reports what it saw");
+        assert!(r["span_secs"].as_i64().unwrap() < LEAD_CONC_MIN_SPAN_SECS);
     }
 
     #[test]
@@ -3494,7 +3545,7 @@ mod tests {
         let mut es = EpochStore::new();
         let fronts = ["Taiwan Strait", "Ukraine", "Kashmir", "Korea", "South China Sea"];
         for i in 0..40i64 {
-            es.push(epoch_at_lead(4000 - i, now, 0.55, fronts[(i as usize) % fronts.len()]));
+            es.push(epoch_at_lead(25200 - i * 600, now, 0.55, fronts[(i as usize) % fronts.len()]));
         }
         let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
         assert_eq!(r["available"], true);
@@ -3535,8 +3586,8 @@ mod tests {
         // tag can't mislead the operator into thinking the fresh entrant owned the day.
         let now = Utc::now();
         let mut es = EpochStore::new();
-        for i in 0..34 { es.push(epoch_at_lead(3600 - i, now, 0.60, "Ukraine")); }       // day leader
-        for i in 0..6  { es.push(epoch_at_lead(60 - i, now, 0.60, "Taiwan Strait")); }   // fresh entrant, newest
+        for i in 0..34 { es.push(epoch_at_lead(25200 - i * 600, now, 0.60, "Ukraine")); }  // day leader
+        for i in 0..6  { es.push(epoch_at_lead(60 - i, now, 0.60, "Taiwan Strait")); }     // fresh entrant, newest
         let r = es.lead_concentration_window("Taiwan Strait", now, 24 * 3600, 30);
         assert_eq!(r["available"], true);
         assert_eq!(r["current"], "Taiwan Strait");

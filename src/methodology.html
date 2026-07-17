@@ -132,6 +132,7 @@ P     = sigmoid( logit(BASELINE_ANNUAL) + β · L_sys )   capped at {{FORECAST_P
 
 <h2 id="confidence">Confidence</h2>
 <p>An estimate-confidence score reflects source tier quality, event volume, and active-source breadth. Low event volume or thin sourcing lowers confidence; it is reported alongside the index, never hidden.</p>
+<p>That blend is then multiplied by an <b>observation factor</b>: the fraction of the aggregation window whose time-buckets actually saw live signal, times a freshness decay once the newest signal goes stale. It answers a different question than volume — not "how much evidence is in the window" but "was the pipe <i>watching</i> the window". After an ingestion outage the store can come back warm with pre-outage events (volume and breadth still saturated) while the middle of the window went unobserved; the factor discounts headline and per-modality confidence for exactly that state and raises an <b>observation gap</b> caveat on the dashboard. The forecast itself is untouched: by the declared error posture it holds an active war through news gaps — only the claimed certainty decays.</p>
 
 <h2 id="nuclear">Nuclear detector</h2>
 <p>A dedicated subsystem monitors FDSN seismic networks, public CTBTO statements, and nuclear-news spikes, fusing them into a confidence-weighted alert. Alerts are honestly labeled "SEISMIC ANOMALY" until official confirmation — the detector never claims a detonation.</p>

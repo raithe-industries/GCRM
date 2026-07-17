@@ -385,6 +385,99 @@ pub fn domain_confidence(tiers: &[SourceTier], distinct_actors: usize) -> f64 {
         .clamp(0.0, 1.0)
 }
 
+// ── Observation coverage (staleness honesty) ─────────────────────────────────────
+// The confidence terms above ask "how MUCH evidence is in the window"; none of them ask
+// "was the pipe actually OBSERVING the window". After the 2026-07-15→17 host outage
+// (cooler failure) the store came back still warm with thousands of pre-outage events
+// inside the live-recency gate, every blend term saturated, and the dashboard claimed
+// 100% confidence over a window whose middle ~40h was UNOBSERVED — while the
+// persistence floor (correctly, per the declared error posture) held P high through
+// the gap. Extrapolation through a gap must not masquerade as measurement: the factor
+// below discounts the DISPLAYED confidence by how completely and how recently the
+// window was watched. DISPLAY-ONLY like the rest of this section — P never reads it.
+
+/// Bucket width for the observed-window scan: the aggregation window is split into
+/// buckets this wide and each is asked "did live signal land here".
+pub const OBSERVATION_BUCKET_HOURS: f64 = 3.0;
+
+/// In-bucket event count at which that bucket reads FULLY observed (linear below).
+/// Deliberately far under the healthy per-bucket rate (~45+/3h across the feed fleet,
+/// and well above zero even in a quiet news regime) so a merely-quiet interval never
+/// reads as an outage — only a dark or broken pipe dips a bucket. Presence-vs-absence
+/// of OBSERVATION, decoupled from how busy the world is.
+pub const OBSERVATION_BUCKET_SATURATION: f64 = 5.0;
+
+/// Newest-event age up to which the freshness term stays 1.0 — ordinary poll cadence
+/// and enrichment lag, not staleness.
+pub const OBSERVATION_FRESH_GRACE_HOURS: f64 = 3.0;
+
+/// Past the grace, the freshness term HALVES every this-many hours of continued
+/// silence — deliberately much faster than the war-state persistence floor that holds
+/// P through a news gap: the number may hold, but the claimed certainty in it decays.
+pub const OBSERVATION_STALE_HALF_LIFE_HOURS: f64 = 12.0;
+
+/// Window-coverage fraction below which the read carries the operator-facing
+/// "observation gap" caveat (header watchdog, I&W summary, alert message).
+pub const OBSERVATION_GAP_COVERAGE_FLOOR: f64 = 0.90;
+
+/// How completely and how recently the pipe observed the aggregation window.
+#[derive(Debug, Clone, Copy)]
+pub struct ObservationCoverage {
+    /// Fraction of the window's time-buckets observed, each saturating at
+    /// [`OBSERVATION_BUCKET_SATURATION`] events (1.0 = continuously observed).
+    pub window_coverage: f64,
+    /// Age in hours of the NEWEST live event; capped at the window length when the
+    /// window holds nothing at all.
+    pub newest_age_hours: f64,
+    /// The multiplicative confidence discount, coverage × freshness, in [0,1].
+    pub factor: f64,
+}
+
+/// Pure scan — caller injects `now` (the `lead_concentration_window` pattern) so the
+/// mapping is locked by test. Future-dated events clamp to age 0 (the `recency_weight`
+/// convention): feed clock skew reads as "just now", never as negative age or a hole.
+pub fn observation_coverage(
+    events: &[GeopoliticalEvent],
+    now: DateTime<Utc>,
+    window_hours: f64,
+) -> ObservationCoverage {
+    let buckets = (window_hours / OBSERVATION_BUCKET_HOURS).ceil().max(1.0) as usize;
+    let mut counts = vec![0usize; buckets];
+    let mut newest_age = f64::INFINITY;
+    for e in events {
+        let age_h = ((now - e.published_at).num_seconds() as f64 / 3600.0).max(0.0);
+        if age_h >= window_hours { continue; }
+        counts[(age_h / OBSERVATION_BUCKET_HOURS) as usize] += 1;
+        if age_h < newest_age { newest_age = age_h; }
+    }
+    let window_coverage = counts.iter()
+        .map(|&c| (c as f64 / OBSERVATION_BUCKET_SATURATION).min(1.0))
+        .sum::<f64>() / buckets as f64;
+    let newest_age_hours = if newest_age.is_finite() { newest_age } else { window_hours };
+    let freshness = if newest_age_hours <= OBSERVATION_FRESH_GRACE_HOURS {
+        1.0
+    } else {
+        (-std::f64::consts::LN_2 * (newest_age_hours - OBSERVATION_FRESH_GRACE_HOURS)
+            / OBSERVATION_STALE_HALF_LIFE_HOURS).exp()
+    };
+    ObservationCoverage {
+        window_coverage,
+        newest_age_hours,
+        factor: (window_coverage * freshness).clamp(0.0, 1.0),
+    }
+}
+
+/// The read carries an **observation gap**: part of the window went unobserved (the
+/// pipe was down, whatever the store still holds) or the newest signal is past the
+/// freshness grace. The operator-facing caveat predicate — single source of truth,
+/// same discipline as [`is_data_blind`] / [`is_thinly_sourced`], and like them it can
+/// be true while the OTHER two are false (a warm post-outage store is neither blind
+/// nor thin, yet the world went unwatched).
+pub fn has_observation_gap(oc: &ObservationCoverage) -> bool {
+    oc.window_coverage < OBSERVATION_GAP_COVERAGE_FLOOR
+        || oc.newest_age_hours > OBSERVATION_FRESH_GRACE_HOURS
+}
+
 /// Logistic function. Maps log-odds → probability in (0, 1).
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
@@ -1202,8 +1295,26 @@ impl BayesianRiskEngine {
         } else {
             domain_confs.iter().sum::<f64>() / domain_confs.len() as f64
         };
+        // Staleness honesty: the blend certifies the AMOUNT of evidence; the observation
+        // factor certifies the window was actually WATCHED. A store still warm with
+        // pre-outage events must not read 100% across a multi-day ingestion hole
+        // (2026-07-17), so the blended confidence — and every per-modality "% conf"
+        // cell resting on the same holed window — is discounted by coverage × freshness,
+        // floored at the offline floor. P is untouched: the persistence floor holds by
+        // declared error posture; only the claimed CERTAINTY decays. avg_conf above is
+        // taken from the UNdiscounted per-domain values, so the discount applies once.
+        let obs = observation_coverage(events, Utc::now(), snap.aggregation_window_hours);
+        snap.window_coverage       = (obs.window_coverage * 1e3).round() / 1e3;
+        snap.newest_event_age_secs = (obs.newest_age_hours * 3600.0).round() as i64;
+        snap.observation_factor    = (obs.factor * 1e3).round() / 1e3;
+        snap.observation_gap       = has_observation_gap(&obs);
         snap.estimate_confidence =
-            estimate_confidence(avg_conf, snap.events_in_window, snap.sources_active);
+            ((estimate_confidence(avg_conf, snap.events_in_window, snap.sources_active)
+                * obs.factor).max(CONFIDENCE_OFFLINE_FLOOR) * 1e3).round() / 1e3;
+        for ds in snap.domain_scores.values_mut() {
+            ds.confidence = ((ds.confidence * obs.factor)
+                .max(DOMAIN_CONFIDENCE_OFFLINE_FLOOR) * 1e3).round() / 1e3;
+        }
 
         // ── Step 10: Alert ──
         // Record the configured thresholds onto the snapshot so the JSON is
@@ -1213,9 +1324,21 @@ impl BayesianRiskEngine {
         snap.alert_critical_threshold = self.alert_critical;
         if raw >= self.alert_critical {
             snap.alert_level   = AlertLevel::Critical;
+            // The gap note rides the same line as the confidence it qualifies, so the one
+            // sentence an operator reads can't quote a discounted number without saying why.
+            let gap_note = if snap.observation_gap {
+                format!(
+                    " Observation gap: {:.0}% of the {:.0}h window observed; newest signal {:.1}h old.",
+                    snap.window_coverage * 100.0,
+                    snap.aggregation_window_hours,
+                    snap.newest_event_age_secs as f64 / 3600.0,
+                )
+            } else {
+                String::new()
+            };
             snap.alert_message = format!(
                 "CRITICAL — P(WWIII) {:.3}% exceeds {:.1}% threshold. \
-                 {} domains elevated. Co-occurrence ×{}. Confidence: {:.0}%.",
+                 {} domains elevated. Co-occurrence ×{}. Confidence: {:.0}%.{gap_note}",
                 raw * 100.0,
                 self.alert_critical * 100.0,
                 elevated,
@@ -1239,7 +1362,7 @@ impl BayesianRiskEngine {
 
         info!(
             "P(WWIII)={:.4}% | idx={:.0} | {} | Δ{:+.4}% | regime×{} | elevated={}/{} | \
-             L_sys={:.4} | events={} | confidence={:.0}%",
+             L_sys={:.4} | events={} | confidence={:.0}% | obs cov={:.0}%/{:.1}h",
             raw * 100.0,
             snap.systemic_index,
             snap.driver,
@@ -1250,6 +1373,8 @@ impl BayesianRiskEngine {
             l_sys,
             snap.events_in_window,
             snap.estimate_confidence * 100.0,
+            snap.window_coverage * 100.0,
+            snap.newest_event_age_secs as f64 / 3600.0,
         );
 
         snap
@@ -2046,6 +2171,133 @@ mod tests {
         assert!((at_sat - CONF_W_EVENTS).abs() < 2e-3, "volume term saturates at its weight");
         assert!(way_over <= CONF_W_EVENTS + 1e-9 && way_over >= at_sat,
             "beyond saturation the volume term is capped at its weight");
+    }
+
+    // ── Observation coverage (staleness honesty) ──────────────────────────────
+
+    /// Events with ≥ bucket-saturation count in every bucket of the window — the
+    /// continuously-observed baseline the healthy pipe produces.
+    fn full_coverage_events(window_hours: f64) -> Vec<GeopoliticalEvent> {
+        let buckets = (window_hours / OBSERVATION_BUCKET_HOURS) as usize;
+        let mut evs = Vec::new();
+        for b in 0..buckets {
+            for k in 0..(OBSERVATION_BUCKET_SATURATION as usize) {
+                evs.push(make_event(
+                    "military_escalation", 0.4,
+                    b as f64 * OBSERVATION_BUCKET_HOURS + 0.2 + k as f64 * 0.1,
+                    SourceTier::Tier1,
+                ));
+            }
+        }
+        evs
+    }
+
+    #[test]
+    fn observation_coverage_is_full_for_a_continuously_observed_window() {
+        // Healthy continuous operation → factor exactly 1.0: the discount is provably
+        // a NO-OP outside an outage, so every pre-staleness display value is preserved.
+        let oc = observation_coverage(&full_coverage_events(72.0), Utc::now(), 72.0);
+        assert!((oc.window_coverage - 1.0).abs() < 1e-9, "every bucket observed");
+        assert!(oc.newest_age_hours <= OBSERVATION_FRESH_GRACE_HOURS);
+        assert!((oc.factor - 1.0).abs() < 1e-9, "healthy pipe → no discount");
+        assert!(!has_observation_gap(&oc));
+    }
+
+    #[test]
+    fn observation_coverage_discounts_a_holed_window_despite_saturated_volume() {
+        // The 2026-07-15→17 outage shape: the old edge of the window dense with
+        // pre-outage events, a fresh post-reboot trickle, and the middle UNOBSERVED.
+        // Volume/breadth would saturate (hundreds of events) — the coverage factor is
+        // what says "most of this window went unwatched".
+        let now = Utc::now();
+        let mut evs = Vec::new();
+        for k in 0..300 { evs.push(make_event("military_escalation", 0.4, 60.0 + (k as f64) * 0.04, SourceTier::Tier1)); }
+        for k in 0..10  { evs.push(make_event("military_escalation", 0.4, 0.1 + (k as f64) * 0.2,  SourceTier::Tier1)); }
+        let oc = observation_coverage(&evs, now, 72.0);
+        assert!(oc.window_coverage < 0.35,
+            "old-edge density + fresh trickle covers ~5 of 24 buckets, got {}", oc.window_coverage);
+        assert!(oc.newest_age_hours <= OBSERVATION_FRESH_GRACE_HOURS, "the trickle IS fresh");
+        assert!((oc.factor - oc.window_coverage).abs() < 1e-9,
+            "fresh newest → the discount is exactly the coverage share");
+        assert!(has_observation_gap(&oc), "a holed window must carry the caveat");
+    }
+
+    #[test]
+    fn observation_coverage_freshness_decays_when_the_pipe_goes_dark() {
+        // A fully-covered window whose pipe THEN goes silent: coverage stays high at
+        // first, but the newest-signal age walks past the grace and the freshness term
+        // halves every OBSERVATION_STALE_HALF_LIFE_HOURS — confidence decays DURING an
+        // outage, not only after one is backfilled.
+        let now = Utc::now();
+        // Newest event exactly one half-life past the grace.
+        let dark_hours = OBSERVATION_FRESH_GRACE_HOURS + OBSERVATION_STALE_HALF_LIFE_HOURS;
+        let evs: Vec<GeopoliticalEvent> = full_coverage_events(72.0).into_iter()
+            .map(|mut e| { e.published_at -= Duration::seconds((dark_hours * 3600.0) as i64); e })
+            .collect();
+        let oc = observation_coverage(&evs, now, 72.0);
+        assert!(oc.newest_age_hours > OBSERVATION_FRESH_GRACE_HOURS);
+        assert!((oc.newest_age_hours - dark_hours).abs() < 0.3,
+            "newest ≈ the shifted freshest synthetic event (0.2h construction offset)");
+        let freshness = oc.factor / oc.window_coverage.max(1e-12);
+        assert!((freshness - 0.5).abs() < 0.02,
+            "one half-life past grace → freshness ≈ 0.5, got {freshness}");
+        assert!(has_observation_gap(&oc), "a stale newest signal must carry the caveat");
+        // Deeper silence → strictly smaller factor (monotone decay).
+        let deeper: Vec<GeopoliticalEvent> = evs.iter().cloned()
+            .map(|mut e| { e.published_at -= Duration::seconds(12 * 3600); e })
+            .collect();
+        assert!(observation_coverage(&deeper, now, 72.0).factor < oc.factor);
+    }
+
+    #[test]
+    fn observation_coverage_empty_window_reads_zero_not_a_guess() {
+        let oc = observation_coverage(&[], Utc::now(), 72.0);
+        assert_eq!(oc.window_coverage, 0.0);
+        assert_eq!(oc.newest_age_hours, 72.0, "no in-window signal → age capped at the window");
+        assert_eq!(oc.factor, 0.0);
+        assert!(has_observation_gap(&oc));
+    }
+
+    #[test]
+    fn observation_coverage_future_dated_events_read_as_now_never_amplify() {
+        // Feed clock skew: a future-dated event clamps to age 0 (the recency_weight
+        // convention) — it counts toward the freshest bucket, never panics the bucket
+        // index or claims a negative age.
+        let evs = vec![make_event("military_escalation", 0.4, -2.0, SourceTier::Tier1)];
+        let oc = observation_coverage(&evs, Utc::now(), 72.0);
+        assert_eq!(oc.newest_age_hours, 0.0);
+        assert!(oc.window_coverage > 0.0 && oc.window_coverage <= 1.0 / 24.0 + 1e-9);
+    }
+
+    #[test]
+    fn compute_discounts_confidence_and_modality_cells_across_an_observation_gap() {
+        // End-to-end through the engine: a store still warm with two-day-old events and
+        // NOTHING fresh must not read high confidence — snapshot AND per-modality "%
+        // conf" carry the same discount, the caveat flag trips, and P is NOT read from
+        // any of it (display-only, locked by the fields living outside the P path).
+        let mut engine = minimal_engine();
+        let mut evs = Vec::new();
+        for k in 0..60 {
+            for d in ["military_escalation", "diplomatic_breakdown", "economic_warfare"] {
+                evs.push(make_event(d, 0.5, 52.0 + (k as f64) * 0.3, SourceTier::Tier1));
+            }
+        }
+        let snap = engine.compute(&evs);
+        assert!(snap.observation_gap, "a 52h-stale store is an observation gap");
+        assert!(snap.window_coverage < 0.5, "most of the window unobserved");
+        assert!(snap.newest_event_age_secs > (OBSERVATION_FRESH_GRACE_HOURS * 3600.0) as i64);
+        assert!(snap.estimate_confidence <= snap.observation_factor + CONFIDENCE_OFFLINE_FLOOR + 1e-3,
+            "blended confidence is capped by the observation factor (plus the floor)");
+        for ds in snap.domain_scores.values().filter(|ds| ds.event_count > 0) {
+            assert!(ds.confidence <= snap.observation_factor + DOMAIN_CONFIDENCE_OFFLINE_FLOOR + 1e-3,
+                "per-modality % conf must carry the same discount");
+        }
+        // The same evidence, freshly observed → no discount and no caveat.
+        let mut engine2 = minimal_engine();
+        let snap2 = engine2.compute(&full_coverage_events(72.0));
+        assert!(!snap2.observation_gap);
+        assert!((snap2.observation_factor - 1.0).abs() < 1e-9,
+            "healthy continuous observation must remain undiscounted");
     }
 
     #[test]

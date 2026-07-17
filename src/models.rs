@@ -1057,6 +1057,22 @@ pub struct RiskSnapshot {
 
     pub estimate_confidence: f64,
 
+    /// Observation-coverage honesty (staleness): fraction of the aggregation window's
+    /// time-buckets that actually saw live signal (1.0 = continuously observed), age of
+    /// the newest live event, the multiplicative discount those two applied to
+    /// `estimate_confidence` (and every per-modality confidence), and the operator
+    /// caveat flag. Set in `compute` Step 9 (bayesian::observation_coverage);
+    /// DISPLAY-ONLY — never feeds P. `#[serde(default)]` keeps older persisted
+    /// snapshots loadable (they read 0/false and claim no gap).
+    #[serde(default)]
+    pub window_coverage: f64,
+    #[serde(default)]
+    pub newest_event_age_secs: i64,
+    #[serde(default)]
+    pub observation_factor: f64,
+    #[serde(default)]
+    pub observation_gap: bool,
+
     pub alert_level:   AlertLevel,
     pub alert_message: String,
     /// The annual-P(WWIII) alert-band thresholds that classified THIS snapshot,
@@ -1159,6 +1175,13 @@ impl Default for RiskSnapshot {
             p_wwiii_30day: 0.0,
             p_wwiii_90day: 0.0,
             estimate_confidence: 0.5,
+            // Cold seed: NOTHING has been observed yet, and the seed must say so — a
+            // pre-first-compute snapshot claiming full coverage would be the same lie
+            // the 2026-07-17 outage exposed, one tick earlier.
+            window_coverage: 0.0,
+            newest_event_age_secs: 0,
+            observation_factor: 0.0,
+            observation_gap: true,
             alert_level: AlertLevel::Normal,
             alert_message: String::new(),
             alert_elevated_threshold: AlertSettings::default().elevated,

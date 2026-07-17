@@ -177,6 +177,19 @@ fn generate_dashboard_html(base_path: &str) -> String {
                  &format!("{:.0}", crate::bayesian::CONFIDENCE_EVENT_SATURATION))
         .replace("{{CONFIDENCE_SOURCE_SAT}}",
                  &format!("{:.0}", crate::bayesian::CONFIDENCE_SOURCE_SATURATION))
+        // The observation-coverage discount (staleness honesty) renders from the same
+        // OBS_* constants the engine multiplies in — the explanation of WHY confidence
+        // fell during/after an ingestion outage can't drift from the running math.
+        .replace("{{OBS_BUCKET_H}}",
+                 &format!("{:.0}", crate::bayesian::OBSERVATION_BUCKET_HOURS))
+        .replace("{{OBS_BUCKET_SAT}}",
+                 &format!("{:.0}", crate::bayesian::OBSERVATION_BUCKET_SATURATION))
+        .replace("{{OBS_GRACE_H}}",
+                 &format!("{:.0}", crate::bayesian::OBSERVATION_FRESH_GRACE_HOURS))
+        .replace("{{OBS_STALE_HL_H}}",
+                 &format!("{:.0}", crate::bayesian::OBSERVATION_STALE_HALF_LIFE_HOURS))
+        .replace("{{OBS_COV_FLOOR_PCT}}",
+                 &format!("{:.0}", crate::bayesian::OBSERVATION_GAP_COVERAGE_FLOOR * 100.0))
         // The "For scale" info line and the hero's vs-history positioning anchor the bare
         // P(WWIII)% to two crises an operator knows (Ukraine 2022, Cuba 1962). The two
         // poles render from the model's OWN output for those analogs (backtest::
@@ -960,8 +973,11 @@ mod tests {
             "the context strip must carry the locus element");
         assert!(DASHBOARD_HTML.contains("Locus:"),
             "the locus readout must be labeled so the operator reads it as where-over-time");
-        assert!(DASHBOARD_HTML.contains("% of 24h"),
-            "a named locus must state the current lead's share of the day");
+        // Span honesty: the share is quoted against the span the ring actually covers
+        // (server span_secs; "24h" only once the window is genuinely full) — a fixed
+        // "% of 24h" claimed off a post-restart partial ring was the 2026-07-17 lie.
+        assert!(DASHBOARD_HTML.contains("w.span_secs") && DASHBOARD_HTML.contains("'% of '+spanLbl"),
+            "a named locus must state the current lead's share of the SPAN the ring covers");
     }
 
     #[test]
@@ -1911,8 +1927,10 @@ mod tests {
         // same ones estimate_confidence blends — not hand-typed numbers that could
         // silently drift from the running formula after a re-weighting. A revert to a
         // hardcoded "×0.5 … 200 events … 20 feeds" fails this.
-        const PHS: [&str; 5] = ["{{CONF_W_DOMAIN}}", "{{CONF_W_EVENTS}}",
-            "{{CONF_W_SOURCES}}", "{{CONFIDENCE_EVENT_SAT}}", "{{CONFIDENCE_SOURCE_SAT}}"];
+        const PHS: [&str; 10] = ["{{CONF_W_DOMAIN}}", "{{CONF_W_EVENTS}}",
+            "{{CONF_W_SOURCES}}", "{{CONFIDENCE_EVENT_SAT}}", "{{CONFIDENCE_SOURCE_SAT}}",
+            "{{OBS_BUCKET_H}}", "{{OBS_BUCKET_SAT}}", "{{OBS_GRACE_H}}",
+            "{{OBS_STALE_HL_H}}", "{{OBS_COV_FLOOR_PCT}}"];
         for ph in PHS {
             assert!(DASHBOARD_HTML.contains(ph),
                 "confidence formula must be templated, not hardcoded ({ph})");
@@ -1936,6 +1954,40 @@ mod tests {
         assert!(rendered.contains(&format!(
             "near {:.0} feeds", crate::bayesian::CONFIDENCE_SOURCE_SATURATION)),
             "rendered prose must embed CONFIDENCE_SOURCE_SATURATION");
+        // The observation-factor prose carries the SAME anti-drift guarantee: decay and
+        // caveat-floor quoted from the engine's OBS_* constants, never hand-typed.
+        assert!(rendered.contains(&format!(
+            "halves every {:.0}h", crate::bayesian::OBSERVATION_STALE_HALF_LIFE_HOURS)),
+            "rendered prose must embed OBSERVATION_STALE_HALF_LIFE_HOURS");
+        assert!(rendered.contains(&format!(
+            "coverage under {:.0}%", crate::bayesian::OBSERVATION_GAP_COVERAGE_FLOOR * 100.0)),
+            "rendered prose must embed OBSERVATION_GAP_COVERAGE_FLOOR");
+    }
+
+    #[test]
+    fn dashboard_flags_an_observation_gap_instead_of_a_full_coverage_live() {
+        // HONESTY (pillar 1): after a host/ingestion outage the store comes back warm with
+        // pre-outage events — neither blind (events > 0) nor thin (many feeds) — while the
+        // middle of the aggregation window went UNOBSERVED. The header watchdog and the I&W
+        // board summary must read the server-computed `observation_gap` flag (single source
+        // of truth: bayesian::has_observation_gap via meta) and say the pipe wasn't watching,
+        // instead of claiming a full-coverage "Live" read (the 2026-07-17 post-outage lie).
+        assert!(
+            DASHBOARD_HTML.contains("observation_gap"),
+            "dashboard no longer reads the server observation_gap flag — a post-outage read would claim Live"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("OBSERVATION GAP"),
+            "header freshness watchdog dropped the observation-gap caveat"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("observation gap · window"),
+            "I&W board summary dropped the observation-gap qualifier"
+        );
+        assert!(
+            DASHBOARD_HTML.contains("window_coverage"),
+            "dashboard no longer reads window_coverage — the gap caveat can't quote how much was observed"
+        );
     }
 
     #[test]
