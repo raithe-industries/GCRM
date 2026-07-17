@@ -409,8 +409,10 @@ if (latest) {
   // Locus-concentration readout (#ca-locus): how concentrated the WHERE has been over 24h.
   // Honest-null (cold ring / quiet world with no lead / older backend) HIDES its box, so we cannot
   // demand non-"—". Instead: the node must EXIST (a dropped/renamed element fails), and WHEN its
-  // box is visible it must carry a well-formed locus string ("<theater> — N% of 24h …"), never a
-  // stuck "—" or a stray token.
+  // box is visible it must carry a well-formed locus string — "<theater> — N% of 24h …", or
+  // "<theater> — N% of last Nh …" while a post-restart ring spans under the full day (the
+  // span-honest label shipped 2026-07-17; a deploy landing 6–23h after a restart sees that
+  // form) — never a stuck "—" or a stray token.
   const lcEl = await page.$('#ca-locus');
   if (!lcEl) fail.push('#ca-locus (locus concentration) missing — the "where over time" readout was dropped from the DOM');
   else {
@@ -421,7 +423,7 @@ if (latest) {
     const lc = await page.$eval('#ca-locus', (el) => el.textContent.trim()).catch(() => null);
     if (!lcVisible) ok('locus concentration honest-null (hidden: cold ring / quiet world / no durable field)');
     else if (!lc || lc === '—') fail.push('#ca-locus box is visible but stuck on the "—" placeholder — renderLocus did not populate the locus');
-    else if (!/ — \d+% of 24h/.test(lc)) fail.push(`#ca-locus rendered a malformed locus ("${clip(lc)}") — expected "<theater> — N% of 24h …"`);
+    else if (!/ — \d+% of (24h|last \d+h)/.test(lc)) fail.push(`#ca-locus rendered a malformed locus ("${clip(lc)}") — expected "<theater> — N% of 24h …" (or "… N% of last Nh …" on a partial post-restart ring)`);
     else ok(`locus concentration populated (#ca-locus = "${clip(lc)}")`);
   }
 }
