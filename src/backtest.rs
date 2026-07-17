@@ -698,7 +698,7 @@ fn cross_entropy(pairs: &[(f64, f64)]) -> f64 {
 /// magnitude reads (`brier`/`rmse`): whether the model systematically over- or
 /// under-states risk across the anchored scale (calibration-in-the-large), and whether
 /// every anchor errs the SAME way (a uniform bias, sharper evidence than the mean alone).
-struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize, signed_bias: f64, unanimous: bool }
+struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize, signed_bias: f64, unanimous: bool, calib_slope: Option<f64>, calib_intercept: Option<f64> }
 
 /// Mean SIGNED error (model − anchor) of the (prediction, target) pairs — the
 /// calibration-in-the-large. Unlike Brier/RMSE (which square the error and so are blind to
@@ -707,6 +707,29 @@ struct CalibrationEvidence { brier: f64, rmse: f64, in_band: usize, n: usize, si
 fn signed_bias(pairs: &[(f64, f64)]) -> f64 {
     if pairs.is_empty() { return 0.0; }
     pairs.iter().map(|(p, t)| p - t).sum::<f64>() / pairs.len() as f64
+}
+
+/// The calibration SLOPE and intercept — the SCALE companion to `signed_bias` (which is a pure
+/// LEVEL read). Ordinary least-squares of the OUTCOME (anchor centre, the `.1`) on the
+/// PREDICTION (model P, the `.0`): `centre ≈ intercept + slope·P`. This is the standard
+/// risk-prediction calibration regression (Cox 1958; Steyerberg, *Clinical Prediction Models*;
+/// Van Calster et al. 2016, "A calibration hierarchy"): the ideal is slope 1.0 / intercept 0.
+/// A slope < 1 means the model's predictions are too EXTREME — over-dispersed across the ladder,
+/// its high analogs sitting further from baseline than the anchors warrant; slope > 1 means too
+/// COMPRESSED (under-dispersed). Crucially the slope is ORTHOGONAL to the mean bias: a set can be
+/// unbiased in the large yet mis-scaled, and a squared/mean-error read cannot express it.
+/// Returns `None` when there are < 2 pairs or the predictions have zero spread (slope undefined —
+/// no divide-by-zero). Empty pairs → `None`.
+fn calibration_slope(pairs: &[(f64, f64)]) -> Option<(f64, f64)> {
+    if pairs.len() < 2 { return None; }
+    let n = pairs.len() as f64;
+    let mean_p = pairs.iter().map(|(p, _)| p).sum::<f64>() / n;   // prediction (x)
+    let mean_t = pairs.iter().map(|(_, t)| t).sum::<f64>() / n;   // outcome / anchor centre (y)
+    let sxx = pairs.iter().map(|(p, _)| (p - mean_p) * (p - mean_p)).sum::<f64>();
+    if sxx <= 0.0 { return None; }   // predictions have no spread → slope undefined
+    let sxy = pairs.iter().map(|(p, t)| (p - mean_p) * (t - mean_t)).sum::<f64>();
+    let slope = sxy / sxx;
+    Some((slope, mean_t - slope * mean_p))
 }
 
 fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
@@ -718,6 +741,10 @@ fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
     // directional miss is stronger evidence of a real bias than a mean that could net out
     // opposite-signed errors — the direction-blind aggregate cannot show it at all.
     let unanimous = anchors.iter().all(|a| a.p >= a.centre) || anchors.iter().all(|a| a.p <= a.centre);
+    let (calib_slope, calib_intercept) = match calibration_slope(&pairs) {
+        Some((s, i)) => (Some(s), Some(i)),
+        None => (None, None),
+    };
     let ev = CalibrationEvidence {
         brier,
         rmse: brier.sqrt(),
@@ -725,6 +752,8 @@ fn calibration_evidence() -> (CalibrationEvidence, Vec<Anchor>) {
         n: anchors.len(),
         signed_bias: bias,
         unanimous,
+        calib_slope,
+        calib_intercept,
     };
     (ev, anchors)
 }
@@ -758,6 +787,25 @@ pub fn calibration_evidence_html() -> String {
               else { "neither over- nor under-states" };
     let uni = if ev.unanimous { format!(" &mdash; and does so at every one of the {} anchors (a uniform lean, not opposite errors netting out)", ev.n) }
               else { String::new() };
+    // Scale (calibration slope): the level bias above says HOW HIGH the model sits on average;
+    // the slope says whether it OVER- or UNDER-reacts as the world climbs the anchor ladder — a
+    // distinct, orthogonal failure the mean error cannot express. Regress the anchor centres on
+    // the model P; ideal slope 1.00 / intercept 0.
+    let scale = match (ev.calib_slope, ev.calib_intercept) {
+        (Some(s), Some(i)) => {
+            let word = if s > 1.02 { "under-dispersed (too compressed): the model under-reacts as the world escalates" }
+                       else if s < 0.98 { "over-dispersed (too extreme): the model's high analogs sit further from baseline than the anchors warrant" }
+                       else { "well-scaled: the model's spread across the ladder matches the anchors'" };
+            let shape = if (s - 1.0).abs() < 0.05 { "so the miss is almost entirely a uniform level shift, not a distortion of the ladder's shape" }
+                        else { "so the miss is part level, part scale distortion" };
+            format!("</p>\n\
+                <p>Scale calibration (calibration slope): <b>{s:.2}</b> (intercept <b>{:+.2}pp</b>; the ideal is slope 1.00 / intercept 0) \
+                &mdash; a least-squares fit of the anchored centres on the model P. Predictions are <b>{word}</b>, {shape}. \
+                The slope is orthogonal to the mean bias above: a model can be unbiased on average yet mis-scaled, and Brier/RMSE cannot tell them apart.",
+                i * 100.0)
+        }
+        _ => String::new(),
+    };
     format!(
         "<table><tr><th>Analog</th><th>Model P (annualized)</th><th>Anchor</th><th>&Delta;</th></tr>{rows}</table>\n\
          <p>Aggregate fidelity vs the anchored centres: <b>Brier {:.6}</b> &middot; <b>RMSE {:.2}pp</b> &middot; \
@@ -765,9 +813,9 @@ pub fn calibration_evidence_html() -> String {
          rules (0 is a perfect match to the anchors; lower is better).</p>\n\
          <p>Directional calibration (calibration-in-the-large): mean signed error <b>{:+.2}pp</b> &mdash; the model \
          <b>{}</b> risk relative to the anchored centres{}. Brier and RMSE measure only the MAGNITUDE of the miss \
-         and are blind to its sign; this is the direction the operator should read the headline with.</p>",
+         and are blind to its sign; this is the direction the operator should read the headline with.{}</p>",
         ev.brier, ev.rmse * 100.0, ev.in_band, ev.n,
-        ev.signed_bias * 100.0, dir, uni)
+        ev.signed_bias * 100.0, dir, uni, scale)
 }
 
 /// The live model's annualized P (as a percentage) for a named calibration analog —
@@ -864,10 +912,18 @@ fn calibration_evidence_report() {
     let xe = cross_entropy(&anchors.iter().map(|a| (a.p, a.centre)).collect::<Vec<_>>());
     eprintln!("aggregate: Brier={:.5}  RMSE={:.2}pp  cross-entropy={:.4}  in-band={}/{}",
         ev.brier, ev.rmse * 100.0, xe, ev.in_band, ev.n);
-    eprintln!("direction: signed-bias={:+.2}pp  ({}, {})\n",
+    eprintln!("direction: signed-bias={:+.2}pp  ({}, {})",
         ev.signed_bias * 100.0,
         if ev.signed_bias > 0.0 { "over-states" } else if ev.signed_bias < 0.0 { "under-states" } else { "unbiased" },
         if ev.unanimous { "uniform across all anchors" } else { "mixed direction" });
+    match (ev.calib_slope, ev.calib_intercept) {
+        (Some(s), Some(i)) => eprintln!("scale:     calib-slope={:.3}  intercept={:+.2}pp  ({})\n",
+            s, i * 100.0,
+            if s > 1.02 { "under-dispersed / too compressed" }
+            else if s < 0.98 { "over-dispersed / too extreme" }
+            else { "well-scaled" }),
+        _ => eprintln!("scale:     undefined (need ≥2 anchors with prediction spread)\n"),
+    }
 
     // Robust invariants only — evidence, not a brittle trip-wire.
     assert_eq!(ev.in_band, ev.n, "all anchored analogs must land in their target band");
@@ -906,4 +962,56 @@ fn calibration_evidence_reports_the_signed_directional_bias() {
     let sym = [(0.10, 0.20), (0.30, 0.20)];
     assert!(signed_bias(&sym).abs() < 1e-12, "opposite-signed errors net to zero bias");
     assert!(signed_bias(&[]) == 0.0, "empty → 0.0");
+}
+
+/// The mean bias (calibration-in-the-large) says HOW HIGH the model sits on average, but not
+/// whether it OVER- or UNDER-reacts as the world climbs the anchor ladder. This locks the SCALE
+/// half — the calibration slope (Cox/Steyerberg regression of the anchored centres on the model
+/// P) — which is ORTHOGONAL to the bias: a squared/mean-error read cannot express it.
+/// (Fails-without: neutering `calibration_slope` to a constant 1.0/None drops the field, the
+/// live-slope assert, and the html clause — this stops asserting / compiling.)
+#[test]
+fn calibration_evidence_reports_the_scale_slope_not_just_the_level_bias() {
+    let (ev, _anchors) = calibration_evidence();
+    let slope = ev.calib_slope.expect("the live anchors have prediction spread → slope defined");
+    let intercept = ev.calib_intercept.expect("intercept defined alongside the slope");
+
+    // Identity: the slope IS the OLS regression of the anchor centre (outcome) on the model P
+    // (prediction), recomputed independently from the anchors here.
+    let pairs: Vec<(f64, f64)> = calibration_anchors().iter().map(|a| (a.p, a.centre)).collect();
+    let n = pairs.len() as f64;
+    let mp = pairs.iter().map(|(p, _)| p).sum::<f64>() / n;
+    let mt = pairs.iter().map(|(_, t)| t).sum::<f64>() / n;
+    let sxx: f64 = pairs.iter().map(|(p, _)| (p - mp) * (p - mp)).sum();
+    let sxy: f64 = pairs.iter().map(|(p, t)| (p - mp) * (t - mt)).sum();
+    assert!((slope - sxy / sxx).abs() < 1e-12, "slope must equal the OLS centre-on-P slope");
+    assert!((intercept - (mt - slope * mp)).abs() < 1e-12, "intercept must close the regression");
+
+    // The live model is slightly OVER-dispersed (slope < 1): its high anchors sit a touch further
+    // from baseline than the anchors warrant. Pin the current reading — fails if the slope is
+    // neutered to 1.0 or the fit meaningfully regresses.
+    assert!(slope > 0.90 && slope < 1.00,
+        "live calibration slope should be slightly-below-1 (over-dispersed), got {slope:.4}");
+
+    // Discrimination — the slope is ORTHOGONAL to the mean bias. An UNBIASED but under-dispersed
+    // set (predictions less spread than outcomes): pred [0.2,0.8] vs obs [0.1,0.9] → slope > 1.
+    let compressed = [(0.2, 0.1), (0.8, 0.9)];
+    assert!(signed_bias(&compressed).abs() < 1e-12, "this set is unbiased in the large");
+    assert!((calibration_slope(&compressed).unwrap().0 - (0.8 / 0.6)).abs() < 1e-9,
+        "unbiased-but-compressed predictions → slope 1.33 (> 1)");
+    // Too-EXTREME predictions (over-dispersed): pred [0.1,0.9] vs obs [0.3,0.7] → slope 0.5.
+    assert!((calibration_slope(&[(0.1, 0.3), (0.9, 0.7)]).unwrap().0 - 0.5).abs() < 1e-9,
+        "too-extreme predictions → slope 0.5");
+    // Perfect predictions → slope 1, intercept 0.
+    let (sp, ip) = calibration_slope(&[(0.2, 0.2), (0.8, 0.8)]).unwrap();
+    assert!((sp - 1.0).abs() < 1e-12 && ip.abs() < 1e-12, "perfect fit → slope 1 / intercept 0");
+    // Degenerate: predictions with no spread → undefined (None), not a divide-by-zero.
+    assert!(calibration_slope(&[(0.5, 0.1), (0.5, 0.9)]).is_none(), "zero prediction spread → None");
+    assert!(calibration_slope(&[]).is_none() && calibration_slope(&[(0.5, 0.5)]).is_none(),
+        "< 2 pairs → None");
+
+    // The methodology fragment must STATE the scale (slope), not just the level bias.
+    let html = calibration_evidence_html();
+    assert!(html.contains("calibration slope") && html.contains("over-dispersed"),
+        "the fragment must state the calibration slope and the current over-dispersion");
 }

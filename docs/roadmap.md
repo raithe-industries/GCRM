@@ -857,6 +857,26 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   (trumpeted/bahamas/computing) + `..._whole_words_and_morphology_still_fire` (real Trump/Putin/Hamas
   mentions + Zelenskyy/Houthis suffix recall); FAILS when the three are reverted to substring (panic at
   nlp_sidecar.rs:569, "'Officials trumpeted…' must not trigger"). See improvement-log 2026-07-14 (later).
+- [x] **1.33 Calibration evidence reported the LEVEL bias but not the SCALE (does the model over- or
+  under-REACT as the world climbs the ladder?)** — **DONE 2026-07-17.** 1.26 added the
+  calibration-in-the-large (mean signed error +2.29pp, unanimous 4/4) — HOW HIGH the model sits on
+  average. But a model can sit right on average yet mis-scale: over-react toward the apex (predictions
+  too extreme) or under-react (too compressed), a distinct, orthogonal failure the mean error and the
+  squared Brier/RMSE cannot express. Added `calibration_slope` — the standard risk-prediction
+  calibration regression (Cox 1958; Steyerberg; Van Calster et al. 2016, "A calibration hierarchy"): OLS
+  of the anchored centres (outcome) on the model P (prediction), ideal slope 1.00 / intercept 0. Live
+  read **slope 0.968 / intercept −0.79pp** → the model is slightly OVER-dispersed (its high analogs sit
+  a touch further from baseline than the anchors warrant), but |slope−1|<0.05 so the +2.29pp miss is
+  almost entirely a uniform LEVEL shift, not a distortion of the ladder's shape — a genuinely reassuring
+  true statement about the ranking. Surfaced on `CalibrationEvidence` (`calib_slope`/`calib_intercept`),
+  in the `calibration_evidence_report` `--nocapture` readout, and as a "Scale calibration" clause on the
+  existing methodology fragment (no new surface — extends 1.26's directional paragraph). Diagnostic/
+  evidence only — never feeds P, touches no fitted constant; the four anchors are bit-identical. Locked
+  by `calibration_evidence_reports_the_scale_slope_not_just_the_level_bias` (OLS identity vs an
+  independent recompute; live slope pinned in (0.90,1.00); orthogonality to bias via an unbiased-but-
+  compressed set → slope>1; too-extreme→0.5 / too-compressed→2.0 / perfect→1.0/0 discrimination;
+  zero-spread & <2-pair → None; html states the slope + over-dispersion). FAILS when the slope is
+  neutered to 1.0/None. See improvement-log 2026-07-17.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.9 The eyes gate JUDGES the small/short viewports it promised to** — **STAGED 2026-07-09.**
