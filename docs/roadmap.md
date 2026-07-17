@@ -877,6 +877,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   compressed set → slope>1; too-extreme→0.5 / too-compressed→2.0 / perfect→1.0/0 discrimination;
   zero-spread & <2-pair → None; html states the slope + over-dispersion). FAILS when the slope is
   neutered to 1.0/None. See improvement-log 2026-07-17.
+- [x] **1.34 Escalation-coherence & escalation-breadth counted a FLOOR-HELD theater's STALE momentum as
+  live escalation** — **DONE 2026-07-17 (later²).** The escalation-coherence (1.19) and escalation-breadth
+  (1.20) reads make a PRESENT-TENSE claim — a front is "decisively escalating right now" / "risk is
+  accumulating on a second front" — but both filtered theaters on `escalation_momentum > +0.30` WITHOUT
+  the `!held_by_floor` guard that the sibling `systemic_momentum` gauge applies (theater.rs:883, with an
+  explicit honesty rationale). `escalation_momentum` is computed unconditionally from a theater's
+  (possibly aged) events, so a floor-held theater — whose displayed heat is a remembered war-state carried
+  through a news gap — kept voting its STALE escalatory momentum. A sustained war whose coverage lulls
+  ~a day (fast heat below the war-state floor, but recent-but-decaying escalatory events still weighted)
+  would be named the "decisively escalating" front by coherence AND phantom-counted as a synchronized
+  front by breadth — while `systemic_momentum` (correctly excluding it) reads the LIVE de-escalation, so
+  two gauges built from the same number CONTRADICTED each other about the same theater. Added
+  `!held_by_floor` to both filters (bayesian.rs:1134/1164), the exact live-evidence guard the sibling
+  gauge uses. Diagnostic only — never feeds `l_sys`/P, touches no fitted constant; the four anchors are
+  bit-identical. Locked by `escalation_reads_exclude_a_floor_held_theaters_stale_momentum` (a 96h-aged
+  floor-held us_iran with stale momentum ~0.5 + a fresh non-escalating brink nato_russia → BOTH reads
+  honest-null with the guard; a fresh-escalating over-suppression guard proves live escalation still
+  counts). FAILS-without: stash the guard → coherence names us_iran as the momentum leader (panic at
+  bayesian.rs:2489). See improvement-log 2026-07-17 (later²).
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.10 The served honesty pages are verified COMPLETE — no page ships a raw `{{TOKEN}}`

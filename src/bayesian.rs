@@ -1117,9 +1117,21 @@ impl BayesianRiskEngine {
             // symmetry this comment promises. Display-only: it never feeds `l_sys`/P and touches no
             // fitted constant. `available = false` (no load-bearing theater, or nothing decisively
             // escalating) hides the read honestly.
+            // HONESTY: floor-held theaters are EXCLUDED — the SAME live-evidence guard the sibling
+            // `systemic_momentum` gauge applies (theater.rs: `.filter(.. && !s.held_by_floor)`),
+            // for the same reason. `escalation_momentum` is computed unconditionally from a
+            // theater's (possibly aged) events, so a floor-held theater — whose displayed heat is a
+            // remembered war-state carried through a news gap — carries a STALE momentum from
+            // decayed coverage. A gauge that claims a front is "decisively escalating right now"
+            // (coherence) or that "risk is accumulating on a second front" (breadth) must not mint
+            // that present-tense claim from memory: without this guard, a sustained war whose
+            // coverage lulls for ~a day keeps voting its stale escalatory momentum, so these two
+            // reads would contradict `systemic_momentum` (which correctly reads the live direction)
+            // about the very same theater. Display-only: never feeds `l_sys`/P, touches no fitted
+            // constant.
             let escalation_decisive = -crate::theater::DEESCALATION_STEP_THRESHOLD;
             let mom_leader = snap.theaters.iter()
-                .filter(|t| t.escalation_momentum > escalation_decisive)
+                .filter(|t| !t.held_by_floor && t.escalation_momentum > escalation_decisive)
                 .max_by(|a, b| a.escalation_momentum
                     .partial_cmp(&b.escalation_momentum)
                     .unwrap_or(std::cmp::Ordering::Equal));
@@ -1145,7 +1157,11 @@ impl BayesianRiskEngine {
             // touches no fitted constant. `available = false` (nothing decisively escalating) hides
             // the read honestly.
             let mut fronts: Vec<(String, f64)> = snap.theaters.iter()
-                .filter(|t| t.escalation_momentum > escalation_decisive) // strict — the true mirror of the strict de-escalation gate (see above)
+                // strict `>` — the true mirror of the strict de-escalation gate (see above); and
+                // `!held_by_floor` — the same live-evidence guard the coherence read + the sibling
+                // `systemic_momentum` gauge use, so a floor-held theater's stale escalatory memory
+                // cannot phantom-count as a synchronized front.
+                .filter(|t| !t.held_by_floor && t.escalation_momentum > escalation_decisive)
                 .map(|t| (t.label.clone(), (t.escalation_momentum * 1e3).round() / 1e3))
                 .collect();
             fronts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -2406,6 +2422,104 @@ mod tests {
             "no theater clears the decisive-escalation bar → the breadth read is honest-null");
         assert_eq!(sq.escalation_breadth.count, 0);
         assert!(!sq.escalation_breadth.multi_front);
+    }
+
+    #[test]
+    fn escalation_reads_exclude_a_floor_held_theaters_stale_momentum() {
+        use crate::models::EventType;
+        // HONESTY: the escalation-coherence + escalation-breadth reads make a PRESENT-TENSE claim —
+        // a front is "decisively escalating right now" / "risk is accumulating on a second front".
+        // Both are built from the per-theater `escalation_momentum`, which is computed
+        // UNCONDITIONALLY from a theater's (possibly aged) events — so a FLOOR-HELD theater (its
+        // displayed heat is a remembered war-state carried through a news gap) still carries a STALE
+        // escalatory momentum from decayed coverage. They must EXCLUDE it, the SAME live-evidence
+        // guard the sibling `systemic_momentum` gauge applies (locked there by
+        // theater::systemic_momentum_weights_live_evidence_not_a_floor_held_memory). Without the
+        // guard these two gauges mint a present-tense escalation claim from memory and CONTRADICT
+        // `systemic_momentum` about the very same theater. Builder takes an explicit age + step so a
+        // floor-held theater can be constructed (like the theater-engine adversarial fixture).
+        let ev = |theater: &str, domain: &str, sev: f64, actors: &[&str], gp: bool, step: f64, age_h: i64| {
+            let mut e = GeopoliticalEvent::new("t".into(), "src".into(), SourceTier::Tier1,
+                Utc::now() - Duration::hours(age_h));
+            e.theater                   = Some(theater.to_string());
+            e.domain_signals            = [(domain.to_string(), 0.9)].into_iter().collect();
+            e.domain_tags               = vec![domain.to_string()];
+            e.severity                  = sev;
+            e.escalation_language_score = 0.4;
+            e.actor_ids                 = actors.iter().map(|s| s.to_string()).collect();
+            e.great_power_involved      = gp;
+            e.event_type                = EventType::MilitaryStrike;
+            e.escalation_step           = step;
+            e
+        };
+
+        // Board: A (us_iran) = a sustained war aged 96h with a STALE ESCALATORY step (+0.5) →
+        // floor-held, momentum carried from old news (~0.5, well past the +0.30 bar). B (nato_russia)
+        // = a FRESH nuclear-brink two-great-power theater (load-bearing) that is NOT escalating
+        // (step ~0.02). The ONLY theater clearing the decisive-escalation bar is the floor-held one.
+        let mut evs = Vec::new();
+        for _ in 0..8 {
+            evs.push(ev("us_iran",     "military_escalation", 0.95, &["united_states", "iran"],   true,  0.5,  96));
+            evs.push(ev("us_iran",     "nuclear_posture",     0.9,  &["iran"],                    false, 0.5,  96));
+            evs.push(ev("nato_russia", "nuclear_posture",     0.98, &["united_states", "russia"], true,  0.02, 0));
+            evs.push(ev("nato_russia", "military_escalation", 0.9,  &["united_states", "russia"], true,  0.02, 0));
+        }
+        let s = minimal_engine().compute(&evs);
+
+        // Preconditions that make this the adversarial memory-as-fresh case (not vacuous):
+        let held = s.theaters.iter().find(|t| t.theater_id == "us_iran").expect("us_iran present");
+        assert!(held.held_by_floor,
+            "precondition: the aged sustained war must be floor-held (memory), heat={}", held.heat);
+        assert!(held.escalation_momentum > 0.30,
+            "precondition: the held theater carries a STALE escalatory momentum past the +0.30 bar, got {}",
+            held.escalation_momentum);
+        // load_bearing is computed independently of the escalation guard, so it is available in BOTH
+        // the buggy and fixed builds — that is what makes the coherence honest-null discriminating:
+        // with the guard the sole decisive escalator (the floor-held one) is removed → null; without
+        // it, coherence would be available naming us_iran.
+        assert!(s.load_bearing_theater.available,
+            "precondition: a load-bearing theater exists (so a coherence read is possible)");
+        let fresh = s.theaters.iter().find(|t| t.theater_id == "nato_russia").expect("nato_russia present");
+        assert!(!fresh.held_by_floor, "precondition: the brink theater is fresh, not floor-held");
+
+        // WITH the guard: the floor-held theater's stale momentum is excluded and nothing else is
+        // decisively escalating → BOTH reads are honest-null. (WITHOUT the guard: coherence names
+        // us_iran as the momentum leader — available + divergent — and breadth counts it: the two
+        // asserts below FAIL, which is the fails-without-change proof.)
+        assert!(!s.escalation_coherence.available,
+            "a floor-held theater's stale escalatory memory must NOT mint a coherence read; got momentum_theater_id={:?}",
+            s.escalation_coherence.momentum_theater_id);
+        assert!(!s.escalation_breadth.available && s.escalation_breadth.count == 0,
+            "a floor-held theater must NOT phantom-count as a synchronized front; got count={} fronts={:?}",
+            s.escalation_breadth.count, s.escalation_breadth.fronts);
+        assert!(s.escalation_breadth.fronts.iter().all(|(l, _)| l != &held.label),
+            "the floor-held theater must never appear in the escalating fronts, got {:?}",
+            s.escalation_breadth.fronts);
+
+        // OVER-SUPPRESSION GUARD: a FRESH decisively-escalating theater must STILL count — the guard
+        // removes only stale MEMORY, never a live escalation. Same floor-held us_iran, but now
+        // nato_russia escalates freshly (step 0.9).
+        let mut live = Vec::new();
+        for _ in 0..8 {
+            live.push(ev("us_iran",     "military_escalation", 0.95, &["united_states", "iran"],   true,  0.5, 96)); // floor-held, stale
+            live.push(ev("us_iran",     "nuclear_posture",     0.9,  &["iran"],                    false, 0.5, 96));
+            live.push(ev("nato_russia", "military_escalation", 0.9,  &["united_states", "russia"], true,  0.9, 0));  // FRESH escalating
+            live.push(ev("nato_russia", "nuclear_posture",     0.98, &["united_states", "russia"], true,  0.9, 0));
+        }
+        let sl = minimal_engine().compute(&live);
+        let held2 = sl.theaters.iter().find(|t| t.theater_id == "us_iran").expect("us_iran present");
+        assert!(held2.held_by_floor && held2.escalation_momentum > 0.30,
+            "precondition: us_iran is still floor-held with stale escalatory momentum, got held={} mom={}",
+            held2.held_by_floor, held2.escalation_momentum);
+        assert!(sl.escalation_breadth.available && sl.escalation_breadth.count == 1,
+            "the FRESH escalating theater must still count (the guard removes only memory), got count={} fronts={:?}",
+            sl.escalation_breadth.count, sl.escalation_breadth.fronts);
+        assert_eq!(sl.escalation_breadth.fronts.first().map(|(l, _)| l.as_str()), Some(fresh.label.as_str()),
+            "the counted front must be the fresh nato_russia, not the floor-held us_iran; got {:?}",
+            sl.escalation_breadth.fronts);
+        assert!(sl.escalation_coherence.available && sl.escalation_coherence.momentum_theater_id == "nato_russia",
+            "coherence must name the FRESH escalating theater, not the floor-held one; got {:?}",
+            sl.escalation_coherence.momentum_theater_id);
     }
 
     #[test]
