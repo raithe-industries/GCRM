@@ -512,6 +512,48 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-17 (Signal Hunter, later run)** — **HONEST NO-OP after a fresh, tenacious walk of the
+  ranked gaps with live probes — no source half-wired — but with ONE genuinely-new, forward-useful
+  reachability finding: the reachable-host universe is WIDER than "S3 + raw.github".** Re-mapped the
+  wall by live probe this run (not re-cited): **`storage.googleapis.com` (Google Cloud Storage public
+  buckets) returns 200 to web fetch** — verified positive against `storage.googleapis.com/covid19-open-data/v3/index.csv`
+  (real CSV header returned). Combined with the standing S3 exception (positive control: the
+  `qfes_bushfire` QLD S3 bucket returned **47 live features, newest `ItemDateTimeLocal_ISO`
+  2026-07-17T10:19:02+10:00** — healthy), the reachable set is now **public cloud object storage
+  (S3 + GCS) + `raw.githubusercontent.com`**; WAF'd application servers still 403 (confirmed this run:
+  `meri.digitraffic.fi`, `services9.arcgis.com`/`services3.arcgis.com` FeatureServer query + `opendata.arcgis.com/api/v3`
+  (Esri WAF), `acleddata.com`, `data.humdata.org` API, JRC `remap.jrc.ec.europa.eu`). **Standing hunt
+  implication for future runs:** the winning pattern is the QFES one — an authoritative agency that
+  publishes its geocoded event feed as a static object on **S3 or GCS** (not behind a WAF'd app server);
+  probe candidate agencies' object stores directly. Walked the mission ranking:
+  **(1) Fintraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED, and **sharpened**:
+  browsed the current `tmfg/digitraffic-marine` source tree via the GitHub tree UI (reachable) — the
+  `fi/livi/digitraffic/meri` package ships `ais / portcall / sse / portnet / info` controllers+DTOs but
+  **NO nautical-warning controller/DTO/model at all** (dao/dto/model/controller all enumerated) — so the
+  serving service is confirmed *not in this repo*, corroborating the "service not locatable / no committed
+  schema anchor" block; the live endpoint still 403s web fetch. Honest fixture still unwritable. Stays #1 DEFERRED.
+  **(2) `acled_aggregated` refresh** (conflict freshness) — snapshot newest `WEEK` still **2026-03-07 (~132 d ≫
+  the 42-day gate)** → the ACLED Middle-East Conflict layer is **self-emptied / honestly dark** (working as
+  designed). Refresh RE-CONFIRMED unreachable + login-gated this run by direct probe: **both `acleddata.com/aggregated/...`
+  AND the HDX `data.humdata.org/api/3/action/package_search` 403 web fetch**; the aggregated files are updated
+  weekly on HDX/acleddata but are a registered-tier (myACLED-login) download with no auth-free GitHub/S3/GCS
+  mirror → local-only, not web fetch-doable. **(3) Radiation new geography** (proven DE/FI/FR Path-A pattern) —
+  re-walled: **EURDEP** (JRC, would span ~39 countries) is behind the JRC EURDEP SSO / `remap.jrc` WAF (403),
+  no auth-free REST+GeoJSON endpoint and no committed client quoting one; **Norway RADNETT** (top open radiation
+  geography, DSA/Geonorge) unchanged — host 403, no committed schema anchor. Blocked. **(4) Military-posture via
+  firing-danger / military-zone GeoJSON** (same modality as the blocked Fintraffic lead, from a reachable
+  authority) — searched: the reachable candidates (NOAA/BOEM **Marine Cadastre "Danger Zones and Restricted
+  Areas"**, DoD installations) are **static designated-boundary reference geometry, NOT a fresh event/activity
+  feed** (would plot the same dots forever — fails the freshness + event-signal bar); ruled out. **(5) exxamalte
+  georss/geojson client family** (the committed-fixture Path-B technique that landed nsw_rfs/wa_dfes/geonet_quake) —
+  enumerated: the un-used members are more AU/NZ **fire + quake** feeds (e.g. Tasmania Fire Service) — landable
+  mechanically but a **trivia layer** (another Australian state fire feed), NOT a ranked-gap closer, so declined
+  per the mission's "one gap-closer beats three trivia layers". **Green-proof:** N/A — no code touched; `src/osint.rs`
+  + `vendor/ee-sources/` unchanged; ledger-only commit; tree left clean. Standing first picks when the wall lifts:
+  Fintraffic nautical warnings (a web fetch-200 on the live endpoint reads the wire shape → Path A on the already-live
+  `digitraffic_ais` host), FEWS-NET/IPC `ipcphasemap` GeoJSON, and the Chile `675E7F2BA04771F` volcano layer — plus
+  the NEW standing action: **probe authoritative agencies' S3/GCS object stores for auth-free geocoded event feeds
+  (the QFES pattern), now that GCS is confirmed reachable.**
 - **2026-07-17 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious walk of the ranked gaps
   with live probes; no source half-wired — but ONE new lead fully triaged and ruled out (Ukraine
   air-raid alerts).** Wall re-characterized by live probes this run (not re-cited): **reachable =
