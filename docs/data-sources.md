@@ -309,6 +309,13 @@ Bias each run toward the least-covered axis below.
   (verified 2026-07-13) — naval live-firing / restricted-area military-posture signal in the
   NATO/Russia Baltic frontier. Blocked only on anchoring the warning-feature property keys to
   committed bytes (no committed API doc/consumer found this run).
+  **Ukraine air-raid alerts RULED OUT 2026-07-17** as a clean landing for this gap (despite being a
+  direct active-conflict / air-threat observable): the machine-readable APIs are **token-gated**
+  (`api.alerts.in.ua/v1/alerts/active.json?token=…`, `api.ukrainealarm.com`) → keyed = ships DORMANT;
+  the only auth-free option (`raid.fly.dev` / `alerts.com.ua/api/states`) is **explicitly UNOFFICIAL**
+  (aggregator → fails bar 1 authoritative); and the payload is **per-oblast by NAME with no inline
+  lat/lon** (the MeteoAlarm-class geometry-anchoring wall). Landable only if an OFFICIAL Ukrainian state
+  body exposes an auth-free geocoded feed — none found.
 - **Conflict** — SEEDED 2026-06-14 with `ucdp_ged` (Uppsala, live CSV) and EXTENDED
   2026-06-28 with `acled_aggregated` (**ACLED weekly Admin-1 intensity, Path-B snapshot**) —
   the ACLED aggregated-weekly product is now LANDED (the licensed event `acled` stays dormant).
@@ -505,6 +512,49 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-17 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious walk of the ranked gaps
+  with live probes; no source half-wired — but ONE new lead fully triaged and ruled out (Ukraine
+  air-raid alerts).** Wall re-characterized by live probes this run (not re-cited): **reachable =
+  public S3 + `raw.githubusercontent.com` only.** Positive control: the `qfes_bushfire` QLD S3 bucket
+  returned **40 live features, newest `ItemDateTimeLocal_ISO` 2026-07-17T07:18+10:00** — S3 exception
+  healthy. Everything else 403'd via web fetch: `meri.digitraffic.fi/api/nautical-warning/...`,
+  `hub.arcgis.com/api/v3` (Esri WAF), `api.weather.bom.gov.au`, `karttjanst.ssm.se` (Sweden SSM), **and
+  even `www.gdacs.org`** (a live prod source) — i.e. the standard total-egress wall. Walked the mission
+  ranking:
+  **(1) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED, this
+  run by fetching the doc DIRECTLY (reachable via raw.github): `tmfg/digitraffic` `pages/meriliikenne-en.md`
+  covers **harbour schedules / AIS / winter-navigation (IBNet) / sea-state / AtoN faults but NOT nautical
+  warnings** (confirmed verbatim, not inferred), and `tmfg/digitraffic-marine` `README.md` 404s on raw —
+  so no committed schema anchor for the warning-feature property keys exists; the live endpoint 403s. Honest
+  fixture still unwritable. Stays #1 DEFERRED (Path A, needs the warning-feature keys, served by an
+  unlocatable service). **(2) Ukraine air-raid alerts** (a DIRECT active-conflict / military-posture
+  observable — arguably the single most on-mission signal for the #1 gap; NEW full triage this run) —
+  **RULED OUT as a clean landing:** the machine-readable APIs are **token-gated** (`api.alerts.in.ua/v1/alerts/active.json?token=…`
+  needs `Authorization: Bearer`, `api.ukrainealarm.com` needs a requested API key) → a keyed source ships
+  **DORMANT** (no live value in-sandbox or prod without a key); the only auth-free option (`raid.fly.dev` /
+  `alerts.com.ua/api/states`) is **explicitly UNOFFICIAL** (an aggregator → fails bar 1 authoritative);
+  and the alert payload is **per-oblast by NAME with no inline lat/lon** → the MeteoAlarm-class geometry
+  wall (needs an oblast-polygon table not anchorable to committed bytes). Recorded so future runs don't
+  re-chase. (Landable only if an OFFICIAL Ukrainian state body exposes an auth-free geocoded feed — none
+  found.) **(3) Radiation new geography** (the proven DE/FI/FR Path-A pattern) — no committed client
+  quoting a NEW national network's auth-free endpoint + schema surfaced (search returned only dosimetry/
+  simulation repos + citizen-science OpenRadiation, already ruled out on authority); Sweden SSM
+  `karttjanst.ssm.se` 403, opaque backend, no anchor. Blocked, unchanged. **(4) ReCAAP ISC** (Asian
+  maritime-security incidents — Malacca/Singapore Strait/South China Sea theatre) — RE-VERIFIED: only
+  reports / annual PDFs / the interactive **Re-VAMP dashboard**, **no machine-readable JSON/GeoJSON
+  incident feed** (fails bar 3). Asian maritime-security-incident modality stays blocked. **(5) Chile
+  SERNAGEOMIN volcanoes / South America** (blank continent) — RE-WALLED: `hub.arcgis.com/api/v3/datasets/675E7F2BA04771F`
+  403 (Esri WAF), FeatureServer URL/keys still unpinnable, no committed consumer. **(6) `acled_aggregated`
+  refresh** (conflict freshness) — snapshot newest `WEEK` **2026-03-07 (~132 d ≫ the 42-day `MAX_ROW_AGE_DAYS`
+  gate)**, so the ACLED Middle-East Conflict layer is **self-emptied / honestly dark** (working as designed);
+  refresh RE-CONFIRMED myACLED-login-gated, no auth-free GitHub mirror → local-only, not web fetch-doable.
+  **(7) BoM cyclone** (Indian-Ocean / S-Hemisphere storm gap) — `api.weather.bom.gov.au` 403; can't confirm
+  whether open data resumed from its platform-upgrade suspension. **Green-proof:** N/A — no code touched;
+  `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only commit; tree left clean. Standing first picks
+  when the wall lifts: Fintraffic nautical warnings (a web fetch-200 on the live endpoint would let me read
+  the warning-feature wire shape and land it Path A on the already-live `digitraffic_ais` host), the
+  FEWS-NET IPC `ipcphasemap`/HDX GeoJSON (needs a 200 or a committed real sample), and the Chile
+  `675E7F2BA04771F` volcano layer (needs the Esri host or a committed consumer to become readable).
 - **2026-07-16 (Signal Hunter, later run)** — **HONEST NO-OP after a fresh, tenacious walk of the
   ranked gaps; no source half-wired — but with ONE new, concrete finding that sharpens the humanitarian
   deferral.** Wall was the standard shape, re-characterized by live probes: **reachable = public S3 +
