@@ -916,9 +916,18 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   FAILS-without: neuter the `returned == 0` guard → verdict(0,0) → Absent → both tests panic. Engine-behavior
   on a served indicator; never feeds P — the four anchors bit-identical. See improvement-log 2026-07-18.
 
-- [ ] **[candidate] 1.ac `band_coverage_window` reconstructs its band from a 300:1 STRIDE-DECIMATED
+- [x] **[candidate] 1.ac `band_coverage_window` reconstructs its band from a 300:1 STRIDE-DECIMATED
   series, but its docstring claims the reconstruction "matches `uncertainty_window`'s" FULL-RESOLUTION
-  band — so the served `floor_bound_pct` is biased HIGH and `mean_hw_pct` understated** — surfaced
+  band — so the served `floor_bound_pct` is biased HIGH and `mean_hw_pct` understated** — **DONE
+  2026-07-18 (later).** Took FIX option (a): each anchor's half-width is now rebuilt from the
+  FULL-resolution trailing window (every in-window read, the exact set `uncertainty_window` publishes
+  from); the stride-decimated series is retained ONLY as the forward-coverage pair-count control. So
+  the served `floored`/`floor_bound_pct`/`mean_hw_pct` no longer contradict the very band they
+  validate. Because the fuller reconstruction is far heavier, `band_coverage()` is now stride-cached
+  (the established `momentum_lead_lag` pattern) so it stays off the 1 Hz broadcast lock. Locked by
+  `band_coverage_window_rebuilds_the_half_width_at_full_resolution_not_the_decimated_anchors`
+  (fails-without-change: decimated reconstruction reports `floor_bound_pct` 100 vs the fix's 0). See
+  improvement-log 2026-07-18 (later). ORIGINAL:  — surfaced
   2026-07-18 by an aggregator diagnostics bug-hunt. `uncertainty_window` (the band actually PUBLISHED each
   tick) computes its central-80% half-width over EVERY in-window `p_annual` (~21,600 samples/6h at 1 Hz);
   `band_coverage_window` computes the "same" half-width over the stride-decimated series (~72 samples/6h,

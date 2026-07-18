@@ -626,10 +626,15 @@ pub struct EpochStore {
     /// broadcast while holding the shared epoch_store lock. (Cache, not eviction: the
     /// ring itself is untouched.)
     mom_ll_cache: Option<(DateTime<Utc>, serde_json::Value)>,
+    /// Stride-cached `band_coverage` payload — same rationale as `mom_ll_cache`. The diagnostic
+    /// scans the whole 48h ring and (since the full-resolution half-width fix) rebuilds each
+    /// anchor's band from EVERY in-window read, so it is far too heavy to run per 1 Hz broadcast
+    /// under the shared lock; its answer can only change once per `BAND_COV_STRIDE_SECS` anyway.
+    band_cov_cache: Option<(DateTime<Utc>, serde_json::Value)>,
 }
 
 impl EpochStore {
-    pub fn new() -> Self { Self { ring: VecDeque::new(), mom_ll_cache: None } }
+    pub fn new() -> Self { Self { ring: VecDeque::new(), mom_ll_cache: None, band_cov_cache: None } }
 
     /// Append one timeline entry. Evicts oldest when ring is full.
     pub fn push(&mut self, entry: serde_json::Value) {
@@ -906,15 +911,27 @@ impl EpochStore {
     /// (`overconfident` — real moves escaped it); materially MORE means it was `conservative`, as the
     /// deliberate humility floor intends. Diagnostic only — computed after P is final, it never feeds
     /// P or any fitted constant. See [`Self::band_coverage_window`] for the construction.
-    pub fn band_coverage(&self) -> serde_json::Value {
-        self.band_coverage_window(
-            Utc::now(),
+    ///
+    /// Stride-cached (as [`Self::momentum_lead_lag`] is): the 48h scan now rebuilds every anchor's
+    /// band at full 1 Hz resolution, so recompute at most once per `BAND_COV_STRIDE_SECS` and serve
+    /// the cached payload on the 1 Hz broadcast in between.
+    pub fn band_coverage(&mut self) -> serde_json::Value {
+        let now = Utc::now();
+        if let Some((at, v)) = &self.band_cov_cache {
+            if (now - *at).num_seconds() < BAND_COV_STRIDE_SECS {
+                return v.clone();
+            }
+        }
+        let v = self.band_coverage_window(
+            now,
             BAND_COV_WINDOW_SECS,
             BAND_COV_BAND_SECS,
             BAND_COV_HORIZON_SECS,
             BAND_COV_STRIDE_SECS,
             BAND_COV_MIN_PAIRS,
-        )
+        );
+        self.band_cov_cache = Some((now, v.clone()));
+        v
     }
 
     /// Testable core of [`band_coverage`]: caller injects `now`, the lookback window, the band-window
@@ -925,9 +942,17 @@ impl EpochStore {
     /// (`max(central-80% half-spread, HUMILITY_FLOOR_HW)`) but OMITS the confidence-widening term (the
     /// per-tick `confidence` is not carried in the ring). Since widening only ever WIDENS the published
     /// band, the reconstructed band is a SUBSET of it, so the reported coverage is a conservative FLOOR
-    /// on the true published band's coverage — we never overstate how well the band performed. The
-    /// series is stride-decimated (as in [`Self::momentum_lead_lag_window`]) so 1 Hz autocorrelated
-    /// ticks don't inflate the pair count.
+    /// on the true published band's coverage — we never overstate how well the band performed.
+    ///
+    /// The ANCHOR series (which reads pair with a forward outcome) is stride-decimated (as in
+    /// [`Self::momentum_lead_lag_window`]) so 1 Hz autocorrelated ticks don't inflate the pair count.
+    /// But each anchor's HALF-WIDTH is rebuilt from the FULL-resolution trailing window — every
+    /// in-window read, exactly the sample set [`uncertainty_window`] published the band from — NOT the
+    /// decimated anchors. Decimating the half-width would draw the central-80% spread from ~72 samples
+    /// instead of ~21,600, biasing it narrow; a band `uncertainty_window` reported `floored:false`
+    /// (spread set by measured volatility) could then be mislabelled `floor_bound` here, and
+    /// `mean_hw_pct`/`floor_bound_pct` would contradict the very band they claim to validate. Full
+    /// resolution keeps the sharpness reads faithful to the published band.
     ///
     /// Alongside coverage (reliability), it also reports SHARPNESS (resolution): `mean_hw_pct`, the
     /// band's mean half-width (a floor, since the confidence-widening term is omitted), and
@@ -967,10 +992,18 @@ impl EpochStore {
                 rev.push(((t - cutoff).num_seconds(), p));
             }
         }
-        // Ascending, stride-decimated series of (secs_since_cutoff, p).
-        let mut series: Vec<(i64, f64)> = Vec::with_capacity(rev.len() / 4 + 1);
+        // Full-resolution ascending series (secs_since_cutoff, p) — EVERY in-window read, the same
+        // sample set the PUBLISHED band (`uncertainty_window`) is built from. Anchors' half-widths
+        // are rebuilt from this below; the decimated series (next) is only the pair-count control.
+        let full: Vec<(i64, f64)> = rev.iter().rev().copied().collect();
+        // Ascending, stride-decimated ANCHOR series (with parallel indices back into `full`). The
+        // decimation is the forward-coverage autocorrelation control — 1 Hz ticks are serially
+        // correlated, so counting each as an independent horizon pair would fake precision. It is
+        // NOT applied to the half-width reconstruction below.
+        let mut series: Vec<(i64, f64)> = Vec::with_capacity(full.len() / 4 + 1);
+        let mut series_full_idx: Vec<usize> = Vec::with_capacity(full.len() / 4 + 1);
         let mut last_kept: Option<i64> = None;
-        for &(secs, p) in rev.iter().rev() {
+        for (idx, &(secs, p)) in full.iter().enumerate() {
             if let Some(lk) = last_kept {
                 if secs - lk < stride_secs {
                     continue;
@@ -978,6 +1011,7 @@ impl EpochStore {
             }
             last_kept = Some(secs);
             series.push((secs, p));
+            series_full_idx.push(idx);
         }
 
         // For each anchor tick, reconstruct the empirical band from the trailing `band_secs` of the
@@ -997,20 +1031,21 @@ impl EpochStore {
         // and how often the humility FLOOR rather than measured spread is what set that width.
         let (mut bands, mut sum_hw, mut floor_bound) = (0usize, 0.0f64, 0usize);
         let mut j = 0usize;
+        let mut lo_full = 0usize;
         for i in 0..series.len() {
             let (ti, pi) = series[i];
-            // Trailing band-window reads (need >= 4 to form a central-80% spread, as uncertainty does).
+            let ai = series_full_idx[i];
+            // Trailing band-window reads at FULL resolution (need >= 4 to form a central-80% spread,
+            // as `uncertainty_window` does). `lo_full` is a monotonic left edge over the ascending
+            // `full` series: anchors advance in time, so the window start only ever moves forward.
             let lo_t = ti - band_secs;
-            let mut win: Vec<f64> = Vec::new();
-            for k in (0..=i).rev() {
-                if series[k].0 < lo_t {
-                    break;
-                }
-                win.push(series[k].1);
+            while lo_full < ai && full[lo_full].0 < lo_t {
+                lo_full += 1;
             }
-            if win.len() < 4 {
+            if ai + 1 - lo_full < 4 {
                 continue;
             }
+            let mut win: Vec<f64> = full[lo_full..=ai].iter().map(|&(_, p)| p).collect();
             win.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let emp_hw = (percentile_sorted(&win, 0.90) - percentile_sorted(&win, 0.10)) / 2.0;
             let hw = emp_hw.max(crate::models::HUMILITY_FLOOR_HW);
@@ -3448,6 +3483,50 @@ mod tests {
             "a ±20pp sawtooth's empirical spread dwarfs the floor — it should bind on ~no read, got {}", rv["floor_bound_pct"]);
         assert!(rv["mean_hw_pct"].as_f64().unwrap() > floor_pp + 2.0,
             "a wide empirical spread must push the mean half-width above the floor, got {}", rv["mean_hw_pct"]);
+    }
+
+    #[test]
+    fn band_coverage_window_rebuilds_the_half_width_at_full_resolution_not_the_decimated_anchors() {
+        // The half-width a band-coverage read reports MUST be the one `uncertainty_window` actually
+        // published — reconstructed from EVERY in-window read, not from the stride-decimated anchor
+        // series. Construct a 1 Hz window whose decimated anchors (every 300s) all sit at 0.50 while
+        // the sub-300s reads in between swing ±30pp: the full-resolution central-80% spread is ~0.30
+        // (far above the ±7pp humility floor → a MEASURED band, not floored), but a reconstruction
+        // that only saw the 300s anchors would read a flat 0.50 (zero spread → floored at ±7pp).
+        // With the full-resolution fix the sharpness reads MATCH `uncertainty_window`; the pre-fix
+        // decimated reconstruction reported the opposite (floor_bound_pct 100, mean_hw_pct ~7) —
+        // contradicting the very band it claims to validate. This is the fails-without-the-fix lock.
+        let now = Utc::now();
+        let window = 7200i64; // 2h of 1 Hz reads
+        let mut es = EpochStore::new();
+        for s in 0..window {
+            // `s` = seconds since the window cutoff (ascending in time as we push).
+            let p = if s % 300 == 0 {
+                0.50 // the points the 300s decimator keeps — a flat, floored-looking anchor series
+            } else if s % 2 == 0 {
+                0.20 // the sub-anchor swing the published band actually saw…
+            } else {
+                0.80 // …±30pp, far above the humility floor
+            };
+            es.push(epoch_at(window - s, now, p));
+        }
+        let r = es.band_coverage_window(now, window, 1800, 300, 300, 6);
+        assert_eq!(r["available"], true, "2h of 1 Hz data must reconstruct enough pairs");
+        // Full-resolution truth: the band is set by measured volatility on every reconstructable read.
+        assert_eq!(r["floor_bound_pct"].as_f64().unwrap(), 0.0,
+            "the sub-anchor ±30pp spread is far above the floor — no band is floor-bound (pre-fix decimated: 100), got {}",
+            r["floor_bound_pct"]);
+        assert!(r["mean_hw_pct"].as_f64().unwrap() > 20.0,
+            "the mean half-width must reflect the full-resolution ~30pp spread (pre-fix decimated: ~7pp floor), got {}",
+            r["mean_hw_pct"]);
+        // …and it must AGREE with the very band it validates: `uncertainty_window` over the same
+        // trailing window reports the band as MEASURED (floored:false). A decimated reconstruction
+        // would have labelled the identical history floor-bound — contradicting the published band.
+        let u = es.uncertainty_window(0.50, 1.0, now, 1800);
+        assert_eq!(u["floored"], false, "the published band over the same window is measured, not floored");
+        assert!(u["empirical_hw_pct"].as_f64().unwrap() > 20.0,
+            "sanity: the published band's own empirical half-width is the ~30pp the reconstruction must match, got {}",
+            u["empirical_hw_pct"]);
     }
 
     // ── Alert-band dwell (the TIME axis of the current state) ──────────────────────
