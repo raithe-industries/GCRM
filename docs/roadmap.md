@@ -897,6 +897,64 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   counts). FAILS-without: stash the guard → coherence names us_iran as the momentum leader (panic at
   bayesian.rs:2489). See improvement-log 2026-07-17 (later²).
 
+- [x] **1.35 The aftershock discriminator read an EMPTY (no-coverage) single-source response as a
+  CONFIRMED absence of aftershocks — the strongest PHYSICAL nuclear indicator could light off USGS
+  simply lacking catalog data for a remote test-site region** — **DONE 2026-07-18.** `check_aftershocks`
+  (detector.rs) hardcodes a USGS-only 2h re-query and treated `aftershock_count == 0` identically whether
+  USGS *confirmed quiet* or *had no data*. The detector's own FDSN registry notes USGS ComCat completeness
+  for small events in the Arctic / Central-Asian test sites (Novaya Zemlya, Lop Nur, Semipalatinsk) is poor
+  and GFZ/EMSC cover those better — so a natural M≥4.5 quake there with a real (GFZ/EMSC-recorded) aftershock
+  sequence could hit an empty USGS response → `AftershockAbsent` → `is_test_consistent()` → the served
+  `seismic_test_consistent` I&W indicator lit off a natural quake, plus the +0.20 confidence absence bonus.
+  Absence of coverage is not evidence of absence. FIX: capture the TOTAL USGS features returned (coverage
+  proof) alongside the aftershock count; a new pure `aftershock_verdict(returned, count)` returns
+  `Inconclusive` when `returned == 0` (no coverage → leave the alert untouched, no `AftershockAbsent`, no
+  bonus) and `Absent` only when USGS demonstrably saw the region (`returned ≥ 1`) with zero aftershocks.
+  Sequence/Ambiguous unchanged. Locked by `aftershock_verdict_reads_an_empty_usgs_response_as_inconclusive_not_confirmed_absence`
+  (truth table) + `empty_usgs_response_does_not_light_the_seismic_test_consistent_indicator` (end-to-end:
+  the inconclusive alert stays `!is_test_consistent()` and lower-confidence; the covered case still lights).
+  FAILS-without: neuter the `returned == 0` guard → verdict(0,0) → Absent → both tests panic. Engine-behavior
+  on a served indicator; never feeds P — the four anchors bit-identical. See improvement-log 2026-07-18.
+
+- [ ] **[candidate] 1.ac `band_coverage_window` reconstructs its band from a 300:1 STRIDE-DECIMATED
+  series, but its docstring claims the reconstruction "matches `uncertainty_window`'s" FULL-RESOLUTION
+  band — so the served `floor_bound_pct` is biased HIGH and `mean_hw_pct` understated** — surfaced
+  2026-07-18 by an aggregator diagnostics bug-hunt. `uncertainty_window` (the band actually PUBLISHED each
+  tick) computes its central-80% half-width over EVERY in-window `p_annual` (~21,600 samples/6h at 1 Hz);
+  `band_coverage_window` computes the "same" half-width over the stride-decimated series (~72 samples/6h,
+  `BAND_COV_STRIDE_SECS`=300). Decimation shrinks a P10–P90 spread (fewer tail samples), so the
+  reconstructed `emp_hw` is generally ≤ the published one — a band `uncertainty_window` reports
+  `floored:false` ("set by measured volatility") can be counted `floor_bound` by `band_coverage`, and the
+  served `floor_bound_pct`/`mean_hw_pct` then contradict `uncertainty_window` about the identical history
+  (docstring line ~1007 explicitly claims the `<` predicate "matches `uncertainty_window`'s own `floored`
+  predicate"). `coverage_pct` itself stays conservative (narrower band → lower coverage → won't falsely
+  reassure), so this is MEDIUM not severe. Untested: every `band_coverage_window` fixture spaces samples at
+  exactly 300s, so the decimation loop is a no-op in every test — the full-vs-decimated divergence is never
+  exercised. GATE: a `band_coverage_window` test with SUB-300s jittered 1 Hz-like samples whose
+  full-resolution central-80% spread exceeds `HUMILITY_FLOOR_HW` while the decimated reconstruction falls
+  below it, asserting the served `floored`/`floor_bound_pct` matches the full-resolution `uncertainty_window`
+  verdict on the same series — FAILS today. FIX options: (a) reconstruct `emp_hw` over the UNDECIMATED
+  in-window reads (decimation is only needed for the forward-coverage autocorrelation control, not for the
+  half-width); or (b) if the decimated half-width is intentional, correct the docstring + the `floored`
+  label so it no longer claims equivalence. Touched: engine-behavior (changes a served diagnostic value) or
+  display-only (if only the label/doc is corrected) — decide with the measured magnitude in the log entry.
+
+- [ ] **[candidate] 1.ad Escalation-coherence/breadth omit the `heat ≥ STABLE_HEAT_CEILING` HALF of the
+  sibling `systemic_momentum` live-evidence guard — a Stable/baseline theater (heat < 0.06) with a few
+  fresh escalatory-worded but low-signal events can count as a decisively-escalating FRONT while
+  `systemic_momentum` excludes it** — surfaced 2026-07-18 (companion to 1.34, which added only the
+  `!held_by_floor` half). `systemic_momentum` filters `heat ≥ STABLE_HEAT_CEILING && !held_by_floor`
+  (theater.rs:883); the escalation reads keep only `!held_by_floor` (bayesian.rs). NOTE — this is NOT a
+  clear-cut defect: `escalation_breadth`'s own doc DELIBERATELY wants to catch "a cool theater turning up
+  fast" (distinct from the HOT-theater `concurrency` count), so a heat floor could DEFEAT its stated
+  purpose. The genuine question is whether heat < `STABLE_HEAT_CEILING` (0.06 — the Stable/baseline
+  boundary, "nothing worth amplifying") is "cool turning up" or "still baseline noise". RESOLVE FIRST
+  (likely Robert-gated, as it is a design/calibration judgment on a served awareness gauge), then either
+  add the heat half for full sibling lockstep OR document why the escalation reads intentionally differ.
+  GATE (if taken): a synthetic near-quiet board (two theaters heat 0.04, not floor-held, momentum 0.4)
+  where `systemic_momentum == 0` but `escalation_breadth.multi_front == true` today — assert they agree
+  after the change. Diagnostic only; never feeds P.
+
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.10 The served honesty pages are verified COMPLETE — no page ships a raw `{{TOKEN}}`
   template placeholder** — **STAGED 2026-07-17 (later).** The dashboard and methodology pages are

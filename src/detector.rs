@@ -639,6 +639,70 @@ impl SeismicMonitor {
 // Gutenberg-Richter aftershock sequence within 2-6 hours.
 // This is one of the strongest discriminating signals available.
 
+/// The verdict of a COMPLETED 2h aftershock re-query. `returned` is the TOTAL number of
+/// features the source (USGS) returned for the region/window — its COVERAGE proof; and
+/// `aftershock_count` is that set minus the original mainshock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AftershockVerdict {
+    /// ≥ `AFTERSHOCK_SEQUENCE_MIN` nearby M≥2.5 events — a Gutenberg-Richter/Omori sequence,
+    /// i.e. a natural tectonic source → clear the alert.
+    Sequence,
+    /// The source COVERED the region (returned ≥1 feature) yet found no aftershock sequence —
+    /// consistent with an explosion source → `AftershockAbsent`.
+    Absent,
+    /// A single nearby event — background OR the start of a sequence; leave the level as-is.
+    Ambiguous,
+    /// The source returned NO data for the region/window — no coverage, so "no aftershocks" is
+    /// UNPROVEN. Absence of coverage is not evidence of absence: an empty response must NOT
+    /// confirm an explosion signature. `check_aftershocks` hardcodes a USGS-only query, but the
+    /// detector's own FDSN registry notes USGS ComCat completeness for small events in the
+    /// Arctic / Central-Asian test-site regions (Novaya Zemlya, Lop Nur, Semipalatinsk) is poor
+    /// and GFZ/EMSC cover those better — so an empty USGS response there means "USGS has no
+    /// catalog here", not "the quake had no aftershocks". Leave the alert untouched (no verdict).
+    Inconclusive,
+}
+
+/// Classify a completed aftershock re-query. Keyed on `AFTERSHOCK_SEQUENCE_MIN` so it shares the
+/// natural-earthquake boundary with `alert_should_retain`. The `returned == 0` guard is the
+/// honesty rule: an EMPTY single-source response is `Inconclusive` (no coverage), never a
+/// confirmed absence — so the strongest physical nuclear indicator cannot light off USGS simply
+/// lacking catalog data for a remote test-site region. (A non-empty response with zero
+/// aftershocks proves the source SAW the region, so that is a genuine confirmed `Absent`.)
+fn aftershock_verdict(returned: usize, aftershock_count: usize) -> AftershockVerdict {
+    if aftershock_count >= AFTERSHOCK_SEQUENCE_MIN {
+        AftershockVerdict::Sequence
+    } else if returned == 0 {
+        AftershockVerdict::Inconclusive
+    } else if aftershock_count == 0 {
+        AftershockVerdict::Absent
+    } else {
+        AftershockVerdict::Ambiguous
+    }
+}
+
+/// Apply a non-clearing aftershock verdict (`Absent` or `Ambiguous`) to a live alert: record the
+/// completed check and, for `Absent` only, promote the level to `AftershockAbsent`. `Sequence`
+/// (clear) and `Inconclusive` (leave untouched — no verdict) are handled by the caller and must
+/// NOT reach here.
+fn apply_aftershock_verdict(
+    alert:   &mut SeismicAlert,
+    verdict: AftershockVerdict,
+    count:   usize,
+    now:     DateTime<Utc>,
+) {
+    alert.aftershock_checked  = true;
+    alert.aftershock_count    = count;
+    alert.aftershock_check_at = Some(now);
+    if verdict == AftershockVerdict::Absent {
+        // No aftershocks over a region the source demonstrably covered — explosion-consistent.
+        alert.level = SeismicAlertLevel::AftershockAbsent;
+    }
+    // Ambiguous (count == 1): background OR the start of a sequence — leave the level as-is.
+    // compute_confidence already withholds the +0.20 absence bonus when count > 0.
+    alert.confidence  = alert.compute_confidence();
+    alert.description = SeismicMonitor::build_description_static(alert);
+}
+
 async fn check_aftershocks(
     client:   &Client,
     state:    &Arc<AppState>,
@@ -656,20 +720,25 @@ async fn check_aftershocks(
          &starttime={start}&orderby=time&limit=50"
     );
 
-    let aftershock_count = match client.get(&url).send().await {
+    // Capture BOTH the TOTAL features USGS returned (coverage proof) and the aftershock count
+    // (that set minus the mainshock). An empty response is coverage-absent, NOT aftershock-absent.
+    let (returned, aftershock_count) = match client.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
             match resp.json::<FdsnResponse>().await {
-                Ok(data) => data.features.iter()
-                    .filter(|f| f.id != event_id)
-                    .count(),
+                Ok(data) => (
+                    data.features.len(),
+                    data.features.iter().filter(|f| f.id != event_id).count(),
+                ),
                 Err(_) => return,
             }
         }
         _ => return,
     };
 
+    let verdict = aftershock_verdict(returned, aftershock_count);
+
     let mut alerts = state.nuclear_alerts.lock().await;
-    if aftershock_count >= AFTERSHOCK_SEQUENCE_MIN {
+    if verdict == AftershockVerdict::Sequence {
         // A genuine aftershock SEQUENCE (multiple nearby events, Omori-style) — natural
         // tectonic source, not an explosion. Clear the alert. A SINGLE coincidental nearby
         // M≥2.5 is background seismicity, not a sequence, and no longer clears a real
@@ -684,21 +753,22 @@ async fn check_aftershocks(
         }
         return;
     }
+    if verdict == AftershockVerdict::Inconclusive {
+        // Empty USGS response: no catalog coverage for this region/window, so "no aftershocks"
+        // is unproven. Do NOT promote to AftershockAbsent (which lights the strongest physical
+        // nuclear indicator) or award the +0.20 absence bonus — absence of coverage is not
+        // evidence of absence. Leave the alert at its pre-check level; log for ops.
+        info!(
+            "SEISMIC ANOMALY aftershock check at 2h: USGS returned no data near {} \
+             ({:.2},{:.2}) — discriminator INCONCLUSIVE (no coverage), level unchanged",
+            event_id, lat, lon
+        );
+        return;
+    }
 
     if let Some(alert) = alerts.iter_mut().find(|a| a.id == event_id) {
-        alert.aftershock_checked  = true;
-        alert.aftershock_count    = aftershock_count; // record the TRUE count, not a hardcoded 0
-        alert.aftershock_check_at = Some(Utc::now());
-
-        if aftershock_count == 0 {
-            // No aftershocks at all — consistent with an explosion source.
-            alert.level = SeismicAlertLevel::AftershockAbsent;
-        }
-        // aftershock_count == 1: ambiguous (one nearby quake could be background OR the start
-        // of a sequence). Do NOT promote to AftershockAbsent and do NOT clear — leave the level
-        // as-is; compute_confidence already withholds the +0.20 absence bonus when count > 0.
-        alert.confidence  = alert.compute_confidence();
-        alert.description = SeismicMonitor::build_description_static(alert);
+        // Absent or Ambiguous — a real verdict over a region USGS demonstrably covered.
+        apply_aftershock_verdict(alert, verdict, aftershock_count, Utc::now());
         info!(
             "SEISMIC ANOMALY aftershock check at 2h: {} aftershock(s) → {} (confidence {:.0}%)",
             aftershock_count, alert.id, alert.confidence * 100.0
@@ -1157,6 +1227,62 @@ mod tests {
         has_seq.aftershock_count   = 5;
 
         assert!(no_seq.compute_confidence() > has_seq.compute_confidence());
+    }
+
+    #[test]
+    fn aftershock_verdict_reads_an_empty_usgs_response_as_inconclusive_not_confirmed_absence() {
+        // The honesty invariant: an EMPTY response (returned == 0) is INCONCLUSIVE — USGS had no
+        // catalog coverage for the region, so "no aftershocks" is unproven. It must NOT read as a
+        // confirmed absence (which would light the strongest physical nuclear indicator).
+        assert_eq!(aftershock_verdict(0, 0), AftershockVerdict::Inconclusive);
+        // A NON-empty response with zero aftershocks proves USGS SAW the region (the mainshock or
+        // background) and found no sequence — a genuine confirmed absence.
+        assert_eq!(aftershock_verdict(1, 0), AftershockVerdict::Absent);
+        assert_eq!(aftershock_verdict(3, 0), AftershockVerdict::Absent);
+        // A single nearby event — ambiguous, leave the level as-is.
+        assert_eq!(aftershock_verdict(2, 1), AftershockVerdict::Ambiguous);
+        // A real Gutenberg-Richter/Omori sequence — natural tectonic source, clear.
+        assert_eq!(aftershock_verdict(2, 2), AftershockVerdict::Sequence);
+        assert_eq!(aftershock_verdict(9, 5), AftershockVerdict::Sequence);
+    }
+
+    #[test]
+    fn empty_usgs_response_does_not_light_the_seismic_test_consistent_indicator() {
+        // A within-radius shallow anomaly at a remote test-site region whose 2h re-query hits
+        // USGS and gets an EMPTY response (no small-event coverage there). Mirror the exact
+        // verdict routing in `check_aftershocks`: Inconclusive leaves the alert untouched.
+        let mut alert = make_alert(1.0, 5.0, 30.0, 3); // within_radius (dist 30 < 150), MultiNetwork-eligible
+        alert.level = SeismicAlertLevel::MultiNetwork;
+        let (returned, count) = (0usize, 0usize); // empty USGS response
+        let verdict = aftershock_verdict(returned, count);
+        assert_eq!(verdict, AftershockVerdict::Inconclusive);
+        match verdict {
+            AftershockVerdict::Absent | AftershockVerdict::Ambiguous =>
+                apply_aftershock_verdict(&mut alert, verdict, count, Utc::now()),
+            _ => {} // Inconclusive / Sequence: caller leaves the alert untouched
+        }
+        assert!(!alert.aftershock_checked,
+            "an inconclusive (no-coverage) check must not mark the discriminator as run");
+        assert_ne!(alert.level, SeismicAlertLevel::AftershockAbsent,
+            "absence of USGS coverage must not promote to AftershockAbsent");
+        assert!(!alert.is_test_consistent(),
+            "absence of USGS coverage must not light the seismic-test-consistent indicator");
+
+        // Contrast: a NON-empty response (USGS covered the region — returned the mainshock) with
+        // zero aftershocks IS a genuine confirmed absence and legitimately lights the indicator.
+        let mut covered = make_alert(1.0, 5.0, 30.0, 3);
+        covered.level = SeismicAlertLevel::MultiNetwork;
+        let verdict2 = aftershock_verdict(1, 0);
+        assert_eq!(verdict2, AftershockVerdict::Absent);
+        apply_aftershock_verdict(&mut covered, verdict2, 0, Utc::now());
+        assert_eq!(covered.level, SeismicAlertLevel::AftershockAbsent);
+        assert!(covered.is_test_consistent(),
+            "a covered region with no aftershocks is explosion-consistent");
+        // The +0.20 absence bonus applies only in the genuinely-covered case: the inconclusive
+        // alert kept aftershock_checked=false (identical alert otherwise), so its confidence is
+        // strictly lower — the honesty consequence, not just the label.
+        assert!(covered.compute_confidence() > alert.compute_confidence(),
+            "the confirmed-absence read carries the absence bonus the inconclusive read withholds");
     }
 
     #[test]
