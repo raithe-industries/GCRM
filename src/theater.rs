@@ -539,9 +539,12 @@ fn rung_for(heat: f64, wmd_used: bool, nuclear_used: bool) -> EscalationRung {
 ///
 /// We therefore require a use-phrase AND the absence of any whole-word non-use framing
 /// token AND at least one phrase occurrence that is not directly NEGATED ("No nuclear
-/// strike occurred", "report debunked as a hoax"). Whole-word matching (split on
+/// strike occurred", "report debunked as a hoax"). The framing tokens also include the
+/// historical-commemoration family (anniversary/commemoration/memorial/remembrance): the
+/// "atomic bombing" use-phrase floods the wire every August for the Hiroshima/Nagasaki
+/// anniversaries, and a commemoration reports a remembered past event, not a fresh use.
+/// Whole-word matching (split on
 /// non-alphanumerics) avoids substring traps such as "latest"→"test"; the untrue-report
-/// family (hoax/debunked/fabricated…) is scanned globally, while the bare negators
 /// (no/not/never) are scanned only in the tokens immediately BEFORE the phrase — global
 /// would be unsafe, since "no survivors"/"no doubt" trail a REAL detonation. The `any()`
 /// over the whole window keeps recall high for a real detonation (which spawns many
@@ -610,6 +613,20 @@ fn nuclear_use_in(tev: &[GeopoliticalEvent]) -> bool {
         // is deliberately omitted — "false flag" can accompany a real attribution dispute.)
         "hoax", "debunked", "disproven", "disproved", "fabricated",
         "fabrication", "untrue", "misinformation", "disinformation", "nonexistent",
+        // Historical-commemoration / anniversary framing — the "atomic bombing" use-phrase is
+        // overwhelmingly HISTORICAL in the firehose every August (Hiroshima Aug 6 / Nagasaki
+        // Aug 9): "Hiroshima atomic bombing 81st anniversary", "Japan commemorates the atomic
+        // bombing", "Nagasaki atomic bombing memorial", "remembrance of the atomic bombing".
+        // A commemoration reports a REMEMBERED past event, never a fresh detonation, so these
+        // words are safe whole-word anywhere in the window (like the untrue-report family above);
+        // `any()` still trips on a real strike's cleaner confirming headlines. Deliberately NOT
+        // gated: the bare "N years since / N years ago" ordinal — that construction is SHARED
+        // with a real first-in-decades use ("first nuclear weapon used since 1945"), so gating it
+        // would risk MUTING a genuine report. The commemorative nouns below never co-occur with a
+        // fresh confirmation, so they carry no such recall risk.
+        "anniversary", "anniversaries", "commemorate", "commemorates", "commemorated",
+        "commemorating", "commemoration", "commemorations", "commemorative",
+        "memorial", "memorials", "remembrance",
     ];
 
     // Bare negators that REVERSE a use-phrase when they sit immediately before it
@@ -2545,6 +2562,51 @@ mod tests {
             assert_ne!(t.rung, EscalationRung::Systemic,
                 "negated / untrue nuclear report must not force the systemic rung: {title:?}");
         }
+    }
+
+    #[test]
+    fn commemoration_of_a_historical_atomic_bombing_does_not_force_systemic_rung() {
+        // The "atomic bombing" use-phrase is overwhelmingly HISTORICAL in the firehose every
+        // August (Hiroshima Aug 6 / Nagasaki Aug 9). A commemoration / anniversary / memorial
+        // headline carries the use-phrase and is tagged nuclear_indicator, but reports a
+        // REMEMBERED past event — it must never force the apex Systemic rung that pegs the index
+        // at 95. Before this guard, "Hiroshima atomic bombing 81st anniversary" alone pegged
+        // P(WWIII). (Reachability is seasonal and near-certain: this coverage recurs every August.)
+        let cases = [
+            "Hiroshima atomic bombing 81st anniversary marked with silence",
+            "Japan commemorates the atomic bombing of Nagasaki",
+            "Nagasaki atomic bombing memorial draws thousands",
+            "Survivors gather for remembrance of the Hiroshima atomic bombing",
+        ];
+        for title in cases {
+            let mut te = TheaterEngine::new();
+            let mut e = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+            e.title = title.to_string();
+            e.nuclear_indicator = true;
+            let out = te.compute(&[e]);
+            let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+            assert_ne!(t.rung, EscalationRung::Systemic,
+                "a historical commemoration must not force the systemic rung: {title:?}");
+        }
+    }
+
+    #[test]
+    fn a_real_detonation_near_an_anniversary_still_fires_when_a_clean_headline_is_present() {
+        // Recall guard for the commemoration fix: the accepted `any()` tradeoff. A commemorative
+        // token suppresses ONLY the headline it sits in; a co-occurring clean confirmation in the
+        // same window must still force Systemic, so the anniversary vocabulary cannot mute a real
+        // detonation that spawns its own definitive coverage.
+        let mut te = TheaterEngine::new();
+        let mut memorial = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        memorial.title = "Nagasaki atomic bombing memorial draws thousands".into();
+        memorial.nuclear_indicator = true;
+        let mut confirmed = ev("nato_russia", "nuclear_posture", 1.0, 1.0, &["russia", "united_states"], true);
+        confirmed.title = "A nuclear weapon was used; nuclear detonation confirmed".into();
+        confirmed.nuclear_indicator = true;
+        let out = te.compute(&[memorial, confirmed]);
+        let t = out.theaters.iter().find(|s| s.theater_id == "nato_russia").unwrap();
+        assert_eq!(t.rung, EscalationRung::Systemic,
+            "a clean confirmation in the window must still force Systemic despite an anniversary headline");
     }
 
     #[test]

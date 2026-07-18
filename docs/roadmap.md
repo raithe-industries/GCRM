@@ -916,6 +916,29 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   FAILS-without: neuter the `returned == 0` guard → verdict(0,0) → Absent → both tests panic. Engine-behavior
   on a served indicator; never feeds P — the four anchors bit-identical. See improvement-log 2026-07-18.
 
+- [x] **1.36 `nuclear_use_in` — the SOLE apex-Systemic trigger — had no HISTORICAL-COMMEMORATION guard, so a
+  Hiroshima/Nagasaki anniversary headline carrying "atomic bombing" forced the catastrophe rung** — **DONE
+  2026-07-18 (later²).** Companion to 1.ab (negation) and 1.ac's bug-hunt lineage. `nuclear_use_in`
+  (src/theater.rs) is the only path to `EscalationRung::Systemic` (pegs the headline at
+  `FORECAST_INDEX_CEILING = 95`, floods P(WWIII)). Its `USE_PHRASES` include `"atomic bombing"` — which
+  floods the wire every August for the Hiroshima (Aug 6) / Nagasaki (Aug 9) anniversaries. A commemoration
+  headline ("Hiroshima atomic bombing 81st anniversary", "Japan commemorates the atomic bombing", "Nagasaki
+  atomic bombing memorial") carries the use-phrase, is tagged `nuclear_indicator`, is not interrogative and
+  not negated — so it slipped every existing guard and FALSELY forced the apex Systemic rung. Reachability
+  is seasonal and near-certain (recurs every August; the Aug anniversaries are ~3 weeks out from this run).
+  FIX (engine-behavior; no P math, no fitted constant, no anchor touched — backtest titles carry no
+  commemorative phrasing so the four anchors are bit-identical): add the historical-commemoration family
+  {anniversary(-ies), commemorate(-s/-d/-ing), commemoration(-s), commemorative, memorial(-s), remembrance}
+  to `NON_USE_TOKENS` (safe whole-word anywhere, like the untrue-report family — these nouns never co-occur
+  with a fresh detonation). DELIBERATELY NOT gated: the bare "N years since / N years ago" ordinal — that
+  construction is SHARED with a real first-in-decades use ("first nuclear weapon used since 1945"), so
+  gating it would risk muting a genuine report. Locked by
+  `commemoration_of_a_historical_atomic_bombing_does_not_force_systemic_rung` (4 anniversary headlines must
+  decline — FAILS when the tokens are stashed, "Hiroshima atomic bombing 81st anniversary" pegs Systemic) +
+  `a_real_detonation_near_an_anniversary_still_fires_when_a_clean_headline_is_present` (recall guard: a clean
+  confirmation co-occurring with a memorial headline still forces Systemic). Engine-behavior; never feeds P.
+  See improvement-log 2026-07-18 (later²). (Surfaced 2026-07-18 by a fresh theater/models honesty bug-hunt.)
+
 - [x] **[candidate] 1.ac `band_coverage_window` reconstructs its band from a 300:1 STRIDE-DECIMATED
   series, but its docstring claims the reconstruction "matches `uncertainty_window`'s" FULL-RESOLUTION
   band — so the served `floor_bound_pct` is biased HIGH and `mean_hw_pct` understated** — **DONE
@@ -960,6 +983,38 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   boundary, "nothing worth amplifying") is "cool turning up" or "still baseline noise". RESOLVE FIRST
   (likely Robert-gated, as it is a design/calibration judgment on a served awareness gauge), then either
   add the heat half for full sibling lockstep OR document why the escalation reads intentionally differ.
+
+- [ ] **[candidate] 1.ae `alliance_invoked` is a recency-BLIND latch that mints a live +30% coupler from a
+  STALE Article-5 headline — FEEDS P** — surfaced 2026-07-18 by the theater/models honesty bug-hunt.
+  `alliance_invoked = tev.iter().any(|e| e.alliance_indicator)` (theater.rs:~988) is a raw boolean OR over
+  the theater's whole event window (pruned only at `MAX_EVENT_AGE_HOURS ≈ 4 years`, aggregator.rs) with NO
+  recency weight and NO release. It flows `alliance_activation_of` (→ FULL tier 1.0 in a hot theater) →
+  `coupling_multiplier` (+`COUPLING_ALLIANCE_WEIGHT = 0.30`) → `l_sys` → P(WWIII) and the I&W alliance light.
+  Every OTHER signal reaching P is recency-treated (modality/heat skip `rw < 0.01`, `escalation_momentum`
+  skips `rw < 0.01`, snapshot GP/sources gate `rw > 0.1`); the war-state persistence floor at least RELEASES
+  on de-escalation. `alliance_invoked` alone has neither a gate nor a release — one matching (or hypothetical,
+  since processor.rs sets the flag by substring on `ALLIANCE_INVOCATION_PHRASES`) headline latches a live
+  +30% amplifier for up to 4 years, even on a theater held entirely by the persistence floor. NOTE — this
+  is a JUDGMENT call, likely Robert-gated: an Article-5 invocation is arguably DURABLE, so persistence may
+  be defensible; but the asymmetry (no decay AND no release, off a substring flag that also fires on
+  hypotheticals, while everything else feeding P decays) is a genuine "stale-counted-as-live feeds P" gap.
+  RESOLVE with Robert (it moves P), then either recency-gate/decay the flag to sibling discipline OR document
+  why an alliance invocation is intentionally durable. Gate if taken: a synthetic test where a hot theater +
+  ONE stale (`rw ≈ 0`) alliance headline yields the SAME `l_sys`/P as the same board without it; the four
+  anchors stay in-band (they carry only fresh events, so a recency gate is a no-op on them).
+
+- [ ] **[candidate] 1.af `read_range_window` lacks the post-restart SPAN-honesty guard its sibling
+  `lead_concentration_window` carries — served `position`/`pct_rank` claim multi-day range context off
+  seconds of data after a restart** — surfaced 2026-07-18 by the aggregator diagnostics bug-hunt. Both share
+  the 24 h window + `MIN_SAMPLES = 30`; `lead_concentration_window` (aggregator.rs:~1273) additionally
+  returns `{available:false, reason:"short_history"}` when `span_secs < MIN_SPAN_SECS` (6 h = window/4),
+  the exact "post-restart lie the 2026-07-17 outage exposed" guard. `read_range_window` computes the same
+  `span_secs` (aggregator.rs:~872) but never gates on it — so ~30 s after a restart the 1 Hz ring holds 30
+  samples spanning ~29 s, and the served `position:"near-high"` / `pct_rank` assert a multi-day HIGH that is
+  really 29 s of data (the only tell is the un-served `span_secs`). Served-only (never feeds P), so
+  Touched: engine-behavior with display consequence — take on a run with headroom. Gate: inject a full-count
+  but short-span window and assert `read_range` honest-nulls (`available:false`/`reason:"short_history"`),
+  mirroring the sibling's lock; FAILS today.
   GATE (if taken): a synthetic near-quiet board (two theaters heat 0.04, not floor-held, momentum 0.4)
   where `systemic_momentum == 0` but `escalation_breadth.multi_front == true` today — assert they agree
   after the change. Diagnostic only; never feeds P.
