@@ -42,7 +42,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .alert-bar.critical{display:block;background:#1a0000;border-bottom:0.5px solid #700;animation:pulse-bar 2s infinite}
 @keyframes pulse-bar{0%,100%{opacity:1}50%{opacity:.75}}
 .ticker{height:24px;background:var(--bg2);border-bottom:0.5px solid var(--border);overflow:hidden;display:flex;align-items:center;flex-shrink:0}
-.ticker-inner{display:flex;gap:40px;animation:scroll 80s linear infinite;white-space:nowrap;padding:0 20px}
+.ticker-inner{display:flex;gap:40px;animation:scroll 120s linear infinite;white-space:nowrap;padding:0 20px} /* 80s→120s: calmer read (operator, 2026-07-18) */
 .ticker-inner:hover{animation-play-state:paused}
 @keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 .tick-item{font-size:10px;color:var(--t3);display:flex;align-items:center;gap:6px;cursor:pointer}
@@ -113,15 +113,21 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .dconf{font-size:7px;color:var(--t4);margin-top:2px}
 .tl-head{font-size:8px;color:var(--t4);padding:4px 10px;letter-spacing:.06em;background:var(--bg2);border-bottom:0.5px solid var(--border);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;text-transform:uppercase}
 .tl-head-note{color:var(--t4);font-weight:400;text-transform:none;opacity:.7}
+/* Collapsed model-internals toggle bar (mirrors .tl-head look). */
+.mi-toggle{font-size:9px;color:var(--t4);padding:4px 10px;letter-spacing:.05em;background:var(--bg2);border-top:0.5px solid var(--border);cursor:pointer;user-select:none;flex-shrink:0}
+.mi-toggle:hover{color:var(--t2)}
+#model-internals.mi-collapsed{display:none}
 .theater-ladder{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
-.tl-chip{background:var(--bg);padding:6px 8px;display:flex;flex-direction:column;gap:3px;min-width:0}
+/* Theater chips sized for READING, not just density — the 8px/7px strip was too
+   small to read comfortably (operator directive 2026-07-18). */
+.tl-chip{background:var(--bg);padding:8px 10px;display:flex;flex-direction:column;gap:4px;min-width:0}
 .tl-top{display:flex;justify-content:space-between;align-items:baseline;gap:5px}
-.tl-name{font-size:8px;color:var(--t3);letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-rung{font-size:9px;font-weight:600;font-family:monospace;white-space:nowrap;transition:color .4s}
+.tl-name{font-size:10px;color:var(--t3);letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-rung{font-size:10px;font-weight:600;font-family:monospace;white-space:nowrap;transition:color .4s}
 .tl-trend{margin-left:3px}
-.tl-bar{height:2px;background:var(--bg3);border-radius:1px;overflow:hidden}
+.tl-bar{height:3px;background:var(--bg3);border-radius:1px;overflow:hidden}
 .tl-fill{height:100%;border-radius:1px;transition:width .5s ease}
-.tl-sub{display:flex;justify-content:space-between;font-size:7px;color:var(--t4)}
+.tl-sub{display:flex;justify-content:space-between;font-size:8.5px;color:var(--t4);gap:4px}
 /* Indications & Warning board — a 3-column light panel of the twelve deterministic
    warning conditions (indicators::evaluate). Mirrors the ladder strip's idiom. */
 .iw-board{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
@@ -305,10 +311,19 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .brand-a-coin{position:relative;width:80px;height:80px;transform-style:preserve-3d;animation:brand-a-spin 7s linear infinite}
 .brand-a-face{position:absolute;top:0;left:0;width:80px;height:80px;opacity:.45;backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:opacity .3s}
 .brand-a-back{transform:rotateY(180deg)}
+/* 2D fallback the motion watchdog applies when the 3D flip renders frozen (no GPU
+   compositing): a flat in-plane rotation animates on any compositor. */
+.brand-a-coin.coin2d{animation:brand-a-spin2d 7s linear infinite;transform-style:flat}
+.brand-a-coin.coin2d .brand-a-back{display:none}
+@keyframes brand-a-spin2d{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .brand-a:hover .brand-a-coin{animation-play-state:paused}
 .brand-a:hover .brand-a-face{opacity:.85}
 @keyframes brand-a-spin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
-@media(prefers-reduced-motion:reduce){.brand-a-coin{animation:none}}
+/* The brand coin spins REGARDLESS of the OS reduce-motion setting — the operator
+   explicitly requires the brand motion (2026-07-18: "my raithe logo no longer seems
+   to be spinning" — GNOME power-saver had flipped prefers-reduced-motion and the old
+   blanket `animation:none` here killed it). An 80px 7s rotation is gentle; every
+   OTHER animation still honors the user preference. */
 .pe-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:#fff;text-align:center;text-transform:uppercase;margin-bottom:8px}
 .pe-item{margin-bottom:9px}
 .pe-label{font-size:8px;font-weight:600;color:var(--t3);letter-spacing:.03em;margin-bottom:2px;text-align:center}
@@ -534,7 +549,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
          roll-up; this is the board it reads from — so an operator sees *where* the
          risk is, not just how high. (Geographic situational awareness, distinct from
          the model-internal rail on the left.) -->
-    <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note">hottest first</span></div>
+    <div class="tl-head">Theaters · Escalation Ladder<span class="tl-head-note" title="US/Israel–Iran is pinned first by operator directive (2026-07-18) — the live shooting war leads the strip; the rest follow hottest-first. The model's heats and numbers are untouched by this display order.">operator focus · then hottest</span></div>
     <div class="theater-ladder" id="theater-ladder"></div>
     <!-- v2 Indications & Warning board: the twelve deterministic, observable warning
          conditions the IC I&W method tracks. Each is computed from the live theaters
@@ -572,6 +587,14 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
         <div class="chart-inner"><canvas id="domain-chart"></canvas></div>
       </div>
     </div>
+    <!-- Model internals — the dense math/context/diagnostics text is COLLAPSED behind
+         one toggle by default (operator directive 2026-07-18: cut the visual noise;
+         the full text is one click away and the choice persists per browser). All ids
+         and copy inside are unchanged — JS keeps populating them while hidden. -->
+    <div class="mi-toggle" id="mi-toggle" onclick="toggleInternals()" title="Expand/collapse the model internals: the context strip (24h range · dwell · locus), the live Bayesian chain, load-bearing diagnostics, and meta pills. The full write-up lives in Methodology.">
+      <span id="mi-chev">▸</span>&nbsp;Model internals — math · context · diagnostics
+    </div>
+    <div id="model-internals" class="mi-collapsed">
     <div class="context-strip">
       <div class="ca">Baseline: <span>0.10%</span></div>
       <div class="ca">Hist avg (2026): <span>~1.7%</span></div>
@@ -592,6 +615,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <span id="f-breadth-row" title="How many theaters are DECISIVELY ESCALATING at the same time (server field escalation_breadth) — isolated single-front escalation vs. a synchronized multi-front one, historically the sharper systemic-risk signature. This is momentum-breadth: it counts fronts whose news flow is turning up, deliberately distinct from the HOT-theater count (couplers.concurrency, which feeds the number) — escalation can be broad while heat is concentrated, or narrow while heat is broad. Diagnostic only — it never feeds the number.">Escalation breadth = <span id="f-breadth">—</span></span>
     </div>
     <div class="meta-pills" id="meta-row"></div>
+    </div><!-- /model-internals -->
   </div>
   <div class="right-panel">
     <div class="tabs">
@@ -716,6 +740,18 @@ async function refreshSrcCount(){
   }catch(e){}
 }
 refreshSrcCount();
+// Model-internals expander: collapsed by default (operator 2026-07-18 — kill the
+// bottom text noise); the choice persists per browser. Content stays in the DOM and
+// keeps updating while hidden, so expanding is instant and eyes/tests still read it.
+function toggleInternals(){const b=document.getElementById('model-internals'),c=document.getElementById('mi-chev');if(!b)return;const open=!b.classList.toggle('mi-collapsed');if(c)c.textContent=open?'▾':'▸';try{localStorage.setItem('gcrm-internals-open',open?'1':'0');}catch(e){}}
+(function(){try{if(localStorage.getItem('gcrm-internals-open')==='1'){const b=document.getElementById('model-internals');if(b)b.classList.remove('mi-collapsed');const c=document.getElementById('mi-chev');if(c)c.textContent='▾';}}catch(e){}})();
+// Brand-coin motion watchdog: on some setups the 3D coin renders STATIC even with the
+// reduce-motion exemption (e.g. graphics acceleration off in the browser — the
+// raithe-server-only symptom, 2026-07-18). Sample the computed transform twice; if it
+// is frozen, fall back to a compositor-independent 2D rotation so the brand always turns.
+setTimeout(()=>{const coin=document.querySelector('.brand-a-coin');if(!coin)return;
+  const t0=getComputedStyle(coin).transform;
+  setTimeout(()=>{if(getComputedStyle(coin).transform===t0)coin.classList.add('coin2d');},1600);},1400);
 const DID=['military_escalation','nuclear_posture','economic_warfare','cyber_info_ops','diplomatic_breakdown'];
 // Live timeline chart capacity. Mirrors the server's epoch ring (MAX_EPOCH_ENTRIES
 // = 350,640 ≈ 4 days at the 1s tick), and is applied identically on initial load
@@ -865,7 +901,31 @@ const alertBands={id:'alertBands',afterDatasetsDraw(chart){
     c.fillText(b[3],a.right-3,py-3);c.restore();
   });
 }};
-const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks,alertBands]});
+const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,
+// Hover anywhere on the chart (nearest-x, no need to hit a 0-radius point): the tooltip
+// shows the read at that instant, and — when the hovered instant sits on/near a recorded
+// knock — WHY it moved (the spike's driver record: the events that landed that tick).
+// Operator directive 2026-07-18: "what exactly made that graph move should be more easily
+// accessible".
+interaction:{mode:'nearest',axis:'x',intersect:false},
+plugins:{legend:{display:false},tooltip:{enabled:true,displayColors:false,
+  backgroundColor:'rgba(8,12,17,.96)',borderColor:'rgba(255,255,255,.14)',borderWidth:0.5,
+  titleColor:'#c8c8e8',bodyColor:'#9aa4b8',titleFont:{size:10},bodyFont:{size:9},
+  filter:(it)=>it.datasetIndex===0,
+  callbacks:{
+    title:(items)=>items.length?toETShort(new Date(tlChart.data.labels[items[0].dataIndex])):'',
+    label:(it)=>'P(WWIII) '+(it.parsed.y*100).toFixed(3)+'%',
+    afterBody:(items)=>{
+      if(!items.length)return;
+      const idx=items[0].dataIndex;let best=null,bd=Infinity;
+      for(const s of spikes){const dd=Math.abs(s.idx-idx);if(dd<bd){bd=dd;best=s;}}
+      if(!best||bd>8)return;                       // no recorded knock near this instant
+      const out=['',(best.delta>0?'▲ +':'▼ ')+(best.delta*100).toFixed(3)+'% move'+(bd>0?' (nearby)':'')];
+      if(best.drivers&&best.drivers.length)best.drivers.forEach(x=>out.push('• '+x));
+      else out.push('(no driver record for this move)');
+      return out;
+    }}}},
+scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks,alertBands]});
 const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
   // Clicking a bar audits that domain — same filter as clicking its card above.
   onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
@@ -1013,7 +1073,7 @@ let prevAnnual=null;
 // lands on (idx = current length; the new point is pushed right after this runs).
 // spikeMarks draws the ▲/▼ on canvas — the old chartjs-plugin-annotation markers
 // rendered nothing under Chart.js v4 (object-map annotations get swallowed).
-function checkSpike(pA){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;prevAnnual=pA;if(Math.abs(delta)<=0.0002)return;spikes.push({idx:tlChart.data.labels.length,delta});if(spikes.length>20)spikes.shift();const sl=document.getElementById('spike-label');if(sl)sl.textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}
+function checkSpike(pA,drivers){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;prevAnnual=pA;if(Math.abs(delta)<=0.0002)return;spikes.push({idx:tlChart.data.labels.length,delta,drivers:(drivers&&drivers.length)?drivers:undefined});if(spikes.length>300)spikes.shift();const sl=document.getElementById('spike-label');if(sl)sl.textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}
 // Calibration-period overlay. The early stretch of the durable timeline is the model
 // warming up — few events, a jagged ramp — before the estimate settles onto its plateau.
 // We detect that settle point from the series itself (the last sample sitting well off
@@ -1258,7 +1318,7 @@ function applyData(d){
   // the word said "Crisis" — and its own theater chip showed amber. Single source of
   // truth = the rung the engine assigned the hottest theater, not a rounded number.
   const idxCol=rungColor(RUNG_LVL[_top.rung]??0);
-  checkSpike(pA);
+  checkSpike(pA,d.tick_drivers||[]);
   // Hero dial: P(WWIII) as a fraction of 1.0, coloured by probability severity.
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
   animateHero(Math.min(1,pA));
@@ -1359,6 +1419,12 @@ function applyData(d){
   // mean what it says).
   _lastComputedAt=new Date(d.computed_at);_lastSnapMs=Date.now();_dataBlind=!!(d.meta&&d.meta.data_blind);_thinSourced=!!(d.meta&&d.meta.thinly_sourced);_obsGap=!!(d.meta&&d.meta.observation_gap);_obsCov=(d.meta&&typeof d.meta.window_coverage==='number')?d.meta.window_coverage:null;_sourcesActive=(d.meta&&d.meta.sources_active)||0;renderFreshness();
   const ths=(d.theaters||[]).slice().sort((a,b)=>(b.heat||0)-(a.heat||0));const topTh=ths[0]||{};
+  // Operator-priority pin (Robert, 2026-07-18): US/Israel–Iran — the live shooting war —
+  // leads the STRIP regardless of raw heat ordering (NATO–Russia's higher heat leans on
+  // posture/alliance weightings he ranks second to the active war). DISPLAY ORDER ONLY:
+  // topTh (Threat Level cell), heats, P, and every model number are untouched, and the
+  // strip note declares the pin so the order can't be mistaken for the model's own.
+  {const _pi=ths.findIndex(t=>t.theater_id==='us_iran');if(_pi>0)ths.unshift(ths.splice(_pi,1)[0]);}
   const cmdThreat=document.getElementById('cmd-threat');cmdThreat.textContent=topTh.rung_label||threatLabel(pA);cmdThreat.style.color=idxCol;
   document.getElementById('cmd-threat-sub').textContent='systemic index '+sysIdx+'/100';
   document.getElementById('cmd-risk').textContent=(_atCeiling?'≥':'')+(pA*100).toFixed(2)+'%';document.getElementById('cmd-risk').style.color=pA>=.08?'#E24B4A':pA>=.025?'#EF9F27':'var(--t1)';
@@ -1531,6 +1597,12 @@ function applyTimeline(entries){
   // spike baseline so the reload discontinuity itself doesn't register as a spike.
   spikes.length=0;prevAnnual=null;{const _sl=document.getElementById('spike-label');if(_sl)_sl.textContent='';}
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
+  // Seed the spike markers from DURABLE history: entries that carry a driver record
+  // (server-side material moves ≥ DRIVER_NOTE_MIN_DELTA, TimelineEntry.drivers) become
+  // hoverable ▲/▼ knocks immediately on load. Previously spikes existed only for moves
+  // this tab witnessed live and every reload wiped them (operator, 2026-07-18).
+  for(let i=0;i<entries.length;i++){const e=entries[i];if(e.drivers&&e.drivers.length)spikes.push({idx:i,delta:(typeof e.delta==='number'?e.delta:0),drivers:e.drivers});}
+  if(spikes.length>300)spikes=spikes.slice(-300);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay(true);tlChart.update('none');
   if(entries.length>0){let mx=-Infinity,mn=Infinity;for(let i=0;i<entries.length;i++){const v=entries[i].p_annual;if(v>mx)mx=v;if(v<mn)mn=v;}sessionPeak=mx;sessionLow=mn;}
@@ -1984,7 +2056,11 @@ async function refreshFinance(){
   const ins=d.instruments||[],body=document.getElementById('radar-body');
   if(!ins.length){body.innerHTML='<div class="radar-empty">market feed unavailable</div>';return;}
   body.innerHTML=ins.map(s=>{
-    const p=+s.pct||0,up=p>=0,col=up?'#2ecc71':'#e2554f',arr=up?'▲':'▼';
+    // REVERSED price palette (operator directive 2026-07-18, "until further notice"):
+    // in this monitor's risk lens a FALLING price reads positive → GREEN, a RISING
+    // price reads negative → RED. Arrows stay factual (▲ = price up, ▼ = price down);
+    // only the colour carries the operator's reversed valence.
+    const p=+s.pct||0,up=p>=0,col=up?'#e2554f':'#2ecc71',arr=up?'▲':'▼';
     return `<div class="radar-row"><span class="nm" title="${esc(s.name)}">${esc(s.name)}</span><span class="px">${fmtPx(s.price)}</span><span class="mv" style="color:${col}">${arr}${Math.abs(p).toFixed(2)}%</span></div>`;
   }).join('');
 }

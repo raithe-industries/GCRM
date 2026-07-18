@@ -196,6 +196,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // single-front vs. synchronized multi-front escalation. Distinct from couplers.concurrency
         // (HOT-theater count, which feeds P). Diagnostic; never feeds P.
         "escalation_breadth": snap.escalation_breadth,
+        // Movement attribution for THIS tick (WHY it moved) — hover fodder for the
+        // timeline chart's live appends; the durable copy rides TimelineEntry.drivers.
+        // Empty on immaterial ticks. Diagnostic; never feeds P.
+        "tick_drivers": snap.tick_drivers,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -229,9 +233,20 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
 // No background rotation task is required — the path changes at local (Eastern)
 // midnight naturally as today_timeline_path() recomputes the date on each call.
 
-async fn append_timeline(snap: &RiskSnapshot) {
-    let entry = TimelineEntry::from_snapshot(snap);
-    let line = match serde_json::to_string(&entry) {
+/// Movement-attribution gate: |Δ annual| in ONE tick at/above which the tick's new
+/// events are recorded onto the snapshot/timeline as drivers (0.0005 = 0.05pp — a
+/// real batch-driven knock on the chart, well above 1 Hz numeric wiggle). Display
+/// threshold only — never touches P or any fitted constant.
+pub const DRIVER_NOTE_MIN_DELTA: f64 = 0.0005;
+/// Top new events (severity-first) named per material tick — enough to answer
+/// "what did this", small enough for a hover card.
+const DRIVER_NOTE_MAX_EVENTS: usize = 3;
+/// Driver titles are clipped to this many chars for the hover card (full articles
+/// remain one click away in the feed).
+const DRIVER_TITLE_MAX_CHARS: usize = 96;
+
+async fn append_timeline(entry: &TimelineEntry) {
+    let line = match serde_json::to_string(entry) {
         Ok(s) => s + "\n",
         Err(e) => { warn!("Timeline serialise failed: {e}"); return; }
     };
@@ -2218,6 +2233,38 @@ impl Aggregator {
                 }
             }
 
+            // Movement attribution (display-only; the seismic pattern — set AFTER
+            // compute, never feeds P): when this tick's headline moved materially,
+            // record WHAT landed with it — the top new events by severity, the
+            // corroboration count, or, when nothing new arrived, the decay/eviction
+            // fact — so a knock on the timeline chart can answer WHY on hover
+            // (operator directive 2026-07-18). Rides the snapshot to the live WS
+            // clients and TimelineEntry.drivers to the durable ring/archive.
+            if snapshot.delta_annual.abs() >= DRIVER_NOTE_MIN_DELTA {
+                let mut top: Vec<&GeopoliticalEvent> = to_persist.iter().collect();
+                top.sort_by(|a, b| b.severity.partial_cmp(&a.severity)
+                    .unwrap_or(std::cmp::Ordering::Equal));
+                let mut drivers: Vec<String> = top.iter().take(DRIVER_NOTE_MAX_EVENTS)
+                    .map(|e| {
+                        let mut t: String = e.title.chars().take(DRIVER_TITLE_MAX_CHARS).collect();
+                        if e.title.chars().count() > DRIVER_TITLE_MAX_CHARS { t.push('…'); }
+                        format!("{} · {}", e.source, t)
+                    })
+                    .collect();
+                if corroborated > 0 {
+                    drivers.push(format!("+{corroborated} corroboration{}",
+                                         if corroborated == 1 { "" } else { "s" }));
+                }
+                if drivers.is_empty() {
+                    drivers.push(if evicted > 0 {
+                        format!("no new events — recency decay ({evicted} aged out)")
+                    } else {
+                        "no new events — recency decay".to_string()
+                    });
+                }
+                snapshot.tick_drivers = drivers;
+            }
+
             info!(
                 "Batch: +{new_count} corroborated={corroborated} | window={} | P(WWIII)={:.4}% | Δ{:+.4}%",
                 self.event_window.len(),
@@ -2229,8 +2276,10 @@ impl Aggregator {
             // transient (0-articles → first batch → spike) from the timeline chart.
             // Live broadcasts and the gauge are unaffected; only the record is held.
             if self.started_at.elapsed().as_secs() >= WARMUP_SECS {
-                append_timeline(&snapshot).await;
+                // One entry built once (drivers included), written to both the durable
+                // archive and the in-memory ring — the two records can't diverge.
                 let entry = TimelineEntry::from_snapshot(&snapshot);
+                append_timeline(&entry).await;
                 if let Ok(v) = serde_json::to_value(&entry) {
                     self.state.epoch_store.lock().await.push(v);
                 }

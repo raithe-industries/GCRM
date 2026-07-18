@@ -981,6 +981,37 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_timeline_knocks_explain_their_drivers_on_hover() {
+        // AWARENESS (operator directive 2026-07-18): each material knock on the P timeline
+        // must be hoverable and answer WHY it moved. Lock the three legs: live WS payload
+        // consumption (tick_drivers), durable-history seeding (entry drivers → spikes),
+        // and the tooltip that renders them (afterBody callback + nearest-x hover so a
+        // zero-radius point never has to be hit exactly).
+        assert!(DASHBOARD_HTML.contains("tick_drivers"),
+            "dashboard no longer consumes the live tick_drivers attribution");
+        assert!(DASHBOARD_HTML.contains("e.drivers&&e.drivers.length"),
+            "applyTimeline no longer seeds hoverable knocks from durable driver records");
+        assert!(DASHBOARD_HTML.contains("afterBody"),
+            "timeline tooltip dropped the driver-rendering callback");
+        assert!(DASHBOARD_HTML.contains("interaction:{mode:'nearest',axis:'x',intersect:false}"),
+            "chart hover must not require hitting a zero-radius point");
+    }
+
+    #[test]
+    fn dashboard_model_internals_collapse_to_one_toggle() {
+        // LEGIBILITY (operator directive 2026-07-18): the dense bottom math/context/meta
+        // text sits behind ONE expander, COLLAPSED by default; every id and copy stays in
+        // the DOM (sibling tests and the eyes gate keep reading them while hidden) and the
+        // operator's expand choice persists per browser.
+        assert!(DASHBOARD_HTML.contains("id=\"model-internals\" class=\"mi-collapsed\""),
+            "model internals must ship collapsed by default");
+        assert!(DASHBOARD_HTML.contains("toggleInternals"),
+            "the internals expander lost its toggle");
+        assert!(DASHBOARD_HTML.contains("gcrm-internals-open"),
+            "the internals expander no longer persists the operator's choice");
+    }
+
+    #[test]
     fn dashboard_renders_the_durable_recent_range_position() {
         // HONESTY + AWARENESS: the context strip must consume the durable, server-computed recent
         // range (server field read_range / EpochStore::read_range) — the 24h high/low + the read's

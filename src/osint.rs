@@ -162,6 +162,46 @@ static FEED_LAST_GOOD: Mutex<Option<LastGoodBatches>> = Mutex::const_new(None);
 /// How long a feed's last-good batch may stand in for an empty live pull (30 min).
 const LAST_GOOD_MAX_AGE: StdDuration = StdDuration::from_secs(1800);
 
+/// Per-feed CONSECUTIVE-miss streaks (a miss = failed or empty pull this rebuild;
+/// reset to 0 by any non-empty pull). Same lazy-static idiom as [`FEED_LAST_GOOD`].
+static FEED_MISS_STREAK: Mutex<Option<HashMap<String, u32>>> = Mutex::const_new(None);
+
+/// Consecutive misses before a feed is SURFACED on the operator's degraded-feed strip.
+/// One missed rebuild is routine upstream jitter across ~45 public feeds (a 429, a
+/// timeout, an empty burst window) — the old first-miss amber kept the strip lit
+/// almost permanently, so a genuinely dead feed looked identical to a hiccup and the
+/// operator learned to distrust the strip ("crying wolf", reported 2026-07-18). Two
+/// consecutive misses (~2 rebuild cycles) is a standing condition worth naming.
+const FEED_MISS_SURFACE_STREAK: u32 = 2;
+
+/// The streak-gated degraded-feed note for one feed this rebuild — `None` = stay
+/// silent. Pure (locked by `miss_note_*` tests):
+///   • below the surface streak → silent (jitter, and the map still shows last-good);
+///   • falling back to a recent last-good batch → name the streak + what is shown;
+///   • hard-failing with NOTHING to fall back on → surface the raw fetch error + streak
+///     (a real outage: the layer is actually dark);
+///   • long-quiet with no error and no recent last-good → silent: an EMPTY feed is a
+///     valid world-state (quiet hurricane season), not an outage — LAYER_HINTS already
+///     explain empty layers, and flagging quiet as degraded is the boy-who-cried-wolf
+///     failure this gate exists to end.
+fn miss_note(
+    key: &str,
+    streak: u32,
+    raw_err: Option<&str>,
+    fallback: Option<(usize, u64)>,
+) -> Option<String> {
+    if streak < FEED_MISS_SURFACE_STREAK {
+        return None;
+    }
+    match (fallback, raw_err) {
+        (Some((n, age)), _) => Some(format!(
+            "{key}: {streak} misses — showing last-good {n} ({age}s old)"
+        )),
+        (None, Some(e)) => Some(format!("{e} — {streak} misses, nothing recent to show")),
+        (None, None) => None,
+    }
+}
+
 /// OpenSky fetch window: (last-good key, (lamin, lomin, lamax, lomax), event cap).
 type OpenskyWindow = (&'static str, (f64, f64, f64, f64), usize);
 /// The four aircraft windows the map cares about. Anonymous OpenSky credits only
@@ -947,6 +987,8 @@ async fn feeds_payload() -> Value {
     // whole layer (a CWFIS GeoServer hiccup used to zero out all of Canada's wildfires).
     let mut lg_guard = FEED_LAST_GOOD.lock().await;
     let last_good = lg_guard.get_or_insert_with(HashMap::new);
+    let mut ms_guard = FEED_MISS_STREAK.lock().await;
+    let miss_streaks = ms_guard.get_or_insert_with(HashMap::new);
     let now = Instant::now();
     // Cap each feed so the payload can't balloon; the two fetched OpenSky windows
     // land in window-keyed slots and are unioned with the off-phase windows below.
@@ -1019,30 +1061,52 @@ async fn feeds_payload() -> Value {
         // recency) — plain truncation cut in arbitrary provider order.
         sort_for_cap(&mut evs);
         evs.truncate(cap);
-        if let Some(e) = err {
-            errors.push(e);
-        }
+        // Miss-streak bookkeeping: a failed fetch lands here as an empty batch
+        // (fetch_one pairs every error with an empty vec), so "empty" == "miss".
+        // Surfacing on the health strip is STREAK-GATED via miss_note — the first
+        // missed rebuild stays silent while the map holds last-good, so transient
+        // upstream jitter no longer floods the strip (operator report 2026-07-18)
+        // and ONE line per feed replaces the old raw-error + fallback-note double.
+        let streak = if evs.is_empty() {
+            let s = miss_streaks.entry(key.to_string()).or_insert(0);
+            *s += 1;
+            *s
+        } else {
+            miss_streaks.remove(key);
+            0
+        };
         // The fetched OpenSky windows park their batch in a window-keyed slot; the
         // union across ALL four windows is assembled after the loop, so they skip
-        // the generic fallback / count / extend below.
+        // the generic fallback / count / extend below. Their anonymous-credit 429s
+        // were the loudest first-miss noise — the same streak gate applies.
         if key.starts_with("opensky@") {
-            if !evs.is_empty() {
+            if evs.is_empty() {
+                if let Some(n) = miss_note(key, streak, err.as_deref(), None) {
+                    errors.push(n);
+                }
+            } else {
                 last_good.insert(key.to_string(), (now, evs));
             }
             continue;
         }
-        // Resilience: refresh last-good on a non-empty pull; on an empty one, reuse the
-        // recent last-good (flagged stale) instead of caching a deceptive zero.
+        // Resilience: refresh last-good on a non-empty pull; on a miss, hold the
+        // recent last-good (age-capped) instead of blanking the layer mid-look.
         if !evs.is_empty() {
+            if let Some(e) = err {
+                errors.push(e); // data AND an error: impossible today, surface if it ever happens
+            }
             last_good.insert(key.to_string(), (now, evs.clone()));
-        } else if let Some((at, prev)) = last_good.get(key) {
-            if now.duration_since(*at) < LAST_GOOD_MAX_AGE {
-                let age = now.duration_since(*at).as_secs();
-                evs = prev.clone();
-                errors.push(format!(
-                    "{key}: live feed empty — showing last-good {} ({age}s old)",
-                    evs.len()
-                ));
+        } else {
+            let mut fallback: Option<(usize, u64)> = None;
+            if let Some((at, prev)) = last_good.get(key) {
+                if now.duration_since(*at) < LAST_GOOD_MAX_AGE {
+                    let age = now.duration_since(*at).as_secs();
+                    evs = prev.clone();
+                    fallback = Some((evs.len(), age));
+                }
+            }
+            if let Some(n) = miss_note(key, streak, err.as_deref(), fallback) {
+                errors.push(n);
             }
         }
         counts.insert(key.to_string(), json!(evs.len()));
@@ -1251,6 +1315,31 @@ fn instrument_name<'a>(symbol: &str, fallback: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn miss_note_is_silent_on_the_first_miss_and_names_a_standing_one() {
+        // First miss = upstream jitter: silent regardless of error/fallback shape —
+        // the map still shows last-good, and the strip stops crying wolf (2026-07-18).
+        assert_eq!(miss_note("usgs", 1, Some("usgs: timeout"), Some((12, 60))), None);
+        assert_eq!(miss_note("usgs", 1, None, None), None);
+        assert_eq!(miss_note("usgs", 0, None, Some((5, 10))), None);
+        // From the surface streak on: one line naming the feed, the streak, and what
+        // is being shown instead.
+        let n = miss_note("cwfis", FEED_MISS_SURFACE_STREAK, None, Some((7, 240))).unwrap();
+        assert!(n.contains("cwfis") && n.contains("2 misses") && n.contains("last-good 7"),
+                "fallback note must carry feed, streak, and the substitute batch: {n}");
+    }
+
+    #[test]
+    fn miss_note_surfaces_a_real_outage_but_never_flags_a_quiet_feed() {
+        // Standing hard failure with NOTHING to fall back on → the layer is dark; the
+        // raw fetch error surfaces with the streak.
+        let n = miss_note("digitraffic_ais", 3, Some("digitraffic_ais: HTTP 503"), None).unwrap();
+        assert!(n.contains("HTTP 503") && n.contains("3 misses"), "outage note: {n}");
+        // Long-quiet feed (no error, nothing recent): quiet is a VALID world-state
+        // (empty hurricane season), never a degraded-feed flag.
+        assert_eq!(miss_note("nhc", 500, None, None), None);
+    }
 
     #[test]
     fn theater_coords_cover_named_theaters_and_skip_other() {

@@ -43,8 +43,9 @@ on purpose," never as "delete the assert."
 | `systemic` | object | `index` (number, the 0–`FORECAST_INDEX_CEILING` headline index), `driver` (string, the dominant coupling channel). |
 | `theaters` | array | Per-theater state (heat, rung, why…), incl. `escalation_momentum` (number ∈ [−1,+1], the recency-weighted direction of the news flow). |
 | `couplers` | object | Systemic amplifiers (gp-entanglement, alliance, concurrency, breadth, guardrail_collapse, breadth_saturated…). |
+| `tick_drivers` | array of strings | Movement attribution for THIS tick (2026-07-18): when the read moved ≥ `DRIVER_NOTE_MIN_DELTA` in one tick, the top new events ("source · title"), corroboration count, or decay note that landed with it. Empty on immaterial ticks; diagnostic, never feeds P. Durable copy: `TimelineEntry.drivers` (skipped when empty). |
 | `indicators` | array/object | I&W board lights (`crate::indicators::evaluate`). |
-| `meta` | object | `events_in_window`, `data_blind`, `thinly_sourced`, `at_ceiling`, `breadth_saturated`, `read_held_by_floor`, `sources_active`, `great_power_events`, `regions_active`, `top_actors`, `aggregation_window_hours`, `max_window_events`. The honesty-posture flags an operator/consumer must respect. |
+| `meta` | object | `events_in_window`, `data_blind`, `thinly_sourced`, `at_ceiling`, `breadth_saturated`, `read_held_by_floor`, `window_coverage`, `newest_event_age_secs`, `observation_factor`, `observation_gap`, `sources_active`, `great_power_events`, `regions_active`, `top_actors`, `aggregation_window_hours`, `max_window_events`. The honesty-posture flags an operator/consumer must respect (the four `observation_*`/`window_coverage` keys are the 2026-07-17 staleness-honesty set: how completely and how recently the pipe watched the window, and the discount applied to `confidence`). |
 
 ## Server-augmented fields (merged in `broadcast_snapshots`)
 

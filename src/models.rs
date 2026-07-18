@@ -1156,6 +1156,16 @@ pub struct RiskSnapshot {
     /// the I&W seismic light. Empty when no test-consistent event is live.
     #[serde(default)]
     pub seismic_site: String,
+
+    /// Movement attribution for THIS tick: when the headline moved materially this
+    /// snapshot (|Δ| ≥ aggregator::DRIVER_NOTE_MIN_DELTA), the top new events (plus
+    /// corroboration/decay notes) that landed with it — "source · title" strings the
+    /// timeline chart shows on hover, so a knock on the graph can answer WHY it moved.
+    /// Set in the aggregator run loop AFTER compute (the `seismic_test_consistent`
+    /// pattern), so it never touches the P(WWIII) math and backtests are bit-identical.
+    /// Empty on immaterial ticks.
+    #[serde(default)]
+    pub tick_drivers: Vec<String>,
 }
 
 impl Default for RiskSnapshot {
@@ -1204,6 +1214,7 @@ impl Default for RiskSnapshot {
             escalation_breadth: EscalationBreadth::default(),
             seismic_test_consistent: false,
             seismic_site: String::new(),
+            tick_drivers: vec![],
         }
     }
 }
@@ -1232,6 +1243,12 @@ pub struct TimelineEntry {
     /// loadable — they read momentum 0 and are simply not counted as decisive samples.
     #[serde(default)]
     pub mom:       f64,
+    /// Movement attribution (`snap.tick_drivers`) — WHY this tick moved, rendered by
+    /// the chart's hover. Skipped when empty so the 350k-entry ring and the JSONL
+    /// archive stay lean (the overwhelming majority of 1 Hz ticks are immaterial);
+    /// `default` keeps older persisted entries loadable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drivers:   Vec<String>,
 }
 
 impl TimelineEntry {
@@ -1247,6 +1264,7 @@ impl TimelineEntry {
             delta:    (snap.delta_annual * 1e8).round() / 1e8,
             lead:     lead_theater(&snap.theaters),
             mom:      (snap.couplers.systemic_momentum * 1e3).round() / 1e3,
+            drivers:  snap.tick_drivers.clone(),
         }
     }
 }
@@ -1392,6 +1410,29 @@ impl Default for DashboardSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeline_entry_carries_the_tick_driver_attribution_leanly() {
+        // The chart's "why did it knock here" hover rests on this plumbing: a snapshot's
+        // tick_drivers ride into TimelineEntry.drivers verbatim — and an IMMATERIAL tick
+        // (empty drivers) serializes WITHOUT the key at all, so the 350k-entry ring and
+        // the JSONL archive don't grow by an empty array per 1 Hz tick.
+        let mut snap = RiskSnapshot::default();
+        snap.tick_drivers = vec!["reuters · US launches strikes".into(), "+3 corroborations".into()];
+        let entry = TimelineEntry::from_snapshot(&snap);
+        assert_eq!(entry.drivers, snap.tick_drivers, "drivers must ride the entry verbatim");
+        let with = serde_json::to_string(&entry).unwrap();
+        assert!(with.contains("\"drivers\""), "material tick must serialize its drivers");
+        let quiet = TimelineEntry::from_snapshot(&RiskSnapshot::default());
+        let without = serde_json::to_string(&quiet).unwrap();
+        assert!(!without.contains("\"drivers\""),
+            "an immaterial tick must skip the key entirely (ring/archive leanness)");
+        // And an OLD persisted line (pre-field) still loads, reading no drivers.
+        let old: TimelineEntry = serde_json::from_str(
+            r#"{"t":"2026-07-01T00:00:00Z","p_annual":0.5,"p_30day":0.05,"alert":"normal",
+                "elevated":0,"regime":1.0,"events":10,"delta":0.0}"#).unwrap();
+        assert!(old.drivers.is_empty());
+    }
 
     #[test]
     fn real_settings_yml_parses_with_deny_unknown_fields() {
