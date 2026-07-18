@@ -512,6 +512,24 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-18 (Signal Hunter, later run)** — **HONEST NO-OP; second firing today, fresh live-probe
+  re-walk of the ranked gaps, no code touched.** Re-confirms the earlier-today wall with independent probes
+  and adds one forward-useful negative. Probed this run: **`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`
+  → 403** (unchanged); **`data.humdata.org/api/3/action/package_search` (HDX CKAN *API*, not just the HTML portal)
+  → 403**; **`api.github.com/repos/tmfg/digitraffic-marine/git/trees?recursive=1` → 403** (can't list the repo tree
+  to locate the nautical-warning DTO from the cloud). **New finding — closes off a tempting schema-anchor route:**
+  attempted to anchor the Fintraffic nautical-warning wire schema from a real *archived* response via
+  **`web.archive.org`**, but web fetch is **tool-level-blocked from web.archive.org** (returns "the fetch tool is unable
+  to fetch from web.archive.org") — so the **Wayback Machine is NOT a usable schema-anchor path** for any 403'd
+  endpoint in this sandbox; future runs should not retry it to recover a walled endpoint's field keys. Net on the
+  ranking: **(1) Fintraffic nautical warnings** (military-posture #1) stays DEFERRED — endpoint 403, and no committed
+  OpenAPI/consumer/DTO quoting the warning feature-property keys exists on raw.github (searched the field names, the
+  `tmfg/digitraffic-marine` repo, and the `thjr/hass-digitraffic` add-on — which covers only weather/sse/ais/train,
+  **not** warnings). **(2) IPC / FEWS-NET** humanitarian GeoJSON re-confirmed published on HDX (IPC AFI per-country
+  GeoJSON resources exist), but the HDX CKAN API **and** portal both 403 and `fdw.fews.net` 403 → the GeoJSON lives
+  only on 403 hosts, walled. **(3) `acled_aggregated` refresh** — snapshot newest `WEEK` still **2026-03-07 (~133 d ≫
+  the 42-day gate)**, layer honestly dark; refresh still myACLED/HDX-login-gated, no auth-free S3/GCS/raw.github mirror.
+  **Green-proof:** N/A — no code touched; `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only commit; tree clean.
 - **2026-07-18 (Signal Hunter)** — **HONEST NO-OP after a fresh live-probe walk of the ranked gaps;
   no source half-wired. Re-confirms the 07-17 findings with today's probes — every candidate blocked on
   the same reachability/anchoring wall.** Reachable universe unchanged this run (S3 + GCS + `raw.githubusercontent.com`);
