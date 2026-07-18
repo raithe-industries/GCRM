@@ -512,6 +512,35 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-18 (Signal Hunter)** — **HONEST NO-OP after a fresh live-probe walk of the ranked gaps;
+  no source half-wired. Re-confirms the 07-17 findings with today's probes — every candidate blocked on
+  the same reachability/anchoring wall.** Reachable universe unchanged this run (S3 + GCS + `raw.githubusercontent.com`);
+  everything else 403'd via direct web fetch probe: **`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`**,
+  **`services9.arcgis.com/.../rest/services` (Esri-hosted FeatureServer root)** AND **`luk.vedur.is/arcgis/rest/services`
+  (agency-hosted ArcGIS — direct-probed for the first time; the Esri-stack wall holds for agency ArcGIS too, not just
+  esri.com hosting)**, and **`data.humdata.org/organization/acled`**. Walked the mission ranking:
+  **(1) Fintraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED: GitHub code-search on
+  `tmfg/digitraffic-marine` returns **0 files matching "NauticalWarning"** (corroborates 07-17's tree browse — the
+  serving DTO/controller is not in the public repo), and no committed consumer/fixture/OpenAPI quoting the warning
+  feature-property keys surfaced (searched the field names directly). Live endpoint still 403. Honest fixture still
+  unwritable → stays #1 DEFERRED. **(2) `acled_aggregated` refresh** (conflict freshness) — snapshot newest `WEEK`
+  still **2026-03-07 (~133 d ≫ the 42-day age gate)**, so the ACLED Middle-East Conflict layer remains **self-emptied /
+  honestly dark** (working as designed; unchanged from 07-16/07-17, not a new development). New sharpening: web search
+  confirms the free **Aggregated Data** product (canonical `WEEK…CENTROID_LATITUDE/LONGITUDE` schema) is published
+  **weekly on HDX** — but `data.humdata.org` 403s web fetch and `acleddata.com` aggregated download is myACLED-login-gated,
+  with **no auth-free S3/GCS/raw.github mirror** → cloud-refresh remains impossible; the local re-download+re-commit job
+  is the only path. **(3) Radiation new geography** (proven DE/FI/FR Path-A pattern; frontier/Asian-theatre value) —
+  re-walled: **Japan NRA RAMDAS** (Fukushima + Asian theatre), **Norway RADNETT** (Kola/Arctic frontier, on Geonorge),
+  **Sweden SSM `gammastationer`** (Baltic/Russia frontier) — all authoritative, but **no committed GitHub client quoting
+  an auth-free endpoint + wire schema** for any of them (searched each), and their hosts 403; the only radiation clients
+  found are crowdsourced/citizen projects (Safecast, OpenRadiation, dosenet — fail bar 1 authoritative). Blocked.
+  **(4) Australian state emergency feeds via the exxamalte/S3 pattern** (mechanically landable — the QFES-style
+  reachable path) — declined: another AU state fire/all-hazard warning feed is a **trivia layer**, not a top-gap closer,
+  per the mission's "one gap-closer beats three trivia layers". **Green-proof:** N/A — no code touched; `src/osint.rs` +
+  `vendor/ee-sources/` unchanged; ledger-only commit; tree left clean. Standing first picks when the wall lifts are
+  unchanged (Fintraffic nautical warnings on a live-endpoint web fetch-200; FEWS-NET/IPC `ipcphasemap`; Chile
+  `675E7F2BA04771F` volcano layer), plus the standing QFES-pattern action: probe authoritative agencies' S3/GCS object
+  stores for auth-free geocoded event feeds.
 - **2026-07-17 (Signal Hunter, later run)** — **HONEST NO-OP after a fresh, tenacious walk of the
   ranked gaps with live probes — no source half-wired — but with ONE genuinely-new, forward-useful
   reachability finding: the reachable-host universe is WIDER than "S3 + raw.github".** Re-mapped the
