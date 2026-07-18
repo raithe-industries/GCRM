@@ -24,7 +24,7 @@
   --cyb:#1a9e9e;--ali:#d4962a;--gp:#9b6fbf;--wmd:#c0392b;
 }
 body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.cmd-strip{display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg2);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.cmd-strip{display:grid;grid-template-columns:repeat(6,1fr);background:var(--bg2);border-bottom:0.5px solid var(--border);flex-shrink:0} /* 6 cells (operator 2026-07-18: even counts balance, esp. 2-col mobile) */
 .cmd-cell{padding:7px 14px;border-right:0.5px solid var(--border);cursor:pointer;transition:background .15s}
 .cmd-cell:hover{background:var(--bg3)}
 .cmd-cell:last-child{border-right:none}
@@ -448,6 +448,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   <div class="cmd-cell" onclick="openInfo('driver')" title="Click for a full explanation"><div class="cmd-label">Primary Driver<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-driver" style="font-size:11px">—</div><div class="cmd-sub" id="cmd-driver-sub">highest domain</div></div>
   <div class="cmd-cell" onclick="openInfo('conf')" title="Click for a full explanation"><div class="cmd-label">Confidence<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-conf">—</div><div class="cmd-sub" id="cmd-conf-sub">data quality</div></div>
   <div class="cmd-cell" onclick="openInfo('trend')" title="Click for a full explanation"><div class="cmd-label">6h Trend<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-trend">—</div><div class="cmd-sub" id="cmd-trend-sub">vs 6 hrs ago</div></div>
+  <div class="cmd-cell" onclick="openInfo('momentum')" title="Click for a full explanation"><div class="cmd-label">Momentum<span class="cmd-info">ⓘ</span></div><div class="cmd-val" id="cmd-mom">—</div><div class="cmd-sub" id="cmd-mom-sub">news-flow direction</div></div>
 </div>
 <div id="alert-bar" class="alert-bar"></div>
 <div class="ticker"><div class="ticker-inner" id="ticker-inner"><span class="tick-item"><span class="tick-dot" style="background:#6060a0"></span>Awaiting live feed...</span></div></div>
@@ -919,7 +920,14 @@ plugins:{legend:{display:false},tooltip:{enabled:true,displayColors:false,
       if(!items.length)return;
       const idx=items[0].dataIndex;let best=null,bd=Infinity;
       for(const s of spikes){const dd=Math.abs(s.idx-idx);if(dd<bd){bd=dd;best=s;}}
-      if(!best||bd>8)return;                       // no recorded knock near this instant
+      // Reach is PIXEL-based, not index-based: on a 350k-point history one index is
+      // micro-pixels wide, so a fixed ±8-tick window was unhittable by a human hover.
+      // 12px ≈ the drawn triangle's width plus slack; the ±8-tick floor keeps zoomed-in
+      // (few-point) charts from over-reaching.
+      const _a=tlChart.chartArea,_n=tlChart.data.labels.length;
+      const _pxPer=_a?(_a.right-_a.left)/Math.max(1,_n-1):1;
+      const _win=Math.max(8,Math.ceil(12/Math.max(1e-9,_pxPer)));
+      if(!best||bd>_win)return;                    // no recorded knock near this instant
       const out=['',(best.delta>0?'▲ +':'▼ ')+(best.delta*100).toFixed(3)+'% move'+(bd>0?' (nearby)':'')];
       if(best.drivers&&best.drivers.length)best.drivers.forEach(x=>out.push('• '+x));
       else out.push('(no driver record for this move)');
@@ -995,6 +1003,10 @@ const INFO={
     <p><span style="color:#E24B4A">Red ▲</span> rising · <span style="color:#1D9E75">green ▼</span> falling · flat is stable. The sub-line notes how far back the comparison reaches — normally a full 6 hours, or less right after a restart while the window refills.</p>
     <p>If the <b>hottest theater</b> changed over the window, the sub-line also names the relocation (<b>lead→X (was Y)</b>) — <i>where</i> the risk concentrated, which the magnitude alone can't tell. A net-flat headline can still hide one theater cooling as another heats; the lead shift surfaces it.</p>
     <p><span style="color:#E0922E"><b>Pegged at model ceiling</b></span> (amber): a frozen <b>+0.000%</b> is not always calm. When the hottest theater is railed at the model's maximum heat <i>and</i> the read has not moved all window, the number <i>can't</i> move — not because the world is quiet but because the model has run out of resolution above this point. We surface that honestly rather than letting a flat line read as reassurance.</p>`},
+  momentum:{title:'Escalation Momentum',html:`
+    <p><b>Momentum</b> is the recency-weighted <b>direction of the news flow</b> across the whole theater board, from −1 to +1 (server field <code>couplers.systemic_momentum</code>): <span style="color:#E24B4A">⇧ positive</span> = escalatory moves dominate recent coverage, <span style="color:#1D9E75">⇩ negative</span> = ceasefires/talks dominate, ─ near zero = mixed or quiet.</p>
+    <p>It is the <b>forward-leaning companion</b> to the 6h Trend: the trend measures where the number already <i>went</i>; momentum measures which way the coverage is <i>leaning now</i>. Coverage can turn conciliatory while heat is still high or held, or escalatory before the number moves.</p>
+    <p>Honesty note: whether momentum actually <b>leads</b> the headline P is not assumed — it is measured against history (the momentum lead-lag diagnostic in the model internals) and reads honest-null until there are enough decisive episodes to test.</p>`},
   w30:{title:'30-Day Window',html:`
     <p><b>30-Day Window</b> re-expresses the same model over a rolling 30-day horizon — a nearer-term read than the headline annual figure.</p>
     <p>It moves faster than the annual number, so it's the better gauge of short-run escalation. It's a derived view of one model, not a separate forecast.</p>`},
@@ -1495,6 +1507,14 @@ function applyData(d){
   document.getElementById('cmd-conf-sub').textContent=(conf*100).toFixed(0)+'% data quality'+(_obsGap?' · obs gap':'');
   const _ct=trend6h(d,pA);const trendEl=document.getElementById('cmd-trend');
   if(!_ct){trendEl.textContent='—';trendEl.style.color='var(--t1)';document.getElementById('cmd-trend-sub').textContent='vs 6 hrs ago';}else{trendEl.textContent=fmtTrend(_ct.delta);trendEl.style.color=_ct.pegged?PEGGED_COLOR:trendColor(_ct.delta);document.getElementById('cmd-trend-sub').textContent=trendSub(_ct);}
+  // Momentum cell (6th strip metric, operator 2026-07-18): board-wide news-flow direction —
+  // the forward-leaning companion to the realized 6h Trend. Decisive one-sidedness uses the
+  // same ±0.25 bar as the theater-chip tags, so the two surfaces can't disagree.
+  {const _m=(d.couplers&&typeof d.couplers.systemic_momentum==='number')?d.couplers.systemic_momentum:0;
+   const _me=document.getElementById('cmd-mom'),_ms=document.getElementById('cmd-mom-sub');
+   if(_me){_me.textContent=(_m>=0.25?'⇧ +':_m<=-0.25?'⇩ ':_m>=0?'─ +':'─ ')+_m.toFixed(2);
+     _me.style.color=_m>=0.25?'#E24B4A':_m<=-0.25?'#1D9E75':'var(--t1)';}
+   if(_ms){_ms.textContent=_m>=0.25?'news flow escalatory':_m<=-0.25?'news flow de-escalating':'news flow mixed / quiet';}}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
   // Rail shows the 30/90-day windows. The annual reading is the hero gauge; the live
   // Bayesian chain (P₀ × regime × coupling → P(WWIII)) is in the LIVE COMPUTE panel.
@@ -1512,8 +1532,26 @@ function applyData(d){
   // as the --dcols CUSTOM PROPERTY (consumed by .domains in CSS via var()), NOT an
   // inline grid-template-columns: an inline value outranks the ≤680px media query and
   // re-widens the strip to 5 cols on phones, overflowing the viewport. (viewport fix)
-  grid.style.setProperty('--dcols','repeat('+DID.length+',1fr)');
+  // +1 for the OBSERVATION card appended after the loop (operator 2026-07-18: six cards
+  // balance the row like the six theaters, and split 2-across cleanly on mobile).
+  grid.style.setProperty('--dcols','repeat('+(DID.length+1)+',1fr)');
   DID.forEach((id,i)=>{const ds=doms[id]||{score:0,label:'low',confidence:0,event_count:0,great_power_events:0};const prev=prevDomainScores[id]||0;const delta=ds.score-prev;const pct=Math.round(ds.score*100);const col=dc(ds.score);let arrow='';if(Math.abs(delta)>0.01){arrow=delta>0?'<span class="ddelta" style="color:#E24B4A">▲</span>':'<span class="ddelta" style="color:#1D9E75">▼</span>';}const tag=DTAGS[id]||'?';const tagCol=TAG_COLORS[tag]||'#6060a0';const div=document.createElement('div');div.className=(_artDomainFilter===id)?'domain active':'domain';div.title='Click to audit '+DSHORT[i]+': filters the article feed to the signals feeding this score. "signals" = articles tagged to this domain; "gt-power" = those involving the US, Russia, China, or NATO.';div.onclick=()=>filterByDomain(id);div.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>'+DSHORT[i].toUpperCase()+'</span><span class="art-tag" style="background:'+tagCol+'22;color:'+tagCol+'">'+tag+'</span></div><div class="dbar"><div class="dfill" style="width:'+pct+'%;background:'+col+'"></div></div><div class="drow"><span class="dscore" style="color:'+col+'">'+pct+'%'+arrow+'</span><span class="dlabel '+(ds.label||'low')+'">'+(ds.label||'low')+'</span></div><div class="dconf">'+(ds.event_count||0)+' signals · '+Math.round((ds.confidence||0)*100)+'% conf'+(ds.great_power_events>0?' · '+ds.great_power_events+' gt-power':'')+'</div>';grid.appendChild(div);});
+  // 6th card — OBSERVATION (epistemic, not a force domain; deliberately distinct copy so
+  // it can't be misread as a scored modality): how completely the pipe is WATCHING the
+  // window (meta.window_coverage) + the freshest-signal age. Click opens the Confidence
+  // explainer (the observation factor lives there); it does NOT filter articles.
+  {const _mm=d.meta||{};const _cov=(typeof _mm.window_coverage==='number')?_mm.window_coverage:null;
+   const _covPct=_cov==null?0:Math.round(_cov*100);const _gap=!!_mm.observation_gap;
+   const _ageM=(typeof _mm.newest_event_age_secs==='number')?Math.round(_mm.newest_event_age_secs/60):null;
+   const _ocol=_gap?'#EF9F27':'#1D9E75';
+   const _od=document.createElement('div');_od.className='domain domain-obs';
+   _od.title='Observation coverage — the share of the '+((_mm.aggregation_window_hours||72))+'h evidence window the pipe actually watched (not a force domain: this is how much to TRUST the cards to its left). Click for the full Confidence/observation-factor explanation.';
+   _od.onclick=()=>openInfo('conf');
+   _od.innerHTML='<div class="dn" style="display:flex;justify-content:space-between;align-items:center"><span>OBSERVATION</span><span class="art-tag" style="background:#4a566a22;color:#8fa3c0">OBS</span></div>'
+     +'<div class="dbar"><div class="dfill" style="width:'+_covPct+'%;background:'+_ocol+'"></div></div>'
+     +'<div class="drow"><span class="dscore" style="color:'+_ocol+'">'+(_cov==null?'—':_covPct+'%')+'</span><span class="dlabel '+(_gap?'elevated':'low')+'">'+(_gap?'gap':'watching')+'</span></div>'
+     +'<div class="dconf">'+((_mm.sources_active||0)+' sources')+(_ageM==null?'':' · newest '+(_ageM<60?_ageM+'m':(Math.round(_ageM/6)/10)+'h'))+'</div>';
+   grid.appendChild(_od);}
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
   dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
   document.getElementById('f-guard').textContent=((d.couplers&&d.couplers.guardrail_collapse)||0).toFixed(2);
@@ -2046,15 +2084,22 @@ function wireMapClicks(){
   });
 }
 
+let _finGood=false; // rendered at least one good instrument list this session
 async function refreshFinance(){
   let d; try{ d=await (await fetch(BASE_PATH+'/api/finance')).json(); }
-  catch(e){ const eb=document.getElementById('radar-body'); if(eb)eb.innerHTML='<div class="radar-empty">market feed unavailable</div>'; return; }
+  catch(e){ // One failed poll must not blank a panel that was fine 60s ago (the same
+            // crying-wolf class as the map's first-miss amber): keep the last-good rows
+            // standing — each carries its own staleness via the next successful refresh —
+            // and only show "unavailable" when there has never been data to show.
+    if(!_finGood){const eb=document.getElementById('radar-body'); if(eb)eb.innerHTML='<div class="radar-empty">market feed unavailable</div>';}
+    return; }
   const lvl=document.getElementById('radar-level');
   lvl.textContent=(d.level||'—')+(d.composite!=null?' '+(d.composite*100).toFixed(0)+'%':'');
   lvl.style.color=d.level_color||'var(--t2)';
   // Real movers — each tracked instrument's price and signed daily move, biggest first.
   const ins=d.instruments||[],body=document.getElementById('radar-body');
-  if(!ins.length){body.innerHTML='<div class="radar-empty">market feed unavailable</div>';return;}
+  if(!ins.length){ if(!_finGood)body.innerHTML='<div class="radar-empty">market feed unavailable</div>'; return; }
+  _finGood=true;
   body.innerHTML=ins.map(s=>{
     // REVERSED price palette (operator directive 2026-07-18, "until further notice"):
     // in this monitor's risk lens a FALLING price reads positive → GREEN, a RISING

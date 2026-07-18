@@ -1012,6 +1012,25 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_top_strip_and_domain_row_balance_to_six() {
+        // LEGIBILITY (operator directive 2026-07-18): six cells in the command strip and
+        // six cards in the domain row — even counts split cleanly at the 2-col mobile
+        // breakpoints. The additions are DISPLAY metrics, not new scored modalities: the
+        // 6th strip cell is the served couplers.systemic_momentum, the 6th card is the
+        // OBSERVATION (window-coverage) read — both already-served numbers, P untouched.
+        assert!(DASHBOARD_HTML.contains("grid-template-columns:repeat(6,1fr)"),
+            "command strip must lay out six cells");
+        assert!(DASHBOARD_HTML.contains("cmd-mom") && DASHBOARD_HTML.contains("openInfo('momentum')"),
+            "the momentum strip cell (and its explainer) was dropped");
+        assert!(DASHBOARD_HTML.contains("momentum:{title:'Escalation Momentum'"),
+            "the momentum info-modal entry was dropped");
+        assert!(DASHBOARD_HTML.contains("domain-obs") && DASHBOARD_HTML.contains("DID.length+1"),
+            "the OBSERVATION card (and the +1 column count) was dropped from the domain row");
+        assert!(DASHBOARD_HTML.contains("not a force domain"),
+            "the OBSERVATION card must declare itself epistemic, not a scored modality");
+    }
+
+    #[test]
     fn dashboard_renders_the_durable_recent_range_position() {
         // HONESTY + AWARENESS: the context strip must consume the durable, server-computed recent
         // range (server field read_range / EpochStore::read_range) — the 24h high/low + the read's
