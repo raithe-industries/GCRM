@@ -339,7 +339,13 @@ Bias each run toward the least-covered axis below.
   to global** — the shipped seed is the real ACLED Middle-East aggregate; the documented local
   re-download job should pull all six regional files (Africa, Asia-Pacific, Europe & Central Asia,
   Latin America & Caribbean, Middle East, US & Canada) for worldwide coverage; (b) a higher-frequency
-  auth-free conflict signal if one surfaces.
+  auth-free conflict signal if one surfaces. **HDX HAPI ruled out as a cloud-refresh route
+  (2026-07-19):** `hapi.humdata.org/api/v1/coordination-context/conflict-events` — the OCHA REST API
+  that re-serves ACLED events aggregated by admin unit (distinct from the WAF'd CKAN portal) — **403s
+  web fetch** like every other humdata host, and its conflict-event resource is admin1/2-pcode-keyed
+  (needs a separate pcode-centroid join even if reachable). So NO auth-free reachable API route to the
+  ACLED-derived conflict data exists; the local re-download+re-commit of `acled_aggregated_snapshot.csv`
+  is still the only refresh path.
 - **Storm / tropical cyclone** — SEEDED 2026-06-24 with `nhc` (NOAA NHC, Atlantic/E-Pacific)
   and EXTENDED 2026-06-25 with `jma_typhoon` (JMA RSMC Tokyo, W-Pacific/South China Sea, Path A).
   Gap now: **Indian Ocean + Southern Hemisphere** basins — IMD (`mausam.imd.gov.in`), BoM
@@ -377,6 +383,21 @@ Bias each run toward the least-covered axis below.
   ACC layer directly) **OR** a committed consumer/fixture quoting the live ACC MapServer/FeatureServer
   layer id + attribute keys surfaces on `raw.githubusercontent.com`. **MAGMA snapshot refresh** is a
   local re-capture job (origin host unreachable in-sandbox).
+  **Japan JMA volcanic alert levels (噴火警戒レベル 1–5) — NEW concrete lead 2026-07-19, blocked on
+  anchoring:** JMA (the authoritative national monitor for Japan's ~111 active volcanoes) publishes
+  volcano warnings on the same `www.jma.go.jp/bosai` host already proven live in prod by `jma_typhoon`
+  + `jma_quake`; this would extend the operational volcano-alert-level modality (`geonet_volcano` NZ +
+  `usgs_volcano` US/Alaska + `magma_volcano` Indonesia) to **Japan / the NW-Pacific**, a key Asian
+  theatre. **Blocked this run on the standard wall:** `bosai/volcano/data/list.json` AND the
+  coordinate const `bosai/common/const/volcano.json` both 403 web fetch in-sandbox, and **no committed
+  client anchors the volcano endpoint + its alert-level/coordinate schema** — `aoirint/aoirint_jmapy`
+  covers only forecast/warning/area endpoints (enumerated 2026-07-19, no volcano path), and
+  `nehemiaharchives/jma-quake-api` is quake-only. Note the live signal is the *alert level*, which is
+  only obtainable by reaching the (403'd) JMA endpoint — a coordinate table alone (GVP/`gvp_volcano`
+  already carries Japanese volcano lat/lon) does NOT unblock it. **Landable when EITHER** the JMA
+  `bosai/volcano` endpoint becomes web fetch-reachable (200 → read the live alert levels directly, Path
+  A on the already-live host) **OR** a committed consumer/fixture quoting the volcano list endpoint +
+  its alert-level field keys surfaces on `raw.githubusercontent.com`.
 - **Geography** — feeds are Canada/US-dense; SW-Pacific seeded via `geonet_volcano` (NZ),
   W-Pacific via `jma_typhoon`, **SE-Asia / Indonesia** via `magma_volcano` (PVMBG volcanoes)
   and now `bmkg_quake` (**BMKG felt earthquakes + InaTEWS tsunami potential**, 2026-06-30) —
@@ -527,6 +548,47 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-19 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious walk of the ranked gaps
+  with live probes; no source half-wired — with TWO genuinely-new findings (the HDX HAPI conflict
+  API is walled too; a concrete new JMA-volcano lead triaged and deferred).** Reachability wall
+  unchanged this run (gov/OSINT hosts 403 web fetch; only S3/GCS/`raw.githubusercontent.com` reachable).
+  Walked the mission ranking, each candidate re-verified blocked by live probe:
+  **(1) `acled_aggregated` refresh** (conflict-freshness) — snapshot newest `WEEK` still **2026-03-07
+  (~134 d ≫ the 42-day gate)**, so the ACLED Middle-East Conflict layer is self-emptied / honestly dark
+  (working as designed). Refresh re-confirmed login/403-gated: `data.humdata.org/dataset/...` 403 and
+  web search re-confirms the free Aggregated Data product is a **registered-tier (myACLED/HDX-login)**
+  download with no auth-free S3/GCS/raw.github mirror. **NEW this run:** probed **HDX HAPI**
+  (`hapi.humdata.org/api/v1/coordination-context/conflict-events`) — the OCHA Humanitarian REST API
+  that re-serves ACLED conflict events aggregated by admin unit (distinct from the WAF'd CKAN portal, a
+  path not previously tried) — it **also 403s web fetch**, so there is NO reachable API route to the
+  ACLED-derived conflict data either (and HAPI's conflict-event resource is admin1/2-pcode-keyed,
+  needing a separate pcode-centroid join even if it were reachable). Conflict-freshness stays walled;
+  local re-download+re-commit remains the only refresh path.
+  **(2) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED:
+  `meri.digitraffic.fi/api/nautical-warning/v1/warnings/active` re-probed → **403**, and the warning
+  feature-property keys are still not anchorable — no committed OpenAPI/consumer/DTO quotes them (the
+  serving service is confirmed *not* in the public `tmfg/digitraffic-marine` repo by prior runs; today's
+  search surfaced only the doc/README, neither of which covers nautical warnings). Stays #1 DEFERRED.
+  **(3) Radiation new geography** (proven DE/FI/FR Path-A pattern) — re-walled: the only committed
+  clients for national dose-rate networks are **OpenRadiation** (citizen/crowdsourced → fails bar 1
+  authoritative) and the already-landed **kalisio/k-teleray** (France); no authoritative committed
+  client for Belgium TELERAD / Spain CSN / Switzerland NADAM / Poland / Czech surfaced, EURDEP stays
+  access-restricted (JRC `remon`/`remap` SSO/WAF). No anchor → blocked.
+  **(4) Japan JMA volcanic alert levels** (NEW candidate this run — Asian-theatre extension of the
+  operational volcano-alert modality already live for NZ/US/Indonesia, on the `bosai` host proven live
+  by `jma_typhoon`/`jma_quake`) — triaged and DEFERRED (see the Volcano coverage-gap note): the
+  `bosai/volcano/data/list.json` + `bosai/common/const/volcano.json` endpoints both **403 web fetch**,
+  and no committed client anchors the volcano endpoint/alert-level/coordinate schema (`aoirint_jmapy`
+  enumerated → forecast/warning/area only, no volcano; `nehemiaharchives/jma-quake-api` quake-only). The
+  live signal is the alert level, only obtainable by reaching the 403'd endpoint, so a coordinate table
+  alone doesn't unblock it. Best-scoped new lead; landable on a JMA `bosai/volcano` web fetch-200 or a
+  committed volcano-endpoint consumer.
+  **Green-proof:** N/A — no code touched; `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only
+  commit; tree left clean. Standing first picks when the wall lifts: Fintraffic nautical warnings (live
+  endpoint web fetch-200 → Path A on the already-live `digitraffic_ais` host), JMA `bosai/volcano` alert
+  levels, FEWS-NET/IPC `ipcphasemap` GeoJSON, and the Chile `675E7F2BA04771F` volcano layer — plus the
+  standing QFES-pattern action: probe authoritative agencies' S3/GCS object stores for auth-free
+  geocoded event feeds (the one path that bypasses both the 403 wall and the anchoring requirement).
 - **2026-07-18 (Signal Hunter, later run)** — **HONEST NO-OP; second firing today, fresh live-probe
   re-walk of the ranked gaps, no code touched.** Re-confirms the earlier-today wall with independent probes
   and adds one forward-useful negative. Probed this run: **`meri.digitraffic.fi/api/nautical-warning/v1/warnings/active`
