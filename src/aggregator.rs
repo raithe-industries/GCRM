@@ -861,6 +861,20 @@ impl EpochStore {
                 "span_secs": 0,
             });
         }
+        // Span honesty: many ticks ≠ much time. The sample floor above is COUNT-based, and a 1 Hz
+        // ring satisfies it seconds after a restart while spanning seconds — a `position:"near-high"`
+        // / `pct_rank` asserting a multi-day HIGH off half a minute of data is the post-restart lie
+        // the 2026-07-17 outage exposed on the sibling `lead_concentration_window`. Honest-null
+        // (mirroring that sibling's `short_history` guard) until real span accrues.
+        let span_secs = oldest.map(|o| (now - o).num_seconds().max(0)).unwrap_or(0);
+        if span_secs < READ_RANGE_MIN_SPAN_SECS {
+            return serde_json::json!({
+                "available": false,
+                "reason":    "short_history",
+                "samples":   ps.len(),
+                "span_secs": span_secs,
+            });
+        }
         // Range = observed min/max (the "high/low" the operator expects). Position = the percentile
         // RANK of the current read among the window's reads — robust to a single transient spike
         // that would otherwise set `hi` far above everything and make every later read read "low".
@@ -869,7 +883,6 @@ impl EpochStore {
         let n = ps.len() as f64;
         let at_or_below = ps.iter().filter(|&&p| p <= current_p).count() as f64;
         let pct_rank = (at_or_below / n * 100.0 * 1e1).round() / 1e1;
-        let span_secs = oldest.map(|o| (now - o).num_seconds().max(0)).unwrap_or(0);
         let flat = (hi - lo) < FLAT_RANGE_PP / 100.0;
         // Position tag off the percentile rank (not the raw min/max fraction), so a lone spike in
         // `hi` cannot mislabel a genuinely high read as "mid". Flat range → no high/low claim.
@@ -1555,6 +1568,13 @@ const MOM_EPISODE_GAP: u32 = 2;         // sub-deadband strides that close an ep
 const READ_RANGE_WINDOW_SECS: i64 = 24 * 3600;
 const READ_RANGE_MIN_SAMPLES: usize = 30;
 const FLAT_RANGE_PP: f64 = 0.3;
+/// Minimum SPAN the in-window reads must cover before a position/range verdict renders — a
+/// quarter of the window (mirrors `LEAD_CONC_MIN_SPAN_SECS`). The `MIN_SAMPLES` floor above is
+/// COUNT-based, and a 1 Hz ring clears 30 samples ~30s after a restart while spanning only ~30s:
+/// a served `position:"near-high"` / `pct_rank` claiming a multi-day HIGH off half a minute of
+/// data is the same post-restart lie the 2026-07-17 outage exposed on the sibling locus read.
+/// A range verdict about the recent band needs day-scale span. Honest-null until it accrues.
+const READ_RANGE_MIN_SPAN_SECS: i64 = READ_RANGE_WINDOW_SECS / 4;
 
 // Lead-concentration parameters (DISPLAY/diagnostic only — none touches P or any fitted constant).
 // Fixed 24h window off the durable ring (matches read_range so the "locus" band means the same for
@@ -3873,6 +3893,39 @@ mod tests {
         let r = es.read_range_window(0.45, now, 24 * 3600, 30); // only 5 < 30
         assert_eq!(r["available"], false, "too few samples must not fabricate a range");
         assert_eq!(r["span_secs"], 0);
+    }
+
+    #[test]
+    fn read_range_window_honest_null_on_a_short_post_restart_ring() {
+        // A freshly restarted 1 Hz ring clears the COUNT floor within seconds while spanning only
+        // seconds — many ticks, ~no time. The served `position:"near-high"` / `pct_rank` would then
+        // assert a multi-day HIGH off half a minute of data (the post-restart lie the 2026-07-17
+        // outage exposed on the sibling `lead_concentration_window`). `read_range_window` must
+        // honest-null on `span_secs < READ_RANGE_MIN_SPAN_SECS`, mirroring that sibling's guard —
+        // NOT publish a range verdict off a sub-span ring.
+        let now = Utc::now();
+        let mut es = EpochStore::new();
+        // 40 ascending reads at 1s spacing → 40 ≥ 30 samples but only ~39s of span (≪ 6h floor).
+        for i in 0..40i64 {
+            es.push(epoch_at(40 - i, now, 0.40 + 0.002 * i as f64));
+        }
+        let r = es.read_range_window(0.60, now, 24 * 3600, 30);
+        assert_eq!(r["available"], false, "a full-count but short-span ring must not claim a range");
+        assert_eq!(r["reason"], "short_history");
+        assert_eq!(r["samples"].as_u64().unwrap(), 40, "the sample count is still reported");
+        assert!(
+            r["span_secs"].as_i64().unwrap() < READ_RANGE_MIN_SPAN_SECS,
+            "the honest-null must be BECAUSE the span is under the floor"
+        );
+        // And the guard must RELEASE once real span accrues: the same 40 reads spread over >6h
+        // must publish a live range (proves the null is span-gated, not a blanket refusal).
+        let mut es_long = EpochStore::new();
+        for i in 0..40i64 {
+            es_long.push(epoch_at(3600 * 7 - 600 * i, now, 0.40 + 0.002 * i as f64)); // ~7h..~50m span
+        }
+        let long = es_long.read_range_window(0.60, now, 24 * 3600, 30);
+        assert_eq!(long["available"], true, "the same reads over day-scale span DO publish a range");
+        assert!(long["span_secs"].as_i64().unwrap() >= READ_RANGE_MIN_SPAN_SECS);
     }
 
     #[test]

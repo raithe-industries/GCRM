@@ -1003,18 +1003,24 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   ONE stale (`rw ≈ 0`) alliance headline yields the SAME `l_sys`/P as the same board without it; the four
   anchors stay in-band (they carry only fresh events, so a recency gate is a no-op on them).
 
-- [ ] **[candidate] 1.af `read_range_window` lacks the post-restart SPAN-honesty guard its sibling
+- [x] **[candidate] 1.af `read_range_window` lacks the post-restart SPAN-honesty guard its sibling
   `lead_concentration_window` carries — served `position`/`pct_rank` claim multi-day range context off
-  seconds of data after a restart** — surfaced 2026-07-18 by the aggregator diagnostics bug-hunt. Both share
+  seconds of data after a restart** — **DONE 2026-07-19.** Added `READ_RANGE_MIN_SPAN_SECS =
+  READ_RANGE_WINDOW_SECS / 4` (6 h) and the span guard: after the count floor, `read_range_window` now
+  honest-nulls `{available:false, reason:"short_history", samples, span_secs}` when `span_secs <
+  READ_RANGE_MIN_SPAN_SECS`, mirroring `lead_concentration_window`'s exact guard. So a freshly restarted
+  1 Hz ring that clears 30 samples in ~30 s no longer publishes `position:"near-high"` / `pct_rank`
+  asserting a multi-day HIGH off half a minute of data; the client already renders `available:false` as
+  the honestly-labeled "session high/low" degraded state (no dashboard change). Locked by
+  `read_range_window_honest_null_on_a_short_post_restart_ring` (fails-without-change: neuter the
+  threshold → the 40-sample/39-s ring returns `available:true`, test panics at aggregator.rs:3913); the
+  test also proves the guard RELEASES once >6 h of span accrues. See improvement-log 2026-07-19. Both share
   the 24 h window + `MIN_SAMPLES = 30`; `lead_concentration_window` (aggregator.rs:~1273) additionally
   returns `{available:false, reason:"short_history"}` when `span_secs < MIN_SPAN_SECS` (6 h = window/4),
-  the exact "post-restart lie the 2026-07-17 outage exposed" guard. `read_range_window` computes the same
-  `span_secs` (aggregator.rs:~872) but never gates on it — so ~30 s after a restart the 1 Hz ring holds 30
-  samples spanning ~29 s, and the served `position:"near-high"` / `pct_rank` assert a multi-day HIGH that is
-  really 29 s of data (the only tell is the un-served `span_secs`). Served-only (never feeds P), so
-  Touched: engine-behavior with display consequence — take on a run with headroom. Gate: inject a full-count
-  but short-span window and assert `read_range` honest-nulls (`available:false`/`reason:"short_history"`),
-  mirroring the sibling's lock; FAILS today.
+  the exact "post-restart lie the 2026-07-17 outage exposed" guard. `read_range_window` computed the same
+  `span_secs` (aggregator.rs:~872) but never gated on it — so ~30 s after a restart the 1 Hz ring held 30
+  samples spanning ~29 s, and the served `position:"near-high"` / `pct_rank` asserted a multi-day HIGH that is
+  really 29 s of data (the only tell is the un-served `span_secs`). Served-only (never feeds P).
   GATE (if taken): a synthetic near-quiet board (two theaters heat 0.04, not floor-held, momentum 0.4)
   where `systemic_momentum == 0` but `escalation_breadth.multi_front == true` today — assert they agree
   after the change. Diagnostic only; never feeds P.
