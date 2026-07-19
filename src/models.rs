@@ -1417,8 +1417,7 @@ mod tests {
         // tick_drivers ride into TimelineEntry.drivers verbatim — and an IMMATERIAL tick
         // (empty drivers) serializes WITHOUT the key at all, so the 350k-entry ring and
         // the JSONL archive don't grow by an empty array per 1 Hz tick.
-        let mut snap = RiskSnapshot::default();
-        snap.tick_drivers = vec!["reuters · US launches strikes".into(), "+3 corroborations".into()];
+        let snap = RiskSnapshot { tick_drivers: vec!["reuters · US launches strikes".into(), "+3 corroborations".into()], ..Default::default() };
         let entry = TimelineEntry::from_snapshot(&snap);
         assert_eq!(entry.drivers, snap.tick_drivers, "drivers must ride the entry verbatim");
         let with = serde_json::to_string(&entry).unwrap();
