@@ -35,6 +35,21 @@ web fetch** (out-of-band), not curl. Two ways a source lands:
 
 ---
 
+## ENGINE FACTS — current (supersedes the prompt's snapshot when they disagree)
+- **Feed-health surfacing is STREAK-GATED (2026-07-18, operator-directed, `osint.rs::miss_note`):**
+  a feed's FIRST missed rebuild is silent (per-feed last-good holds its layer), a standing failure
+  surfaces from the **2nd consecutive miss** as ONE line per feed (streak + what is shown instead),
+  a hard failure with nothing to fall back on surfaces the raw fetch error, and a long-quiet feed
+  is NEVER flagged (quiet is a valid world-state — `LAYER_HINTS` explains empty layers). For your
+  connectors this means: still return honest, descriptive errors (they ARE operator-visible when a
+  failure is real) and never fake an empty success — but a single upstream blip no longer ambers
+  the strip, so do not treat one transient miss in testing as a rejection reason. Do NOT restore
+  first-miss surfacing; the gate is a standing operator directive (see docs/scorecard.md
+  "Standing operator directives").
+- Unchanged and still binding: cross-feed earthquake DEDUP (`quake_feed_rank`), severity-sort
+  before cap truncation, plotted-vs-fetched counts on `/api/map`, per-feed last-good + startup
+  cache-warm protecting the eyes gate (time-box fetches).
+
 ## LIVE — wired into the map (`src/osint.rs` fan-out) — do not re-add
 
 | source_id | EventKind | Authority | Notes |

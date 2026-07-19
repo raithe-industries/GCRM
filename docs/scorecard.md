@@ -95,6 +95,40 @@ asymptote to make headroom (2026-06-09: that re-erodes the off-peg headroom). A 
 legitimately moves nothing is reported as "wired, low current influence," never tuned up. **Bold +
 honest, never bold + fabricated. A prettier lie is worse than an ugly truth.**
 
+## Standing operator directives (Robert-gated — reverting any of these as a "fix" is a FAIL)
+Display/UX decisions Robert made in person; each is labeled in-UI where it diverges from the
+model's own ordering or convention. They are as gated as the fitted constants: revert or "clean
+up" only on his explicit word. (Set 2026-07-17/18; full context in the improvement-log entries
+of those dates.)
+- **Observation-coverage honesty** (2026-07-17): displayed confidence = evidence blend ×
+  observation factor (window bucket-coverage × freshness decay; constants `OBSERVATION_*` in
+  bayesian.rs are operator-set display thresholds). LOW CONFIDENCE AFTER A RESTART/OUTAGE IS THE
+  HONEST STATE — do not re-chase it; it recovers as the window genuinely refills. Post-restart
+  honest-nulls (`lead_concentration` `short_history`, the trend/read-range span guards) are BY
+  DESIGN, not regressions.
+- **Theater strip pin**: `us_iran` renders FIRST (client-side; note "operator focus · then
+  hottest"). The model's heats and `topTh` are untouched — do not restore hottest-first.
+- **Reversed Finance-Radar palette**: price ▲ up = RED, ▼ down = GREEN ("until further notice").
+  Arrows stay factual; do not restore conventional colors. GCRM-only (gmm is field-native).
+- **Model internals collapsed** behind one `.mi-toggle` (default closed, localStorage-persisted).
+  Content must STAY in the DOM populating while hidden — sibling locks and the eyes gate read it.
+- **Six-balance**: 6 command-strip cells (6th = Momentum, `couplers.systemic_momentum`; neutral
+  state shows the bare signed value, no dash prefix) and 6 domain-row cards (6th = OBSERVATION,
+  window-coverage — EPISTEMIC display, never a scored modality; the model keeps FIVE modalities).
+  Keep strip cells / domain cards at even counts if surfaces ever change (which is operator-gated
+  anyway).
+- **Timeline knock attribution**: material ticks (|Δ| ≥ `DRIVER_NOTE_MIN_DELTA` = 0.0005, tuned
+  against prod's measured tick-delta distribution — retune only from fresh measurements) carry
+  `tick_drivers`/`TimelineEntry.drivers`; the chart seeds hoverable ▲/▼ knocks and the tooltip's
+  reach is PIXEL-based (an index window regresses to unhittable at full history — keep pixels).
+- **Map feed-health streak gate** (`osint.rs::miss_note`): the FIRST missed rebuild is silent
+  (last-good holds the layer); surfaced from `FEED_MISS_SURFACE_STREAK` (2) misses, one line per
+  feed; long-quiet feeds are NEVER flagged (quiet ≠ outage). Do not restore first-miss surfacing —
+  that is the crying-wolf failure this gate ends. Fetch errors remain operator-visible from the
+  second consecutive miss, so "fail loudly" now means "fail loudly when it is REAL".
+- **Brand coin** is exempt from `prefers-reduced-motion` (plus a 2D watchdog fallback); every
+  other animation honors the preference. Ticker scrolls at 120s.
+
 ## Forbidden (these are not "improvement")
 - Cosmetic churn to look busy; renaming/reformatting with no behavioral or clarity gain.
 - **Annotation inflation** — mirroring an existing caveat/flag/observable onto an Nth surface, or
@@ -120,7 +154,7 @@ honest, never bold + fabricated. A prettier lie is worse than an ugly truth.**
 |---|---|---|---|---|
 | Build | release builds | `cargo build --release` | green | **Hold** |
 | Tests green | full suite passes | `cargo test` | green | **Hold** |
-| Test count | locks behavior — **NEVER evidence of improvement** | `cargo test --release` on the gcrm target (passed + ignored); the grep proxy `grep -rhoE '#\[(tokio::)?test\]' src \| wc -l` undercounts by missing `#[tokio::test(flavor…)]` forms | **554 passed + 4 ignored** (re-based 2026-07-04 evening; the 4th ignored is the live video-transcript proof) | **Floor (Hold)** — a run whose ONLY positive effect is +N tests is an automatic FAIL; the required lock test must FAIL when the change is `git stash`ed (attach that proof). The floor re-bases DOWNWARD in the same log entry when a retirement removes lock tests (see the T2 retirement lane) — that is not a regression |
+| Test count | locks behavior — **NEVER evidence of improvement** | `cargo test --release` on the gcrm target (passed + ignored); the grep proxy `grep -rhoE '#\[(tokio::)?test\]' src \| wc -l` undercounts by missing `#[tokio::test(flavor…)]` forms | **652 passed + 5 ignored** (re-based 2026-07-18 after the observation-coverage + architect-directive sessions; was 554+4 on 2026-07-04) | **Floor (Hold)** — a run whose ONLY positive effect is +N tests is an automatic FAIL; the required lock test must FAIL when the change is `git stash`ed (attach that proof). The floor re-bases DOWNWARD in the same log entry when a retirement removes lock tests (see the T2 retirement lane) — that is not a regression |
 | **Live signal sources** | new sight feeding the read | sources feeding a modality/map | (current roster) | **↑** — counts ONLY with a real-response fixture test + a `feed_roster_liveness` probe + a synthetic test that changes an output; epsilon-weight dead inputs do NOT count |
 | **Map layers** | new geographic sight | map layers on `/api/map` | (current) | **↑** — counts ONLY when backed by a NEW live source not already on the map; slicing/relabeling an existing feed or a static table does NOT count |
 | **Monitors shipped** | platform breadth | monitors at Definition-of-Done | 1 (GCRM) | **↑** — +1 ONLY at the DoD rung (≥1 live connector + honest headline from real input + ladder + where/why + uncertainty + renders under eyes); partial steps are progress, not +1 |
