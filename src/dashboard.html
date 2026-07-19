@@ -1512,7 +1512,10 @@ function applyData(d){
   // same ±0.25 bar as the theater-chip tags, so the two surfaces can't disagree.
   {const _m=(d.couplers&&typeof d.couplers.systemic_momentum==='number')?d.couplers.systemic_momentum:0;
    const _me=document.getElementById('cmd-mom'),_ms=document.getElementById('cmd-mom-sub');
-   if(_me){_me.textContent=(_m>=0.25?'⇧ +':_m<=-0.25?'⇩ ':_m>=0?'─ +':'─ ')+_m.toFixed(2);
+   // Neutral state shows just the signed value — the old '─ ' prefix beside '+0.04'
+   // read as a stray minus sign (operator, 2026-07-18). The sub-line carries the
+   // mixed/quiet wording; decisive states keep their ⇧/⇩ arrows.
+   if(_me){_me.textContent=(_m>=0.25?'⇧ +':_m<=-0.25?'⇩ ':_m>=0?'+':'')+_m.toFixed(2);
      _me.style.color=_m>=0.25?'#E24B4A':_m<=-0.25?'#1D9E75':'var(--t1)';}
    if(_ms){_ms.textContent=_m>=0.25?'news flow escalatory':_m<=-0.25?'news flow de-escalating':'news flow mixed / quiet';}}
   const setMv=(id,val,color)=>{const el=document.getElementById(id);if(el){el.textContent=val;el.style.color=color;}};
