@@ -548,6 +548,38 @@ Bias each run toward the least-covered axis below.
 Newest first. One short entry per run: date, what was evaluated, what was adopted/rejected/
 deferred, and the green-proof. Append; never rewrite history.
 
+- **2026-07-22 (Signal Hunter)** — **HONEST NO-OP after a fresh live-probe walk of all four ranked
+  gaps; no code touched, no source half-wired — with TWO new forward-useful negatives that close off
+  tempting bypass routes.** Reachability wall unchanged and re-confirmed this run: `raw.githubusercontent.com`
+  serves (fetched `tmfg/digitraffic` `meriliikenne-en.md` OK), while every gov/OSINT/Esri host 403s web fetch.
+  Walked the ranking, each candidate re-verified blocked by live probe:
+  **(1) `acled_aggregated` refresh** (conflict-freshness) — snapshot newest `WEEK` still **2026-03-07
+  (~137 d ≫ the 42-day gate)**, so the ACLED Conflict layer is self-emptied / honestly dark (working as
+  designed). Refresh re-confirmed registration-gated: `acleddata.com/aggregated/aggregated-data-middle-east`
+  **403 web fetch**, and web search re-confirms the free Aggregated Data product downloads only after an ACLED
+  Access-Portal (myACLED) login — no auth-free S3/GCS/raw.github mirror. Local re-download+re-commit remains
+  the only refresh path; would not fabricate values.
+  **(2) Fintraffic Digitraffic nautical warnings** (military-posture, #1 gap) — RE-VERIFIED BLOCKED:
+  `meri.digitraffic.fi/api/nautical-warning/v1/warnings/active` **403**, `meri.digitraffic.fi/swagger/openapi.json`
+  **403**, and the warning feature-property keys stay unanchorable. **NEW negative:** a GitHub search of the
+  serving repo `tmfg/digitraffic-marine` for "nautical warning" returns **0 code results today** — corroborating
+  prior runs that the nautical-warning service is genuinely *not* in the public marine repo (only AIS/port-call/
+  Aton DTOs are), so no committed DTO/OpenAPI quotes the field names. Stays #1 DEFERRED; landable on a live
+  web fetch-200 (Path A on the already-live `digitraffic_ais` host) or a committed consumer surfacing the keys.
+  **(3) Chile SERNAGEOMIN volcano** (South America geography) — re-walled, and **NEW negative closing the last
+  hope route:** the two ArcGIS-Hub "download CDN" paths for dataset `675E7F2BA04771F` —
+  `hub.arcgis.com/api/download/v1/items/675E7F2BA04771F/geojson` AND `opendata.arcgis.com/datasets/675E7F2BA04771F_0.geojson`
+  — **both 403 web fetch**, same Esri corporate WAF as `services*.arcgis.com`/`plataformadedatos.cl`. So the Hub
+  download CDN is **NOT** a bypass for the Esri WAF; future runs should not retry it. Unblocks only on a
+  web fetch-200 or a committed client quoting the FeatureServer URL + attribute keys.
+  **(4) FEWS-NET / IPC** (humanitarian early-warning modality) — re-walled: `fdw.fews.net/api/ipcphasemap/?format=geojson`
+  **403 web fetch**; the auth-free GeoJSON product still lives only behind that 403 wall (HDX CKAN + portal 403 per
+  prior runs; the public S3 bucket serves binary shapefiles). No anchor → blocked.
+  **Green-proof:** N/A — no code touched; `src/osint.rs` + `vendor/ee-sources/` unchanged; ledger-only commit;
+  tree left clean. Standing first picks when the wall lifts: Fintraffic nautical warnings, JMA `bosai/volcano`
+  alert levels, FEWS-NET/IPC `ipcphasemap` GeoJSON, the Chile `675E7F2BA04771F` volcano layer — plus the standing
+  QFES-pattern action: probe authoritative agencies' S3/GCS object stores for auth-free geocoded event feeds (the
+  one path that bypasses both the 403 wall and the anchoring requirement).
 - **2026-07-19 (Signal Hunter)** — **HONEST NO-OP after a fresh, tenacious walk of the ranked gaps
   with live probes; no source half-wired — with TWO genuinely-new findings (the HDX HAPI conflict
   API is walled too; a concrete new JMA-volcano lead triaged and deferred).** Reachability wall
