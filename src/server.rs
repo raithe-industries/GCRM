@@ -1031,6 +1031,28 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_command_strip_cells_render_from_the_snapshot() {
+        // LEGIBILITY (pillar 2): the command strip is the top-of-cockpit "grasp the state at a
+        // glance" row — the FIRST thing an operator reads. It has SIX value cells, each seeded to
+        // the "—" placeholder in static HTML and repainted from the live snapshot by the render
+        // pass. Two of them (#cmd-trend, #cmd-mom) already carry individual anti-drift locks; the
+        // other four did not, so a refactor that dropped or renamed a cell would ship a top row
+        // that stays blank "—" — a correct number rendered BLIND. Lock all six IDs AND that each is
+        // wired to a getElementById(...) repaint, so a dropped element OR a dropped render both fail
+        // `cargo test` in-sandbox (the deploy-time eyes gate §8b guards the runtime population).
+        for id in ["cmd-threat", "cmd-risk", "cmd-driver", "cmd-conf", "cmd-trend", "cmd-mom"] {
+            assert!(
+                DASHBOARD_HTML.contains(&format!("id=\"{id}\"")),
+                "command strip dropped the #{id} value cell — the top-of-cockpit glance row is incomplete"
+            );
+            assert!(
+                DASHBOARD_HTML.contains(&format!("getElementById('{id}')")),
+                "command strip #{id} exists but is never repainted from the snapshot — it would stay stuck on the placeholder"
+            );
+        }
+    }
+
+    #[test]
     fn dashboard_renders_the_durable_recent_range_position() {
         // HONESTY + AWARENESS: the context strip must consume the durable, server-computed recent
         // range (server field read_range / EpochStore::read_range) — the 24h high/low + the read's

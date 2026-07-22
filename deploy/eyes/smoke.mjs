@@ -428,6 +428,67 @@ if (latest) {
   }
 }
 
+// 8b) COMMAND STRIP — the top-of-cockpit "grasp the state at a glance" row (the six .cmd-cell
+//    readouts: Threat Level, WWIII Risk, Primary Driver, Confidence, 6h Trend, Momentum). Every
+//    cell initializes to the "—" placeholder in static HTML and is populated from the live
+//    snapshot by the render pass. The gate already guards #cmd-trend (§6), but the other five —
+//    the FIRST thing an operator reads — were never looked at: a client refactor that crashed the
+//    strip render or dropped a cell would ship a top row stuck on "—" (a correct number rendered
+//    BLIND — pillar-2 legibility failure) undetected. Assert the four cells that always resolve to
+//    a real value once the snapshot lands do so, and the two with strong stable formats (Risk %,
+//    Momentum signed decimal) are well-formed rather than a stray token. Primary Driver is
+//    honest-null-capable (no dominant domain named → "—", its sub-line still carries the fallback),
+//    so we require its node to EXIST but tolerate the placeholder. No opinion on any value.
+if (latest) {
+  const settled = async (sel) => {
+    let txt = null;
+    for (let i = 0; i < 15; i++) {                 // ≈ 15 × 500ms ≈ 7.5s, mirrors the §8 poll
+      txt = await page.$eval(sel, (el) => el.textContent).catch(() => null);
+      txt = txt == null ? null : txt.trim();
+      if (txt && txt !== '—') break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    return txt;
+  };
+  const clip = (t) => (t.length > 56 ? t.slice(0, 56) + '…' : t);
+
+  const threat = await settled('#cmd-threat');
+  if (threat == null) fail.push('#cmd-threat (Threat Level) missing — the command strip did not render');
+  else if (threat === '' || threat === '—') fail.push('#cmd-threat stuck on the "—" placeholder — the command strip did not populate the threat level');
+  else ok(`command strip: threat level populated (#cmd-threat = "${clip(threat)}")`);
+
+  const risk = await settled('#cmd-risk');
+  if (risk == null) fail.push('#cmd-risk (WWIII Risk) missing — the command strip did not render');
+  else if (risk === '' || risk === '—') fail.push('#cmd-risk stuck on the "—" placeholder — the command strip did not populate the annual risk');
+  else if (!/^≥?\d+(\.\d+)?%$/.test(risk)) fail.push(`#cmd-risk rendered a malformed risk readout ("${clip(risk)}") — expected "[≥]N.NN%"`);
+  else ok(`command strip: annual risk populated (#cmd-risk = "${risk}")`);
+
+  const conf = await settled('#cmd-conf');
+  if (conf == null) fail.push('#cmd-conf (Confidence) missing — the command strip did not render');
+  else if (conf === '' || conf === '—') fail.push('#cmd-conf stuck on the "—" placeholder — the command strip did not populate the confidence label');
+  else ok(`command strip: confidence populated (#cmd-conf = "${clip(conf)}")`);
+
+  // Momentum (6th cell, operator 2026-07-18): board-wide news-flow direction. Always resolves to a
+  // signed 2-decimal value once the snapshot lands (neutral shows the bare "+0.04"; decisive states
+  // carry the ⇧/⇩ arrow). A malformed momentum (missing the value, stray token) is a real defect.
+  const mom = await settled('#cmd-mom');
+  if (mom == null) fail.push('#cmd-mom (Momentum) missing — the six-cell command strip did not render');
+  else if (mom === '' || mom === '—') fail.push('#cmd-mom stuck on the "—" placeholder — the momentum cell did not populate');
+  else if (!/^([⇧⇩] )?[+-]?\d+\.\d{2}$/.test(mom)) fail.push(`#cmd-mom rendered a malformed momentum ("${clip(mom)}") — expected "[⇧|⇩ ][+|-]N.NN"`);
+  else ok(`command strip: momentum populated (#cmd-mom = "${mom}")`);
+
+  // Primary Driver: honest-null-capable — when no dominant domain is named the value stays "—" and
+  // the sub-line ("hottest: X" / "no theater elevated") carries the fallback. Require the node to
+  // exist (a dropped/renamed cell fails) but do not demand a non-placeholder value.
+  const drvEl = await page.$('#cmd-driver');
+  if (!drvEl) fail.push('#cmd-driver (Primary Driver) missing — the command strip cell was dropped from the DOM');
+  else {
+    const drv = await page.$eval('#cmd-driver', (el) => el.textContent.trim()).catch(() => null);
+    if (drv && drv !== '—') ok(`command strip: primary driver populated (#cmd-driver = "${clip(drv)}")`);
+    else ok('command strip: primary driver honest-null (no dominant domain named; sub-line carries the fallback)');
+  }
+}
+
 // 9) RESPONSIVE / SMALL-VIEWPORT LEGIBILITY — every check above ran at ONE size (1440×900),
 //    but the dashboard ships deliberate layout rules for phones (`@media(max-width:680px)`:
 //    stack the columns, wrap the 5-stat strip to 2 cols) and short displays

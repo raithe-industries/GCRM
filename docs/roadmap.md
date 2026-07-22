@@ -1026,6 +1026,20 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   after the change. Diagnostic only; never feeds P.
 
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
+- [x] **2.11 The eyes gate SEES the command strip — the top-of-cockpit "grasp at a glance" row** —
+  **STAGED 2026-07-22.** The deploy-time eyes gate was exhaustive on the awareness footers/context
+  strip and the I&W board (2.7), yet it verified only ONE of the six `.cmd-cell` readouts
+  (`#cmd-trend`, §6). The other five — Threat Level, WWIII Risk, Primary Driver, Confidence, Momentum,
+  the FIRST row an operator reads — were never looked at, so a client refactor that crashed the strip
+  render or dropped a cell would ship a top row stuck on the `—` placeholder (a correct number rendered
+  BLIND — pillar-2 legibility failure) with the gate green. Added §8b: poll-then-assert (WS-race-safe,
+  mirrors §8) that Threat/Risk/Confidence/Momentum populate off the placeholder, with well-formed-format
+  checks on the two stable formats (Risk `[≥]N.NN%`, Momentum `[⇧|⇩ ][±]N.NN`) so a stray token also
+  fails; Primary Driver is honest-null-capable (no dominant domain → `—`, sub-line carries the fallback)
+  so its node must EXIST but the placeholder is tolerated. Server side of the contract locked IN-SANDBOX
+  by `dashboard_command_strip_cells_render_from_the_snapshot` (all six cell IDs present AND each wired to
+  a `getElementById(...)` repaint — proven to FAIL when a cell id is dropped). STAGED→DONE on the local
+  deploy that runs the browser gate. See improvement-log 2026-07-22.
 - [x] **2.10 The served honesty pages are verified COMPLETE — no page ships a raw `{{TOKEN}}`
   template placeholder** — **STAGED 2026-07-17 (later).** The dashboard and methodology pages are
   built by a hand-maintained `.replace()` chain (`generate_dashboard_html` / `ServerState::new`) that
