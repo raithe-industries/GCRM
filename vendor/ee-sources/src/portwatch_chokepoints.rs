@@ -346,7 +346,7 @@ pub fn parse_portwatch(json: &str) -> anyhow::Result<Vec<Event>> {
         // Newest first; drop same-date duplicates (paged offsets can shift between
         // requests when the upstream updates mid-pagination — a duplicated day must
         // not double-weight the recent mean).
-        c.rows.sort_by(|a, b| b.0.cmp(&a.0));
+        c.rows.sort_by_key(|r| std::cmp::Reverse(r.0));
         c.rows.dedup_by(|a, b| a.0 == b.0);
         let latest = c.rows[0].0;
         let recent_cut = latest - ChronoDuration::days(RECENT_DAYS);

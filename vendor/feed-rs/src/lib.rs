@@ -1,4 +1,9 @@
 #![doc(html_root_url = "https://docs.rs/rss/")]
+// Vendored upstream (2.3.1) — we carry it only to bump quick-xml past
+// RUSTSEC-2026-0194/0195. Its own style is not ours to relitigate: a
+// collapsible_if rewrite would widen our diff from upstream for zero
+// behaviour change and make the next re-vendor harder to reconcile.
+#![allow(clippy::collapsible_match)]
 //! This crate provides a parser and common data model over Atom, RSS and JSON Feed content.
 //!
 //! The parser will automatically detect the type of content (XML vs. JSON) and the feed format (Atom vs. RSS).
