@@ -56,7 +56,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.75)}}
 .sub{font-size:10px;color:var(--t4);font-family:monospace}
 .topbar-right{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--t4);font-family:monospace}
-.main{display:grid;grid-template-columns:176px 1fr 310px;flex:1;overflow:hidden}
+.main{display:grid;grid-template-columns:176px 1fr 310px;flex:1;overflow:hidden;min-height:0}
 /* The rail scrolls AS A WHOLE when it can't fit (short monitors), instead of
    only the explainer scrolling while the fixed gauge/metrics/foot crush it off
    screen — the bug that hid the "WHAT THIS MEANS" button on small displays. */
@@ -94,7 +94,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .lm-label{font-size:8px;color:var(--t4);margin-bottom:2px;letter-spacing:.04em}
 .lm-val{font-size:13px;font-weight:500;font-family:monospace;color:var(--t1);transition:color .4s}
 .lm-sub{font-size:9px;color:var(--t3);margin-top:1px}
-.center-panel{display:flex;flex-direction:column;overflow:hidden}
+.center-panel{display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .domains{display:grid;grid-template-columns:var(--dcols,repeat(5,1fr));gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .domain{background:var(--bg);padding:7px 9px;cursor:pointer;transition:background .2s}
 .domain:hover{background:var(--bg3)}
@@ -137,7 +137,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .iw-dot.apex{background:var(--red);box-shadow:0 0 6px var(--red)}
 .iw-label{font-size:8px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t4)}
 .iw-cell.on .iw-label{color:var(--t2)}
-.charts-area{flex:1;display:grid;grid-template-rows:3fr 2fr;overflow:hidden}
+.charts-area{flex:1;display:grid;grid-template-rows:3fr 2fr;overflow:hidden;min-height:0}
 .chart-card{padding:8px 10px;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .ct{font-size:9px;color:var(--t1);margin-bottom:4px;flex-shrink:0;font-weight:600;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
 .chart-inner{flex:1;position:relative;min-height:0}
@@ -225,12 +225,16 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .meta-pills{display:none}
 .mpill{font-size:8px;padding:1px 5px;border-radius:8px;border:0.5px solid var(--border);color:var(--t4)}
 .mpill.hi{border-color:var(--purple);color:#a0a0ff}
-.right-panel{border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)}
+.right-panel{border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--bg2);min-height:0}
 .tabs{display:flex;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .tab{flex:1;padding:6px;font-size:9px;color:var(--t4);cursor:pointer;text-align:center;border-bottom:2px solid transparent;transition:color .2s}
 .tab:hover{color:var(--t2)}
 .tab.active{color:var(--t1);border-bottom-color:var(--purple)}
-.panel-body{flex:1;overflow-y:auto;font-size:11px}
+/* min-height:0 is load-bearing: without it a flex item defaults to min-height:auto and
+   grows to its content, so a 400-row feed expands the panel instead of scrolling — the
+   "bottom of the page explodes" bug. With it the feed scrolls inside its track and the
+   cockpit fits any viewport. */
+.panel-body{flex:1;overflow-y:auto;min-height:0;font-size:11px}
 .art-item{padding:7px 10px;border-bottom:0.5px solid var(--border);cursor:pointer;transition:background .15s}
 .art-item:hover{background:var(--bg3)}
 .art-title{font-size:10px;color:var(--t1);line-height:1.35;margin-bottom:2px}
@@ -433,7 +437,9 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .chart-inner{height:190px;flex:none}
   .chart-split{height:210px;flex:none}
   .chart-split .chart-inner{height:100%}
-  .panel-body{overflow-y:visible}
+  /* Cap + scroll the feed even when the page scrolls — an uncapped 400-row list here is
+     exactly what made the bottom of the page explode on short viewports. */
+  .panel-body{max-height:60vh;overflow-y:auto}
 }
 </style>
 </head>
@@ -867,8 +873,9 @@ const spikeMarks={id:'spikeMarks',afterDatasetsDraw(chart){
   spikes.forEach((s,si)=>{
     if(s.idx<0||s.idx>=n)return;
     const px=a.left+(a.right-a.left)*(s.idx/(n-1));if(px<a.left-0.5||px>a.right+0.5)return;
-    const up=s.delta>0,col=up?'#E24B4A':'#1D9E75';
-    if(si===last){c.strokeStyle=up?'rgba(226,75,74,0.45)':'rgba(29,158,117,0.45)';c.lineWidth=1;c.beginPath();c.moveTo(px,a.top);c.lineTo(px,a.bottom);c.stroke();}
+    // Up-move arrows render GREEN, down-move RED (operator directive 2026-07-23).
+    const up=s.delta>0,col=up?'#1D9E75':'#E24B4A';
+    if(si===last){c.strokeStyle=up?'rgba(29,158,117,0.45)':'rgba(226,75,74,0.45)';c.lineWidth=1;c.beginPath();c.moveTo(px,a.top);c.lineTo(px,a.bottom);c.stroke();}
     const py=Math.min(a.bottom-7,Math.max(a.top+7,y.getPixelForValue(data[s.idx]||0))),ty=up?py-7:py+7;
     c.fillStyle=col;c.beginPath();
     if(up){c.moveTo(px,ty-4);c.lineTo(px-3.5,ty+2);c.lineTo(px+3.5,ty+2);}
@@ -1141,7 +1148,7 @@ function fmtArticleDate(isoStr,ingestedIso){
   let badge='';if(ageH>168)badge='<span style="font-size:7px;padding:1px 4px;background:#200800;color:#c05818;border-radius:2px;margin-left:4px">'+Math.floor(ageH/24)+'d OLD</span>';else if(ageH>24)badge='<span style="font-size:7px;padding:1px 4px;background:#141400;color:#7a7a20;border-radius:2px;margin-left:4px">'+Math.floor(ageH)+'h OLD</span>';
   return'<span style="display:block;font-family:monospace;color:#9090c0">'+torontoFull+'<span style="color:#505070;font-family:inherit"> · '+relAge+'</span>'+badge+'</span>'+subLine;
   }catch(err){return'<span style="color:#404060">'+esc(isoStr||'unknown date')+'</span>';}}
-function renderArticles(arts,total){const el=document.getElementById(currentTab==='video'?'panel-video':'panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(currentTab==='video')filtered=filtered.filter(a=>/-(video|live)$/.test(String(a.source||'')));if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const RENDER_CAP=400;const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=(filtered.length>RENDER_CAP?(RENDER_CAP+' of '+filtered.length):filtered.length)+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.slice(0,RENDER_CAP).map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const vidBadge=String(a.source||'').endsWith('-video')?'<span class="art-vid" style="font-size:7px;padding:1px 4px;background:#1a1030;color:#b090ff;border-radius:2px;margin-left:4px" title="video transcript — click opens YouTube">▶ VIDEO</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+vidBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+esc(a.source)+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
+function renderArticles(arts,total){const el=document.getElementById(currentTab==='video'?'panel-video':'panel-articles');if(!el)return;const now=Date.now();let filtered=arts;if(currentTab==='video')filtered=filtered.filter(a=>/-video$/.test(String(a.source||'')));if(_artAgeMin>0||_artAgeMax>0)filtered=filtered.filter(a=>{try{const age=now-new Date(a.published_at).getTime();return age>=_artAgeMin*3600000&&(_artAgeMax===0||age<_artAgeMax*3600000);}catch{return false;}});if(_artDomainFilter)filtered=filtered.filter(a=>(a.domain_tags||[]).includes(_artDomainFilter));if(_artSrcFilter)filtered=filtered.filter(a=>a.source===_artSrcFilter);const RENDER_CAP=400;const countEl=document.getElementById('art-count');if(countEl)countEl.textContent=(filtered.length>RENDER_CAP?(RENDER_CAP+' of '+filtered.length):filtered.length)+' shown / '+total+' total';const scrollTop=el.scrollTop;el.innerHTML=filtered.slice(0,RENDER_CAP).map(a=>{const isMover=lastMovers.has(a.id)||lastMovers.has(a.url);const tierCls=isMover?'art-mover':'art-tier'+a.tier;const tags=(a.domain_tags||[]).map(dt=>{const tag=DTAGS[dt]||dt.slice(0,3).toUpperCase();const col=TAG_COLORS[tag]||'#6060a0';return'<span class="art-tag" data-dt="'+dt+'" style="background:'+col+'22;color:'+col+';cursor:pointer" onclick="filterByDomain(this.dataset.dt)">'+tag+'</span>';}).join('');const moverBadge=isMover?'<span style="font-size:7px;padding:1px 4px;background:#2a0000;color:#ff6060;border-radius:2px;margin-left:4px">↑MODEL</span>':'';const vidBadge=String(a.source||'').endsWith('-video')?'<span class="art-vid" style="font-size:7px;padding:1px 4px;background:#1a1030;color:#b090ff;border-radius:2px;margin-left:4px" title="video transcript — click opens YouTube">▶ VIDEO</span>':'';const title=a.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');const srcColor=a.tier===1?'#1D9E75':a.tier===2?'#7070a0':'#EF9F27';return'<div class="art-item '+tierCls+'" data-url="'+encodeURIComponent(a.url)+'" onclick="window.open(decodeURIComponent(this.dataset.url),\'_blank\')"><div class="art-title">'+title+moverBadge+vidBadge+'</div><div class="art-meta" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="color:'+srcColor+'">'+esc(a.source)+'</span><span>'+fmtArticleDate(a.published_at,a.fetched_at||a.ingested_at)+'</span></div>'+(tags?'<div class="art-tags">'+tags+'</div>':'')+' </div>';}).join('');if(scrollTop>0)el.scrollTop=scrollTop;updateTicker(filtered.slice(0,40));}
 // Keep the visible filter label + domain-card highlight in sync with the active
 // domain filter so the audit path is discoverable (a domain card click filters
 // the feed to the articles feeding that score).
@@ -1330,6 +1337,25 @@ const _m=Number.isFinite(top.magnitude)?'M'+top.magnitude.toFixed(1):'M?';const 
 // Which conditions are apex is decided by the engine and carried per-indicator as
 // `i.apex` (indicators.rs::APEX_INDICATORS) — read it off the data so the red lights
 // can't drift from the engine, rather than re-hardcoding the set here.
+// I&W dot colour — a warning gradient from safe to critical (operator 2026-07-23):
+// level 0 (clear) is GREEN, not grey; it rises through yellow/orange as an indicator
+// nears its trip threshold, to red when tripped. The two apex (great-power-war) lights
+// keep the strong red glow. Math indicators derive the near-miss level from the value in
+// their `detail`; the binary latent lights (velocity/brink/seismic) just go clear→tripped.
+const IW_TRIP={nuclear_signaling:0.45,energy_chokepoint:0.45,diplomatic_breakdown:0.45,cyber_infrastructure:0.45,gp_entanglement:0.60,multi_theater:1.8,cross_domain:3};
+function iwLevel(i){
+  if(i.tripped)return i.apex?1:0.82;
+  const trip=IW_TRIP[i.id];if(!trip)return 0;                       // binary latent → clear green
+  let v=0;
+  if(i.id==='cross_domain'){const c=(i.detail||'').match(/(\d+)\s*\/\s*3/);v=c?+c[1]:0;}
+  else{const m=(i.detail||'').match(/(\d+(?:\.\d+)?)(?!.*\d)/);v=m?+m[1]:0;}   // last number in detail
+  return Math.max(0,Math.min(0.75,(v/trip)*0.78));                  // approaching a trip → up to orange
+}
+function iwDot(i){
+  if(i.tripped&&i.apex)return{bg:'var(--red)',glow:'0 0 6px var(--red)'};
+  const lv=iwLevel(i),hue=Math.round(142*(1-lv)),bg='hsl('+hue+',70%,42%)';
+  return{bg:bg,glow:i.tripped?'0 0 5px '+bg:'none'};
+}
 function renderIndicators(inds){
   const board=document.getElementById('iw-board');if(!board)return;
   const summ=document.getElementById('iw-summary');
@@ -1373,12 +1399,11 @@ function renderIndicators(inds){
   }
   if(!inds.length){board.innerHTML='<div class="iw-cell"><span class="iw-dot"></span><span class="iw-label">awaiting indicator data…</span></div>';return;}
   const cells=inds.map(i=>{
-    const apex=i.tripped&&i.apex;
-    const dotCls=i.tripped?(apex?'iw-dot apex':'iw-dot trip'):'iw-dot';
+    const {bg,glow}=iwDot(i);
     const where=i.theater?(' — '+i.theater):'';
     const title=(i.label+(i.tripped?' · TRIPPED':' · clear')+where+'\n'+(i.detail||'')).replace(/"/g,'&quot;');
     return '<div class="iw-cell'+(i.tripped?' on':'')+'" title="'+title+'">'
-      +'<span class="'+dotCls+'"></span>'
+      +'<span class="iw-dot" style="background:'+bg+';box-shadow:'+glow+'"></span>'
       +'<span class="iw-label">'+i.label+'</span>'
       +'</div>';
   }).join('');

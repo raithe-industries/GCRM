@@ -384,8 +384,12 @@ pub fn evaluate(snap: &RiskSnapshot) -> Vec<Indicator> {
         }
     };
 
+    // Order groups the three structurally-latent lights — active_escalation (velocity),
+    // nuclear_brink (apex), seismic_test (physical) — LAST, so on the 3-column board they
+    // land together in the final row instead of scattered among the always-live ones
+    // (operator directive 2026-07-23).
     vec![ind_gp_kinetic, ind_nuclear, ind_energy, ind_diplomatic, ind_cyber, ind_concurrency,
-         ind_escalating, ind_gp_entangle, ind_alliance, ind_cross, ind_brink, ind_seismic]
+         ind_gp_entangle, ind_alliance, ind_cross, ind_escalating, ind_brink, ind_seismic]
 }
 
 #[cfg(test)]
