@@ -48,9 +48,14 @@ pub const WHISPER_THREADS: u32 = 4;
 /// Budget for the whole capture+transcribe of one stream.
 pub const STREAM_BUDGET_SECS: u64 = 240;
 
-/// Dormancy gate: explicit operator opt-in.
+/// Permanently disabled (operator directive 2026-07-23): the 24/7 whisper-livestream
+/// tier produced misleading "[LIVE] {label}:" rows whose transcription was mostly
+/// nonsense ("Pufferfish don't generally attack humans", "violated the MOU"). Robert
+/// judged the live-stream axis not worth its noise — recent uploaded videos stay, live
+/// streams go. Hard-off in code (not just the env flag) so it can't be re-enabled by a
+/// stray `GCRM_LIVESTREAM_SOURCES=1`; flip this back only on his explicit say-so.
 pub fn enabled() -> bool {
-    std::env::var("GCRM_LIVESTREAM_SOURCES").map(|v| v == "1").unwrap_or(false)
+    false
 }
 
 /// The whisper CLI to run: `GCRM_WHISPER_BIN` → the gcrm-video venv → PATH.
@@ -166,11 +171,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dormant_without_explicit_opt_in() {
-        if std::env::var("GCRM_LIVESTREAM_SOURCES").map(|v| v == "1").unwrap_or(false) {
-            return; // operator-enabled environment
-        }
-        assert!(!enabled(), "live-stream sources must ship dormant");
+    fn permanently_disabled_regardless_of_env() {
+        // Operator directive 2026-07-23: the whisper-livestream tier is hard-off in code,
+        // so even a stray GCRM_LIVESTREAM_SOURCES=1 cannot resurrect the misleading [LIVE]
+        // rows. Set the flag in-process and confirm enabled() stays false.
+        std::env::set_var("GCRM_LIVESTREAM_SOURCES", "1");
+        assert!(!enabled(), "the live-stream tier must stay off even with the env flag set");
+        std::env::remove_var("GCRM_LIVESTREAM_SOURCES");
+        assert!(!enabled(), "the live-stream tier must be off by default");
     }
 
     #[test]

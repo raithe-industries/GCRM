@@ -1723,8 +1723,12 @@ pub async fn load_articles(max_size: usize) -> ArticleStore {
                 for line in text.lines() {
                     if let Ok(a) = serde_json::from_str::<StoredArticle>(line) {
                         // Live-flagged watchlist rows are excluded at ingest (2026-07-22);
-                        // drop archived ones too so the Video tab stops replaying them.
-                        if a.source.ends_with("-video") && crate::video::is_live_title(&a.title) { continue; }
+                        // drop archived ones too so the Video tab stops replaying them. The
+                        // whole whisper-livestream tier (`-live`) is retired 2026-07-23 —
+                        // drop every archived `-live` row so its misleading [LIVE] entries
+                        // vanish on restart rather than reloading for years.
+                        if (a.source.ends_with("-video") && crate::video::is_live_title(&a.title))
+                            || a.source.ends_with("-live") { continue; }
                         if !latest.contains_key(&a.id) { order.push(a.id.clone()); }
                         latest.insert(a.id.clone(), a);
                     }
@@ -2202,9 +2206,10 @@ impl Aggregator {
         let now = Utc::now();
         events.retain(|e| age_hours(&e.published_at, &now) < self.max_age_hours);
         // Retroactive scrub of live-flagged watchlist rows (excluded at ingest
-        // 2026-07-22): the 4-year window otherwise reloads them for years. Scoped
-        // to `-video` so the whisper tier's "[LIVE]" events (source `-live`) stay.
-        events.retain(|e| !(e.source.ends_with("-video") && crate::video::is_live_title(&e.title)));
+        // 2026-07-22) AND the retired whisper-livestream tier (`-live`, 2026-07-23):
+        // the 4-year window otherwise reloads both for years.
+        events.retain(|e| !((e.source.ends_with("-video") && crate::video::is_live_title(&e.title))
+            || e.source.ends_with("-live")));
         events.sort_by_key(|b| std::cmp::Reverse(b.published_at));
         events.truncate(MAX_WINDOW_EVENTS);
         self.corr_index.rebuild_from_window(&events);
@@ -4274,12 +4279,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preload_drops_live_flagged_video_events_but_keeps_the_whisper_tier() {
-        // Live-flagged watchlist rows are excluded at ingest (video_loop), but the
-        // 4-year window would keep RELOADING the ones already archived — so the boot
-        // path scrubs them too. The scope guard is what matters: the whisper tier's
-        // own "[LIVE]" prefix trips the same predicate, and its model participation
-        // is deliberate, so a source-blind scrub would silently kill it.
+    async fn preload_drops_live_flagged_video_and_the_retired_whisper_tier() {
+        // Live-flagged watchlist rows are excluded at ingest (video_loop), and the
+        // whisper-livestream tier (`-live`) is retired entirely (2026-07-23) — the boot
+        // path scrubs both so the 4-year window doesn't reload them. Real wire text and
+        // ordinary (non-live) video rows must survive.
         let (_etx, erx) = mpsc::channel(8);
         let (stx, _srx) = mpsc::channel(8);
         let mut agg = Aggregator::new(
@@ -4292,8 +4296,8 @@ mod tests {
             make_event_for_corroboration("Russia launches missile strike on Kyiv", "reuters", SourceTier::Tier1, 3),
         ]);
         let kept: Vec<&str> = agg.event_window.iter().map(|e| e.source.as_str()).collect();
-        assert_eq!(kept.len(), 3, "both live-flagged -video rows must be scrubbed: {kept:?}");
-        assert!(kept.contains(&"aljazeera-live"), "whisper tier must survive the scrub");
+        assert_eq!(kept.len(), 2, "both -video LIVE rows and the -live whisper row must be scrubbed: {kept:?}");
+        assert!(!kept.contains(&"aljazeera-live"), "the retired whisper tier (-live) must be scrubbed");
         assert!(kept.contains(&"reuters") && kept.contains(&"wion-video"),
             "non-live wire and video rows must survive: {kept:?}");
         assert!(!agg.event_window.iter().any(|e| e.title.contains("LIVE:")),
