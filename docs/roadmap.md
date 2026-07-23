@@ -1025,6 +1025,25 @@ concentrating. **Honesty > Legibility > Awareness**, then the enablers.
   where `systemic_momentum == 0` but `escalation_breadth.multi_front == true` today — assert they agree
   after the change. Diagnostic only; never feeds P.
 
+- [x] **[candidate] 1.ag `chokepoint_pair_score` matched coercion tokens by BARE SUBSTRING — the one
+  keyword path in processor.rs that never got the word-boundary honesty fix, so ordinary shipping-desk
+  prose fabricated "chokepoint weaponized" (→ `economic_warfare` → P AND the `energy_chokepoint` I&W
+  light)** — **DONE 2026-07-23.** The pair rule (`processor.rs:~1225`) tested every short coercion token
+  with `tl.contains(...)` while the sibling `score_domains` right below it (and 1.7/1.8/1.29/1.30 on the
+  actor/domain sides) already word-boundary-match. So `"determined"`⊃`"mined"`, `"examining"`⊃`"mining"`,
+  `"coffee"`⊃`"fee"`, `"atoll"`⊃`"toll"`, `"shuttle"`⊃`"shut"`, `"return back"`⊃`"turn back"` each paired
+  with a real strait name (`"red sea shipping"`, `"strait of hormuz"`, `"taiwan strait"`, …) and falsely
+  returned `Some(0.80)` — a served number biased UP and a board indicator flipped from benign trade
+  journalism, the exact false-alarm direction the file's boundary work exists to prevent. FIX: coercion
+  tokens now match at a WORD START (`starts_word`, keeps plural/tense forms like `tolls`/`seizes`/
+  `shutdown`), except the two whose PREFIX is itself an ordinary word (`shut`⊂shuttle/shutter,
+  `fee`⊂feel/feet/feed) which match whole-word with their wanted forms enumerated. Locked by
+  `chokepoint_coercion_tokens_match_words_not_substrings` (5 mid-token false cases → `None`; 5 genuine
+  coercion cases incl. plural/tense → `Some(0.80)`); fails-without-change proven (revert `hit` to
+  `tl.contains` → `"determined"` false case panics at processor.rs:1735). Never retuned the 0.80 weight or
+  any anchor; the four calibration bands are untouched (their titles carry no chokepoint prose). See
+  improvement-log 2026-07-23.
+
 ## 2. Legibility — dashboard / UX  (grasp the state at a glance)
 - [x] **2.11 The eyes gate SEES the command strip — the top-of-cockpit "grasp at a glance" row** —
   **STAGED 2026-07-22.** The deploy-time eyes gate was exhaustive on the awareness footers/context

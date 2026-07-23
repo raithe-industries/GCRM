@@ -1235,16 +1235,33 @@ impl NlpProcessor {
         // false fire the pruned generics caused).
         const TOLLED: &[&str] = &["suez canal", "panama canal", "bosphorus"];
         const HARD_COERCION: &[&str] = &[
-            "closure", "closing", "closed", "shut", "blockade", "mining", "mined",
-            "naval mine", "seize", "seized", "seizure", "weapon", "leverage",
-            "u-turn", "turn back", "turning back", "harass", "attack", "missile",
-            "drone", "deny passage", "denied passage", "suspend transit",
-            "reroute", "rerouting", "avoid",
+            "closure", "closing", "closed", "shut", "shuts", "shutdown", "shutting",
+            "blockade", "mining", "mined", "naval mine", "seize", "seized", "seizure",
+            "weapon", "leverage", "u-turn", "turn back", "turning back", "harass",
+            "attack", "missile", "drone", "deny passage", "denied passage",
+            "suspend transit", "reroute", "rerouting", "avoid",
         ];
-        const FEE_COERCION: &[&str] = &["toll", "fee"];
-        let hard = HARD_COERCION.iter().any(|c| tl.contains(c));
+        const FEE_COERCION: &[&str] = &["toll", "fee", "fees"];
+        // Coercion tokens are matched at a WORD START — the same substring→boundary honesty
+        // discipline the sibling `score_domains` right below already enforces (and 1.7/1.8/
+        // 1.29/1.30 applied to actors/domains). Bare `tl.contains(...)` on tokens this short
+        // fabricated "chokepoint weaponized" from ordinary shipping-desk prose: "determined"
+        // ⊃"mined", "examining"⊃"mining", "atoll"⊃"toll", "return back"⊃"turn back". Word-start
+        // keeps the wanted plural/tense forms (`tolls`, `seizes`, `shutdown`) while killing the
+        // mid-token hits. EXCEPTION — tokens whose very PREFIX is itself an ordinary word
+        // ("shut"⊂"shuttle/shutter", "fee"⊂"feel/feet/feed") must match WHOLE-word, so their
+        // wanted forms are enumerated above ("shuts"/"shutdown"/"shutting", "fees").
+        const WHOLE_WORD_COERCION: &[&str] = &["shut", "fee"];
+        let hit = |token: &str| -> bool {
+            if WHOLE_WORD_COERCION.contains(&token) {
+                contains_word(tl, token)
+            } else {
+                starts_word(tl, token)
+            }
+        };
+        let hard = HARD_COERCION.iter().any(|c| hit(c));
         if STRAITS.iter().any(|c| tl.contains(c)) {
-            return (hard || FEE_COERCION.iter().any(|c| tl.contains(c))).then_some(0.80);
+            return (hard || FEE_COERCION.iter().any(|c| hit(c))).then_some(0.80);
         }
         if TOLLED.iter().any(|c| tl.contains(c)) {
             return hard.then_some(0.80);
@@ -1702,6 +1719,40 @@ mod tests {
             let benign = proc.score_domains(benign_tl);
             assert!(benign.get("economic_warfare").copied().unwrap_or(0.0) < 0.45,
                 "trade journalism must not read as weaponization: {benign_tl:?} -> {benign:?}");
+        }
+    }
+
+    #[test]
+    fn chokepoint_coercion_tokens_match_words_not_substrings() {
+        // The pair rule feeds `economic_warfare` (→ theater heat → P) AND lights the
+        // `energy_chokepoint` I&W board, so a coercion token hiding MID-token fabricates
+        // "chokepoint weaponized" from ordinary shipping-desk prose. It used bare
+        // `tl.contains(...)` on very short tokens while the sibling `score_domains` right
+        // below already word-boundary-matches — this locks the gap closed. Each FALSE case
+        // pairs a REAL strait/tolled name with an ORDINARY word that merely CONTAINS a
+        // coercion token; none is coercion, so the pair rule must stay silent.
+        for false_tl in [
+            "regulators have not determined whether red sea shipping costs will rise", // determined ⊃ mined
+            "coffee and grain shipments through the strait of hormuz slowed",           // coffee ⊃ fee
+            "ferry shuttle service resumes across the taiwan strait",                   // shuttle ⊃ shut
+            "cargo vessels pass the atoll near the strait of malacca",                  // atoll ⊃ toll
+            "examining traffic patterns in the kerch strait this quarter",              // examining ⊃ mining
+        ] {
+            assert!(NlpProcessor::chokepoint_pair_score(false_tl).is_none(),
+                "an ordinary word must not trip the chokepoint pair rule mid-token: {false_tl:?} -> {:?}",
+                NlpProcessor::chokepoint_pair_score(false_tl));
+        }
+        // Genuine coercion — the token as a real word, incl. plural/tense forms — must STILL
+        // fire at 0.80 (guards against over-fixing the boundary check into a recall loss).
+        for true_tl in [
+            "iran threatens to shut the strait of hormuz",             // shut (whole word)
+            "iran imposes a transit fee on the hormuz strait",          // fee (whole word)
+            "tolls demanded from tankers crossing the taiwan strait",   // tolls (word start)
+            "mines laid as mining begins in the strait of malacca",     // mining (word start)
+            "ships reroute to avoid the bab-el-mandeb",                 // reroute / avoid (word start)
+        ] {
+            assert_eq!(NlpProcessor::chokepoint_pair_score(true_tl), Some(0.80),
+                "genuine chokepoint coercion must still fire: {true_tl:?}");
         }
     }
 
