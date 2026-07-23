@@ -1,11 +1,33 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+# Dependabot — https://docs.github.com/code-security/dependabot
+# GCRM is a Cargo workspace (the `gcrm` binary + vendored crates under vendor/).
+# Only the ROOT manifest's registry dependencies are managed here; the vendored
+# path-crates (feed-rs, ee-*) are deliberately patched in-tree and must not be
+# auto-bumped.
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "cargo"
+    directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    # Fold routine minor/patch bumps into one PR instead of a swarm.
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Standing decision: the reqwest 0.11 / axum 0.7 / tokio-tungstenite 0.21
+      # stack stays until a deliberate major upgrade. The transitive advisories
+      # that ride on it (rustls-pemfile unmaintained, rand 0.8 unsound) are
+      # reachability-assessed as non-exploitable as built, so major-bump PRs here
+      # would be pure churn. Security alerts still fire; minor/patch still flow.
+      - dependency-name: "reqwest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "axum"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tokio-tungstenite"
+        update-types: ["version-update:semver-major"]
