@@ -1471,12 +1471,12 @@ deferred, and the green-proof. Append; never rewrite history.
 - **2026-07-05 (local watch, morning)** — **VIDEO ROSTER 7→15** (operator-directed): Reuters, AP,
   France 24 EN, CNA, TRT World, WION (wire/state-broadcast; weekend/overnight coverage no longer
   clusters on one 24/7 channel) + Democracy Now! and Zeteo (operator-nominated independent
-  analysis/interview outlets, Tier2). **LIVE-STREAM TRANSCRIPTION lands DORMANT**
-  (`src/livestream.rs` + `Ingestor::livestream_loop`, `GCRM_LIVESTREAM_SOURCES=1` to enable):
-  Al Jazeera EN + DW 24/7 streams → yt-dlp live-URL resolve → ffmpeg 120s window → CPU
-  faster-whisper (int8 base, nice'd, GPU untouched) → relevance gate → ONE rolling article per
-  stream (update-in-place). Proven end-to-end 2026-07-05 (60s of live AJ transcribed accurately;
-  ~17s CPU per minute of audio). ANALYST-CHANNEL SHORTLIST (pending operator sign-off, weekly
+  analysis/interview outlets, Tier2). **LIVE-STREAM TRANSCRIPTION landed DORMANT then was
+  RETIRED 2026-07-23** (operator call: its "[LIVE] {label}:" rows transcribed 24/7 streams into
+  mostly-nonsense text — recent uploaded videos stay, live streams go). `livestream::enabled()`
+  is now hard-false in code; the tier's scaffolding (`src/livestream.rs` + `Ingestor::livestream_loop`,
+  Al Jazeera EN + DW → yt-dlp → ffmpeg → CPU faster-whisper) remains but is off and the boot
+  scrubs drop every archived `-live` row. ANALYST-CHANNEL SHORTLIST (pending operator sign-off, weekly
   cadence Tier2/3 candidates): Perun (defense economics), CaspianReport (geopolitics), Ward
   Carroll (US naval), Anders Puck Nielsen (maritime/Russia) — each an editorial-trust decision.
   DEFERRED: Telegram/X war-channel video — highest raw signal, but needs a source-trust and
