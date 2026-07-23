@@ -68,7 +68,7 @@ try {
 // never hangs (the per-element timeout is the ceiling); a genuinely missing panel still
 // fails, precisely, in the assertions below.
 await Promise.all(
-  ['#timeline-chart', '#domain-chart', '#theater-ladder', '#gauge-canvas'].map((sel) =>
+  ['#timeline-chart', '#theater-ladder', '#gauge-canvas'].map((sel) =>
     page.waitForSelector(sel, { state: 'visible', timeout: 12000 }).catch(() => {})),
 );
 await page.waitForTimeout(1200); // brief settle for canvas draw after the elements attach
@@ -157,11 +157,11 @@ if (!tl) fail.push('#timeline-chart canvas missing or not visible');
 else if (tl.height < MIN_GRAPH_H) fail.push(`#timeline-chart squished: ${Math.round(tl.height)}px tall (legibility floor ${MIN_GRAPH_H}px)`);
 else ok(`timeline graph rendered ${Math.round(tl.width)}×${Math.round(tl.height)}px`);
 
-// 3) Secondary domain-breakdown chart: present and not collapsed.
-const dm = await box('#domain-chart');
-if (!dm) fail.push('#domain-chart canvas missing or not visible');
-else if (dm.height < 24) fail.push(`#domain-chart collapsed: ${Math.round(dm.height)}px tall`);
-else ok(`domain chart rendered ${Math.round(dm.width)}×${Math.round(dm.height)}px`);
+// 3) Domain scores now live in the domain cards (the bottom bar chart was removed
+//    2026-07-23 as redundant); verify the domain grid is present instead.
+const dg = await box('#domain-grid');
+if (!dg) fail.push('#domain-grid missing or not visible');
+else ok(`domain grid rendered ${Math.round(dg.width)}×${Math.round(dg.height)}px`);
 
 // 4) Core situational-awareness panels exist and occupy real space (no layout
 //    opinion — just "is it there and visible").

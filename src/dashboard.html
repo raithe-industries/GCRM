@@ -94,7 +94,10 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .lm-label{font-size:8px;color:var(--t4);margin-bottom:2px;letter-spacing:.04em}
 .lm-val{font-size:13px;font-weight:500;font-family:monospace;color:var(--t1);transition:color .4s}
 .lm-sub{font-size:9px;color:var(--t3);margin-top:1px}
-.center-panel{display:flex;flex-direction:column;overflow:hidden;min-height:0}
+/* overflow-y:auto (not hidden): when a short/zoomed viewport can't fit the strips + charts,
+   the CENTER column scrolls in its own track — the app stays viewport-locked so the feed
+   column always reaches the bottom, instead of the whole page scrolling. */
+.center-panel{display:flex;flex-direction:column;overflow-y:auto;min-height:0}
 .domains{display:grid;grid-template-columns:var(--dcols,repeat(5,1fr));gap:1px;background:var(--border);flex-shrink:0;border-bottom:0.5px solid var(--border)}
 .domain{background:var(--bg);padding:7px 9px;cursor:pointer;transition:background .2s}
 .domain:hover{background:var(--bg3)}
@@ -137,7 +140,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .iw-dot.apex{background:var(--red);box-shadow:0 0 6px var(--red)}
 .iw-label{font-size:8px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t4)}
 .iw-cell.on .iw-label{color:var(--t2)}
-.charts-area{flex:1;display:grid;grid-template-rows:3fr 2fr;overflow:hidden;min-height:0}
+.charts-area{flex:1;display:grid;grid-template-rows:1fr;overflow:hidden;min-height:280px}
 .chart-card{padding:8px 10px;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .ct{font-size:9px;color:var(--t1);margin-bottom:4px;flex-shrink:0;font-weight:600;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
 .chart-inner{flex:1;position:relative;min-height:0}
@@ -418,28 +421,16 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .panel-body{flex:none;max-height:80vh;overflow-y:auto;font-size:13px}
   .alert-bar,.art-title,.src-name{font-size:13px}
 }
-/* ── Short viewports (≤640px tall — landscape phones, split-screen, projectors) ──
-   The cockpit is a fixed-height (100vh, body overflow:hidden) grid. The LEFT rail
-   already scrolls in its own track (min-height:0 + overflow-y:auto), but the CENTER
-   column (domains → ladder → I&W board → charts) is overflow:hidden with the charts
-   on flex:1 — so when the fixed strips eat the height the charts squish toward zero
-   and the bottom P(WWIII)/domain card clips below the fold with NO way to scroll to
-   it. This is the vertical twin of the ≤680px fix: let the whole PAGE scroll and pin
-   the charts to explicit heights (which also kills the Chart.js no-bounded-height
-   resize→render loop, the same hazard the phone rule guards). Width is untouched, so
-   a wide-but-short display keeps its 3 columns. Scoped to short heights only, so the
-   normal-height render is byte-for-byte unchanged. */
+/* ── Short viewports (≤640px tall — split-screen, projectors, zoomed desktops) ──
+   Stay VIEWPORT-LOCKED (body stays 100vh/overflow:hidden from the base) so the whole
+   page never scrolls and the feed always fills its own column to the bottom. The CENTER
+   column scrolls internally instead (`.center-panel{overflow-y:auto}`), and the charts
+   keep a bounded min-height so they neither squish to zero nor trip the Chart.js
+   resize→render loop the old page-scroll rule guarded against. This replaced the earlier
+   page-scroll approach, which left the feed as a capped island that didn't reach the
+   bottom (operator 2026-07-23). */
 @media(max-height:640px){
-  body{height:auto;min-height:100dvh;overflow-y:auto}
-  .main{overflow:visible}
-  .left-panel,.center-panel,.right-panel{overflow:visible}
-  .charts-area{overflow:visible}
-  .chart-inner{height:190px;flex:none}
-  .chart-split{height:210px;flex:none}
-  .chart-split .chart-inner{height:100%}
-  /* Cap + scroll the feed even when the page scrolls — an uncapped 400-row list here is
-     exactly what made the bottom of the page explode on short viewports. */
-  .panel-body{max-height:60vh;overflow-y:auto}
+  .chart-inner{min-height:140px}
 }
 </style>
 </head>
@@ -486,8 +477,14 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            band is the model's own recent spread, floored at a deliberate humility minimum and
            widened when data is thin (server-computed, EpochStore::uncertainty_6h). A point
            estimate of an unprecedented event would claim a precision the model does not have. -->
-      <div class="gauge-interval" id="gauge-interval" style="font-size:10px;color:var(--t3);text-align:center;margin-top:1px;line-height:1.2;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
-      <div class="gauge-band-cov" id="gauge-band-cov" style="font-size:9px;color:var(--t3);text-align:center;line-height:1.2;font-family:monospace" title="Self-validation of the band above: over the last 48h of archived reads, the share that landed inside the model's own band published an hour earlier (server field band_coverage). A well-calibrated 80% band holds ~80%; more = conservative (the humility floor at work), less = overconfident. Diagnostic only — it never feeds the number."></div>
+      <!-- The published band + its self-validation, condensed behind a discreet toggle
+           (operator 2026-07-23) — the honest range is one click away, not cluttering the
+           hero. Same collapse idiom as the model-internals bar below. -->
+      <div id="gauge-band-toggle" onclick="toggleGaugeBand()" style="font-size:8px;color:var(--t4);text-align:center;margin-top:2px;cursor:pointer;letter-spacing:.04em;user-select:none" title="Show the published band (a range, not a point) and its self-validation">range &amp; band ▾</div>
+      <div id="gauge-band-wrap" style="display:none">
+        <div class="gauge-interval" id="gauge-interval" style="font-size:10px;color:var(--t3);text-align:center;margin-top:1px;line-height:1.2;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
+        <div class="gauge-band-cov" id="gauge-band-cov" style="font-size:9px;color:var(--t3);text-align:center;line-height:1.2;font-family:monospace" title="Self-validation of the band above: over the last 48h of archived reads, the share that landed inside the model's own band published an hour earlier (server field band_coverage). A well-calibrated 80% band holds ~80%; more = conservative (the humility floor at work), less = overconfident. Diagnostic only — it never feeds the number."></div>
+      </div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
       <!-- Historical positioning: where the live read sits on the model's OWN calibration
            ladder (the same Ukraine-2022 / Cuba-1962 analog scores the For-scale info line
@@ -605,10 +602,6 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
             </div>
           </div>
         </div>
-      </div>
-      <div class="chart-card">
-        <div class="ct">Domain scores — current snapshot (with Δ trend)</div>
-        <div class="chart-inner"><canvas id="domain-chart"></canvas></div>
       </div>
     </div>
     <!-- Model internals — the dense math/context/diagnostics text is COLLAPSED behind
@@ -768,6 +761,9 @@ refreshSrcCount();
 // bottom text noise); the choice persists per browser. Content stays in the DOM and
 // keeps updating while hidden, so expanding is instant and eyes/tests still read it.
 function toggleInternals(){const b=document.getElementById('model-internals'),c=document.getElementById('mi-chev');if(!b)return;const open=!b.classList.toggle('mi-collapsed');if(c)c.textContent=open?'▾':'▸';try{localStorage.setItem('gcrm-internals-open',open?'1':'0');}catch(e){}}
+// Gauge band + range: hidden by default, revealed by the discreet toggle (operator 2026-07-23).
+function toggleGaugeBand(){const w=document.getElementById('gauge-band-wrap'),t=document.getElementById('gauge-band-toggle');if(!w)return;const open=w.style.display==='none';w.style.display=open?'block':'none';if(t)t.textContent=open?'range & band ▴':'range & band ▾';try{localStorage.setItem('gcrm-band-open',open?'1':'0');}catch(e){}}
+(function(){try{if(localStorage.getItem('gcrm-band-open')==='1'){const w=document.getElementById('gauge-band-wrap');if(w)w.style.display='block';const t=document.getElementById('gauge-band-toggle');if(t)t.textContent='range & band ▴';}}catch(e){}})();
 (function(){try{if(localStorage.getItem('gcrm-internals-open')==='1'){const b=document.getElementById('model-internals');if(b)b.classList.remove('mi-collapsed');const c=document.getElementById('mi-chev');if(c)c.textContent='▾';}}catch(e){}})();
 // Brand-coin motion watchdog: on some setups the 3D coin renders STATIC even with the
 // reduce-motion exemption (e.g. graphics acceleration off in the browser — the
@@ -873,15 +869,15 @@ const spikeMarks={id:'spikeMarks',afterDatasetsDraw(chart){
   spikes.forEach((s,si)=>{
     if(s.idx<0||s.idx>=n)return;
     const px=a.left+(a.right-a.left)*(s.idx/(n-1));if(px<a.left-0.5||px>a.right+0.5)return;
-    // Up-move arrows render GREEN, down-move RED (operator directive 2026-07-23).
-    const up=s.delta>0,col=up?'#1D9E75':'#E24B4A';
-    if(si===last){c.strokeStyle=up?'rgba(29,158,117,0.45)':'rgba(226,75,74,0.45)';c.lineWidth=1;c.beginPath();c.moveTo(px,a.top);c.lineTo(px,a.bottom);c.stroke();}
-    const py=Math.min(a.bottom-7,Math.max(a.top+7,y.getPixelForValue(data[s.idx]||0))),ty=up?py-7:py+7;
-    c.fillStyle=col;c.beginPath();
-    if(up){c.moveTo(px,ty-4);c.lineTo(px-3.5,ty+2);c.lineTo(px+3.5,ty+2);}
-    else  {c.moveTo(px,ty+4);c.lineTo(px-3.5,ty-2);c.lineTo(px+3.5,ty-2);}
-    c.closePath();c.fill();
-    if(si===last){c.fillStyle='#c8c8e8';c.font='600 8px system-ui';const rt=px>a.right-44;c.textAlign=rt?'right':'left';c.fillText((up?'+':'')+(s.delta*100).toFixed(3)+'%',rt?px-5:px+5,up?ty-3:ty+9);}
+    // Neutral WHITE point-circle marks each knock (operator directive 2026-07-23): a
+    // coloured up/down triangle read as good/bad, which is misleading on a war-risk chart
+    // — the marker just says "something moved here", the card on hover says what & which way.
+    const up=s.delta>0;
+    if(si===last){c.strokeStyle='rgba(232,236,245,0.40)';c.lineWidth=1;c.beginPath();c.moveTo(px,a.top);c.lineTo(px,a.bottom);c.stroke();}
+    const py=Math.min(a.bottom-6,Math.max(a.top+6,y.getPixelForValue(data[s.idx]||0)));
+    c.beginPath();c.arc(px,py,3,0,Math.PI*2);
+    c.fillStyle='#eef2f8';c.fill();c.lineWidth=1;c.strokeStyle='rgba(10,14,20,0.9)';c.stroke();
+    if(si===last){c.fillStyle='#c8c8e8';c.font='600 8px system-ui';const rt=px>a.right-44;c.textAlign=rt?'right':'left';c.fillText((up?'+':'')+(s.delta*100).toFixed(3)+'%',rt?px-6:px+6,py-5);}
   });
   c.restore();
 }};
@@ -1022,11 +1018,9 @@ plugins:{legend:{display:false},tooltip:{enabled:false,external:tlCardHandler,di
       return out;
     }}}},
 scales:{x:{display:false},y:{min:0,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>(v*100).toFixed(2)+'%'}}},animation:{duration:200,easing:'easeOutQuart'}},plugins:[calibBand,spikeMarks,alertBands]});
-const dmChart=new Chart(document.getElementById('domain-chart'),{type:'bar',data:{labels:DSHORT,datasets:[{label:'Current',data:new Array(5).fill(0),backgroundColor:new Array(5).fill('#1D9E75'),borderRadius:2,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,
-  // Clicking a bar audits that domain — same filter as clicking its card above.
-  onClick:(e,els)=>{if(els&&els.length)filterByDomain(DID[els[0].index]);},
-  onHover:(e,els)=>{const c=e?.native?.target;if(c)c.style.cursor=(els&&els.length)?'pointer':'default';},
-  plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:TICK,font:{size:9}}},y:{min:0,max:1,grid:{color:GRID},ticks:{color:TICK,font:{size:9},callback:v=>Math.round(v*100)+'%'}}},animation:{duration:300,easing:'easeOutQuart'}},plugins:[elevLine]});
+// (The bottom "Domain scores" bar chart was removed 2026-07-23 — redundant with the
+// domain cards above, which already show each score + Δ and click to filter. Removing
+// it frees the vertical space that lets the timeline/map fill any monitor.)
 let liveData=null,prevDomainScores={},sessionPeak=0,sessionLow=Infinity,history6h=[];
 function dc(s){return s>=.7?'#E24B4A':s>=.35?'#EF9F27':s>=.2?'#7F77DD':'#1D9E75'}
 function pc(p){return p>=ALERT_CRIT?'var(--red)':p>=ALERT_ELEV?'var(--amber)':'var(--green)'}
@@ -1662,7 +1656,6 @@ function applyData(d){
      +'<div class="dconf">'+((_mm.sources_active||0)+' sources')+(_ageM==null?'':' · newest '+(_ageM<60?_ageM+'m':(Math.round(_ageM/6)/10)+'h'))+'</div>';
    grid.appendChild(_od);}
   prevDomainScores={};DID.forEach(id=>prevDomainScores[id]=doms[id]?.score||0);
-  dmChart.data.datasets[0].data=DID.map(id=>doms[id]?.score||0);dmChart.data.datasets[0].backgroundColor=DID.map(id=>dc(doms[id]?.score||0));dmChart.update();
   document.getElementById('f-guard').textContent=((d.couplers&&d.couplers.guardrail_collapse)||0).toFixed(2);
   const cdrv=(d.couplers&&d.couplers.coupling_driver)||'';
   document.getElementById('f-lik').textContent='coupling ×'+((d.couplers&&d.couplers.coupling_multiplier)||1).toFixed(2)+' · '+elev+'/5 modalities'+(cdrv?' · led by '+cdrv:'');
