@@ -23,8 +23,8 @@ and units. A raw internal/absolute number with no operator meaning (e.g. an abso
 gauge level with no per-station flood baseline) is a "nonsense number" and must NOT ship.
 
 **Sandbox + ingestion paths.** The cloud Signal-Hunter sandbox allowlists only GitHub +
-crates — most live gov/OSINT hosts 403 *in-sandbox*, so the routine **live-verifies via
-web fetch** (out-of-band), not curl. Two ways a source lands:
+crates — most live gov/OSINT hosts 403 *in-sandbox*, so the routine **live-verifies
+out-of-band** (an external fetch, routed outside the sandbox), not curl. Two ways a source lands:
 - **Path A — live feed:** the connector fetches the live endpoint; prod (full network)
   serves it after deploy. Default for publicly-reachable feeds.
 - **Path B — mirrored snapshot:** for data NOT freely live-reachable (licensed / manual /
@@ -628,8 +628,7 @@ deferred, and the green-proof. Append; never rewrite history.
   → 403**; **`api.github.com/repos/tmfg/digitraffic-marine/git/trees?recursive=1` → 403** (can't list the repo tree
   to locate the nautical-warning DTO from the cloud). **New finding — closes off a tempting schema-anchor route:**
   attempted to anchor the Fintraffic nautical-warning wire schema from a real *archived* response via
-  **`web.archive.org`**, but web fetch is **tool-level-blocked from web.archive.org** (returns "the fetch tool is unable
-  to fetch from web.archive.org") — so the **Wayback Machine is NOT a usable schema-anchor path** for any 403'd
+  **`web.archive.org`**, but the out-of-band fetch is **tool-level-blocked from web.archive.org** (the fetch tool refuses that host) — so the **Wayback Machine is NOT a usable schema-anchor path** for any 403'd
   endpoint in this sandbox; future runs should not retry it to recover a walled endpoint's field keys. Net on the
   ranking: **(1) Fintraffic nautical warnings** (military-posture #1) stays DEFERRED — endpoint 403, and no committed
   OpenAPI/consumer/DTO quoting the warning feature-property keys exists on raw.github (searched the field names, the
@@ -2227,8 +2226,8 @@ deferred, and the green-proof. Append; never rewrite history.
   `name`); a four-host batch — `api.weather.gov`, `api.open-meteo.com`, USGS
   `significant_week.geojson`, GDACS `xml/rss.xml` — **all 403**, so the egress-wide web fetch
   block on non-GitHub hosts is unchanged and Path-A *live* verification stays impossible
-  in-sandbox. **The unlock (same technique that landed NHC):** verified via **web search**
-  (out-of-band, works) that the JMA `bosai` typhoon JSON is auth-free and widely consumed,
+  in-sandbox. **The unlock (same technique that landed NHC):** verified via an **out-of-band web search**
+  (works) that the JMA `bosai` typhoon JSON is auth-free and widely consumed,
   then pulled the **real captured schema off GitHub** — `silenthooligan/localsky`
   `src/api/tropical.rs` carries a real archived `forecast.json` payload (typhoon IN-FA/TC2105,
   2021) plus `targetTc.json`/`pastTracks.json`, and 6+ independent repos (`skotm/wis-viewer`,
@@ -2306,7 +2305,7 @@ deferred, and the green-proof. Append; never rewrite history.
   **GDACS `xml/rss.xml`** — plus normally-bot-friendly **`api.open-meteo.com`** (Ottawa current-temp)
   **all 403**. The breadth (even Wikipedia/open-meteo, which don't bot-block) re-confirms the
   restriction is **egress-wide on web fetch**, not per-host bot-protection → **Path A still
-  structurally impossible** (owner-side network policy). **web search works** (out-of-band) and
+  structurally impossible** (owner-side network policy). **out-of-band web search works** and
   re-mapped the AIS gap: authoritative gov AIS (NOAA/USCG `marinecadastre`) is **historical
   GeoParquet bulk on GitHub, no live feed**; every real-time AIS GeoJSON is **commercial**
   (aisstream/vesselfinder/aishub) — no free authoritative live AIS exists, confirming the standing
@@ -2494,7 +2493,7 @@ deferred, and the green-proof. Append; never rewrite history.
   only `raw.githubusercontent.com` resolved (positive control returned real content). The
   open-meteo 403 again confirms the restriction is **egress-wide on web fetch**, not per-host
   bot-protection → **Path A is structurally impossible** until the env network policy is changed
-  (owner-side). **web search works** (out-of-band) and was used to re-hunt the open gaps:
+  (owner-side). **out-of-band web search works** and was used to re-hunt the open gaps:
   for AIS-beyond-Baltic the strongest lead surfaced was **NOAA/USCG `ocm-marinecadastre/
   ais-vessel-traffic`** — authoritative, but its data files live on **Azure blob**
   (`*.blob.core.windows.net`, 403 in-sandbox), **not** GitHub raw, in heavy **GeoParquet**

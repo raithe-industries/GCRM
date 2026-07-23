@@ -1784,7 +1784,7 @@ Robert-gated). Every source: parser test on a checked-in REAL-RESPONSE fixture +
   unless a calibration pass is Robert-approved).
 
 ## 7. Unified platform — the RAITHE Global Monitor surface
-Full plan: `the platform plan (local)`. GCRM's engine/runtime stay UNTOUCHED;
+Full plan: the RAITHE Global Monitor platform plan (kept locally). GCRM's engine/runtime stay UNTOUCHED;
 the platform is product-unified, runtime-federated (each monitor its own binary/port/deploy-gate).
 - [x] **7.1** Freeze GCRM's `/api/latest` JSON as documented "headline-read contract v1" + a contract
   test, so sibling monitors and the portal clone a SPEC, not a forked SPA. **DONE 2026-06-27.** Added
