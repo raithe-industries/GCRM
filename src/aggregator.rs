@@ -200,6 +200,10 @@ pub fn snapshot_to_json(snap: &RiskSnapshot) -> serde_json::Value {
         // timeline chart's live appends; the durable copy rides TimelineEntry.drivers.
         // Empty on immaterial ticks. Diagnostic; never feeds P.
         "tick_drivers": snap.tick_drivers,
+        // Structured twins (url/age/snippet) — the clickable audit trail behind the
+        // hover card. Additive key; contract v1 consumers reading tick_drivers only
+        // are untouched. Diagnostic; never feeds P.
+        "tick_driver_refs": snap.tick_driver_refs,
         "indicators": crate::indicators::evaluate(snap),
         "meta": {
             "events_in_window":         snap.events_in_window,
@@ -244,6 +248,10 @@ const DRIVER_NOTE_MAX_EVENTS: usize = 3;
 /// Driver titles are clipped to this many chars for the hover card (full articles
 /// remain one click away in the feed).
 const DRIVER_TITLE_MAX_CHARS: usize = 96;
+/// Snippet cap for the hover card's structured refs (DriverRef.snippet): enough to
+/// read like a mini-article lede, small enough that a material tick adds ~600 bytes
+/// to the ring/archive, not a body dump.
+const DRIVER_SNIPPET_MAX_CHARS: usize = 180;
 
 async fn append_timeline(entry: &TimelineEntry) {
     let line = match serde_json::to_string(entry) {
@@ -546,6 +554,16 @@ impl ArticleStore {
         art.published_at = published_at.to_string();
         art.ingested_at  = ingested_at.to_string();
         Some(art.clone())
+    }
+
+    /// Read-only lookup by article id (the event pipeline's `raw_article_id` join
+    /// key) — the driver-note block resolves the hover card's url/age/snippet here.
+    /// Same index→slot arithmetic as set_domain_tags; a desynced slot returns None
+    /// rather than a wrong article.
+    pub fn get_by_id(&self, id: &str) -> Option<&StoredArticle> {
+        let &abs_pos = self.index.get(id)?;
+        let slot = abs_pos.wrapping_sub(self.front_counter);
+        self.articles.get(slot).filter(|a| a.id == id)
     }
 
     /// Apply NLP domain tags to an article by ID.
@@ -1704,6 +1722,9 @@ pub async fn load_articles(max_size: usize) -> ArticleStore {
             Ok(text) => {
                 for line in text.lines() {
                     if let Ok(a) = serde_json::from_str::<StoredArticle>(line) {
+                        // Live-flagged watchlist rows are excluded at ingest (2026-07-22);
+                        // drop archived ones too so the Video tab stops replaying them.
+                        if a.source.ends_with("-video") && crate::video::is_live_title(&a.title) { continue; }
                         if !latest.contains_key(&a.id) { order.push(a.id.clone()); }
                         latest.insert(a.id.clone(), a);
                     }
@@ -2180,6 +2201,10 @@ impl Aggregator {
         if events.is_empty() { return; }
         let now = Utc::now();
         events.retain(|e| age_hours(&e.published_at, &now) < self.max_age_hours);
+        // Retroactive scrub of live-flagged watchlist rows (excluded at ingest
+        // 2026-07-22): the 4-year window otherwise reloads them for years. Scoped
+        // to `-video` so the whisper tier's "[LIVE]" events (source `-live`) stay.
+        events.retain(|e| !(e.source.ends_with("-video") && crate::video::is_live_title(&e.title)));
         events.sort_by_key(|b| std::cmp::Reverse(b.published_at));
         events.truncate(MAX_WINDOW_EVENTS);
         self.corr_index.rebuild_from_window(&events);
@@ -2316,6 +2341,33 @@ impl Aggregator {
                     } else {
                         "no new events — recency decay".to_string()
                     });
+                }
+                // Structured refs for the SAME top events (the clickable audit trail
+                // behind the hover card): url/age/snippet resolved from the store via
+                // raw_article_id. An evicted/suppressed article degrades the ref to
+                // the event's own fields (url empty → card renders an unlinked row).
+                // Note lines (+N corroborations / decay) stay strings-only.
+                {
+                    let store = self.state.article_store.lock().await;
+                    snapshot.tick_driver_refs = top.iter().take(DRIVER_NOTE_MAX_EVENTS)
+                        .map(|e| {
+                            let art = store.get_by_id(&e.raw_article_id);
+                            let snippet = art.map(|a| {
+                                let mut s: String = a.body.chars().take(DRIVER_SNIPPET_MAX_CHARS).collect();
+                                if a.body.chars().count() > DRIVER_SNIPPET_MAX_CHARS { s.push('…'); }
+                                s
+                            }).unwrap_or_default();
+                            crate::models::DriverRef {
+                                source:       e.source.clone(),
+                                title:        e.title.clone(),
+                                url:          art.map(|a| a.url.clone()).unwrap_or_default(),
+                                published_at: art.map(|a| a.published_at.clone())
+                                                 .unwrap_or_else(|| e.published_at.to_rfc3339()),
+                                snippet,
+                                video:        e.source.ends_with("-video"),
+                            }
+                        })
+                        .collect();
                 }
                 snapshot.tick_drivers = drivers;
             }
@@ -4219,6 +4271,33 @@ mod tests {
         );
         e.domain_tags = vec!["military_escalation".into()];
         e
+    }
+
+    #[tokio::test]
+    async fn preload_drops_live_flagged_video_events_but_keeps_the_whisper_tier() {
+        // Live-flagged watchlist rows are excluded at ingest (video_loop), but the
+        // 4-year window would keep RELOADING the ones already archived — so the boot
+        // path scrubs them too. The scope guard is what matters: the whisper tier's
+        // own "[LIVE]" prefix trips the same predicate, and its model participation
+        // is deliberate, so a source-blind scrub would silently kill it.
+        let (_etx, erx) = mpsc::channel(8);
+        let (stx, _srx) = mpsc::channel(8);
+        let mut agg = Aggregator::new(
+            vec![], AlertSettings::default(), erx, stx, AppState::new(), 1);
+        agg.preload_events(vec![
+            make_event_for_corroboration("US-Iran War LIVE: Explosions Rock Tehran", "wion-video", SourceTier::Tier2, 1),
+            make_event_for_corroboration("LIVE: Louvre gallery reopens after heist", "reuters-video", SourceTier::Tier1, 2),
+            make_event_for_corroboration("[LIVE] aljazeera: strikes reported near Isfahan", "aljazeera-live", SourceTier::Tier1, 1),
+            make_event_for_corroboration("Iran targets Kuwait with fresh missile attack", "wion-video", SourceTier::Tier2, 1),
+            make_event_for_corroboration("Russia launches missile strike on Kyiv", "reuters", SourceTier::Tier1, 3),
+        ]);
+        let kept: Vec<&str> = agg.event_window.iter().map(|e| e.source.as_str()).collect();
+        assert_eq!(kept.len(), 3, "both live-flagged -video rows must be scrubbed: {kept:?}");
+        assert!(kept.contains(&"aljazeera-live"), "whisper tier must survive the scrub");
+        assert!(kept.contains(&"reuters") && kept.contains(&"wion-video"),
+            "non-live wire and video rows must survive: {kept:?}");
+        assert!(!agg.event_window.iter().any(|e| e.title.contains("LIVE:")),
+            "no LIVE-titled watchlist event may reach the model window");
     }
 
     /// Helper: build a corroboration index from a window slice.

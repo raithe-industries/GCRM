@@ -190,6 +190,23 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .pop-meta{font-size:8px;color:var(--t4);font-family:monospace}
 .pop-link{display:inline-block;margin-top:5px;font-size:8px;font-weight:600;color:var(--accent);text-decoration:none}
 .pop-link:hover{text-decoration:underline}
+/* Timeline hover mini-card — the HTML overlay that replaced the canvas tooltip so
+   knock drivers can be CLICKED through to their article/video (canvas text can't
+   carry links). Absolutely positioned inside .chart-inner: never affects layout,
+   so the canvas keeps its full height (eyes-gate floor). */
+#tl-card{position:absolute;z-index:40;display:none;max-width:252px;min-width:170px;background:rgba(8,12,17,.97);border:0.5px solid rgba(255,255,255,.14);border-radius:6px;padding:7px 9px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#tl-card .tlc-t{font-size:10px;color:#c8c8e8;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+#tl-card .tlc-p{font-family:monospace;color:var(--t1)}
+#tl-card .tlc-move{font-size:9px;font-weight:700;margin:3px 0 1px}
+#tl-card .tlc-row{margin-top:5px;padding:5px 6px;border:0.5px solid rgba(255,255,255,.08);border-radius:4px;background:rgba(255,255,255,.03)}
+#tl-card .tlc-row.lnk{cursor:pointer}
+#tl-card .tlc-row.lnk:hover{background:rgba(255,255,255,.07)}
+#tl-card .tlc-plain{font-size:9px;color:var(--t2);margin-top:3px}
+/* The source + age line is the AUDIT line — who reported this and how fresh —
+   so it reads a step brighter than the map popups' equivalent, and the
+   click-through affordance carries the accent colour. */
+#tl-card .tlc-meta{font-size:8px;color:var(--t3);font-family:monospace;margin-top:3px}
+#tl-card .tlc-open{color:var(--accent);font-weight:600}
 .map-radar{position:absolute;bottom:5px;left:5px;z-index:6;width:160px;background:rgba(6,10,14,.95);border:0.5px solid var(--border);border-radius:4px;padding:6px 7px}
 .map-radar.hidden{display:none}
 .radar-h{display:flex;justify-content:space-between;align-items:baseline;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:4px}
@@ -563,7 +580,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <div class="chart-card">
         <div class="ct"><span>P(WWIII) — full historical timeline (persists across sessions)</span><span style="font-size:8px;color:var(--t4);font-weight:400" id="spike-label"></span></div>
         <div class="chart-split">
-          <div class="chart-inner"><canvas id="timeline-chart"></canvas></div>
+          <div class="chart-inner"><canvas id="timeline-chart"></canvas><div id="tl-card"></div></div>
           <div class="map-half">
             <div id="worldmap"></div>
             <div class="map-toolbar">
@@ -902,14 +919,78 @@ const alertBands={id:'alertBands',afterDatasetsDraw(chart){
     c.fillText(b[3],a.right-3,py-3);c.restore();
   });
 }};
+// ── Timeline hover mini-card ─────────────────────────────────────────────────
+// HTML overlay replacing the canvas tooltip (canvas text can't carry links): the
+// same nearest-x hover surfaces one small article card per driver — headline,
+// source, age, snippet, click-through — so every knock is auditable in one hover
+// and one click (operator directive 2026-07-22). The card survives the pointer
+// travelling onto it (250ms grace + mouseenter cancel) so its links are actually
+// clickable. Feed-controlled title/url/snippet pass esc()/safeUrl() (dashboard-3/4/5).
+// _tlOver is load-bearing, not belt-and-braces: Chart.js handles the canvas
+// mouseleave ASYNCHRONOUSLY (next frame), so it asks us to hide AFTER the card's
+// mouseenter has already fired — cancelling the timer on enter alone loses that
+// race and the card vanishes from under the pointer. The deferred hide re-checks
+// this flag at fire time instead.
+let _tlHideT=null,_tlOver=false;
+function hideTlCard(now){const el=document.getElementById('tl-card');if(!el)return;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}if(now){_tlOver=false;el.style.display='none';return;}_tlHideT=setTimeout(()=>{_tlHideT=null;if(_tlOver)return;el.style.display='none';},250);}
+// Same pixel-window matcher the canvas tooltip used (12px ≈ triangle width + slack,
+// ±8-tick floor for zoomed-in charts) — one shared definition of "near a knock".
+function nearestSpikeTo(idx){
+  let best=null,bd=Infinity;
+  for(const s of spikes){const dd=Math.abs(s.idx-idx);if(dd<bd){bd=dd;best=s;}}
+  const _a=tlChart.chartArea,_n=tlChart.data.labels.length;
+  const _pxPer=_a?(_a.right-_a.left)/Math.max(1,_n-1):1;
+  const _win=Math.max(8,Math.ceil(12/Math.max(1e-9,_pxPer)));
+  return(best&&bd<=_win)?{s:best,near:bd>0}:null;
+}
+function tlCardHandler(ctx){
+ try{
+  const el=document.getElementById('tl-card');if(!el)return;
+  const tt=ctx.tooltip;
+  if(!tt||tt.opacity===0){hideTlCard(false);return;}
+  if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}
+  const dp=tt.dataPoints&&tt.dataPoints[0];if(!dp){hideTlCard(false);return;}
+  let h='<div class="tlc-t"><span>'+esc((tt.title&&tt.title[0])||'')+'</span><span class="tlc-p">'+(dp.parsed.y*100).toFixed(3)+'%</span></div>';
+  const hit=nearestSpikeTo(dp.dataIndex);
+  if(hit){
+    const s=hit.s,up=s.delta>0;
+    h+='<div class="tlc-move" style="color:'+(up?'#E24B4A':'#1D9E75')+'">'+(up?'▲ +':'▼ ')+(s.delta*100).toFixed(3)+'% move'+(hit.near?' (nearby)':'')+'</div>';
+    if(s.refs&&s.refs.length){
+      // Rich rows: one mini-article per driver, clickable when the url validates.
+      s.refs.forEach(r=>{
+        const u=safeUrl(r.url||''),core=(r.snippet||'').replace(/…$/,'');
+        h+='<div class="tlc-row'+(u?' lnk" data-url="'+encodeURIComponent(u)+'" onclick="openArticle(decodeURIComponent(this.dataset.url))':'')+'">'
+          +'<div class="pop-title">'+(r.video?'▶ ':'')+esc(r.title||'')+'</div>'
+          +(core&&!(r.title||'').startsWith(core)?'<div class="pop-sub">'+esc(r.snippet)+'</div>':'')
+          +'<div class="tlc-meta">'+esc(r.source||'')+(r.published_at?' · '+relTime(r.published_at):'')+(u?' · <span class="tlc-open">open ↗</span>':'')+'</div></div>';
+      });
+    }else if(s.drivers&&s.drivers.length){
+      // Pre-refs history (old ring/archive entries): unlinked text rows.
+      s.drivers.forEach(x=>{h+='<div class="tlc-plain">• '+esc(x)+'</div>';});
+    }else{
+      h+='<div class="tlc-plain">(no driver record for this move)</div>';
+    }
+  }
+  el.innerHTML=h;el.style.display='block';
+  const area=ctx.chart.chartArea,W=el.offsetWidth,H=el.offsetHeight;
+  let x=tt.caretX+10,y=tt.caretY-10;
+  if(area){if(x+W>area.right)x=tt.caretX-W-10;if(x<area.left)x=area.left;
+    if(y+H>area.bottom)y=area.bottom-H;if(y<area.top)y=area.top;}
+  el.style.left=Math.round(x)+'px';el.style.top=Math.round(y)+'px';
+ }catch(err){console.warn('tl-card render error',err);} /* an overlay bug must never become a pageerror (the eyes gate treats those as fatal) */
+}
+{const _tc=document.getElementById('tl-card');if(_tc){_tc.addEventListener('mouseenter',()=>{_tlOver=true;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}});_tc.addEventListener('mouseleave',()=>{_tlOver=false;hideTlCard(false);});}}
 const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,
-// Hover anywhere on the chart (nearest-x, no need to hit a 0-radius point): the tooltip
-// shows the read at that instant, and — when the hovered instant sits on/near a recorded
-// knock — WHY it moved (the spike's driver record: the events that landed that tick).
-// Operator directive 2026-07-18: "what exactly made that graph move should be more easily
-// accessible".
+// Hover anywhere on the chart (nearest-x, no need to hit a 0-radius point): the hover
+// card shows the read at that instant, and — when the hovered instant sits on/near a
+// recorded knock — WHY it moved (the spike's driver record: the events that landed that
+// tick). Operator directive 2026-07-18: "what exactly made that graph move should be more
+// easily accessible"; 2026-07-22: rendered as the external #tl-card overlay (tlCardHandler)
+// so each driver is a clickable mini-article — the canvas tooltip couldn't carry links.
+// The callbacks below still build the tooltip model the handler reads (title/P line) and
+// keep the text fallback path exercised.
 interaction:{mode:'nearest',axis:'x',intersect:false},
-plugins:{legend:{display:false},tooltip:{enabled:true,displayColors:false,
+plugins:{legend:{display:false},tooltip:{enabled:false,external:tlCardHandler,displayColors:false,
   backgroundColor:'rgba(8,12,17,.96)',borderColor:'rgba(255,255,255,.14)',borderWidth:0.5,
   titleColor:'#c8c8e8',bodyColor:'#9aa4b8',titleFont:{size:10},bodyFont:{size:9},
   filter:(it)=>it.datasetIndex===0,
@@ -1085,7 +1166,7 @@ let prevAnnual=null;
 // lands on (idx = current length; the new point is pushed right after this runs).
 // spikeMarks draws the ▲/▼ on canvas — the old chartjs-plugin-annotation markers
 // rendered nothing under Chart.js v4 (object-map annotations get swallowed).
-function checkSpike(pA,drivers){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;prevAnnual=pA;if(Math.abs(delta)<=0.0002)return;spikes.push({idx:tlChart.data.labels.length,delta,drivers:(drivers&&drivers.length)?drivers:undefined});if(spikes.length>300)spikes.shift();const sl=document.getElementById('spike-label');if(sl)sl.textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}
+function checkSpike(pA,drivers,refs){if(prevAnnual===null){prevAnnual=pA;return;}const delta=pA-prevAnnual;prevAnnual=pA;if(Math.abs(delta)<=0.0002)return;spikes.push({idx:tlChart.data.labels.length,delta,drivers:(drivers&&drivers.length)?drivers:undefined,refs:(refs&&refs.length)?refs:undefined});if(spikes.length>300)spikes.shift();const sl=document.getElementById('spike-label');if(sl)sl.textContent='Last spike: '+(delta>0?'+':'')+(delta*100).toFixed(3)+'% at '+toETShort(new Date());}
 // Calibration-period overlay. The early stretch of the durable timeline is the model
 // warming up — few events, a jagged ramp — before the estimate settles onto its plateau.
 // We detect that settle point from the series itself (the last sample sitting well off
@@ -1330,7 +1411,7 @@ function applyData(d){
   // the word said "Crisis" — and its own theater chip showed amber. Single source of
   // truth = the rung the engine assigned the hottest theater, not a rounded number.
   const idxCol=rungColor(RUNG_LVL[_top.rung]??0);
-  checkSpike(pA,d.tick_drivers||[]);
+  checkSpike(pA,d.tick_drivers||[],d.tick_driver_refs||[]);
   // Hero dial: P(WWIII) as a fraction of 1.0, coloured by probability severity.
   const pCol=pA>=0.08?'#E24B4A':pA>=0.025?'#EF9F27':'#1D9E75';
   animateHero(Math.min(1,pA));
@@ -1636,13 +1717,13 @@ function applyTimeline(entries){
   entries=entries.slice().reverse();
   // Wholesale history reload — drop the session's spike markers and re-seed the
   // spike baseline so the reload discontinuity itself doesn't register as a spike.
-  spikes.length=0;prevAnnual=null;{const _sl=document.getElementById('spike-label');if(_sl)_sl.textContent='';}
+  spikes.length=0;prevAnnual=null;hideTlCard(true);{const _sl=document.getElementById('spike-label');if(_sl)_sl.textContent='';}
   if(entries.length>MAX_TL_POINTS)entries=entries.slice(-MAX_TL_POINTS);
   // Seed the spike markers from DURABLE history: entries that carry a driver record
   // (server-side material moves ≥ DRIVER_NOTE_MIN_DELTA, TimelineEntry.drivers) become
   // hoverable ▲/▼ knocks immediately on load. Previously spikes existed only for moves
   // this tab witnessed live and every reload wiped them (operator, 2026-07-18).
-  for(let i=0;i<entries.length;i++){const e=entries[i];if(e.drivers&&e.drivers.length)spikes.push({idx:i,delta:(typeof e.delta==='number'?e.delta:0),drivers:e.drivers});}
+  for(let i=0;i<entries.length;i++){const e=entries[i];if(e.drivers&&e.drivers.length)spikes.push({idx:i,delta:(typeof e.delta==='number'?e.delta:0),drivers:e.drivers,refs:(e.driver_refs&&e.driver_refs.length)?e.driver_refs:undefined});}
   if(spikes.length>300)spikes=spikes.slice(-300);
   tlChart.data.labels=entries.map(e=>e.t);tlChart.data.datasets[0].data=entries.map(e=>e.p_annual);tlChart.data.datasets[1].data=entries.map(e=>e.p_30day);
   const n=entries.length;tlChart.data.datasets[2].data=new Array(n).fill(0.001);tlChart.data.datasets[3].data=new Array(n).fill(0.017);refreshCalibrationOverlay(true);tlChart.update('none');

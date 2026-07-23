@@ -143,6 +143,18 @@ pub fn is_short(url: &str) -> bool {
     url.contains("/shorts/")
 }
 
+/// Broadcaster livestream entries ("US-Iran War LIVE: …", "🔴 LIVE …") ride the
+/// same Atom feed as real uploads but are rolling placeholders — operator audits
+/// (2026-07-22) found them misleading on click-through (loops/reposts under a
+/// breaking title), and while live they have no captions, so only the raw title
+/// ever reaches the model. Detected by a standalone ALL-CAPS LIVE token —
+/// case-sensitive so "Liverpool", "…we live in…" and mixed-case wire live-blogs
+/// ("Live: …") pass. Model-side scrubs MUST pair this with a `-video` source
+/// check: the whisper tier's own "[LIVE]" prefix (livestream.rs) also matches.
+pub fn is_live_title(title: &str) -> bool {
+    title.split(|c: char| !c.is_alphanumeric()).any(|tok| tok == "LIVE")
+}
+
 /// A channel's auth-free Atom feed (no API key; the same URL YouTube has served
 /// since 2015, also used by podcast apps — a stable public contract).
 pub fn channel_feed_url(channel_id: &str) -> String {
@@ -445,6 +457,32 @@ mod tests {
     fn shorts_urls_are_recognized() {
         assert!(is_short("https://www.youtube.com/shorts/IeMD9bNZFp4"));
         assert!(!is_short("https://www.youtube.com/watch?v=koCXfHeX6_k"));
+    }
+
+    #[test]
+    fn live_titles_are_recognized_and_real_headlines_survive() {
+        // Positives: observed broadcaster livestream shapes (logs/articles_2026-07-22.jsonl).
+        assert!(is_live_title("US-Iran War LIVE: Back-To-Back Explosions Rock Tehran"));
+        assert!(is_live_title("LIVE: Watch Sky News"));
+        assert!(is_live_title("🔴 LIVE — Security Council emergency session"));
+        assert!(is_live_title("[LIVE] aljazeera: strikes reported near Isfahan")); // whisper shape — see scope test
+        // Negatives: word-boundary + case-sensitivity keep real headlines in.
+        assert!(!is_live_title("Liverpool have 'obvious' gaps to address this summer"));
+        assert!(!is_live_title("My friends left Ukraine… now I wonder if we live in the same world"));
+        assert!(!is_live_title("Live: Rebel Wilson wins defamation battle"));
+        assert!(!is_live_title("Olive harvest collapses across the Levant"));
+    }
+
+    #[test]
+    fn live_scrub_predicate_spares_the_whisper_tier() {
+        // The model-side scrub is `source.ends_with("-video") && is_live_title(title)`.
+        // The whisper tier's own "[LIVE]" prefix trips is_live_title by design, so the
+        // -video scope is what keeps its deliberate model participation intact.
+        let scrubbed = |source: &str, title: &str| source.ends_with("-video") && is_live_title(title);
+        assert!(scrubbed("wion-video", "US-Iran War LIVE: Iran Targets Kuwait With Fresh Drone & Missile Attack"));
+        assert!(!scrubbed("aljazeera-live", "[LIVE] aljazeera: strikes reported near Isfahan"));
+        assert!(!scrubbed("wion-video", "Iran targets Kuwait with fresh drone and missile attack"));
+        assert!(!scrubbed("reuters", "LIVE: markets open sharply lower")); // wire live-blogs are not video rows
     }
 
     #[test]

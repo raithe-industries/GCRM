@@ -1166,6 +1166,14 @@ pub struct RiskSnapshot {
     /// Empty on immaterial ticks.
     #[serde(default)]
     pub tick_drivers: Vec<String>,
+
+    /// Structured twins of `tick_drivers` — the same top events with url/age/snippet
+    /// so the chart's hover mini-card can link straight to the underlying article or
+    /// video for audit. Same lifecycle and guarantees: set AFTER compute, display-only,
+    /// never feeds P, empty on immaterial ticks. Note strings and refs are built from
+    /// the same events but refs skip the "+N corroborations"/decay NOTE lines.
+    #[serde(default)]
+    pub tick_driver_refs: Vec<DriverRef>,
 }
 
 impl Default for RiskSnapshot {
@@ -1215,8 +1223,32 @@ impl Default for RiskSnapshot {
             seismic_test_consistent: false,
             seismic_site: String::new(),
             tick_drivers: vec![],
+            tick_driver_refs: vec![],
         }
     }
+}
+
+// ── Driver reference ──────────────────────────────────────────────────────────
+
+/// One movement-attribution driver in structured form — the audit trail behind a
+/// timeline knock. `tick_drivers` keeps the compact "source · title" strings; this
+/// carries what the hover mini-card needs to be CLICKABLE (url) and self-explanatory
+/// (published_at → age, snippet). Resolved from the ArticleStore via the event's
+/// raw_article_id at driver-note time; url/snippet may be empty when the article is
+/// already evicted or suppressed — the card must degrade to an unlinked text row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriverRef {
+    pub source:       String,
+    pub title:        String,
+    #[serde(default)]
+    pub url:          String,
+    #[serde(default)]
+    pub published_at: String,
+    #[serde(default)]
+    pub snippet:      String,
+    /// True for watchlist video rows (source `-video`) — the card badges these ▶.
+    #[serde(default)]
+    pub video:        bool,
 }
 
 // ── Timeline entry ────────────────────────────────────────────────────────────
@@ -1249,6 +1281,11 @@ pub struct TimelineEntry {
     /// `default` keeps older persisted entries loadable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drivers:   Vec<String>,
+    /// Structured twin of `drivers` (`snap.tick_driver_refs`) — url/age/snippet for
+    /// the clickable hover card. Same skip-when-empty ring/archive discipline;
+    /// `default` keeps every pre-field persisted entry loadable (unlinked text rows).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub driver_refs: Vec<DriverRef>,
 }
 
 impl TimelineEntry {
@@ -1265,6 +1302,7 @@ impl TimelineEntry {
             lead:     lead_theater(&snap.theaters),
             mom:      (snap.couplers.systemic_momentum * 1e3).round() / 1e3,
             drivers:  snap.tick_drivers.clone(),
+            driver_refs: snap.tick_driver_refs.clone(),
         }
     }
 }
@@ -1417,20 +1455,34 @@ mod tests {
         // tick_drivers ride into TimelineEntry.drivers verbatim — and an IMMATERIAL tick
         // (empty drivers) serializes WITHOUT the key at all, so the 350k-entry ring and
         // the JSONL archive don't grow by an empty array per 1 Hz tick.
-        let snap = RiskSnapshot { tick_drivers: vec!["reuters · US launches strikes".into(), "+3 corroborations".into()], ..Default::default() };
+        let snap = RiskSnapshot {
+            tick_drivers: vec!["reuters · US launches strikes".into(), "+3 corroborations".into()],
+            tick_driver_refs: vec![DriverRef {
+                source: "reuters".into(), title: "US launches strikes".into(),
+                url: "https://example.com/a".into(), published_at: "2026-07-22T01:00:00Z".into(),
+                snippet: "Strikes began at…".into(), video: false,
+            }],
+            ..Default::default()
+        };
         let entry = TimelineEntry::from_snapshot(&snap);
         assert_eq!(entry.drivers, snap.tick_drivers, "drivers must ride the entry verbatim");
+        assert_eq!(entry.driver_refs.len(), 1, "structured refs must ride alongside");
         let with = serde_json::to_string(&entry).unwrap();
         assert!(with.contains("\"drivers\""), "material tick must serialize its drivers");
+        assert!(with.contains("\"driver_refs\"") && with.contains("https://example.com/a"),
+            "material tick must serialize its clickable refs");
         let quiet = TimelineEntry::from_snapshot(&RiskSnapshot::default());
         let without = serde_json::to_string(&quiet).unwrap();
         assert!(!without.contains("\"drivers\""),
             "an immaterial tick must skip the key entirely (ring/archive leanness)");
-        // And an OLD persisted line (pre-field) still loads, reading no drivers.
+        assert!(!without.contains("\"driver_refs\""),
+            "refs must obey the same skip-when-empty discipline");
+        // And an OLD persisted line (pre-field) still loads, reading no drivers/refs.
         let old: TimelineEntry = serde_json::from_str(
             r#"{"t":"2026-07-01T00:00:00Z","p_annual":0.5,"p_30day":0.05,"alert":"normal",
                 "elevated":0,"regime":1.0,"events":10,"delta":0.0}"#).unwrap();
         assert!(old.drivers.is_empty());
+        assert!(old.driver_refs.is_empty(), "pre-field archive lines must read empty refs");
     }
 
     #[test]

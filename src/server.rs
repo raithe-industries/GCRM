@@ -995,6 +995,19 @@ mod tests {
             "timeline tooltip dropped the driver-rendering callback");
         assert!(DASHBOARD_HTML.contains("interaction:{mode:'nearest',axis:'x',intersect:false}"),
             "chart hover must not require hitting a zero-radius point");
+        // Fourth leg (operator directive 2026-07-22): the hover surface is the CLICKABLE
+        // #tl-card overlay — structured refs consumed live (tick_driver_refs) and from
+        // durable history (e.driver_refs), rendered by the external handler with the
+        // mandatory escapes, and sticky long enough for its links to be clicked.
+        assert!(DASHBOARD_HTML.contains("tick_driver_refs"),
+            "dashboard no longer consumes the live structured driver refs");
+        assert!(DASHBOARD_HTML.contains("e.driver_refs&&e.driver_refs.length"),
+            "applyTimeline no longer seeds clickable refs from durable history");
+        assert!(DASHBOARD_HTML.contains("external:tlCardHandler")
+             && DASHBOARD_HTML.contains("id=\"tl-card\""),
+            "the timeline hover card overlay is gone — knock drivers are unclickable again");
+        assert!(DASHBOARD_HTML.contains("safeUrl(r.url"),
+            "driver ref urls must pass safeUrl before entering the card's DOM");
     }
 
     #[test]

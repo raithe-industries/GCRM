@@ -1013,6 +1013,9 @@ impl Ingestor {
                     if url.is_empty() || done.contains(&url) { continue; }
                     // Shorts: sub-minute clips/teasers — near-zero value, pure clutter.
                     if video::is_short(&url) { done.insert(url); continue; }
+                    // Livestream rows: misleading placeholders, captionless while live —
+                    // title-only model entries. Excluded from ingest (2026-07-22 operator call).
+                    if video::is_live_title(&title) { done.insert(url); continue; }
                     let published = match entry.published.or(entry.updated) {
                         Some(p) => p,
                         None => continue,
