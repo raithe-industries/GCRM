@@ -64,10 +64,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 anyhow   = "1"                                                     # ergonomic errors
-thiserror = "1"                                                    # typed errors
 once_cell = "1"                                                    # lazy statics
 regex    = "1"
-md5      = "0.7"
+md5      = "0.8"
 futures  = "0.3"
 bytes    = "1"
 url      = "2"
