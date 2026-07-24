@@ -393,6 +393,33 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .cmd-label,.lm-label,.panel-title,.dn,.pe-label,.iw-label{font-size:11px}
   .pe-title{font-size:14px}
 }
+/* ── High-res desktops (≥2100 / ≥2560) — widen the side rails so the cockpit stays
+   BALANCED. The fixed 230/380 columns leave a stretched, sparse centre and a thin feed
+   on a 1440p+ monitor; here the feed and left rail widen with the screen and the type
+   steps up so nothing reads tiny (operator 2026-07-23, target ≥2560×1440). */
+@media(min-width:2100px){
+  .main{grid-template-columns:280px 1fr 480px}
+  .logo{font-size:22px}
+  .cmd-val,.lm-val,.dscore{font-size:20px}
+  .gauge-val{font-size:34px}
+  .art-title,.panel-body,.src-name{font-size:15px}
+  .tl-name,.tl-rung,.tl-sub,.iw-label,.dn,.cmd-label,.panel-title{font-size:12px}
+  .ct,.tab,.tf-btn{font-size:12px}
+}
+@media(min-width:2560px){
+  .main{grid-template-columns:320px 1fr 560px}
+  .cmd-val,.lm-val,.dscore{font-size:22px}
+  .art-title{font-size:16px}
+  .tl-chip{padding:9px 12px}
+  .iw-cell{padding:7px 11px}
+}
+/* HD screens (wide AND tall) cap the timeline/map so it can't stretch into a
+   mostly-empty 900px+ box; the freed room goes to the expanded model internals below
+   (see the HD internals-open default). Scoped to HD so non-HD tall screens let the
+   charts fill instead of leaving a gap. */
+@media(min-width:2100px) and (min-height:1200px){
+  .charts-area{max-height:720px}
+}
 /* ── Mobile / phones (≤680px) ─────────────────────────────────────────────────
    The cockpit is a fixed-height, no-scroll 3-column grid built for desktop. On a
    phone that can't reflow, so it crammed everything into one screen, clipped the
@@ -764,7 +791,15 @@ function toggleInternals(){const b=document.getElementById('model-internals'),c=
 // Gauge band + range: hidden by default, revealed by the discreet toggle (operator 2026-07-23).
 function toggleGaugeBand(){const w=document.getElementById('gauge-band-wrap'),t=document.getElementById('gauge-band-toggle');if(!w)return;const open=w.style.display==='none';w.style.display=open?'block':'none';if(t)t.textContent=open?'range & band ▴':'range & band ▾';try{localStorage.setItem('gcrm-band-open',open?'1':'0');}catch(e){}}
 (function(){try{if(localStorage.getItem('gcrm-band-open')==='1'){const w=document.getElementById('gauge-band-wrap');if(w)w.style.display='block';const t=document.getElementById('gauge-band-toggle');if(t)t.textContent='range & band ▴';}}catch(e){}})();
-(function(){try{if(localStorage.getItem('gcrm-internals-open')==='1'){const b=document.getElementById('model-internals');if(b)b.classList.remove('mi-collapsed');const c=document.getElementById('mi-chev');if(c)c.textContent='▾';}}catch(e){}})();
+// Model internals: HD screens (≥2100×1200) default to EXPANDED — the extra room is used
+// for the diagnostics instead of an empty band; standard screens stay collapsed (the
+// 2026-07-18 space-saving directive). A saved preference wins on either. (operator 2026-07-23)
+(function(){try{
+  const saved=localStorage.getItem('gcrm-internals-open');
+  const hd=window.innerWidth>=2100&&window.innerHeight>=1200;
+  const open=saved!==null?saved==='1':hd;
+  if(open){const b=document.getElementById('model-internals');if(b)b.classList.remove('mi-collapsed');const c=document.getElementById('mi-chev');if(c)c.textContent='▾';}
+}catch(e){}})();
 // Brand-coin motion watchdog: on some setups the 3D coin renders STATIC even with the
 // reduce-motion exemption (e.g. graphics acceleration off in the browser — the
 // raithe-server-only symptom, 2026-07-18). Sample the computed transform twice; if it
