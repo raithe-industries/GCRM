@@ -44,11 +44,26 @@ const THUMB_QUALITY: u8 = 72;
 const CAPTURE_TIMEOUT_SECS: u64 = 40;
 /// Pending-capture queue depth. Full ⇒ drop (best-effort).
 const QUEUE_DEPTH: usize = 64;
+/// Circuit-breaker ceiling on one capture's process group. A normal page runs ~10–15 procs;
+/// only a pathological ad/tracker page swarms past this (and times out with nothing anyway), so
+/// tripping here caps the transient spike instead of riding it out for the whole timeout.
+const MAX_CAPTURE_PROCS: usize = 40;
+/// Quiet gap between finishing one capture and starting the next. Chromium tears its helper
+/// tree (renderer/gpu/zygote) down ASYNCHRONOUSLY after the main process exits, so spawning the
+/// next browser immediately stacks the dying tree on top of the new one — on a heavy page
+/// (YouTube) that briefly showed ~80 procs on the shared box. This lets the previous tree fully
+/// exit first, so the live process count stays at roughly ONE browser's worth.
+const INTER_CAPTURE_SETTLE_MS: u64 = 750;
 /// Cap on the render-fingerprint set (see `is_boilerplate_render`) before it is cleared —
 /// it is a dedup hint, not a ledger, so forgetting is always safe.
 const SEEN_CAP: usize = THUMB_CAP * 4;
 
 static TX: OnceLock<mpsc::Sender<String>> = OnceLock::new();
+/// Keys currently queued or being captured — so the same url enqueued by several concurrent
+/// serves (multiple browser tabs bootstrapping at once) is captured ONCE, not once per serve.
+/// Inserted on enqueue, removed when the capture finishes; `exists()` covers the after-the-fact
+/// case, this covers the before-first-capture window.
+static INFLIGHT: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = OnceLock::new();
 /// md5 of every thumbnail this process has stored, used to spot pages that render
 /// IDENTICALLY for different URLs — cookie walls, paywalls, "prove you're human"
 /// interstitials, 404 templates. Those are worse than no thumbnail: they show the
@@ -119,14 +134,35 @@ fn browser_bin() -> Option<PathBuf> {
 }
 
 /// Queue a source URL for thumbnail capture. Cheap and non-blocking: no-ops when the feature is
-/// off, the worker never started, the URL is not http(s), or the thumbnail already exists.
+/// off, the worker never started, the URL is not http(s), the thumbnail already exists, or the
+/// same url is already queued/in-flight (so N concurrent bootstraps queue it once, not N times).
 pub fn enqueue(url: &str) {
     if !enabled() || url.is_empty() { return; }
     if !(url.starts_with("http://") || url.starts_with("https://")) { return; }
-    if exists(&key_for(url)) { return; }
+    let key = key_for(url);
+    if exists(&key) { return; }
+    // Claim the key: only the caller that inserts it (not already present) proceeds to queue.
+    {
+        let set = INFLIGHT.get_or_init(Default::default);
+        let Ok(mut g) = set.lock() else { return };
+        if !g.insert(key.clone()) { return; }               // already queued/capturing — skip
+    }
     if let Some(tx) = TX.get() {
         // try_send: a saturated queue drops the request rather than stalling the caller.
-        let _ = tx.try_send(url.to_string());
+        if tx.try_send(url.to_string()).is_err() {
+            // Dropped (queue full): release the claim so a later serve can re-queue it.
+            if let Some(set) = INFLIGHT.get() { if let Ok(mut g) = set.lock() { g.remove(&key); } }
+        }
+    } else if let Some(set) = INFLIGHT.get() {              // no worker — don't strand the claim
+        if let Ok(mut g) = set.lock() { g.remove(&key); }
+    }
+}
+
+/// Release an in-flight claim once its capture attempt has finished (success or failure), so a
+/// future re-capture (e.g. after the file is evicted past the cap) can be queued again.
+fn clear_inflight(key: &str) {
+    if let Some(set) = INFLIGHT.get() {
+        if let Ok(mut g) = set.lock() { g.remove(key); }
     }
 }
 
@@ -188,7 +224,7 @@ pub fn spawn_worker() {
         // knocks can never fan out into concurrent Chromium processes on the prod box.
         while let Some(url) = rx.recv().await {
             let key = key_for(&url);
-            if exists(&key) { continue; }
+            if exists(&key) { clear_inflight(&key); continue; }
             match capture_one(&bin, &url, &key).await {
                 Ok(bytes) => {
                     debug!("Thumbs: captured {key} ({bytes} B) for {}", &url[..url.len().min(80)]);
@@ -197,12 +233,103 @@ pub fn spawn_worker() {
                 Err(e) => debug!("Thumbs: capture failed for {}: {e}",
                                  &url[..url.len().min(80)]),
             }
+            clear_inflight(&key);
+            // Let the just-finished browser's helper tree exit before spawning the next, so the
+            // live process count stays at ~one browser's worth instead of stacking teardowns.
+            tokio::time::sleep(std::time::Duration::from_millis(INTER_CAPTURE_SETTLE_MS)).await;
         }
     });
 }
 
+/// YouTube video id from the common url shapes (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`,
+/// `/embed/`), or `None` if this is not a YouTube link. Ids are exactly 11 url-safe chars.
+fn youtube_id(url: &str) -> Option<String> {
+    let u = url.split('#').next().unwrap_or(url);
+    let ok = |s: &str| -> Option<String> {
+        let s = s.trim();
+        (s.len() == 11 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+            .then(|| s.to_string())
+    };
+    if let Some(rest) = u.strip_prefix("https://youtu.be/").or_else(|| u.strip_prefix("http://youtu.be/")) {
+        return ok(rest.split(['?', '/', '&']).next().unwrap_or(""));
+    }
+    if !u.contains("youtube.com/") { return None; }
+    if let Some(q) = u.split('?').nth(1) {
+        for kv in q.split('&') {
+            if let Some(v) = kv.strip_prefix("v=") { return ok(v); }
+        }
+    }
+    for seg in ["/shorts/", "/live/", "/embed/", "/v/"] {
+        if let Some(i) = u.find(seg) {
+            return ok(u[i + seg.len()..].split(['?', '/', '&']).next().unwrap_or(""));
+        }
+    }
+    None
+}
+
+/// Store a YouTube video's poster frame as the thumbnail — a lightweight HTTP GET, no browser.
+/// A headless YouTube watch/live page spawns a huge media-decode process tree (~88 procs for a
+/// live stream) and usually renders a consent wall; its poster is lighter AND a truer preview.
+async fn youtube_poster(vid: &str, key: &str) -> anyhow::Result<u64> {
+    // maxres (1280×720) is sharp but 404s for some videos; mqdefault (320×180) is 16:9 and
+    // ALWAYS present — both crop cleanly to the wide card (unlike hq/sd, which are 4:3 with bars).
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let mut bytes = None;
+    for q in ["maxresdefault", "mqdefault"] {
+        let u = format!("https://img.youtube.com/vi/{vid}/{q}.jpg");
+        if let Ok(resp) = client.get(&u).send().await {
+            if resp.status().is_success() {
+                if let Ok(b) = resp.bytes().await {
+                    if b.len() > 1024 { bytes = Some(b); break; }   // >1KB ⇒ a real frame, not a stub
+                }
+            }
+        }
+    }
+    let Some(bytes) = bytes else { anyhow::bail!("no youtube poster for {vid}") };
+    let buf = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        let img = image::load_from_memory(&bytes)?;
+        let thumb = img.resize(THUMB_W, u32::MAX, image::imageops::FilterType::Triangle);
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, THUMB_QUALITY).encode_image(&thumb.to_rgb8())?;
+        Ok(out)
+    }).await??;
+    if is_boilerplate_render(&buf, key) { anyhow::bail!("duplicate youtube poster"); }
+    let len = buf.len() as u64;
+    tokio::fs::write(path_for(key), &buf).await?;
+    Ok(len)
+}
+
+/// Count processes in a given process group by scanning `/proc/<pid>/stat` (field 5 = pgrp).
+/// Cheap enough at 1 Hz during a single serialized capture; `comm` can contain spaces/parens so
+/// the fields are read AFTER the final ')'.
+#[cfg(unix)]
+fn count_process_group(pgid: u32) -> usize {
+    let mut n = 0;
+    let Ok(rd) = std::fs::read_dir("/proc") else { return 0 };
+    for e in rd.flatten() {
+        let name = e.file_name();
+        let Some(s) = name.to_str() else { continue };
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) { continue; }
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{s}/stat")) else { continue };
+        let Some((_, after)) = stat.rsplit_once(')') else { continue };
+        // after = " <state> <ppid> <pgrp> ..." → pgrp is the 3rd whitespace field.
+        if after.split_whitespace().nth(2).and_then(|p| p.parse::<u32>().ok()) == Some(pgid) {
+            n += 1;
+        }
+    }
+    n
+}
+#[cfg(not(unix))]
+fn count_process_group(_pgid: u32) -> usize { 0 }
+
 /// Capture one URL → downscaled JPEG on disk. Returns the stored byte size.
 async fn capture_one(bin: &Path, url: &str, key: &str) -> anyhow::Result<u64> {
+    // Videos never touch the browser — fetch the poster frame instead (see `youtube_poster`).
+    if let Some(vid) = youtube_id(url) {
+        return youtube_poster(&vid, key).await;
+    }
     let tmp_dir = std::env::temp_dir().join(format!("gcrm-thumb-{key}"));
     tokio::fs::create_dir_all(&tmp_dir).await.ok();
     let raw = tmp_dir.join("shot.png");
@@ -220,6 +347,16 @@ async fn capture_one(bin: &Path, url: &str, key: &str) -> anyhow::Result<u64> {
         .arg("--disable-extensions")
         .arg("--mute-audio")
         .arg("--no-first-run")
+        // Cap the renderer fan-out. A heavy page (a YouTube watch page above all) otherwise
+        // spawns a renderer per origin/iframe/ad plus media-decode helpers — measured ~80
+        // processes for a single capture on the shared box. `--renderer-process-limit=1` +
+        // no site isolation holds one capture to ~one browser's worth of processes while the
+        // screenshot stays byte-identical to the unconstrained render (flag experiment
+        // 2026-07-24). `--single-process` was rejected — it SIGKILLs modern headless.
+        .arg("--renderer-process-limit=1")
+        .arg("--disable-features=site-per-process,IsolateOrigins,Translate")
+        .arg("--disable-software-rasterizer")
+        .arg("--disable-background-networking")
         .arg(format!("--screenshot={}", raw.display()))
         .arg(format!("--window-size={SHOT_W},{SHOT_H}"))
         .arg("--virtual-time-budget=7000")
@@ -236,10 +373,26 @@ async fn capture_one(bin: &Path, url: &str, key: &str) -> anyhow::Result<u64> {
     cmd.process_group(0);
     let mut child = cmd.kill_on_drop(true).spawn()?;
     let pid = child.id();
-    let waited = tokio::time::timeout(
-        std::time::Duration::from_secs(CAPTURE_TIMEOUT_SECS),
-        child.wait(),
-    ).await;
+    // Race the wait against TWO ceilings: wall-clock, and a PROCESS-COUNT circuit breaker.
+    // A rare ad/tracker-heavy page (independent.co.uk measured 85 procs) spawns a swarm of
+    // utility/network subprocesses that `--renderer-process-limit` can't cap, and it times
+    // out anyway — so a group that blows past MAX_CAPTURE_PROCS is pathological: trip early
+    // rather than let it sit at 85 procs for the full timeout. cgroup pids.max can't do this
+    // (it counts THREADS, so any limit that lets chrome run also lets it explode).
+    let breaker = async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            match pid {
+                Some(p) if count_process_group(p) > MAX_CAPTURE_PROCS => break,
+                _ => {}
+            }
+        }
+    };
+    let waited = tokio::select! {
+        w = child.wait() => Ok(w),                              // finished on its own
+        _ = tokio::time::sleep(std::time::Duration::from_secs(CAPTURE_TIMEOUT_SECS)) => Err("timeout"),
+        _ = breaker => Err("process-swarm"),                    // pathological page — abort early
+    };
     if waited.is_err() {
         // SIGKILL the negative pid = the whole group, so chromium's zygote/renderer/gpu
         // helpers die with the browser instead of outliving it.
@@ -408,6 +561,34 @@ mod tests {
         assert!(is_valid_key(minted));
         assert!(refs[1].get("thumb").is_none(), "a non-http url must not be given a key");
         assert_eq!(refs[2]["thumb"].as_str().unwrap(), "cafebabe", "an existing key must be preserved");
+    }
+
+    #[test]
+    fn youtube_ids_parse_from_every_url_shape() {
+        assert_eq!(youtube_id("https://www.youtube.com/watch?v=8OUPvOqr4kw").as_deref(), Some("8OUPvOqr4kw"));
+        assert_eq!(youtube_id("https://www.youtube.com/watch?a=1&v=hzHTskkwqyo&t=2").as_deref(), Some("hzHTskkwqyo"));
+        assert_eq!(youtube_id("https://youtu.be/8OUPvOqr4kw?si=x").as_deref(), Some("8OUPvOqr4kw"));
+        assert_eq!(youtube_id("https://www.youtube.com/live/abcdefghijk").as_deref(), Some("abcdefghijk"));
+        assert_eq!(youtube_id("https://www.youtube.com/shorts/ABCDE_-1234").as_deref(), Some("ABCDE_-1234"));
+        // Not YouTube, or not a real id → None (falls through to the browser capture path).
+        assert_eq!(youtube_id("https://taskandpurpose.com/news/x"), None);
+        assert_eq!(youtube_id("https://www.youtube.com/watch?v=short"), None);   // wrong length
+        assert_eq!(youtube_id("https://www.youtube.com/feed/subscriptions"), None);
+    }
+
+    #[test]
+    fn inflight_claim_dedupes_then_releases() {
+        // The in-flight set: the first claim of a key succeeds, a second (concurrent serve) is
+        // rejected, and clearing it lets a later re-capture claim again. Exercised directly since
+        // enqueue's queue side needs a running worker.
+        let set = INFLIGHT.get_or_init(Default::default);
+        let key = "aa11bb22cc33";
+        { let mut g = set.lock().unwrap(); g.remove(key); }        // clean slate
+        assert!(set.lock().unwrap().insert(key.to_string()), "first claim must win");
+        assert!(!set.lock().unwrap().insert(key.to_string()), "second concurrent claim must be rejected");
+        clear_inflight(key);
+        assert!(set.lock().unwrap().insert(key.to_string()), "after clear, the key can be claimed again");
+        clear_inflight(key);
     }
 
     #[test]
