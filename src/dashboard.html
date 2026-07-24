@@ -69,10 +69,10 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
 .subgauge-head{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px}
 .subgauge-val{font-size:18px;font-weight:700;font-family:monospace;line-height:1;transition:color .4s}
 .subgauge-rung{font-size:10px;font-weight:600}
-.subgauge-lbl{font-size:8px;color:var(--t3);text-align:center;margin-top:1px}
+.subgauge-lbl{font-size:10px;color:var(--t3);text-align:center;margin-top:1px}
 .gauge-val{font-size:22px;font-weight:700;font-family:monospace;color:var(--t1);margin-top:2px;text-align:center;transition:color .4s}
 .gauge-pct-label{font-size:9px;color:var(--t3);text-align:center;margin-top:1px}
-.gauge-context{margin-top:5px;width:100%;font-size:8px;color:var(--t4);line-height:1.8}
+.gauge-context{margin-top:5px;width:100%;font-size:10px;color:var(--t3);line-height:1.7}
 .gauge-context-row{display:flex;justify-content:space-between}
 /* LIVE COMPUTE panel — replaces the redundant 2nd gauge; shows the Bayesian chain
    producing P(WWIII), refreshed each snapshot (dot blips on every recompute). */
@@ -413,12 +413,15 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
   .tl-chip{padding:9px 12px}
   .iw-cell{padding:7px 11px}
 }
-/* HD screens (wide AND tall) cap the timeline/map so it can't stretch into a
-   mostly-empty 900px+ box; the freed room goes to the expanded model internals below
-   (see the HD internals-open default). Scoped to HD so non-HD tall screens let the
-   charts fill instead of leaving a gap. */
-@media(min-width:2100px) and (min-height:1200px){
-  .charts-area{max-height:720px}
+/* ── The TALL/HD method (>1080 monitors) ─────────────────────────────────────
+   Split at viewport height ~1080 so a 1080p screen (≈930px viewport in a normal
+   browser) uses the compact method and a 1440p screen (≈1290px viewport) uses this
+   one — WITHOUT needing fullscreen/zoom (operator 2026-07-24). The timeline/map is
+   capped so it can't stretch into a mostly-empty 900px+ box; the freed room goes to
+   the model internals, which default to EXPANDED here (see the HD internals default).
+   Width floor keeps it to real desktops (tablets/phones use the compact/mobile paths). */
+@media(min-width:1500px) and (min-height:1100px){
+  .charts-area{max-height:760px}
 }
 /* ── Mobile / phones (≤680px) ─────────────────────────────────────────────────
    The cockpit is a fixed-height, no-scroll 3-column grid built for desktop. On a
@@ -507,10 +510,11 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
       <!-- The published band + its self-validation, condensed behind a discreet toggle
            (operator 2026-07-23) — the honest range is one click away, not cluttering the
            hero. Same collapse idiom as the model-internals bar below. -->
-      <div id="gauge-band-toggle" onclick="toggleGaugeBand()" style="font-size:8px;color:var(--t4);text-align:center;margin-top:2px;cursor:pointer;letter-spacing:.04em;user-select:none" title="Show the published band (a range, not a point) and its self-validation">range &amp; band ▾</div>
+      <div id="gauge-band-toggle" onclick="toggleGaugeBand()" style="font-size:10px;color:var(--t3);text-align:center;margin-top:3px;cursor:pointer;letter-spacing:.03em;user-select:none;text-decoration:underline dotted var(--t4)" title="Show the published band (a range, not a point), its self-validation, and the model's error posture">band &amp; posture ▾</div>
       <div id="gauge-band-wrap" style="display:none">
-        <div class="gauge-interval" id="gauge-interval" style="font-size:10px;color:var(--t3);text-align:center;margin-top:1px;line-height:1.2;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
-        <div class="gauge-band-cov" id="gauge-band-cov" style="font-size:9px;color:var(--t3);text-align:center;line-height:1.2;font-family:monospace" title="Self-validation of the band above: over the last 48h of archived reads, the share that landed inside the model's own band published an hour earlier (server field band_coverage). A well-calibrated 80% band holds ~80%; more = conservative (the humility floor at work), less = overconfident. Diagnostic only — it never feeds the number."></div>
+        <div class="gauge-interval" id="gauge-interval" style="font-size:11px;color:var(--t3);text-align:center;margin-top:2px;line-height:1.25;font-family:monospace" title="Published as a range, not a point — the model's recent spread floored at an irreducible humility margin">—</div>
+        <div class="gauge-band-cov" id="gauge-band-cov" style="font-size:10px;color:var(--t3);text-align:center;line-height:1.3;font-family:monospace" title="Self-validation of the band above: over the last 48h of archived reads, the share that landed inside the model's own band published an hour earlier (server field band_coverage). A well-calibrated 80% band holds ~80%; more = conservative (the humility floor at work), less = overconfident. Diagnostic only — it never feeds the number."></div>
+        <div class="gauge-posture" id="gauge-posture" style="font-size:10px;color:var(--t3);text-align:center;margin-top:5px;line-height:1.35" title="">—</div>
       </div>
       <div class="gauge-pct-label">annual <b style="color:var(--t2)">P(WWIII)</b> · 12-month outlook</div>
       <!-- Historical positioning: where the live read sits on the model's OWN calibration
@@ -519,7 +523,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            operator knows. The two poles are server-substituted from the live model
            (backtest::analog_model_pct), never hand-typed — same anti-drift guarantee as the
            baseline prior. Filled by renderHistContext() in applyData. -->
-      <div class="gauge-hist" id="gauge-hist" style="font-size:8px;color:var(--t4);text-align:center;margin-top:2px;line-height:1.2"></div>
+      <div class="gauge-hist" id="gauge-hist" style="font-size:10px;color:var(--t3);text-align:center;margin-top:2px;line-height:1.3"></div>
       <!-- Honesty caveat: shown only when the forecast is hard-clamped to
            FORECAST_PROB_CEILING. A clamped value is a FLOOR, not a measurement, so the
            hero reads "≥90.0%" and this line says the true read may be higher (capped for
@@ -548,11 +552,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
            board is decisively one-sided (|m| ≥ 0.25); a neutral/quiet world names nothing. Driven by
            couplers.systemic_momentum (theater::compute — heat-weighted, never feeds P). -->
       <div class="gauge-momentum" id="gauge-momentum" style="display:none;font-size:8px;text-align:center;margin-top:1px;line-height:1.2"></div>
-      <!-- Error posture (honesty layer): names which mistake the model is tuned to prefer, so a
-           reader knows how to weigh the number. Every choice has consequences; this makes ours
-           legible. Server-driven from models::ERROR_POSTURE_NOTE (single source of truth); the
-           reference-class limit is the hover title and the methodology page. -->
-      <div class="gauge-posture" id="gauge-posture" style="font-size:8px;color:var(--t4);text-align:center;margin-top:3px;line-height:1.25" title="">—</div>
+      <!-- Error posture moved into the "band & posture" collapse above (operator 2026-07-24:
+           decluttered the gauge; the note is one click away, not crowding the hero). -->
       <!-- Live movement of P(WWIII): the dot blips on every recompute (heartbeat),
            the arrow shows direction at all times (▲ rising / ▼ falling / ↔ steady),
            and the Δ/s shows only when it actually moves. The Bayesian chain itself
@@ -563,12 +564,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
           <div class="sidx-lbl">systemic index</div>
           <div class="sidx-rung" id="cc-rung">—</div>
         </div>
-        <div style="font-size:8px;color:var(--t4);text-align:center;margin-top:7px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
+        <div style="font-size:10px;color:var(--t4);text-align:center;margin-top:7px"><a href="{{BASE_PATH}}/methodology" style="color:var(--purple);text-decoration:none">methodology ↗</a></div>
       </div>
       <div class="conf-row">
-        <span style="color:var(--t4);font-size:8px">CONF</span>
+        <span style="color:var(--t4);font-size:10px">CONF</span>
         <div class="conf-bar"><div class="conf-fill" id="conf-fill" style="width:0%"></div></div>
-        <span id="conf-pct" style="font-size:9px;color:var(--t2)">—</span>
+        <span id="conf-pct" style="font-size:11px;color:var(--t2)">—</span>
       </div>
     </div>
     <!-- At-a-glance rail: the two derived windows + freshness. The annual reading is
@@ -789,14 +790,14 @@ refreshSrcCount();
 // keeps updating while hidden, so expanding is instant and eyes/tests still read it.
 function toggleInternals(){const b=document.getElementById('model-internals'),c=document.getElementById('mi-chev');if(!b)return;const open=!b.classList.toggle('mi-collapsed');if(c)c.textContent=open?'▾':'▸';try{localStorage.setItem('gcrm-internals-open',open?'1':'0');}catch(e){}}
 // Gauge band + range: hidden by default, revealed by the discreet toggle (operator 2026-07-23).
-function toggleGaugeBand(){const w=document.getElementById('gauge-band-wrap'),t=document.getElementById('gauge-band-toggle');if(!w)return;const open=w.style.display==='none';w.style.display=open?'block':'none';if(t)t.textContent=open?'range & band ▴':'range & band ▾';try{localStorage.setItem('gcrm-band-open',open?'1':'0');}catch(e){}}
-(function(){try{if(localStorage.getItem('gcrm-band-open')==='1'){const w=document.getElementById('gauge-band-wrap');if(w)w.style.display='block';const t=document.getElementById('gauge-band-toggle');if(t)t.textContent='range & band ▴';}}catch(e){}})();
+function toggleGaugeBand(){const w=document.getElementById('gauge-band-wrap'),t=document.getElementById('gauge-band-toggle');if(!w)return;const open=w.style.display==='none';w.style.display=open?'block':'none';if(t)t.textContent=open?'band & posture ▴':'band & posture ▾';try{localStorage.setItem('gcrm-band-open',open?'1':'0');}catch(e){}}
+(function(){try{if(localStorage.getItem('gcrm-band-open')==='1'){const w=document.getElementById('gauge-band-wrap');if(w)w.style.display='block';const t=document.getElementById('gauge-band-toggle');if(t)t.textContent='band & posture ▴';}}catch(e){}})();
 // Model internals: HD screens (≥2100×1200) default to EXPANDED — the extra room is used
 // for the diagnostics instead of an empty band; standard screens stay collapsed (the
 // 2026-07-18 space-saving directive). A saved preference wins on either. (operator 2026-07-23)
 (function(){try{
   const saved=localStorage.getItem('gcrm-internals-open');
-  const hd=window.innerWidth>=2100&&window.innerHeight>=1200;
+  const hd=window.innerWidth>=1500&&window.innerHeight>=1100;   // >1080-tall desktops
   const open=saved!==null?saved==='1':hd;
   if(open){const b=document.getElementById('model-internals');if(b)b.classList.remove('mi-collapsed');const c=document.getElementById('mi-chev');if(c)c.textContent='▾';}
 }catch(e){}})();
@@ -1429,11 +1430,16 @@ function renderIndicators(inds){
   if(!inds.length){board.innerHTML='<div class="iw-cell"><span class="iw-dot"></span><span class="iw-label">awaiting indicator data…</span></div>';return;}
   const cells=inds.map(i=>{
     const {bg,glow}=iwDot(i);
+    // Label brightness tracks the dot's warmth: a yellow/orange/red (elevated or tripped)
+    // dot always gets a READABLE label, never grey — a warm dot with a grey label read as
+    // "greyed out" even when the indicator was live (operator 2026-07-24). Only truly clear
+    // (green, low-level) lights stay dimmed.
+    const lv=iwLevel(i),lblCol=lv>=0.4?'var(--t1)':'var(--t4)';
     const where=i.theater?(' — '+i.theater):'';
     const title=(i.label+(i.tripped?' · TRIPPED':' · clear')+where+'\n'+(i.detail||'')).replace(/"/g,'&quot;');
     return '<div class="iw-cell'+(i.tripped?' on':'')+'" title="'+title+'">'
       +'<span class="iw-dot" style="background:'+bg+';box-shadow:'+glow+'"></span>'
-      +'<span class="iw-label">'+i.label+'</span>'
+      +'<span class="iw-label" style="color:'+lblCol+'">'+i.label+'</span>'
       +'</div>';
   }).join('');
   // Complete the partial last row of the 3-column grid: an indicator count not divisible by 3
