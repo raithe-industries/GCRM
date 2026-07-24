@@ -412,13 +412,17 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
     // durable history on demand. (audit aggregator-1)
     // Display-decimated before it goes on the wire: the chart cannot resolve 50k points, and
     // shipping them cost a measured 9.4 MB frame per connect (2026-07-24 load profile).
-    let timeline: Vec<serde_json::Value> = {
+    let mut timeline: Vec<serde_json::Value> = {
         let es = state.app_state.epoch_store.lock().await;
         let raw: Vec<serde_json::Value> =
             es.query(crate::aggregator::WS_TIMELINE_BOOTSTRAP).into_iter().cloned().collect();
         drop(es);
         crate::aggregator::decimate_timeline(raw, crate::aggregator::TIMELINE_DISPLAY_POINTS)
     };
+    // Mint thumbnail keys + queue captures for the bootstrapped knocks. Without this, only
+    // FRESH live knocks would ever show a page-view — every knock seeded from history carries
+    // no key and renders imageless. (operator report 2026-07-24: "no images on the cards")
+    crate::thumbs::hydrate_timeline(&mut timeline);
     let tl_msg = json!({"type": "timeline", "data": timeline}).to_string();
     if socket.send(Message::Text(tl_msg)).await.is_err() {
         *state.client_count.lock().await -= 1;
@@ -526,8 +530,11 @@ async fn get_epoch(
     let total = es.len();
     drop(es);
     // Decimate only the implicit (chart-fallback) default; an explicit ?limit=N is served raw.
-    let entries = if explicit { entries }
+    let mut entries = if explicit { entries }
         else { crate::aggregator::decimate_timeline(entries, crate::aggregator::TIMELINE_DISPLAY_POINTS) };
+    // Same page-view hydration the WS bootstrap does, so a client that loads the chart via
+    // /api/epoch (not the socket) also gets thumbnail keys + queued captures for its knocks.
+    crate::thumbs::hydrate_timeline(&mut entries);
     let returned = entries.len();
     Json(json!({
         "entries": entries,
@@ -1068,8 +1075,9 @@ mod tests {
             "the hover card no longer renders the source-page mini pageview");
         assert!(DASHBOARD_HTML.contains("/^[a-f0-9]{6,40}$/.test(r.thumb"),
             "thumbnail keys must be re-validated before entering the card's DOM");
-        assert!(DASHBOARD_HTML.contains("onerror=\"this.parentNode.style.display="),
-            "a not-yet-captured pageview must remove its frame instead of showing an empty box");
+        assert!(DASHBOARD_HTML.contains("onerror=\"tlShotErr(this)\"")
+             && DASHBOARD_HTML.contains("function tlShotErr"),
+            "a not-yet-captured pageview must retry until the capture lands, then drop its frame — never an empty box");
         assert!(DASHBOARD_HTML.contains("onClick:()=>pinTlCard()")
              && DASHBOARD_HTML.contains("if(_tlPin)return;"),
             "clicking the chart must pin the card and freeze it against further hover");

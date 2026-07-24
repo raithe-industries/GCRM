@@ -206,8 +206,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
    masthead + headline (the part that identifies the page at a glance) survives
    the crop. Hidden outright if the capture hasn't landed yet — the key is minted
    from the url on ingest, so the <img> can legitimately 404 for a few seconds. */
-#tl-card .tlc-shot{display:block;margin:0 0 5px;border-radius:3px;overflow:hidden;background:#0d1117;border:0.5px solid rgba(255,255,255,.07);line-height:0}
-#tl-card .tlc-shot img{width:100%;height:104px;object-fit:cover;object-position:top center;display:block;filter:saturate(.9) brightness(.86);transition:filter .15s}
+#tl-card .tlc-shot{position:relative;display:block;margin:0 0 5px;border-radius:3px;overflow:hidden;background:#0d1117;border:0.5px solid rgba(255,255,255,.07);line-height:0;height:104px}
+/* Placeholder shown WHILE the capture is still being taken (the img 404s and retries): the
+   loaded JPEG paints opaquely on top and covers it; on final failure the whole frame is hidden. */
+#tl-card .tlc-shot::after{content:'◵ capturing preview…';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;letter-spacing:.04em;color:var(--t4);font-family:monospace;animation:tlcPulse 1.4s ease-in-out infinite}
+@keyframes tlcPulse{0%,100%{opacity:.4}50%{opacity:.85}}
+#tl-card .tlc-shot img{position:relative;width:100%;height:104px;object-fit:cover;object-position:top center;display:block;filter:saturate(.9) brightness(.86);transition:filter .15s}
 #tl-card .tlc-row.lnk:hover .tlc-shot img{filter:none}
 #tl-card .tlc-t{font-size:10px;color:#c8c8e8;font-weight:600;display:flex;justify-content:space-between;gap:8px}
 #tl-card .tlc-p{font-family:monospace;color:var(--t1)}
@@ -992,6 +996,19 @@ const alertBands={id:'alertBands',afterDatasetsDraw(chart){
 // race and the card vanishes from under the pointer. The deferred hide re-checks
 // this flag at fire time instead.
 let _tlHideT=null,_tlOver=false,_tlPin=false,_tlHtml='';
+// A page-view capture is minted (thumb key) the moment its knock is served, but the actual
+// screenshot lands a few SECONDS later (queued, one-at-a-time browser). So a fresh card's <img>
+// legitimately 404s at first — don't hide it, RETRY with a cache-busting param until the capture
+// arrives, then give up and drop the frame (wall/paywall/timeout ⇒ text-only fallback). The
+// pinned card is what makes this visible: it persists, so the retries play out and the pageview
+// pops in. ~8 tries × 2.6s ≈ 20s covers the measured 1–28s capture span.
+function tlShotErr(img){
+  var n=(+img.dataset.r||0);
+  if(n>=8){var p=img.parentNode;if(p)p.style.display='none';return;}
+  img.dataset.r=n+1;
+  var base=img.src.split('?')[0];
+  setTimeout(function(){ if(img.isConnected!==false) img.src=base+'?r='+(n+1); },2600);
+}
 function paintTlCard(){const el=document.getElementById('tl-card');if(!el)return;
   el.innerHTML=(_tlPin?'<div class="tlc-x" onclick="unpinTlCard(event)" title="close (Esc)">✕</div>':'')+_tlHtml
     +'<div class="tlc-hint">'+(_tlPin?'pinned · ✕ or Esc to close':'click the chart to pin this card')+'</div>';
@@ -1035,7 +1052,7 @@ function tlCardHandler(ctx){
         // src=) and drop the frame on error — a capture can lag its driver by seconds.
         const k=/^[a-f0-9]{6,40}$/.test(r.thumb||'')?r.thumb:'';
         h+='<div class="tlc-row'+(u?' lnk" data-url="'+encodeURIComponent(u)+'" onclick="openArticle(decodeURIComponent(this.dataset.url))':'')+'">'
-          +(k?'<div class="tlc-shot"><img loading="lazy" decoding="async" alt="" src="'+BASE_PATH+'/api/thumb/'+k+'" onerror="this.parentNode.style.display=\'none\'"></div>':'')
+          +(k?'<div class="tlc-shot"><img loading="lazy" decoding="async" alt="" src="'+BASE_PATH+'/api/thumb/'+k+'" onerror="tlShotErr(this)"></div>':'')
           +'<div class="pop-title">'+(r.video?'▶ ':'')+esc(r.title||'')+'</div>'
           +(core&&!(r.title||'').startsWith(core)?'<div class="pop-sub">'+esc(r.snippet)+'</div>':'')
           +'<div class="tlc-meta">'+esc(r.source||'')+(r.published_at?' · '+relTime(r.published_at):'')+(u?' · <span class="tlc-open">open ↗</span>':'')+'</div></div>';

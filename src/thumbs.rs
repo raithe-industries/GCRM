@@ -130,6 +130,41 @@ pub fn enqueue(url: &str) {
     }
 }
 
+/// How many uncaptured urls one timeline serve may queue. Below QUEUE_DEPTH so a bootstrap
+/// leaves headroom, yet large enough to cover every knock a decimated timeline actually shows.
+const HYDRATE_ENQUEUE_BUDGET: usize = 48;
+
+/// Backfill thumbnail keys onto the timeline the client is about to receive, and queue their
+/// captures. The live-tick path mints keys only for FRESH knocks, but almost every hoverable
+/// knock is seeded from durable history (the ring), whose refs predate this feature and carry
+/// no key — so their cards render no image at all. This walks the served entries and, for each
+/// driver ref with an http(s) url, sets `thumb = key_for(url)` (so the `<img>` renders) and
+/// enqueues a capture. Enqueue is NEWEST-FIRST and budget-bounded: the knocks an operator
+/// actually explores get captured before the queue fills; older ones still render a key and
+/// fall back to text if never captured. Idempotent across serves — `enqueue` skips urls already
+/// on disk, so repeated bootstraps are cheap once a capture lands. No-op when capture is off.
+pub fn hydrate_timeline(entries: &mut [serde_json::Value]) {
+    if !enabled() { return; }
+    let mut budget = HYDRATE_ENQUEUE_BUDGET;
+    for entry in entries.iter_mut().rev() {                 // rev() = newest first (entries are chronological)
+        let Some(refs) = entry.get_mut("driver_refs").and_then(|v| v.as_array_mut()) else { continue };
+        for r in refs.iter_mut() {
+            // Own the url first so the follow-up mutation of `r` doesn't fight the borrow.
+            let url = match r.get("url").and_then(|u| u.as_str()) {
+                Some(u) if u.starts_with("http://") || u.starts_with("https://") => u.to_string(),
+                _ => continue,
+            };
+            let has_thumb = r.get("thumb").and_then(|t| t.as_str()).is_some_and(|s| !s.is_empty());
+            if !has_thumb {
+                if let Some(obj) = r.as_object_mut() {
+                    obj.insert("thumb".into(), serde_json::Value::String(key_for(&url)));
+                }
+            }
+            if budget > 0 { enqueue(&url); budget -= 1; }
+        }
+    }
+}
+
 /// Start the single capture worker. Safe to call once at boot; a second call is ignored.
 pub fn spawn_worker() {
     if !enabled() {
@@ -351,6 +386,28 @@ mod tests {
             "the SAME url re-rendering identically is a refresh, not a wall");
         assert!(!is_boilerplate_render(article, "cccc3333"),
             "a distinct render must pass even after a wall was learned");
+    }
+
+    #[test]
+    fn hydrate_backfills_keys_for_historical_refs_with_urls() {
+        // The fix for "no images on the cards": refs seeded from durable history carry a url but
+        // no thumb key, so their <img> never renders. hydrate must mint the key in place for any
+        // http(s) url, leave non-http/keyed refs alone, and never panic on odd shapes.
+        let mut entries = vec![
+            serde_json::json!({ "t": "2026-07-24T00:00:00Z", "driver_refs": [
+                { "source": "a", "title": "hist", "url": "https://example.com/story" },   // needs key
+                { "source": "b", "title": "vid",  "url": "not-a-url" },                    // skip
+                { "source": "c", "title": "kept", "url": "https://ex.com/x", "thumb": "cafebabe" }, // keep
+            ]}),
+            serde_json::json!({ "t": "2026-07-24T00:00:01Z" }),                            // no refs — must not panic
+        ];
+        hydrate_timeline(&mut entries);
+        let refs = entries[0]["driver_refs"].as_array().unwrap();
+        let minted = refs[0]["thumb"].as_str().unwrap();
+        assert_eq!(minted, key_for("https://example.com/story"), "http ref must get its stable key");
+        assert!(is_valid_key(minted));
+        assert!(refs[1].get("thumb").is_none(), "a non-http url must not be given a key");
+        assert_eq!(refs[2]["thumb"].as_str().unwrap(), "cafebabe", "an existing key must be preserved");
     }
 
     #[test]
