@@ -410,9 +410,14 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
     // read). Capped per connect so a 4-day ring isn't cloned+serialized in full to every
     // client; the chart fills forward via live pushes, and /api/epoch?limit=N serves deeper
     // durable history on demand. (audit aggregator-1)
+    // Display-decimated before it goes on the wire: the chart cannot resolve 50k points, and
+    // shipping them cost a measured 9.4 MB frame per connect (2026-07-24 load profile).
     let timeline: Vec<serde_json::Value> = {
         let es = state.app_state.epoch_store.lock().await;
-        es.query(crate::aggregator::WS_TIMELINE_BOOTSTRAP).into_iter().cloned().collect()
+        let raw: Vec<serde_json::Value> =
+            es.query(crate::aggregator::WS_TIMELINE_BOOTSTRAP).into_iter().cloned().collect();
+        drop(es);
+        crate::aggregator::decimate_timeline(raw, crate::aggregator::TIMELINE_DISPLAY_POINTS)
     };
     let tl_msg = json!({"type": "timeline", "data": timeline}).to_string();
     if socket.send(Message::Text(tl_msg)).await.is_err() {
@@ -496,7 +501,12 @@ async fn get_epoch(
     State(state): State<ServerState>,
     Query(params): Query<EpochParams>,
 ) -> impl IntoResponse {
-    let limit = params.limit.unwrap_or(usize::MAX);
+    // An UNCAPPED default cloned+serialized the whole ring (measured 168k entries) per request —
+    // this is the dashboard's chart fallback, so default it to the same display-decimated slice
+    // the WebSocket bootstrap sends. An explicit ?limit=N still serves exactly N (raw), so
+    // deeper//full history stays available to any caller that asks for it.
+    let explicit = params.limit.is_some();
+    let limit = params.limit.unwrap_or(crate::aggregator::WS_TIMELINE_BOOTSTRAP);
     let es = state.app_state.epoch_store.lock().await;
     let entries: Vec<serde_json::Value> = es.query(limit)
         .into_iter()
@@ -515,12 +525,15 @@ async fn get_epoch(
         .collect();
     let total = es.len();
     drop(es);
+    // Decimate only the implicit (chart-fallback) default; an explicit ?limit=N is served raw.
+    let entries = if explicit { entries }
+        else { crate::aggregator::decimate_timeline(entries, crate::aggregator::TIMELINE_DISPLAY_POINTS) };
     let returned = entries.len();
     Json(json!({
         "entries": entries,
         "returned": returned,
         "total_in_store": total,
-        "note": "Full 4-year P(WWIII) timeline. Newest-first. Use ?limit=N or ?since=<rfc3339> to filter.",
+        "note": "Full 4-year P(WWIII) timeline. Newest-first. Default is display-decimated for the chart; use ?limit=N for raw entries or ?since=<rfc3339> to filter.",
     }))
 }
 
@@ -538,13 +551,25 @@ async fn get_articles(
     let limit  = params.limit.unwrap_or(2000);
     let store  = state.app_state.article_store.lock().await;
     let total  = store.len();
-    let arts: Vec<_> = store.query(
+    // Project OUT the `body` excerpt: the feed renders title/source/date/tags and never reads
+    // body, but shipping ~500 chars per row made this the single largest HTTP payload on load
+    // (measured 3.8 MB at limit=6000, 2026-07-24). Everything the dashboard actually uses stays.
+    let arts: Vec<serde_json::Value> = store.query(
         limit,
         params.source.as_deref(),
         params.domain.as_deref(),
     )
     .into_iter()
-    .cloned()
+    .map(|a| json!({
+        "id":           a.id,
+        "title":        a.title,
+        "url":          a.url,
+        "source":       a.source,
+        "tier":         a.tier,
+        "published_at": a.published_at,
+        "ingested_at":  a.ingested_at,
+        "domain_tags":  a.domain_tags,
+    }))
     .collect();
     let shown = arts.len();
     Json(json!({"articles": arts, "total": total, "shown": shown}))
@@ -702,7 +727,11 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
         .route("/api/map",       get(get_map))
         .route("/api/finance",   get(get_finance))
         .with_state(state)
-        .merge(crate::api::operator_routes().with_state(operator_state));
+        .merge(crate::api::operator_routes().with_state(operator_state))
+        // gzip every response that a client advertises support for. The dashboard HTML and
+        // the JSON feeds were served raw, which dominated remote load time; text/JSON of this
+        // shape compresses ~85-90%. Applied last so it wraps every route above.
+        .layer(tower_http::compression::CompressionLayer::new());
 
     let bp = if base_path == "/" { "" } else { base_path };
     if bp.is_empty() {

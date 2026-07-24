@@ -47,6 +47,9 @@ feed-rs  = { path = "vendor/feed-rs" }  # vendored 2.3.1, quick-xml 0.37->0.41 (
 
 # ── Web framework ──────────────────────────────────────────────────────────────
 axum     = { version = "0.7",  features = ["ws", "macros"] }
+# Response compression only — the dashboard HTML and the JSON payloads went out RAW
+# (measured 2026-07-24: 195KB HTML, MB-scale JSON), which is what made a remote load drag.
+tower-http = { version = "0.5", features = ["compression-gzip"] }
 
 # ── Serialisation ──────────────────────────────────────────────────────────────
 serde        = { version = "1", features = ["derive"] }

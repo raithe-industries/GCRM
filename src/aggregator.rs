@@ -636,6 +636,36 @@ pub const MAX_EPOCH_ENTRIES: usize = 35_064 * 10; // ~350k; ~28 MB at ~80 B/entr
 /// deeper durable history stays available on disk and via /api/epoch?limit=N. (audit aggregator-1)
 pub const WS_TIMELINE_BOOTSTRAP: usize = 50_000;
 
+/// Points actually SENT for the initial chart draw after display-decimation. The chart is
+/// ~900–1700 CSS px wide, so 50k points is ~30–50 points per pixel — pure payload (measured
+/// 2026-07-24: a 9.4 MB WebSocket bootstrap frame) for nothing an eye can resolve. ~2.5k
+/// points is still sub-pixel at any monitor width while cutting that frame ~95%.
+pub const TIMELINE_DISPLAY_POINTS: usize = 2_500;
+
+/// Display-decimate a timeline slice for the initial draw.
+///
+/// Stride-samples `entries` down to about [`TIMELINE_DISPLAY_POINTS`] across the WHOLE slice, so
+/// the full history still spans the axis — it drops resolution the screen cannot show, never
+/// range. Two classes of point are ALWAYS kept regardless of stride:
+///   * the first and last entry, so the endpoints and the live edge stay exact; and
+///   * every entry carrying a `drivers` record — those are the hoverable knocks the chart seeds
+///     its spike markers and audit cards from, and losing them would silently delete history.
+///
+/// Returns the input untouched when it is already at or under the target.
+pub fn decimate_timeline(entries: Vec<serde_json::Value>, target: usize) -> Vec<serde_json::Value> {
+    let n = entries.len();
+    if n <= target || target == 0 { return entries; }
+    let stride = n.div_ceil(target).max(1);
+    let last = n - 1;
+    entries.into_iter().enumerate()
+        .filter(|(i, e)| {
+            *i == 0 || *i == last || i % stride == 0
+                || e.get("drivers").and_then(|d| d.as_array()).is_some_and(|a| !a.is_empty())
+        })
+        .map(|(_, e)| e)
+        .collect()
+}
+
 #[derive(Debug, Default)]
 pub struct EpochStore {
     ring: VecDeque<serde_json::Value>,
