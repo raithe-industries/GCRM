@@ -42,6 +42,7 @@ mod video;
 mod processor;
 mod server;
 mod theater;
+mod thumbs;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -391,6 +392,11 @@ async fn main() {
         let _ = osint::map_payload(None).await;
         let _ = osint::finance_payload().await;
     });
+
+    // Page-view thumbnail worker for the timeline driver cards: ONE serialised, nice'd
+    // capture at a time off a bounded queue, with a rolling disk cap. Dormant (silently)
+    // when no browser binary is present or GCRM_THUMBS=0.
+    thumbs::spawn_worker();
 
     // Background feeds/monitors run SUPERVISED and detached: a panic in any one is caught,
     // logged, and isolated — it never tears down the public monitor (audit xcut_net-4). Only

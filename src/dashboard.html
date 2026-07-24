@@ -197,7 +197,18 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--t2);heigh
    knock drivers can be CLICKED through to their article/video (canvas text can't
    carry links). Absolutely positioned inside .chart-inner: never affects layout,
    so the canvas keeps its full height (eyes-gate floor). */
-#tl-card{position:absolute;z-index:40;display:none;max-width:252px;min-width:170px;background:rgba(8,12,17,.97);border:0.5px solid rgba(255,255,255,.14);border-radius:6px;padding:7px 9px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#tl-card{position:absolute;z-index:40;display:none;max-width:300px;min-width:190px;max-height:min(58vh,430px);overflow-y:auto;overscroll-behavior:contain;background:rgba(8,12,17,.97);border:0.5px solid rgba(255,255,255,.14);border-radius:6px;padding:7px 9px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#tl-card.pinned{border-color:rgba(127,119,221,.55);box-shadow:0 6px 24px rgba(0,0,0,.62)}
+#tl-card .tlc-x{float:right;margin:-3px -4px 0 5px;width:16px;height:16px;line-height:15px;text-align:center;border-radius:3px;color:var(--t3);cursor:pointer;font-size:11px;background:rgba(255,255,255,.06)}
+#tl-card .tlc-x:hover{color:var(--t1);background:rgba(255,255,255,.14)}
+#tl-card .tlc-hint{font-size:8px;color:var(--t4);margin-top:6px;text-align:center;letter-spacing:.03em}
+/* Mini pageview: a captured screenshot of the source page, top-cropped so the
+   masthead + headline (the part that identifies the page at a glance) survives
+   the crop. Hidden outright if the capture hasn't landed yet — the key is minted
+   from the url on ingest, so the <img> can legitimately 404 for a few seconds. */
+#tl-card .tlc-shot{display:block;margin:0 0 5px;border-radius:3px;overflow:hidden;background:#0d1117;border:0.5px solid rgba(255,255,255,.07);line-height:0}
+#tl-card .tlc-shot img{width:100%;height:104px;object-fit:cover;object-position:top center;display:block;filter:saturate(.9) brightness(.86);transition:filter .15s}
+#tl-card .tlc-row.lnk:hover .tlc-shot img{filter:none}
 #tl-card .tlc-t{font-size:10px;color:#c8c8e8;font-weight:600;display:flex;justify-content:space-between;gap:8px}
 #tl-card .tlc-p{font-family:monospace;color:var(--t1)}
 #tl-card .tlc-move{font-size:9px;font-weight:700;margin:3px 0 1px}
@@ -962,16 +973,37 @@ const alertBands={id:'alertBands',afterDatasetsDraw(chart){
 // HTML overlay replacing the canvas tooltip (canvas text can't carry links): the
 // same nearest-x hover surfaces one small article card per driver — headline,
 // source, age, snippet, click-through — so every knock is auditable in one hover
-// and one click (operator directive 2026-07-22). The card survives the pointer
-// travelling onto it (250ms grace + mouseenter cancel) so its links are actually
-// clickable. Feed-controlled title/url/snippet pass esc()/safeUrl() (dashboard-3/4/5).
+// and one click (operator directive 2026-07-22). Each row leads with a mini
+// pageview — a captured screenshot of the source page itself — so the card shows
+// what you're about to open, not just its headline (operator directive 2026-07-23).
+// Feed-controlled title/url/snippet pass esc()/safeUrl() (dashboard-3/4/5).
+//
+// CLICK-TO-PIN (operator directive 2026-07-23: "tricky to click the correct 'open'
+// to view the source because it disappears too quickly"). Hover alone is a moving
+// target — the pointer has to leave the canvas to reach the card, and any twitch on
+// the way re-aims the tooltip at a different instant. So a click on the chart FREEZES
+// the card: pinned, it ignores every further hover update and never auto-hides, and
+// it can be dismissed with its ✕, Escape, or a click anywhere outside it. The 600ms
+// hover grace below is the unpinned fallback for people who never click.
+//
 // _tlOver is load-bearing, not belt-and-braces: Chart.js handles the canvas
 // mouseleave ASYNCHRONOUSLY (next frame), so it asks us to hide AFTER the card's
 // mouseenter has already fired — cancelling the timer on enter alone loses that
 // race and the card vanishes from under the pointer. The deferred hide re-checks
 // this flag at fire time instead.
-let _tlHideT=null,_tlOver=false;
-function hideTlCard(now){const el=document.getElementById('tl-card');if(!el)return;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}if(now){_tlOver=false;el.style.display='none';return;}_tlHideT=setTimeout(()=>{_tlHideT=null;if(_tlOver)return;el.style.display='none';},250);}
+let _tlHideT=null,_tlOver=false,_tlPin=false,_tlHtml='';
+function paintTlCard(){const el=document.getElementById('tl-card');if(!el)return;
+  el.innerHTML=(_tlPin?'<div class="tlc-x" onclick="unpinTlCard(event)" title="close (Esc)">✕</div>':'')+_tlHtml
+    +'<div class="tlc-hint">'+(_tlPin?'pinned · ✕ or Esc to close':'click the chart to pin this card')+'</div>';
+  el.classList.toggle('pinned',_tlPin);}
+function pinTlCard(){const el=document.getElementById('tl-card');if(!el||!_tlHtml||el.style.display==='none')return;
+  _tlPin=true;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}paintTlCard();}
+function unpinTlCard(ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_tlPin=false;_tlOver=false;
+  const el=document.getElementById('tl-card');if(el){el.classList.remove('pinned');el.style.display='none';}}
+function hideTlCard(now){const el=document.getElementById('tl-card');if(!el)return;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}
+  if(now){_tlPin=false;_tlOver=false;el.classList.remove('pinned');el.style.display='none';return;}
+  if(_tlPin)return;                              // a pinned card outlives the pointer, by design
+  _tlHideT=setTimeout(()=>{_tlHideT=null;if(_tlOver||_tlPin)return;el.style.display='none';},600);}
 // Same pixel-window matcher the canvas tooltip used (12px ≈ triangle width + slack,
 // ±8-tick floor for zoomed-in charts) — one shared definition of "near a knock".
 function nearestSpikeTo(idx){
@@ -985,6 +1017,7 @@ function nearestSpikeTo(idx){
 function tlCardHandler(ctx){
  try{
   const el=document.getElementById('tl-card');if(!el)return;
+  if(_tlPin)return;                              // frozen: hover no longer re-aims or re-renders it
   const tt=ctx.tooltip;
   if(!tt||tt.opacity===0){hideTlCard(false);return;}
   if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}
@@ -998,7 +1031,11 @@ function tlCardHandler(ctx){
       // Rich rows: one mini-article per driver, clickable when the url validates.
       s.refs.forEach(r=>{
         const u=safeUrl(r.url||''),core=(r.snippet||'').replace(/…$/,'');
+        // Mini pageview. The key is server-minted hex; re-validate anyway (it lands in a
+        // src=) and drop the frame on error — a capture can lag its driver by seconds.
+        const k=/^[a-f0-9]{6,40}$/.test(r.thumb||'')?r.thumb:'';
         h+='<div class="tlc-row'+(u?' lnk" data-url="'+encodeURIComponent(u)+'" onclick="openArticle(decodeURIComponent(this.dataset.url))':'')+'">'
+          +(k?'<div class="tlc-shot"><img loading="lazy" decoding="async" alt="" src="'+BASE_PATH+'/api/thumb/'+k+'" onerror="this.parentNode.style.display=\'none\'"></div>':'')
           +'<div class="pop-title">'+(r.video?'▶ ':'')+esc(r.title||'')+'</div>'
           +(core&&!(r.title||'').startsWith(core)?'<div class="pop-sub">'+esc(r.snippet)+'</div>':'')
           +'<div class="tlc-meta">'+esc(r.source||'')+(r.published_at?' · '+relTime(r.published_at):'')+(u?' · <span class="tlc-open">open ↗</span>':'')+'</div></div>';
@@ -1010,7 +1047,7 @@ function tlCardHandler(ctx){
       h+='<div class="tlc-plain">(no driver record for this move)</div>';
     }
   }
-  el.innerHTML=h;el.style.display='block';
+  _tlHtml=h;el.style.display='block';paintTlCard();
   const area=ctx.chart.chartArea,W=el.offsetWidth,H=el.offsetHeight;
   let x=tt.caretX+10,y=tt.caretY-10;
   if(area){if(x+W>area.right)x=tt.caretX-W-10;if(x<area.left)x=area.left;
@@ -1019,6 +1056,13 @@ function tlCardHandler(ctx){
  }catch(err){console.warn('tl-card render error',err);} /* an overlay bug must never become a pageerror (the eyes gate treats those as fatal) */
 }
 {const _tc=document.getElementById('tl-card');if(_tc){_tc.addEventListener('mouseenter',()=>{_tlOver=true;if(_tlHideT){clearTimeout(_tlHideT);_tlHideT=null;}});_tc.addEventListener('mouseleave',()=>{_tlOver=false;hideTlCard(false);});}}
+// Dismissal for a pinned card. The canvas click that pinned it bubbles to document
+// AFTER Chart.js's own handler, so the target test below has to spare the canvas or
+// the pin would be undone by the very click that set it.
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&_tlPin)unpinTlCard();});
+document.addEventListener('click',e=>{if(!_tlPin)return;
+  const el=document.getElementById('tl-card');
+  if(el&&!el.contains(e.target)&&e.target!==document.getElementById('timeline-chart'))unpinTlCard();});
 const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',data:{labels:[],datasets:[{label:'Annual',data:[],borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{label:'30-day',data:[],borderColor:'#EF9F27',fill:false,tension:.3,pointRadius:0,borderWidth:1,borderDash:[3,3]},{label:'Baseline',data:[],borderColor:'rgba(96,96,160,0.4)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[6,4]},{label:'HistAvg',data:[],borderColor:'rgba(127,119,221,0.3)',fill:false,tension:0,pointRadius:0,borderWidth:0.5,borderDash:[2,6]}]},options:{responsive:true,maintainAspectRatio:false,
 // Hover anywhere on the chart (nearest-x, no need to hit a 0-radius point): the hover
 // card shows the read at that instant, and — when the hovered instant sits on/near a
@@ -1029,6 +1073,10 @@ const tlChart=new Chart(document.getElementById('timeline-chart'),{type:'line',d
 // The callbacks below still build the tooltip model the handler reads (title/P line) and
 // keep the text fallback path exercised.
 interaction:{mode:'nearest',axis:'x',intersect:false},
+// A click anywhere on the chart freezes whatever the hover card is currently showing,
+// so its links stop being a moving target. Doubles as the touch path: a tap fires
+// hover-then-click, which renders the card and immediately pins it.
+onClick:()=>pinTlCard(),
 plugins:{legend:{display:false},tooltip:{enabled:false,external:tlCardHandler,displayColors:false,
   backgroundColor:'rgba(8,12,17,.96)',borderColor:'rgba(255,255,255,.14)',borderWidth:0.5,
   titleColor:'#c8c8e8',bodyColor:'#9aa4b8',titleFont:{size:10},bodyFont:{size:9},

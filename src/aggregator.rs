@@ -2392,14 +2392,22 @@ impl Aggregator {
                                 if a.body.chars().count() > DRIVER_SNIPPET_MAX_CHARS { s.push('…'); }
                                 s
                             }).unwrap_or_default();
+                            let url = art.map(|a| a.url.clone()).unwrap_or_default();
+                            // Queue a page-view capture for the card (best-effort, bounded
+                            // worker, rolling disk cap — see thumbs.rs) and carry its key so
+                            // the card can show the thumbnail once it lands.
+                            crate::thumbs::enqueue(&url);
+                            let thumb = if url.is_empty() { String::new() }
+                                        else { crate::thumbs::key_for(&url) };
                             crate::models::DriverRef {
                                 source:       e.source.clone(),
                                 title:        e.title.clone(),
-                                url:          art.map(|a| a.url.clone()).unwrap_or_default(),
+                                url,
                                 published_at: art.map(|a| a.published_at.clone())
                                                  .unwrap_or_else(|| e.published_at.to_rfc3339()),
                                 snippet,
                                 video:        e.source.ends_with("-video"),
+                                thumb,
                             }
                         })
                         .collect();

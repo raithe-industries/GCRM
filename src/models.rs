@@ -1249,6 +1249,11 @@ pub struct DriverRef {
     /// True for watchlist video rows (source `-video`) — the card badges these ▶.
     #[serde(default)]
     pub video:        bool,
+    /// Key of this source page's captured thumbnail, served at `/api/thumb/<thumb>` and drawn
+    /// in the hover card as a mini pageview. Empty until (or unless) a capture lands — the card
+    /// falls back to its text rows. Display-only; never feeds P.
+    #[serde(default)]
+    pub thumb:        String,
 }
 
 // ── Timeline entry ────────────────────────────────────────────────────────────
@@ -1460,7 +1465,7 @@ mod tests {
             tick_driver_refs: vec![DriverRef {
                 source: "reuters".into(), title: "US launches strikes".into(),
                 url: "https://example.com/a".into(), published_at: "2026-07-22T01:00:00Z".into(),
-                snippet: "Strikes began at…".into(), video: false,
+                snippet: "Strikes began at…".into(), video: false, thumb: "deadbeef".into(),
             }],
             ..Default::default()
         };

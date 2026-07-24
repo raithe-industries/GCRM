@@ -31,3 +31,9 @@ rustc-ice-*.txt
 
 # API credentials — NEVER commit (loaded at startup by load_secrets_env)
 secrets.env
+
+# Captured page-view thumbnails for the timeline cards (rolling cap, regenerated on demand)
+thumbs/
+
+# Editor-local settings (machine-specific)
+.vscode/

@@ -575,6 +575,26 @@ async fn get_articles(
     Json(json!({"articles": arts, "total": total, "shown": shown}))
 }
 
+// GET /api/thumb/:key — the captured page-view thumbnail for a timeline driver card.
+// 404s (not an error) whenever a capture hasn't landed; the card then shows its text rows.
+// Keys are validated as bounded hex BEFORE touching the filesystem, so this public path can
+// never be walked out of the thumbs directory. Immutable content ⇒ long cache.
+async fn get_thumb(axum::extract::Path(key): axum::extract::Path<String>)
+    -> axum::response::Response
+{
+    if !crate::thumbs::is_valid_key(&key) {
+        return (axum::http::StatusCode::BAD_REQUEST, "bad key").into_response();
+    }
+    match tokio::fs::read(crate::thumbs::path_for(&key)).await {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE,  "image/jpeg"),
+             (axum::http::header::CACHE_CONTROL, "public, max-age=604800, immutable")],
+            bytes,
+        ).into_response(),
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "no thumbnail").into_response(),
+    }
+}
+
 async fn get_sources(State(state): State<ServerState>) -> impl IntoResponse {
     // Honesty: count per-source from the ACTUAL article store (what is currently in
     // the feed), not the cumulative-since-boot registry. So "live/silent" reflects
@@ -726,6 +746,7 @@ pub fn build_router(state: ServerState, operator_state: crate::api::OperatorStat
         .route("/api/health",    get(get_health))
         .route("/api/map",       get(get_map))
         .route("/api/finance",   get(get_finance))
+        .route("/api/thumb/:key", get(get_thumb))
         .with_state(state)
         .merge(crate::api::operator_routes().with_state(operator_state))
         // gzip every response that a client advertises support for. The dashboard HTML and
@@ -1037,6 +1058,24 @@ mod tests {
             "the timeline hover card overlay is gone — knock drivers are unclickable again");
         assert!(DASHBOARD_HTML.contains("safeUrl(r.url"),
             "driver ref urls must pass safeUrl before entering the card's DOM");
+        // Fifth leg (operator directive 2026-07-23): the card leads with a MINI PAGEVIEW —
+        // a captured screenshot of the source page served from /api/thumb — and a click on
+        // the chart PINS the card, so the "open ↗" link stops being a moving target that
+        // "disappears too quickly". The key is re-validated client-side before it lands in
+        // a src=, and a capture that hasn't rendered yet must fail closed (frame removed),
+        // never leave an empty bordered box.
+        assert!(DASHBOARD_HTML.contains("/api/thumb/"),
+            "the hover card no longer renders the source-page mini pageview");
+        assert!(DASHBOARD_HTML.contains("/^[a-f0-9]{6,40}$/.test(r.thumb"),
+            "thumbnail keys must be re-validated before entering the card's DOM");
+        assert!(DASHBOARD_HTML.contains("onerror=\"this.parentNode.style.display="),
+            "a not-yet-captured pageview must remove its frame instead of showing an empty box");
+        assert!(DASHBOARD_HTML.contains("onClick:()=>pinTlCard()")
+             && DASHBOARD_HTML.contains("if(_tlPin)return;"),
+            "clicking the chart must pin the card and freeze it against further hover");
+        assert!(DASHBOARD_HTML.contains("unpinTlCard")
+             && DASHBOARD_HTML.contains("e.key==='Escape'"),
+            "a pinned card must be dismissable (✕ / Escape / click-away)");
     }
 
     #[test]
